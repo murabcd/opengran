@@ -21,6 +21,7 @@ import {
 	Users,
 } from "lucide-react";
 import * as React from "react";
+import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -93,23 +94,33 @@ const currentUser = {
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 	const [activeWorkspace, setActiveWorkspace] = React.useState(workspaces[0]);
+	const [settingsOpen, setSettingsOpen] = React.useState(false);
+	const [user, setUser] = React.useState(currentUser);
 
 	return (
-		<Sidebar collapsible="icon" {...props}>
-			<SidebarHeader>
-				<WorkspaceSwitcher
-					activeWorkspace={activeWorkspace}
-					onSelect={setActiveWorkspace}
-				/>
-			</SidebarHeader>
-			<SidebarContent>
-				<NavMain items={navigation} />
-				<NavProjects projects={quickLinks} />
-			</SidebarContent>
-			<SidebarFooter>
-				<NavUser user={currentUser} />
-			</SidebarFooter>
-		</Sidebar>
+		<>
+			<Sidebar collapsible="icon" {...props}>
+				<SidebarHeader>
+					<WorkspaceSwitcher
+						activeWorkspace={activeWorkspace}
+						onSelect={setActiveWorkspace}
+					/>
+				</SidebarHeader>
+				<SidebarContent>
+					<NavMain items={navigation} />
+					<NavProjects projects={quickLinks} />
+				</SidebarContent>
+				<SidebarFooter>
+					<NavUser user={user} onSettingsOpen={() => setSettingsOpen(true)} />
+				</SidebarFooter>
+			</Sidebar>
+			<SettingsDialog
+				open={settingsOpen}
+				onOpenChange={setSettingsOpen}
+				user={user}
+				onUserChange={setUser}
+			/>
+		</>
 	);
 }
 
@@ -274,12 +285,14 @@ function WorkspaceSwitcher({
 
 function NavUser({
 	user,
+	onSettingsOpen,
 }: {
 	user: {
 		name: string;
 		email: string;
 		avatar: string;
 	};
+	onSettingsOpen: () => void;
 }) {
 	const { isMobile } = useSidebar();
 	const { theme, setTheme } = useTheme();
@@ -333,7 +346,10 @@ function NavUser({
 								{themeLabel}
 							</DropdownMenuItem>
 						</DropdownMenuGroup>
-						<DropdownMenuItem className="h-8 gap-2 px-2">
+						<DropdownMenuItem
+							className="h-8 gap-2 px-2"
+							onClick={onSettingsOpen}
+						>
 							<Settings />
 							Settings
 						</DropdownMenuItem>
