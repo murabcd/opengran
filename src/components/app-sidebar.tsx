@@ -50,26 +50,25 @@ import {
 
 type NavItem = {
 	title: string;
-	url: string;
+	view: "home" | "chat" | "shared";
 	icon: LucideIcon;
 	isActive?: boolean;
 };
 
-const navigation: NavItem[] = [
+const navigation: Array<Omit<NavItem, "isActive">> = [
 	{
 		title: "Home",
-		url: "#home",
+		view: "home",
 		icon: Home,
-		isActive: true,
 	},
 	{
 		title: "Shared with me",
-		url: "#shared-with-me",
+		view: "shared",
 		icon: Share2,
 	},
 	{
 		title: "Chat",
-		url: "#chat",
+		view: "chat",
 		icon: MessageSquare,
 	},
 ];
@@ -92,10 +91,25 @@ const currentUser = {
 	avatar: "",
 };
 
-export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
+export function AppSidebar({
+	currentView,
+	onViewChange,
+	...props
+}: React.ComponentProps<typeof Sidebar> & {
+	currentView: "home" | "chat";
+	onViewChange: (view: "home" | "chat") => void;
+}) {
 	const [activeWorkspace, setActiveWorkspace] = React.useState(workspaces[0]);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
 	const [user, setUser] = React.useState(currentUser);
+	const navItems = React.useMemo(
+		() =>
+			navigation.map((item) => ({
+				...item,
+				isActive: item.view === currentView,
+			})),
+		[currentView],
+	);
 
 	return (
 		<>
@@ -107,7 +121,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 					/>
 				</SidebarHeader>
 				<SidebarContent>
-					<NavMain items={navigation} />
+					<NavMain items={navItems} onViewChange={onViewChange} />
 					<NavProjects projects={quickLinks} />
 				</SidebarContent>
 				<SidebarFooter>
@@ -124,7 +138,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 	);
 }
 
-function NavMain({ items }: { items: NavItem[] }) {
+function NavMain({
+	items,
+	onViewChange,
+}: {
+	items: NavItem[];
+	onViewChange: (view: "home" | "chat") => void;
+}) {
 	return (
 		<SidebarGroup>
 			<SidebarGroupLabel>Platform</SidebarGroupLabel>
@@ -136,10 +156,19 @@ function NavMain({ items }: { items: NavItem[] }) {
 							tooltip={item.title}
 							isActive={item.isActive}
 						>
-							<a href={item.url}>
+							<button
+								type="button"
+								onClick={() => {
+									if (item.view === "shared") {
+										return;
+									}
+									onViewChange(item.view);
+								}}
+								className="flex w-full items-center gap-2"
+							>
 								{item.icon && <item.icon />}
 								<span>{item.title}</span>
-							</a>
+							</button>
 						</SidebarMenuButton>
 					</SidebarMenuItem>
 				))}
