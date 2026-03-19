@@ -1,4 +1,4 @@
-import { CalendarClock, FileText, Plus } from "lucide-react";
+import { CalendarClock, Plus } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
 import {
 	Breadcrumb,
