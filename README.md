@@ -1,10 +1,10 @@
 <a href="https://opengran-oss.vercel.app">
-  <img alt="Notion-like Platform Built with TanStack Start, TanStack AI and Convex." src="./public/preview/opengran.png">
+  <img alt="Gronala-like Notepad Built with Vite, AI SDK and Convex." src="./public/preview/opengran.png">
   <h1 align="center">OpenGran</h1>
 </a>
 
 <p align="center">
-  Notion-like Platform Built with TanStack Start, TanStack AI and Convex.
+  Gronala-like Notepad Built with Vite, AI SDK and Convex.
 </p>
 
 <p align="center">
