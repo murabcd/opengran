@@ -73,6 +73,58 @@ const HOME_QUICK_NOTE_SKELETON_IDS = [
 	"home-quick-note-skeleton-3",
 ] as const;
 
+type GroupedQuickNotes = {
+	today: Array<Doc<"quickNotes">>;
+	yesterday: Array<Doc<"quickNotes">>;
+	lastWeek: Array<Doc<"quickNotes">>;
+	lastMonth: Array<Doc<"quickNotes">>;
+	older: Array<Doc<"quickNotes">>;
+};
+
+const isSameCalendarDay = (left: Date, right: Date) =>
+	left.getFullYear() === right.getFullYear() &&
+	left.getMonth() === right.getMonth() &&
+	left.getDate() === right.getDate();
+
+const groupQuickNotesByDate = (
+	notes: Array<Doc<"quickNotes">>,
+): GroupedQuickNotes => {
+	const now = new Date();
+	const yesterday = new Date(now);
+	yesterday.setDate(now.getDate() - 1);
+	const oneWeekAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+	const oneMonthAgo = now.getTime() - 30 * 24 * 60 * 60 * 1000;
+
+	return notes.reduce<GroupedQuickNotes>(
+		(groups, note) => {
+			const noteDate = new Date(
+				note.updatedAt || note.createdAt || note._creationTime,
+			);
+
+			if (isSameCalendarDay(noteDate, now)) {
+				groups.today.push(note);
+			} else if (isSameCalendarDay(noteDate, yesterday)) {
+				groups.yesterday.push(note);
+			} else if (noteDate.getTime() > oneWeekAgo) {
+				groups.lastWeek.push(note);
+			} else if (noteDate.getTime() > oneMonthAgo) {
+				groups.lastMonth.push(note);
+			} else {
+				groups.older.push(note);
+			}
+
+			return groups;
+		},
+		{
+			today: [],
+			yesterday: [],
+			lastWeek: [],
+			lastMonth: [],
+			older: [],
+		},
+	);
+};
+
 export function App() {
 	const { data: session, isPending: isSessionPending } =
 		authClient.useSession();
@@ -652,65 +704,90 @@ function HomeQuickNotesList({
 	onOpenNote: (noteId: Id<"quickNotes">) => void;
 	onQuickNoteTrashed: (noteId: Id<"quickNotes">) => void;
 }) {
+	const groupedNotes = groupQuickNotesByDate(notes);
+	const sections = [
+		{ key: "today", label: "Today", notes: groupedNotes.today },
+		{ key: "yesterday", label: "Yesterday", notes: groupedNotes.yesterday },
+		{ key: "lastWeek", label: "Last 7 days", notes: groupedNotes.lastWeek },
+		{
+			key: "lastMonth",
+			label: "Last 30 days",
+			notes: groupedNotes.lastMonth,
+		},
+		{ key: "older", label: "Older", notes: groupedNotes.older },
+	] as const;
+
 	return (
 		<div className="w-full max-w-xl space-y-1">
-			<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
-				Today
-			</div>
-			<div className="space-y-2">
-				{notes.map((note) => {
-					const isActive = note._id === activeNoteId;
-					const title =
-						isActive && activeNoteTitle.trim()
-							? activeNoteTitle
-							: note.title || "New note";
-					const preview =
-						note.searchableText.trim() ||
-						note.authorName?.trim() ||
-						currentUserName;
+			{sections.map((section) => {
+				if (section.notes.length === 0) {
+					return null;
+				}
 
-					return (
-						<div
-							key={note._id}
-							className={cn(
-								"group flex items-center rounded-xl p-1 transition-colors hover:bg-card/50 has-[[data-note-actions]:focus-visible]:bg-transparent has-[[data-note-actions]:hover]:bg-transparent",
-								isActive ? "bg-transparent" : "bg-transparent",
-							)}
-						>
-							<button
-								type="button"
-								onClick={() => onOpenNote(note._id)}
-								className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
-							>
-								<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
-									<FileText className="size-4" />
-								</div>
-								<div className="min-w-0 flex-1">
-									<div className="truncate text-sm font-medium">{title}</div>
-									<div className="truncate text-xs text-muted-foreground">
-										{preview}
-									</div>
-								</div>
-							</button>
-							<QuickNoteActionsMenu
-								noteId={note._id}
-								onMoveToTrash={onQuickNoteTrashed}
-								align="end"
-							>
-								<button
-									type="button"
-									data-note-actions
-									className="flex aspect-square size-5 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground opacity-0 outline-hidden transition-[color,opacity] group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
-									aria-label={`Open actions for ${title}`}
-									onClick={(event) => event.stopPropagation()}
-								>
-									<MoreHorizontal className="size-4" />
-								</button>
-							</QuickNoteActionsMenu>
+				return (
+					<div key={section.key} className="space-y-2">
+						<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
+							{section.label}
 						</div>
-					);
-				})}
-			</div>
+						<div className="space-y-2">
+							{section.notes.map((note) => {
+								const isActive = note._id === activeNoteId;
+								const title =
+									isActive && activeNoteTitle.trim()
+										? activeNoteTitle
+										: note.title || "New note";
+								const preview =
+									note.searchableText.trim() ||
+									note.authorName?.trim() ||
+									currentUserName;
+
+								return (
+									<div
+										key={note._id}
+										className={cn(
+											"group flex items-center rounded-xl p-1 transition-colors hover:bg-card/50 has-[[data-note-actions]:focus-visible]:bg-transparent has-[[data-note-actions]:hover]:bg-transparent",
+											isActive ? "bg-transparent" : "bg-transparent",
+										)}
+									>
+										<button
+											type="button"
+											onClick={() => onOpenNote(note._id)}
+											className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
+										>
+											<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+												<FileText className="size-4" />
+											</div>
+											<div className="min-w-0 flex-1">
+												<div className="truncate text-sm font-medium">
+													{title}
+												</div>
+												<div className="truncate text-xs text-muted-foreground">
+													{preview}
+												</div>
+											</div>
+										</button>
+										<QuickNoteActionsMenu
+											noteId={note._id}
+											onMoveToTrash={onQuickNoteTrashed}
+											align="end"
+										>
+											<button
+												type="button"
+												data-note-actions
+												className="flex aspect-square size-5 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground opacity-0 outline-hidden transition-[color,opacity] group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+												aria-label={`Open actions for ${title}`}
+												onClick={(event) => event.stopPropagation()}
+											>
+												<MoreHorizontal className="size-4" />
+											</button>
+										</QuickNoteActionsMenu>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				);
+			})}
 		</div>
 	);
 }
