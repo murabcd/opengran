@@ -67,7 +67,7 @@ type AppUser = {
 };
 
 export function App() {
-	const { data: session } = authClient.useSession();
+	const { data: session, isPending: isSessionPending } = authClient.useSession();
 	const [authError, setAuthError] = React.useState<string | null>(null);
 	const [isAuthenticating, startAuthentication] = React.useTransition();
 	const [isDesktopMac, setIsDesktopMac] = React.useState(false);
@@ -151,6 +151,10 @@ export function App() {
 		});
 	}, []);
 
+	if (isSessionPending) {
+		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
+	}
+
 	if (!session?.user) {
 		return (
 			<AuthScreen
@@ -163,6 +167,22 @@ export function App() {
 	}
 
 	return <AppShell session={session} initialDesktopMac={isDesktopMac} />;
+}
+
+function AuthBootstrapScreen({
+	isDesktopMac,
+}: {
+	isDesktopMac: boolean;
+}) {
+	return (
+		<div
+			data-app-region={isDesktopMac ? "drag" : undefined}
+			className={cn(
+				"min-h-svh bg-background",
+				isDesktopMac && "pt-20 md:pt-24",
+			)}
+		/>
+	);
 }
 
 function AppShell({
