@@ -41,7 +41,7 @@
 
 ## Model provider
 
-This app ships with [OpenAI](https://openai.com/) provider as the default. However, with the [Tanstack AI](https://tanstack.com/ai/latest), you can switch LLM providers to [Anthropic](https://anthropic.com), [Ollama](https://ollama.com), [Gemini](https://cohere.com/), and [many more](https://tanstack.com/ai/latest/docs/getting-started/overview) with just a few lines of code.
+This app ships with [OpenAI](https://openai.com/) provider as the default. However, with the [AI SDK](https://sdk.vercel.ai/docs), you can switch LLM providers to [Anthropic](https://anthropic.com), [Ollama](https://ollama.com), [Cohere](https://cohere.com/), and [many more](https://sdk.vercel.ai/providers/ai-sdk-providers) with just a few lines of code.
 
 ## Deploy your own
 
