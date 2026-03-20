@@ -499,7 +499,7 @@ function AppShell({
 					data-app-region={isDesktopMac ? "drag" : undefined}
 					className={cn(
 						"sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between bg-background/95 px-4 backdrop-blur transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 md:px-6",
-						isDesktopMac && "h-24 pt-8",
+						isDesktopMac && "h-20 pt-8",
 					)}
 				>
 					<div
