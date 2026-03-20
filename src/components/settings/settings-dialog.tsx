@@ -157,7 +157,7 @@ function ManageAccountForm({
 								/>
 							) : null}
 							<AvatarFallback className="bg-muted/40">
-								{avatarPreview ? initials : <ImageUp className="h-8 w-8" />}
+								{avatarPreview ? initials : <ImageUp className="size-8" />}
 							</AvatarFallback>
 						</Avatar>
 						<div className="flex flex-col gap-2">

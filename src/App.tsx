@@ -28,12 +28,22 @@ import {
 } from "@/components/ui/sidebar";
 
 export function App() {
-	const [currentView, setCurrentView] = React.useState<"home" | "chat">(() => {
+	const [currentView, setCurrentView] = React.useState<
+		"home" | "chat" | "shared"
+	>(() => {
 		if (typeof window === "undefined") {
 			return "home";
 		}
 
-		return window.location.pathname === "/chat" ? "chat" : "home";
+		if (window.location.pathname === "/chat") {
+			return "chat";
+		}
+
+		if (window.location.pathname === "/shared") {
+			return "shared";
+		}
+
+		return "home";
 	});
 	const [chatSession, setChatSession] = React.useState(0);
 
@@ -42,11 +52,19 @@ export function App() {
 			const nextView =
 				window.location.pathname === "/chat" || window.location.hash === "#chat"
 					? "chat"
-					: "home";
+					: window.location.pathname === "/shared" ||
+							window.location.hash === "#shared"
+						? "shared"
+						: "home";
 
 			setCurrentView(nextView);
 
-			const nextPath = nextView === "chat" ? "/chat" : "/home";
+			const nextPath =
+				nextView === "chat"
+					? "/chat"
+					: nextView === "shared"
+						? "/shared"
+						: "/home";
 			if (window.location.pathname !== nextPath || window.location.hash) {
 				window.history.replaceState(null, "", nextPath);
 			}
@@ -60,10 +78,17 @@ export function App() {
 		};
 	}, []);
 
-	const handleViewChange = React.useCallback((view: "home" | "chat") => {
-		setCurrentView(view);
-		window.history.pushState(null, "", view === "chat" ? "/chat" : "/home");
-	}, []);
+	const handleViewChange = React.useCallback(
+		(view: "home" | "chat" | "shared") => {
+			setCurrentView(view);
+			window.history.pushState(
+				null,
+				"",
+				view === "chat" ? "/chat" : view === "shared" ? "/shared" : "/home",
+			);
+		},
+		[],
+	);
 
 	return (
 		<SidebarProvider>
@@ -84,7 +109,11 @@ export function App() {
 								<BreadcrumbSeparator className="hidden md:block" />
 								<BreadcrumbItem>
 									<BreadcrumbPage>
-										{currentView === "home" ? "Home" : "Chat"}
+										{currentView === "home"
+											? "Home"
+											: currentView === "shared"
+												? "Shared with me"
+												: "Chat"}
 									</BreadcrumbPage>
 								</BreadcrumbItem>
 							</BreadcrumbList>
@@ -96,7 +125,7 @@ export function App() {
 								<Plus />
 								Quick note
 							</Button>
-						) : (
+						) : currentView === "chat" ? (
 							<Button
 								variant="outline"
 								onClick={() => {
@@ -107,7 +136,7 @@ export function App() {
 								<Plus />
 								New chat
 							</Button>
-						)}
+						) : null}
 					</div>
 				</header>
 				{currentView === "home" ? (
@@ -164,13 +193,32 @@ export function App() {
 											Take your first note
 										</EmptyTitle>
 										<EmptyDescription>
-											Your meeting notes will appear here after you start
-											capturing conversations.
+											Your meeting notes will appear here
 										</EmptyDescription>
 									</EmptyHeader>
 									<EmptyContent>
 										<Button>Quick note</Button>
 									</EmptyContent>
+								</Empty>
+							</section>
+						</div>
+					</div>
+				) : currentView === "shared" ? (
+					<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
+						<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
+							<section className="mx-auto w-full max-w-xl space-y-6">
+								<h1 className="text-lg md:text-xl">Shared with me</h1>
+							</section>
+							<section className="flex justify-center py-8">
+								<Empty className="max-w-xl">
+									<EmptyHeader>
+										<EmptyTitle className="text-base">
+											No shared notes yet
+										</EmptyTitle>
+										<EmptyDescription>
+											When someone shares a note with you, it will show up here
+										</EmptyDescription>
+									</EmptyHeader>
 								</Empty>
 							</section>
 						</div>

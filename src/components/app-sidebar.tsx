@@ -65,7 +65,7 @@ const navigation: Array<Omit<NavItem, "isActive">> = [
 	},
 	{
 		title: "Shared with me",
-		action: "disabled",
+		action: "view",
 		view: "shared",
 		icon: Share2,
 	},
@@ -94,8 +94,8 @@ export function AppSidebar({
 	onViewChange,
 	...props
 }: React.ComponentProps<typeof Sidebar> & {
-	currentView: "home" | "chat";
-	onViewChange: (view: "home" | "chat") => void;
+	currentView: "home" | "chat" | "shared";
+	onViewChange: (view: "home" | "chat" | "shared") => void;
 }) {
 	const [activeWorkspace, setActiveWorkspace] = React.useState(workspaces[0]);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -162,7 +162,7 @@ function NavMain({
 }: {
 	className?: string;
 	items: NavItem[];
-	onViewChange: (view: "home" | "chat") => void;
+	onViewChange: (view: "home" | "chat" | "shared") => void;
 	onSearchOpen: () => void;
 }) {
 	React.useEffect(() => {
@@ -196,7 +196,7 @@ function NavMain({
 										return;
 									}
 
-									if (item.action !== "view" || item.view === "shared") {
+									if (item.action !== "view" || !item.view) {
 										return;
 									}
 									onViewChange(item.view);
