@@ -30,7 +30,7 @@
   },
   "overrides": [
     {
-      "includes": ["src/components/ui/sidebar.tsx"],
+      "includes": ["packages/ui/src/components/sidebar.tsx"],
       "linter": {
         "rules": {
           "suspicious": {

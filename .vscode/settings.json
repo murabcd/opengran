@@ -1,4 +1,5 @@
 {
+  "biome.configurationPath": "./biome.json",
   "files.watcherExclude": {
     "**/dist/**": true
   },

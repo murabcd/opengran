@@ -1,0 +1,5 @@
+@import "@workspace/ui/globals.css";
+
+@source "../../../node_modules/streamdown/dist/*.js";
+@source "./**/*.{ts,tsx}";
+@source "../../../packages/*/src/**/*.{js,jsx,ts,tsx}";
