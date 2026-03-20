@@ -58,10 +58,10 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
 	ChevronsUpDown,
-	Command,
 	FileText,
 	Home,
 	LogOut,
@@ -122,10 +122,25 @@ const navigation: Array<Omit<NavItem, "isActive">> = [
 ];
 
 const workspaces = [
-	{ name: "OpenGran", plan: "Meeting notes", logo: Command },
-	{ name: "Townhall Ops", plan: "Team Workspace", logo: Home },
-	{ name: "Community Lab", plan: "Shared Notes", logo: Users },
-];
+	{
+		name: "OpenGran",
+		plan: "Meeting notes",
+		logo: OpenGranMark,
+		logoTileClassName: "bg-foreground text-background",
+	},
+	{
+		name: "Townhall Ops",
+		plan: "Team Workspace",
+		logo: Home,
+		logoTileClassName: "bg-muted text-foreground",
+	},
+	{
+		name: "Community Lab",
+		plan: "Shared Notes",
+		logo: Users,
+		logoTileClassName: "bg-muted text-foreground",
+	},
+] as const;
 
 const MAX_VISIBLE_NOTES = 5;
 const SIDEBAR_NOTE_SKELETON_IDS = [
@@ -472,7 +487,12 @@ function WorkspaceSwitcher({
 							size="lg"
 							className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
 						>
-							<div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+							<div
+								className={cn(
+									"flex aspect-square size-8 items-center justify-center rounded-lg",
+									activeWorkspace.logoTileClassName,
+								)}
+							>
 								<activeWorkspace.logo className="size-4" />
 							</div>
 							<div className="grid flex-1 text-left text-sm leading-tight">
@@ -496,7 +516,12 @@ function WorkspaceSwitcher({
 								onClick={() => onSelect(workspace)}
 								className="h-8 gap-2 px-2"
 							>
-								<div className="flex size-6 items-center justify-center rounded-md">
+								<div
+									className={cn(
+										"flex size-6 items-center justify-center rounded-md",
+										workspace.logoTileClassName,
+									)}
+								>
 									<workspace.logo className="size-3.5 shrink-0" />
 								</div>
 								{workspace.name}
@@ -603,6 +628,25 @@ function NavUser({
 				</DropdownMenu>
 			</SidebarMenuItem>
 		</SidebarMenu>
+	);
+}
+
+function OpenGranMark({ className }: { className?: string }) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			fill="none"
+			className={className}
+			aria-hidden="true"
+		>
+			<path
+				d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"
+				stroke="currentColor"
+				strokeWidth="2"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+		</svg>
 	);
 }
 
