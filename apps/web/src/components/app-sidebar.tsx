@@ -110,15 +110,18 @@ const currentUser = {
 export function AppSidebar({
 	currentView,
 	onViewChange,
+	settingsOpen,
+	onSettingsOpenChange,
 	desktopSafeTop = false,
 	...props
 }: React.ComponentProps<typeof Sidebar> & {
 	currentView: "home" | "chat" | "shared" | "quick-note";
 	onViewChange: (view: "home" | "chat" | "shared" | "quick-note") => void;
+	settingsOpen: boolean;
+	onSettingsOpenChange: (open: boolean) => void;
 	desktopSafeTop?: boolean;
 }) {
 	const [activeWorkspace, setActiveWorkspace] = React.useState(workspaces[0]);
-	const [settingsOpen, setSettingsOpen] = React.useState(false);
 	const [searchOpen, setSearchOpen] = React.useState(false);
 	const [trashOpen, setTrashOpen] = React.useState(false);
 	const [user, setUser] = React.useState(currentUser);
@@ -152,7 +155,10 @@ export function AppSidebar({
 				</SidebarContent>
 				<SidebarFooter>
 					<NavTrash open={trashOpen} onOpenChange={setTrashOpen} />
-					<NavUser user={user} onSettingsOpen={() => setSettingsOpen(true)} />
+					<NavUser
+						user={user}
+						onSettingsOpen={() => onSettingsOpenChange(true)}
+					/>
 				</SidebarFooter>
 			</Sidebar>
 			<SearchCommand
@@ -168,7 +174,7 @@ export function AppSidebar({
 			/>
 			<SettingsDialog
 				open={settingsOpen}
-				onOpenChange={setSettingsOpen}
+				onOpenChange={onSettingsOpenChange}
 				user={user}
 				onUserChange={setUser}
 			/>

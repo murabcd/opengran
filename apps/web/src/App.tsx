@@ -54,9 +54,11 @@ export function App() {
 	const [chatSession, setChatSession] = React.useState(0);
 	const [quickNoteSession, setQuickNoteSession] = React.useState(0);
 	const [isDesktopMac, setIsDesktopMac] = React.useState(false);
+	const [settingsOpen, setSettingsOpen] = React.useState(false);
 
 	React.useEffect(() => {
 		const syncViewFromLocation = () => {
+			const nextSettingsOpen = window.location.hash === "#settings";
 			const nextView =
 				window.location.pathname === "/quick-note" ||
 				window.location.hash === "#quick-note"
@@ -79,9 +81,15 @@ export function App() {
 						: nextView === "shared"
 							? "/shared"
 							: "/home";
-			if (window.location.pathname !== nextPath || window.location.hash) {
-				window.history.replaceState(null, "", nextPath);
+			const nextLocation = `${nextPath}${nextSettingsOpen ? "#settings" : ""}`;
+			if (
+				window.location.pathname !== nextPath ||
+				window.location.hash !== (nextSettingsOpen ? "#settings" : "")
+			) {
+				window.history.replaceState(null, "", nextLocation);
 			}
+
+			setSettingsOpen(nextSettingsOpen);
 		};
 
 		syncViewFromLocation();
@@ -106,6 +114,7 @@ export function App() {
 	const handleViewChange = React.useCallback(
 		(view: "home" | "chat" | "shared" | "quick-note") => {
 			setCurrentView(view);
+			setSettingsOpen(false);
 			window.history.pushState(
 				null,
 				"",
@@ -121,11 +130,25 @@ export function App() {
 		[],
 	);
 
+	const handleSettingsOpenChange = React.useCallback((open: boolean) => {
+		setSettingsOpen(open);
+
+		const nextUrl = new URL(window.location.href);
+		nextUrl.hash = open ? "settings" : "";
+		window.history.replaceState(
+			null,
+			"",
+			`${nextUrl.pathname}${nextUrl.hash ? `#${nextUrl.hash}` : ""}`,
+		);
+	}, []);
+
 	return (
 		<SidebarProvider>
 			<AppSidebar
 				currentView={currentView}
 				onViewChange={handleViewChange}
+				settingsOpen={settingsOpen}
+				onSettingsOpenChange={handleSettingsOpenChange}
 				desktopSafeTop={isDesktopMac}
 			/>
 			<SidebarInset>
