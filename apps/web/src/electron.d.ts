@@ -9,6 +9,9 @@ declare global {
 			getAuthCallbackUrl: () => Promise<{
 				url: string;
 			}>;
+			getShareBaseUrl: () => Promise<{
+				url: string;
+			}>;
 			openExternalUrl: (url: string) => Promise<{
 				ok: boolean;
 			}>;

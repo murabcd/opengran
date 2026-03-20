@@ -8,6 +8,9 @@ export default defineSchema({
 		title: v.string(),
 		content: v.string(),
 		searchableText: v.string(),
+		visibility: v.union(v.literal("private"), v.literal("public")),
+		shareId: v.optional(v.string()),
+		sharedAt: v.optional(v.number()),
 		isArchived: v.boolean(),
 		archivedAt: v.optional(v.number()),
 		createdAt: v.number(),
@@ -21,5 +24,12 @@ export default defineSchema({
 			"ownerTokenIdentifier",
 			"isArchived",
 			"updatedAt",
-		]),
+		])
+		.index("by_owner_visibility_archived_updatedAt", [
+			"ownerTokenIdentifier",
+			"visibility",
+			"isArchived",
+			"updatedAt",
+		])
+		.index("by_shareId", ["shareId"]),
 });

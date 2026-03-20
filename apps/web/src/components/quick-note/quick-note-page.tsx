@@ -26,6 +26,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { writeTextToClipboard } from "./share-note";
 
 const EMPTY_DOCUMENT: JSONContent = {
 	type: "doc",
@@ -57,28 +58,6 @@ const getExportFileName = (title: string) =>
 			.replace(/[^a-z0-9]+/g, "-")
 			.replace(/^-+|-+$/g, "") || "note"
 	}.txt`;
-
-const writeTextToClipboard = async (value: string) => {
-	if (window.openGranDesktop) {
-		await window.openGranDesktop.writeClipboardText(value);
-		return;
-	}
-
-	if (navigator.clipboard?.writeText) {
-		await navigator.clipboard.writeText(value);
-		return;
-	}
-
-	const textarea = document.createElement("textarea");
-	textarea.value = value;
-	textarea.setAttribute("readonly", "");
-	textarea.style.position = "fixed";
-	textarea.style.opacity = "0";
-	document.body.appendChild(textarea);
-	textarea.select();
-	document.execCommand("copy");
-	document.body.removeChild(textarea);
-};
 
 const exportTextFile = async ({
 	fileName,

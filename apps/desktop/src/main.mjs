@@ -275,6 +275,15 @@ ipcMain.handle("app:get-auth-callback-url", async () => {
 	};
 });
 
+ipcMain.handle("app:get-share-base-url", async () => {
+	const shareBaseUrl =
+		process.env.SITE_URL?.trim() || (await resolveRendererUrl());
+
+	return {
+		url: shareBaseUrl,
+	};
+});
+
 ipcMain.handle("app:write-clipboard-text", async (_event, value) => {
 	if (typeof value !== "string") {
 		throw new Error("Clipboard value must be a string.");

@@ -1,6 +1,12 @@
 import { ConvexError, v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
+
+const noteVisibilityValidator = v.union(
+	v.literal("private"),
+	v.literal("public"),
+);
 
 const quickNoteFields = {
 	_id: v.id("quickNotes"),
@@ -10,6 +16,9 @@ const quickNoteFields = {
 	title: v.string(),
 	content: v.string(),
 	searchableText: v.string(),
+	visibility: noteVisibilityValidator,
+	shareId: v.optional(v.string()),
+	sharedAt: v.optional(v.number()),
 	isArchived: v.boolean(),
 	archivedAt: v.optional(v.number()),
 	createdAt: v.number(),
@@ -17,6 +26,11 @@ const quickNoteFields = {
 };
 
 const quickNoteValidator = v.object(quickNoteFields);
+
+const sharedQuickNoteValidator = v.object({
+	...quickNoteFields,
+	isOwner: v.boolean(),
+});
 
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
@@ -34,19 +48,49 @@ const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 const getAuthorName = (identity: Awaited<ReturnType<typeof requireIdentity>>) =>
 	identity.name?.trim() || identity.email?.trim() || "Unknown user";
 
+const normalizeQuickNote = (note: Doc<"quickNotes">) => ({
+	...note,
+	visibility: note.visibility ?? "private",
+});
+
 const requireTokenIdentifier = async (ctx: QueryCtx | MutationCtx) => {
 	const identity = await requireIdentity(ctx);
 
 	return identity.tokenIdentifier;
 };
 
+const requireOwnedNote = async (
+	ctx: QueryCtx | MutationCtx,
+	id: Doc<"quickNotes">["_id"],
+) => {
+	const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+	const note = await ctx.db.get(id);
+
+	if (!note) {
+		throw new ConvexError({
+			code: "NOTE_NOT_FOUND",
+			message: "Quick note not found.",
+		});
+	}
+
+	if (note.ownerTokenIdentifier !== ownerTokenIdentifier) {
+		throw new ConvexError({
+			code: "UNAUTHORIZED",
+			message: "You do not have access to this quick note.",
+		});
+	}
+
+	return note;
+};
+
+const createShareId = () => crypto.randomUUID().replaceAll("-", "");
+
 export const getLatest = query({
 	args: {},
 	returns: v.union(quickNoteValidator, v.null()),
 	handler: async (ctx) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-
-		return await ctx.db
+		const note = await ctx.db
 			.query("quickNotes")
 			.withIndex("by_ownerTokenIdentifier_and_isArchived_and_updatedAt", (q) =>
 				q
@@ -55,6 +99,8 @@ export const getLatest = query({
 			)
 			.order("desc")
 			.first();
+
+		return note ? normalizeQuickNote(note) : null;
 	},
 });
 
@@ -63,8 +109,7 @@ export const list = query({
 	returns: v.array(quickNoteValidator),
 	handler: async (ctx) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-
-		return await ctx.db
+		const notes = await ctx.db
 			.query("quickNotes")
 			.withIndex("by_ownerTokenIdentifier_and_isArchived_and_updatedAt", (q) =>
 				q
@@ -73,6 +118,28 @@ export const list = query({
 			)
 			.order("desc")
 			.take(100);
+
+		return notes.map(normalizeQuickNote);
+	},
+});
+
+export const listShared = query({
+	args: {},
+	returns: v.array(quickNoteValidator),
+	handler: async (ctx) => {
+		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		const notes = await ctx.db
+			.query("quickNotes")
+			.withIndex("by_owner_visibility_archived_updatedAt", (q) =>
+				q
+					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+					.eq("visibility", "public")
+					.eq("isArchived", false),
+			)
+			.order("desc")
+			.take(100);
+
+		return notes.map(normalizeQuickNote);
 	},
 });
 
@@ -81,8 +148,7 @@ export const listArchived = query({
 	returns: v.array(quickNoteValidator),
 	handler: async (ctx) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-
-		return await ctx.db
+		const notes = await ctx.db
 			.query("quickNotes")
 			.withIndex("by_ownerTokenIdentifier_and_isArchived_and_updatedAt", (q) =>
 				q
@@ -91,6 +157,8 @@ export const listArchived = query({
 			)
 			.order("desc")
 			.take(100);
+
+		return notes.map(normalizeQuickNote);
 	},
 });
 
@@ -111,7 +179,39 @@ export const get = query({
 			return null;
 		}
 
-		return note;
+		return normalizeQuickNote(note);
+	},
+});
+
+export const getShared = query({
+	args: {
+		shareId: v.string(),
+	},
+	returns: v.union(sharedQuickNoteValidator, v.null()),
+	handler: async (ctx, args) => {
+		const note = await ctx.db
+			.query("quickNotes")
+			.withIndex("by_shareId", (q) => q.eq("shareId", args.shareId))
+			.unique();
+
+		if (!note || note.isArchived) {
+			return null;
+		}
+
+		const normalizedNote = normalizeQuickNote(note);
+
+		const identity = await ctx.auth.getUserIdentity();
+		const isOwner =
+			identity?.tokenIdentifier === normalizedNote.ownerTokenIdentifier;
+
+		if (normalizedNote.visibility !== "public" && !isOwner) {
+			return null;
+		}
+
+		return {
+			...normalizedNote,
+			isOwner,
+		};
 	},
 });
 
@@ -132,6 +232,9 @@ export const create = mutation({
 				content: [{ type: "paragraph" }],
 			}),
 			searchableText: "",
+			visibility: "private",
+			shareId: undefined,
+			sharedAt: undefined,
 			isArchived: false,
 			archivedAt: undefined,
 			createdAt: now,
@@ -155,27 +258,16 @@ export const save = mutation({
 		const now = Date.now();
 
 		if (args.id) {
-			const existing = await ctx.db.get(args.id);
-
-			if (!existing) {
-				throw new ConvexError({
-					code: "NOTE_NOT_FOUND",
-					message: "Quick note not found.",
-				});
-			}
-
-			if (existing.ownerTokenIdentifier !== ownerTokenIdentifier) {
-				throw new ConvexError({
-					code: "UNAUTHORIZED",
-					message: "You do not have access to this quick note.",
-				});
-			}
+			const existing = await requireOwnedNote(ctx, args.id);
 
 			await ctx.db.patch(args.id, {
 				authorName: existing.authorName ?? authorName,
 				title: args.title,
 				content: args.content,
 				searchableText: args.searchableText,
+				visibility: existing.visibility ?? "private",
+				shareId: existing.shareId,
+				sharedAt: existing.sharedAt,
 				isArchived: false,
 				archivedAt: undefined,
 				updatedAt: now,
@@ -190,11 +282,52 @@ export const save = mutation({
 			title: args.title,
 			content: args.content,
 			searchableText: args.searchableText,
+			visibility: "private",
+			shareId: undefined,
+			sharedAt: undefined,
 			isArchived: false,
 			archivedAt: undefined,
 			createdAt: now,
 			updatedAt: now,
 		});
+	},
+});
+
+export const updateVisibility = mutation({
+	args: {
+		id: v.id("quickNotes"),
+		visibility: noteVisibilityValidator,
+	},
+	returns: v.object({
+		visibility: noteVisibilityValidator,
+		shareId: v.optional(v.string()),
+	}),
+	handler: async (ctx, args) => {
+		const note = await requireOwnedNote(ctx, args.id);
+
+		if (note.isArchived) {
+			throw new ConvexError({
+				code: "NOTE_NOT_FOUND",
+				message: "Quick note not found.",
+			});
+		}
+
+		const shareId =
+			args.visibility === "public"
+				? (note.shareId ?? createShareId())
+				: note.shareId;
+
+		await ctx.db.patch(args.id, {
+			visibility: args.visibility,
+			shareId,
+			sharedAt: args.visibility === "public" ? Date.now() : note.sharedAt,
+			updatedAt: Date.now(),
+		});
+
+		return {
+			visibility: args.visibility,
+			shareId,
+		};
 	},
 });
 
@@ -204,22 +337,7 @@ export const moveToTrash = mutation({
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
-		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const existing = await ctx.db.get(args.id);
-
-		if (!existing) {
-			throw new ConvexError({
-				code: "NOTE_NOT_FOUND",
-				message: "Quick note not found.",
-			});
-		}
-
-		if (existing.ownerTokenIdentifier !== ownerTokenIdentifier) {
-			throw new ConvexError({
-				code: "UNAUTHORIZED",
-				message: "You do not have access to this quick note.",
-			});
-		}
+		await requireOwnedNote(ctx, args.id);
 
 		await ctx.db.patch(args.id, {
 			isArchived: true,
@@ -237,22 +355,7 @@ export const restore = mutation({
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
-		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const existing = await ctx.db.get(args.id);
-
-		if (!existing) {
-			throw new ConvexError({
-				code: "NOTE_NOT_FOUND",
-				message: "Quick note not found.",
-			});
-		}
-
-		if (existing.ownerTokenIdentifier !== ownerTokenIdentifier) {
-			throw new ConvexError({
-				code: "UNAUTHORIZED",
-				message: "You do not have access to this quick note.",
-			});
-		}
+		await requireOwnedNote(ctx, args.id);
 
 		await ctx.db.patch(args.id, {
 			isArchived: false,
@@ -270,23 +373,7 @@ export const remove = mutation({
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
-		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const existing = await ctx.db.get(args.id);
-
-		if (!existing) {
-			throw new ConvexError({
-				code: "NOTE_NOT_FOUND",
-				message: "Quick note not found.",
-			});
-		}
-
-		if (existing.ownerTokenIdentifier !== ownerTokenIdentifier) {
-			throw new ConvexError({
-				code: "UNAUTHORIZED",
-				message: "You do not have access to this quick note.",
-			});
-		}
-
+		await requireOwnedNote(ctx, args.id);
 		await ctx.db.delete(args.id);
 
 		return null;

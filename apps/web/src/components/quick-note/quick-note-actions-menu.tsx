@@ -12,15 +12,24 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuPortal,
 	DropdownMenuSeparator,
+	DropdownMenuSub,
+	DropdownMenuSubContent,
+	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { useMutation } from "convex/react";
-import { Link2, Trash2 } from "lucide-react";
+import { useMutation, useQuery } from "convex/react";
+import { Check, Globe, Link2, Lock, Share2, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
+import {
+	buildQuickNoteShareUrl,
+	type QuickNoteVisibility,
+	writeTextToClipboard,
+} from "./share-note";
 
 export function QuickNoteActionsMenu({
 	noteId,
@@ -41,16 +50,27 @@ export function QuickNoteActionsMenu({
 }) {
 	const [confirmOpen, setConfirmOpen] = React.useState(false);
 	const [isMovingToTrash, setIsMovingToTrash] = React.useState(false);
+	const [isUpdatingShare, setIsUpdatingShare] = React.useState(false);
+	const note = useQuery(api.quickNotes.get, { id: noteId });
 	const moveToTrash = useMutation(
 		api.quickNotes.moveToTrash,
 	).withOptimisticUpdate((localStore, args) => {
 		const notes = localStore.getQuery(api.quickNotes.list, {});
+		const sharedNotes = localStore.getQuery(api.quickNotes.listShared, {});
 
 		if (notes !== undefined) {
 			localStore.setQuery(
 				api.quickNotes.list,
 				{},
-				notes.filter((note) => note._id !== args.id),
+				notes.filter((item) => item._id !== args.id),
+			);
+		}
+
+		if (sharedNotes !== undefined) {
+			localStore.setQuery(
+				api.quickNotes.listShared,
+				{},
+				sharedNotes.filter((item) => item._id !== args.id),
 			);
 		}
 
@@ -62,11 +82,78 @@ export function QuickNoteActionsMenu({
 		const latestNote = localStore.getQuery(api.quickNotes.getLatest, {});
 		if (latestNote?._id === args.id) {
 			const nextLatest =
-				notes?.find((note) => note._id !== args.id) ??
+				notes?.find((item) => item._id !== args.id) ??
 				(null as Doc<"quickNotes"> | null);
 			localStore.setQuery(api.quickNotes.getLatest, {}, nextLatest);
 		}
 	});
+	const updateVisibility = useMutation(api.quickNotes.updateVisibility);
+
+	const handleCopyInternalLink = React.useCallback(async () => {
+		try {
+			const url = new URL(window.location.href);
+			url.pathname = "/quick-note";
+			url.searchParams.set("noteId", noteId);
+			url.hash = "";
+			await writeTextToClipboard(url.toString());
+			toast.success("Internal link copied");
+		} catch (error) {
+			console.error("Failed to copy note link", error);
+			toast.error("Failed to copy link");
+		}
+	}, [noteId]);
+
+	const handleSetVisibility = React.useCallback(
+		async (visibility: QuickNoteVisibility) => {
+			if (!note || isUpdatingShare) {
+				return;
+			}
+
+			setIsUpdatingShare(true);
+
+			try {
+				if (visibility === "private") {
+					if (note.visibility === "private") {
+						return;
+					}
+
+					await updateVisibility({
+						id: noteId,
+						visibility: "private",
+					});
+					toast.success("Note is now private");
+					return;
+				}
+
+				let shareId = note.shareId;
+				if (note.visibility !== "public" || !shareId) {
+					const result = await updateVisibility({
+						id: noteId,
+						visibility: "public",
+					});
+					shareId = result.shareId;
+				}
+
+				if (!shareId) {
+					throw new Error("Missing share identifier.");
+				}
+
+				const shareUrl = await buildQuickNoteShareUrl(shareId);
+				await writeTextToClipboard(shareUrl);
+				toast.success(
+					note.visibility === "public"
+						? "Share link copied"
+						: "Note shared and link copied",
+				);
+			} catch (error) {
+				console.error("Failed to update quick note visibility", error);
+				toast.error("Failed to update sharing");
+			} finally {
+				setIsUpdatingShare(false);
+			}
+		},
+		[isUpdatingShare, note, noteId, updateVisibility],
+	);
 
 	const handleMoveToTrash = React.useCallback(() => {
 		if (isMovingToTrash) {
@@ -96,38 +183,53 @@ export function QuickNoteActionsMenu({
 				<DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
 				<DropdownMenuContent align={align} side={side}>
 					{itemsBeforeDefaults}
+					<DropdownMenuSub>
+						<DropdownMenuSubTrigger>
+							<Share2 />
+							Share
+						</DropdownMenuSubTrigger>
+						<DropdownMenuPortal>
+							<DropdownMenuSubContent className="min-w-40">
+								<DropdownMenuItem
+									className="cursor-pointer justify-between"
+									disabled={note === undefined || isUpdatingShare}
+									onSelect={(event) => {
+										event.preventDefault();
+										void handleSetVisibility("private");
+									}}
+								>
+									<div className="flex items-center gap-2">
+										<Lock />
+										<span>Private</span>
+									</div>
+									{note?.visibility === "private" ? <Check /> : null}
+								</DropdownMenuItem>
+								<DropdownMenuItem
+									className="cursor-pointer justify-between"
+									disabled={note === undefined || isUpdatingShare}
+									onSelect={(event) => {
+										event.preventDefault();
+										void handleSetVisibility("public");
+									}}
+								>
+									<div className="flex items-center gap-2">
+										<Globe />
+										<span>Public</span>
+									</div>
+									{note?.visibility === "public" ? <Check /> : null}
+								</DropdownMenuItem>
+							</DropdownMenuSubContent>
+						</DropdownMenuPortal>
+					</DropdownMenuSub>
 					<DropdownMenuItem
 						className="cursor-pointer"
-						onClick={() => {
-							const url = new URL(window.location.href);
-							url.pathname = "/quick-note";
-							url.searchParams.set("noteId", noteId);
-							if (window.openGranDesktop) {
-								void window.openGranDesktop
-									.writeClipboardText(url.toString())
-									.then(() => {
-										toast.success("Link copied");
-									})
-									.catch((error) => {
-										console.error("Failed to copy note link", error);
-										toast.error("Failed to copy link");
-									});
-								return;
-							}
-
-							void navigator.clipboard
-								.writeText(url.toString())
-								.then(() => {
-									toast.success("Link copied");
-								})
-								.catch((error) => {
-									console.error("Failed to copy note link", error);
-									toast.error("Failed to copy link");
-								});
+						onSelect={(event) => {
+							event.preventDefault();
+							void handleCopyInternalLink();
 						}}
 					>
 						<Link2 />
-						Copy link
+						Copy internal link
 					</DropdownMenuItem>
 					{itemsAfterDefaults}
 					<DropdownMenuSeparator />

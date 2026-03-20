@@ -65,6 +65,7 @@ import {
 	type QuickNoteEditorActions,
 	QuickNotePage,
 } from "@/components/quick-note/quick-note-page";
+import { SharedQuickNotePage } from "@/components/quick-note/shared-note-page";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
@@ -148,6 +149,17 @@ const groupQuickNotesByDate = (
 	);
 };
 
+const getSharedNoteShareId = (pathname: string) => {
+	const sharedPrefix = "/shared/";
+
+	if (!pathname.startsWith(sharedPrefix)) {
+		return null;
+	}
+
+	const nextValue = pathname.slice(sharedPrefix.length).trim();
+	return nextValue ? decodeURIComponent(nextValue) : null;
+};
+
 const useCurrentDate = () => {
 	const [currentDate, setCurrentDate] = React.useState(() => new Date());
 
@@ -181,6 +193,23 @@ export function App() {
 	const [authError, setAuthError] = React.useState<string | null>(null);
 	const [isAuthenticating, startAuthentication] = React.useTransition();
 	const [isDesktopMac, setIsDesktopMac] = React.useState(false);
+	const [sharedNoteShareId, setSharedNoteShareId] = React.useState<
+		string | null
+	>(() => {
+		if (typeof window === "undefined") {
+			return null;
+		}
+
+		return getSharedNoteShareId(window.location.pathname);
+	});
+	const sharedNote = useQuery(
+		api.quickNotes.getShared,
+		sharedNoteShareId
+			? {
+					shareId: sharedNoteShareId,
+				}
+			: "skip",
+	);
 
 	React.useEffect(() => {
 		void window.openGranDesktop
@@ -213,6 +242,23 @@ export function App() {
 		url.searchParams.delete("authError");
 		url.searchParams.delete("authErrorDescription");
 		window.history.replaceState({}, "", url);
+	}, []);
+
+	React.useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+
+		const syncSharedNoteRoute = () => {
+			setSharedNoteShareId(getSharedNoteShareId(window.location.pathname));
+		};
+
+		syncSharedNoteRoute();
+		window.addEventListener("popstate", syncSharedNoteRoute);
+
+		return () => {
+			window.removeEventListener("popstate", syncSharedNoteRoute);
+		};
 	}, []);
 
 	const handleGitHubSignIn = React.useCallback(() => {
@@ -260,6 +306,23 @@ export function App() {
 			}
 		});
 	}, []);
+
+	const handleOpenOwnedSharedNote = React.useCallback(
+		(noteId: Id<"quickNotes">) => {
+			setSharedNoteShareId(null);
+			window.history.pushState(null, "", `/quick-note?noteId=${noteId}`);
+		},
+		[],
+	);
+
+	if (sharedNoteShareId) {
+		return (
+			<SharedQuickNotePage
+				note={sharedNote}
+				onOpenNote={handleOpenOwnedSharedNote}
+			/>
+		);
+	}
 
 	if (isSessionPending) {
 		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
@@ -347,6 +410,7 @@ function AppShell({
 	const currentWeekdayLabel = currentWeekdayFormatter.format(currentDate);
 	const createQuickNote = useMutation(api.quickNotes.create);
 	const quickNotes = useQuery(api.quickNotes.list, {});
+	const sharedNotes = useQuery(api.quickNotes.listShared, {});
 	const selectedQuickNote = useQuery(
 		api.quickNotes.get,
 		currentQuickNoteId
@@ -745,9 +809,7 @@ function AppShell({
 								) : (
 									<Empty className="max-w-xl">
 										<EmptyHeader>
-											<EmptyTitle className="text-base">
-												Take your first note
-											</EmptyTitle>
+											<EmptyTitle>Take your first note</EmptyTitle>
 											<EmptyDescription>
 												Your meeting notes will appear here
 											</EmptyDescription>
@@ -769,17 +831,28 @@ function AppShell({
 								<h1 className="text-lg md:text-xl">Shared with others</h1>
 							</section>
 							<section className="flex justify-center py-8">
-								<Empty className="max-w-xl">
-									<EmptyHeader>
-										<EmptyTitle className="text-base">
-											No shared notes yet
-										</EmptyTitle>
-										<EmptyDescription>
-											When you share a note with someone else, it will show up
-											here
-										</EmptyDescription>
-									</EmptyHeader>
-								</Empty>
+								{sharedNotes === undefined ? (
+									<SharedQuickNotesSkeleton />
+								) : sharedNotes.length > 0 ? (
+									<SharedQuickNotesList
+										notes={sharedNotes}
+										activeNoteId={currentQuickNoteId}
+										activeNoteTitle={currentQuickNoteTitle}
+										currentUserName={user.name}
+										onOpenNote={openQuickNote}
+										onQuickNoteTrashed={handleQuickNoteTrashed}
+									/>
+								) : (
+									<Empty className="max-w-xl">
+										<EmptyHeader>
+											<EmptyTitle>No shared notes yet</EmptyTitle>
+											<EmptyDescription>
+												When you share a note with someone else, it will show up
+												here
+											</EmptyDescription>
+										</EmptyHeader>
+									</Empty>
+								)}
 							</section>
 						</div>
 					</div>
@@ -814,6 +887,130 @@ function HomeQuickNotesSkeleton() {
 					</div>
 				))}
 			</div>
+		</div>
+	);
+}
+
+function SharedQuickNotesSkeleton() {
+	return (
+		<div className="w-full max-w-xl space-y-3">
+			<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
+				Today
+			</div>
+			<div className="space-y-2">
+				{HOME_QUICK_NOTE_SKELETON_IDS.map((id) => (
+					<div key={id} className="flex items-center gap-3 rounded-xl p-1">
+						<Skeleton className="size-8 rounded-lg" />
+						<div className="min-w-0 flex-1 space-y-2">
+							<Skeleton className="h-4 w-32" />
+							<Skeleton className="h-3 w-48" />
+						</div>
+					</div>
+				))}
+			</div>
+		</div>
+	);
+}
+
+function SharedQuickNotesList({
+	notes,
+	activeNoteId,
+	activeNoteTitle,
+	currentUserName,
+	onOpenNote,
+	onQuickNoteTrashed,
+}: {
+	notes: Array<Doc<"quickNotes">>;
+	activeNoteId: Id<"quickNotes"> | null;
+	activeNoteTitle: string;
+	currentUserName: string;
+	onOpenNote: (noteId: Id<"quickNotes">) => void;
+	onQuickNoteTrashed: (noteId: Id<"quickNotes">) => void;
+}) {
+	const groupedNotes = groupQuickNotesByDate(notes);
+	const sections = [
+		{ key: "today", label: "Today", notes: groupedNotes.today },
+		{ key: "yesterday", label: "Yesterday", notes: groupedNotes.yesterday },
+		{ key: "lastWeek", label: "Last 7 days", notes: groupedNotes.lastWeek },
+		{
+			key: "lastMonth",
+			label: "Last 30 days",
+			notes: groupedNotes.lastMonth,
+		},
+		{ key: "older", label: "Older", notes: groupedNotes.older },
+	] as const;
+
+	return (
+		<div className="w-full max-w-xl space-y-1">
+			{sections.map((section) => {
+				if (section.notes.length === 0) {
+					return null;
+				}
+
+				return (
+					<div key={section.key} className="space-y-2">
+						<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
+							{section.label}
+						</div>
+						<div className="space-y-2">
+							{section.notes.map((note) => {
+								const isActive = note._id === activeNoteId;
+								const title =
+									isActive && activeNoteTitle.trim()
+										? activeNoteTitle
+										: note.title || "New note";
+								const preview =
+									note.searchableText.trim() ||
+									note.authorName?.trim() ||
+									currentUserName;
+
+								return (
+									<div
+										key={note._id}
+										className={cn(
+											"group flex items-center rounded-xl p-1 transition-colors hover:bg-card/50 has-[[data-note-actions]:focus-visible]:bg-transparent has-[[data-note-actions]:hover]:bg-transparent",
+											isActive ? "bg-transparent" : "bg-transparent",
+										)}
+									>
+										<button
+											type="button"
+											onClick={() => onOpenNote(note._id)}
+											className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
+										>
+											<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+												<FileText className="size-4" />
+											</div>
+											<div className="min-w-0 flex-1">
+												<div className="truncate text-sm font-medium">
+													{title}
+												</div>
+												<div className="truncate text-xs text-muted-foreground">
+													{preview}
+												</div>
+											</div>
+										</button>
+										<QuickNoteActionsMenu
+											noteId={note._id}
+											onMoveToTrash={onQuickNoteTrashed}
+											align="end"
+										>
+											<button
+												type="button"
+												data-note-actions
+												className="flex aspect-square size-5 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground opacity-0 outline-hidden transition-[color,opacity] group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+												aria-label={`Open actions for ${title}`}
+												onClick={(event) => event.stopPropagation()}
+											>
+												<MoreHorizontal className="size-4" />
+											</button>
+										</QuickNoteActionsMenu>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				);
+			})}
 		</div>
 	);
 }
