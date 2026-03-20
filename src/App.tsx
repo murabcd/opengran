@@ -11,6 +11,7 @@ import {
 	BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
 	Empty,
 	EmptyContent,
@@ -27,12 +28,46 @@ import {
 } from "@/components/ui/sidebar";
 
 export function App() {
-	const [currentView, setCurrentView] = React.useState<"home" | "chat">("home");
+	const [currentView, setCurrentView] = React.useState<"home" | "chat">(() => {
+		if (typeof window === "undefined") {
+			return "home";
+		}
+
+		return window.location.pathname === "/chat" ? "chat" : "home";
+	});
 	const [chatSession, setChatSession] = React.useState(0);
+
+	React.useEffect(() => {
+		const syncViewFromLocation = () => {
+			const nextView =
+				window.location.pathname === "/chat" || window.location.hash === "#chat"
+					? "chat"
+					: "home";
+
+			setCurrentView(nextView);
+
+			const nextPath = nextView === "chat" ? "/chat" : "/home";
+			if (window.location.pathname !== nextPath || window.location.hash) {
+				window.history.replaceState(null, "", nextPath);
+			}
+		};
+
+		syncViewFromLocation();
+		window.addEventListener("popstate", syncViewFromLocation);
+
+		return () => {
+			window.removeEventListener("popstate", syncViewFromLocation);
+		};
+	}, []);
+
+	const handleViewChange = React.useCallback((view: "home" | "chat") => {
+		setCurrentView(view);
+		window.history.pushState(null, "", view === "chat" ? "/chat" : "/home");
+	}, []);
 
 	return (
 		<SidebarProvider>
-			<AppSidebar currentView={currentView} onViewChange={setCurrentView} />
+			<AppSidebar currentView={currentView} onViewChange={handleViewChange} />
 			<SidebarInset>
 				<header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between bg-background/95 px-4 backdrop-blur transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 md:px-6">
 					<div className="flex items-center gap-2">
@@ -65,7 +100,7 @@ export function App() {
 							<Button
 								variant="outline"
 								onClick={() => {
-									setCurrentView("chat");
+									handleViewChange("chat");
 									setChatSession((current) => current + 1);
 								}}
 							>
@@ -80,40 +115,46 @@ export function App() {
 						<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
 							<section className="mx-auto w-full max-w-xl space-y-6">
 								<h1 className="text-lg md:text-xl">Coming up</h1>
-								<div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-									<div className="flex flex-col gap-6 md:flex-row md:items-start">
-										<div className="flex shrink-0 items-start gap-3 pt-1">
-											<div className="text-5xl leading-none tracking-tight">
-												20
-											</div>
-											<div className="pt-1 leading-none">
-												<div className="flex items-center gap-2 text-base">
-													<span>March</span>
-													<span className="size-2 rounded-full bg-primary" />
+								<Card className="min-h-[176px] rounded-xl border-border py-0 shadow-sm">
+									<CardContent className="p-5">
+										<div className="flex flex-col gap-6 md:flex-row md:items-start">
+											<div className="flex shrink-0 items-start gap-3 pt-1">
+												<div className="text-5xl leading-none tracking-tight">
+													20
 												</div>
-												<p className="mt-1 text-base text-muted-foreground">
-													Fri
-												</p>
+												<div className="pt-1 leading-none">
+													<div className="flex items-center gap-2 text-base">
+														<span>March</span>
+														<span className="size-2 rounded-full bg-primary" />
+													</div>
+													<p className="mt-1 text-base text-muted-foreground">
+														Fri
+													</p>
+												</div>
 											</div>
+											<Card className="ml-auto w-full rounded-xl border-border py-0 shadow-none">
+												<CardContent className="p-3">
+													<Empty className="min-h-[176px] rounded-xl border-border">
+														<EmptyHeader>
+															<EmptyMedia variant="icon">
+																<CalendarClock className="size-6" />
+															</EmptyMedia>
+															<EmptyTitle>No upcoming events</EmptyTitle>
+															<EmptyDescription>
+																Check your visible calendars
+															</EmptyDescription>
+														</EmptyHeader>
+														<EmptyContent>
+															<Button variant="outline">
+																Calendar settings
+															</Button>
+														</EmptyContent>
+													</Empty>
+												</CardContent>
+											</Card>
 										</div>
-										<div className="ml-auto w-full max-w-3xl rounded-3xl border border-border p-3">
-											<Empty className="min-h-[240px] rounded-3xl border-border">
-												<EmptyHeader>
-													<EmptyMedia variant="icon">
-														<CalendarClock className="size-6" />
-													</EmptyMedia>
-													<EmptyTitle>No upcoming events</EmptyTitle>
-													<EmptyDescription>
-														Check your visible calendars
-													</EmptyDescription>
-												</EmptyHeader>
-												<EmptyContent>
-													<Button variant="outline">Calendar settings</Button>
-												</EmptyContent>
-											</Empty>
-										</div>
-									</div>
-								</div>
+									</CardContent>
+								</Card>
 							</section>
 
 							<section className="flex justify-center py-8">
@@ -128,7 +169,7 @@ export function App() {
 										</EmptyDescription>
 									</EmptyHeader>
 									<EmptyContent>
-										<Button>Quick Note</Button>
+										<Button>Quick note</Button>
 									</EmptyContent>
 								</Empty>
 							</section>
