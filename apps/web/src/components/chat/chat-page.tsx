@@ -1,5 +1,4 @@
 import { useChat } from "@ai-sdk/react";
-import { Avatar, AvatarFallback } from "@workspace/ui/components/avatar";
 import {
 	Command,
 	CommandEmpty,
@@ -21,6 +20,7 @@ import {
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
+import { Icons } from "@workspace/ui/components/icons";
 import {
 	InputGroup,
 	InputGroupAddon,
@@ -39,45 +39,24 @@ import {
 	TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { DefaultChatTransport } from "ai";
+import { useQuery } from "convex/react";
 import {
 	ArrowUp,
 	AtSign,
-	BadgeDollarSign,
-	BarChart3,
 	Book,
-	BookOpen,
-	CalendarDays,
 	Check,
 	CirclePlus,
+	FileText,
 	Globe,
 	Grid3x3,
-	Lightbulb,
+	Loader2,
 	Plus,
-	Target,
-	Users,
 	X,
 } from "lucide-react";
 import * as React from "react";
 import { ChatMessages } from "@/components/chat/messages";
 import { chatModels, fallbackChatModel } from "@/lib/ai/models";
-
-const workspaceSources = [
-	{ id: "guidelines", title: "Brand guidelines" },
-	{ id: "brief", title: "Launch brief" },
-	{ id: "notes", title: "Planning notes" },
-	{ id: "faq", title: "Internal FAQ" },
-];
-
-const contextPages = [
-	{ id: "meeting-notes", title: "Meeting Notes", icon: Book },
-	{ id: "project-dashboard", title: "Project Dashboard", icon: BarChart3 },
-	{ id: "ideas", title: "Ideas & Brainstorming", icon: Lightbulb },
-	{ id: "calendar", title: "Calendar & Events", icon: CalendarDays },
-	{ id: "documentation", title: "Documentation", icon: BookOpen },
-	{ id: "goals", title: "Goals & Objectives", icon: Target },
-	{ id: "budget", title: "Budget Planning", icon: BadgeDollarSign },
-	{ id: "team", title: "Team Directory", icon: Users },
-];
+import { api } from "../../../../../convex/_generated/api";
 
 export function ChatPage() {
 	const [draft, setDraft] = React.useState("");
@@ -93,6 +72,7 @@ export function ChatPage() {
 	const [selectedSourceIds, setSelectedSourceIds] = React.useState<string[]>(
 		[],
 	);
+	const quickNotes = useQuery(api.quickNotes.list, {});
 	const transport = React.useMemo(
 		() => new DefaultChatTransport({ api: "/api/chat" }),
 		[],
@@ -100,6 +80,17 @@ export function ChatPage() {
 	const { messages, sendMessage, error, status } = useChat({ transport });
 	const isLoading = status === "submitted" || status === "streaming";
 	const hasMessages = messages.length > 0;
+	const isNotesLoading = quickNotes === undefined;
+	const contextPages = React.useMemo(
+		() =>
+			(quickNotes ?? []).map((note) => ({
+				id: note._id,
+				title: note.title.trim() || "New note",
+				icon: FileText,
+				preview: note.searchableText.trim(),
+			})),
+		[quickNotes],
+	);
 	const shouldSearchDocuments = documentSearchTerm.trim().length > 0;
 	const mentionableDocuments = React.useMemo(() => {
 		const query = documentSearchTerm.trim().toLowerCase();
@@ -109,9 +100,18 @@ export function ChatPage() {
 		}
 
 		return contextPages.filter((page) =>
-			page.title.toLowerCase().includes(query),
+			[page.title, page.preview].join(" ").toLowerCase().includes(query),
 		);
-	}, [documentSearchTerm]);
+	}, [contextPages, documentSearchTerm]);
+	const workspaceSources = React.useMemo(
+		() =>
+			contextPages.map((page) => ({
+				id: page.id,
+				title: page.title,
+				preview: page.preview,
+			})),
+		[contextPages],
+	);
 	const scopesLabel =
 		selectedSourceIds.length === 0
 			? "All Sources"
@@ -126,13 +126,13 @@ export function ChatPage() {
 		}
 
 		return workspaceSources.filter((source) =>
-			source.title.toLowerCase().includes(query),
+			[source.title, source.preview].join(" ").toLowerCase().includes(query),
 		);
-	}, [sourceSearchTerm]);
+	}, [sourceSearchTerm, workspaceSources]);
 	const hasWorkspaceScopes = selectedSourceIds.length > 0;
 	const emptyStateMessage = shouldSearchDocuments
-		? "No pages found."
-		: "No pages available.";
+		? "No notes found."
+		: "No notes available.";
 
 	const handleSubmit = () => {
 		const value = draft.trim();
@@ -231,16 +231,27 @@ export function ChatPage() {
 								<PopoverContent className="p-0 [--radius:1.2rem]" align="start">
 									<Command>
 										<CommandInput
-											placeholder="Search pages..."
+											placeholder="Search notes..."
 											value={documentSearchTerm}
 											onValueChange={setDocumentSearchTerm}
 										/>
 										<CommandList>
+											{isNotesLoading ? (
+												<CommandGroup heading="Notes">
+													<CommandItem
+														disabled
+														className="gap-2 text-muted-foreground"
+													>
+														<Loader2 className="size-4 animate-spin" />
+														Loading notes...
+													</CommandItem>
+												</CommandGroup>
+											) : null}
 											<CommandEmpty>{emptyStateMessage}</CommandEmpty>
 											{mentionableDocuments.length > 0 ? (
 												<CommandGroup
 													heading={
-														shouldSearchDocuments ? "Search results" : "Pages"
+														shouldSearchDocuments ? "Search results" : "Notes"
 													}
 												>
 													{mentionableDocuments.map((document) => (
@@ -250,7 +261,16 @@ export function ChatPage() {
 															onSelect={() => addMention(document.id)}
 														>
 															<document.icon />
-															{document.title}
+															<div className="flex min-w-0 flex-col">
+																<span className="truncate">
+																	{document.title}
+																</span>
+																{document.preview ? (
+																	<span className="truncate text-xs text-muted-foreground">
+																		{document.preview}
+																	</span>
+																) : null}
+															</div>
 														</CommandItem>
 													))}
 												</CommandGroup>
@@ -305,7 +325,11 @@ export function ChatPage() {
 								<Tooltip>
 									<TooltipTrigger asChild>
 										<DropdownMenuTrigger asChild>
-											<InputGroupButton size="sm" className="rounded-full">
+											<InputGroupButton
+												size="sm"
+												className="rounded-full gap-2"
+											>
+												<Icons.codexLogo className="size-3.5 text-muted-foreground" />
 												{selectedModel.name}
 											</InputGroupButton>
 										</DropdownMenuTrigger>
@@ -319,7 +343,7 @@ export function ChatPage() {
 								>
 									<DropdownMenuGroup className="w-42">
 										<DropdownMenuLabel className="text-muted-foreground text-xs">
-											Select model
+											OpenAI
 										</DropdownMenuLabel>
 										{chatModels.map((model) => (
 											<DropdownMenuCheckboxItem
@@ -332,7 +356,10 @@ export function ChatPage() {
 												}}
 												className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
 											>
-												{model.name}
+												<span className="inline-flex items-center gap-2">
+													<Icons.codexLogo className="size-3.5 text-muted-foreground" />
+													{model.name}
+												</span>
 											</DropdownMenuCheckboxItem>
 										))}
 									</DropdownMenuGroup>
@@ -407,11 +434,9 @@ export function ChatPage() {
 													hasWorkspaceScopes ? "[&>svg:last-child]:ml-2!" : ""
 												}
 											>
-												<Avatar className="size-4">
-													<AvatarFallback className="text-[10px]">
-														OM
-													</AvatarFallback>
-												</Avatar>
+												<span className="flex size-4 items-center justify-center text-muted-foreground">
+													<OpenGranMark className="size-4" />
+												</span>
 												OpenGran
 												{hasWorkspaceScopes ? (
 													<span className="ml-auto flex items-center gap-2">
@@ -427,14 +452,25 @@ export function ChatPage() {
 											<DropdownMenuSubContent className="w-72 p-0 [--radius:1rem]">
 												<Command>
 													<CommandInput
-														placeholder="Select a workspace or page"
+														placeholder="Select a workspace or note"
 														autoFocus
 														value={sourceSearchTerm}
 														onValueChange={setSourceSearchTerm}
 													/>
 													<CommandList>
+														{isNotesLoading ? (
+															<CommandGroup heading="Notes">
+																<CommandItem
+																	disabled
+																	className="gap-2 text-muted-foreground"
+																>
+																	<Loader2 className="size-4 animate-spin" />
+																	Loading notes...
+																</CommandItem>
+															</CommandGroup>
+														) : null}
 														<CommandEmpty>No sources found.</CommandEmpty>
-														<CommandGroup heading="Pages">
+														<CommandGroup heading="Notes">
 															{filteredWorkspaceSources.map((source) => {
 																const selected = selectedSourceIds.includes(
 																	source.id,
@@ -448,9 +484,16 @@ export function ChatPage() {
 																		className="gap-2"
 																	>
 																		<Grid3x3 className="size-4" />
-																		<span className="truncate">
-																			{source.title}
-																		</span>
+																		<div className="min-w-0">
+																			<div className="truncate">
+																				{source.title}
+																			</div>
+																			{source.preview ? (
+																				<div className="truncate text-xs text-muted-foreground">
+																					{source.preview}
+																				</div>
+																			) : null}
+																		</div>
 																		{selected ? (
 																			<Check className="ml-auto size-4" />
 																		) : null}
@@ -492,5 +535,24 @@ export function ChatPage() {
 				</form>
 			</div>
 		</div>
+	);
+}
+
+function OpenGranMark({ className }: { className?: string }) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			fill="none"
+			className={className}
+			aria-hidden="true"
+		>
+			<path
+				d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"
+				stroke="currentColor"
+				strokeWidth="2"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+		</svg>
 	);
 }
