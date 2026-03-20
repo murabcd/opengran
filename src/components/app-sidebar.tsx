@@ -13,6 +13,7 @@ import {
 	Settings,
 	Share2,
 	Sun,
+	Trash2,
 	Users,
 } from "lucide-react";
 import * as React from "react";
@@ -28,7 +29,20 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle,
+} from "@/components/ui/empty";
+import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
 import {
 	Sidebar,
 	SidebarContent,
@@ -100,6 +114,7 @@ export function AppSidebar({
 	const [activeWorkspace, setActiveWorkspace] = React.useState(workspaces[0]);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
 	const [searchOpen, setSearchOpen] = React.useState(false);
+	const [trashOpen, setTrashOpen] = React.useState(false);
 	const [user, setUser] = React.useState(currentUser);
 	const navItems = React.useMemo(
 		() =>
@@ -130,6 +145,7 @@ export function AppSidebar({
 					<NavProjects />
 				</SidebarContent>
 				<SidebarFooter>
+					<NavTrash open={trashOpen} onOpenChange={setTrashOpen} />
 					<NavUser user={user} onSettingsOpen={() => setSettingsOpen(true)} />
 				</SidebarFooter>
 			</Sidebar>
@@ -371,5 +387,78 @@ function NavUser({
 				</DropdownMenu>
 			</SidebarMenuItem>
 		</SidebarMenu>
+	);
+}
+
+function NavTrash({
+	open,
+	onOpenChange,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+}) {
+	const { isMobile } = useSidebar();
+
+	return (
+		<SidebarMenu>
+			<SidebarMenuItem>
+				<Popover open={open} onOpenChange={onOpenChange}>
+					<PopoverTrigger asChild>
+						<SidebarMenuButton isActive={open}>
+							<Trash2 />
+							<span>Trash</span>
+						</SidebarMenuButton>
+					</PopoverTrigger>
+					<PopoverContent
+						className="h-[420px] max-h-[70vh] w-[min(420px,calc(100vw-2rem))] gap-0 overflow-hidden p-0"
+						side={isMobile ? "bottom" : "right"}
+						align="end"
+						alignOffset={-24}
+					>
+						<TrashPopoverContent />
+					</PopoverContent>
+				</Popover>
+			</SidebarMenuItem>
+		</SidebarMenu>
+	);
+}
+
+function TrashPopoverContent() {
+	const [search, setSearch] = React.useState("");
+
+	return (
+		<div className="flex h-full flex-col text-sm">
+			<div className="p-2 pb-1">
+				<div className="relative">
+					<Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+					<Input
+						value={search}
+						onChange={(event) => setSearch(event.target.value)}
+						className="h-8 bg-secondary pr-2 pl-8 focus-visible:ring-transparent"
+						placeholder="Search notes..."
+					/>
+				</div>
+			</div>
+
+			<div className="flex min-h-0 flex-1 items-center justify-center p-6">
+				<Empty className="w-full gap-3 border-0 p-0">
+					<EmptyHeader className="gap-1">
+						<EmptyMedia variant="icon" className="text-muted-foreground">
+							<Trash2 />
+						</EmptyMedia>
+						<EmptyTitle>No results</EmptyTitle>
+						<EmptyDescription className="text-xs">
+							Deleted notes will appear here.
+						</EmptyDescription>
+					</EmptyHeader>
+				</Empty>
+			</div>
+
+			<div className="border-t px-3 py-2">
+				<div className="text-xs text-muted-foreground">
+					Notes older than 30 days will be automatically deleted.
+				</div>
+			</div>
+		</div>
 	);
 }
