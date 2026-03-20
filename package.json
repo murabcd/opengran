@@ -11,11 +11,14 @@
     "lint": "turbo run lint",
     "check": "turbo run check",
     "format": "turbo run format",
+    "prepare": "husky",
+    "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "preview": "turbo run preview --filter=web"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.8",
+    "husky": "^9.1.7",
     "turbo": "^2.8.17",
     "typescript": "~5.9.3"
   },

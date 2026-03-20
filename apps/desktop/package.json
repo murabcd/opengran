@@ -7,9 +7,11 @@
   "scripts": {
     "dev": "node ./scripts/dev.mjs",
     "build": "node ./scripts/build.mjs",
+    "generate:tray-icons": "electron ./scripts/generate-tray-icons.mjs",
     "lint": "biome lint --write src scripts package.json",
     "check": "biome check --write src scripts package.json",
     "format": "biome format --write src scripts package.json",
+    "test": "node -e \"process.exit(0)\"",
     "typecheck": "node -e \"process.exit(0)\""
   },
   "dependencies": {

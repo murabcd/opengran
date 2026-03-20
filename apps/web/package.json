@@ -7,6 +7,7 @@
     "dev": "vite --host 127.0.0.1 --port 3000 --strictPort",
     "build": "tsc -b && vite build",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run --environment jsdom",
     "preview": "vite preview",
     "lint": "biome lint --write .",
     "check": "biome check --write .",
@@ -24,11 +25,15 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
+    "jsdom": "^29.0.1",
     "typescript": "~5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^3.2.4"
   }
 }

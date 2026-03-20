@@ -147,6 +147,9 @@ export function ChatPage() {
 				body: {
 					model: selectedModel.model,
 					webSearchEnabled,
+					appsEnabled,
+					mentions,
+					selectedSourceIds,
 				},
 			},
 		);
