@@ -1,5 +1,5 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("openMeetDesktop", {
+contextBridge.exposeInMainWorld("openGranDesktop", {
 	getMeta: () => ipcRenderer.invoke("app:get-meta"),
 });

@@ -4,7 +4,7 @@ import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import { fallbackChatModel, resolveChatModel } from "../src/lib/ai/models";
 
 const BASE_SYSTEM_PROMPT = [
-	"You are OpenMeet AI, a concise assistant for meeting notes and chat.",
+	"You are OpenGran AI, a concise assistant for meeting notes and chat.",
 	"Answer clearly and directly.",
 	"If the user asks about meetings or notes that are not available in context, say that you do not have that context yet.",
 ].join(" ");

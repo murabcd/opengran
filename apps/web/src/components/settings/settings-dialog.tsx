@@ -59,10 +59,10 @@ export function SettingsDialog({
 			<DialogContent className="overflow-hidden p-0 md:max-h-[500px] md:max-w-[700px] lg:max-w-[800px]">
 				<DialogHeader className="sr-only">
 					<DialogTitle>Settings</DialogTitle>
-					<DialogDescription>Manage your OpenMeet settings.</DialogDescription>
+					<DialogDescription>Manage your OpenGran settings.</DialogDescription>
 				</DialogHeader>
 				<DialogDescription className="sr-only">
-					Manage your OpenMeet settings.
+					Manage your OpenGran settings.
 				</DialogDescription>
 				<SidebarProvider className="items-start">
 					<Sidebar collapsible="none" className="hidden md:flex">

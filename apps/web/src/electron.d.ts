@@ -1,6 +1,6 @@
 declare global {
 	interface Window {
-		openMeetDesktop?: {
+		openGranDesktop?: {
 			getMeta: () => Promise<{
 				name: string;
 				version: string;

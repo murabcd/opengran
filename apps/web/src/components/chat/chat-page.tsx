@@ -402,7 +402,7 @@ export function ChatPage() {
 														OM
 													</AvatarFallback>
 												</Avatar>
-												OpenMeet
+												OpenGran
 												{hasWorkspaceScopes ? (
 													<span className="ml-auto flex items-center gap-2">
 														<span className="text-xs text-muted-foreground tabular-nums">

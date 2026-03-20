@@ -6,7 +6,7 @@ import { app, BrowserWindow } from "electron";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const assetsDir = resolve(packageRoot, "src/assets");
-const sourceIconPath = resolve(assetsDir, "OpenMeetTemplate.svg");
+const sourceIconPath = resolve(assetsDir, "OpenGranTemplate.svg");
 
 const buildMarkup = (svgMarkup, _canvasSize, iconSize) => `<!doctype html>
 <html>
@@ -38,7 +38,7 @@ const buildMarkup = (svgMarkup, _canvasSize, iconSize) => `<!doctype html>
 </html>`;
 
 const renderIcon = async ({ svgMarkup, canvasSize, iconSize, outputPath }) => {
-	const tempDir = await mkdtemp(resolve(tmpdir(), "openmeet-tray-"));
+	const tempDir = await mkdtemp(resolve(tmpdir(), "opengran-tray-"));
 	const tempHtmlPath = resolve(tempDir, `tray-${canvasSize}.html`);
 
 	const window = new BrowserWindow({
@@ -87,13 +87,13 @@ app.whenReady().then(async () => {
 			svgMarkup,
 			canvasSize: 16,
 			iconSize: 8,
-			outputPath: resolve(assetsDir, "OpenMeetTemplate.png"),
+			outputPath: resolve(assetsDir, "OpenGranTemplate.png"),
 		});
 		await renderIcon({
 			svgMarkup,
 			canvasSize: 32,
 			iconSize: 16,
-			outputPath: resolve(assetsDir, "OpenMeetTemplate@2x.png"),
+			outputPath: resolve(assetsDir, "OpenGranTemplate@2x.png"),
 		});
 		app.exit(0);
 	} catch (error) {

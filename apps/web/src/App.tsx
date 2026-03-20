@@ -101,7 +101,7 @@ export function App() {
 	}, []);
 
 	React.useEffect(() => {
-		void window.openMeetDesktop
+		void window.openGranDesktop
 			?.getMeta()
 			.then((meta) => {
 				setIsDesktopMac(meta.platform === "darwin");
@@ -172,7 +172,7 @@ export function App() {
 											type="button"
 											onClick={() => handleViewChange("home")}
 										>
-											OpenMeet
+											OpenGran
 										</button>
 									</BreadcrumbLink>
 								</BreadcrumbItem>

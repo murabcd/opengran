@@ -32,11 +32,11 @@ const createChatMiddleware = (): Connect.NextHandleFunction => {
 	};
 };
 
-export const openMeetChatPlugin = (): Plugin => {
+export const openGranChatPlugin = (): Plugin => {
 	const middleware = createChatMiddleware();
 
 	return {
-		name: "openmeet-chat-api",
+		name: "opengran-chat-api",
 		configureServer(server) {
 			server.middlewares.use(middleware);
 		},

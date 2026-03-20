@@ -16,7 +16,7 @@ import { startLocalServer } from "./local-server.mjs";
 loadRootEnv();
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
-const trayIconPath = join(runtimeDir, "assets", "OpenMeetTemplate.png");
+const trayIconPath = join(runtimeDir, "assets", "OpenGranTemplate.png");
 const traySettingsPath = join(app.getPath("userData"), "tray-settings.json");
 const defaultTraySettings = {
 	keepOpenInMenuBar: true,
@@ -40,7 +40,7 @@ const closeLocalServer = async () => {
 };
 
 const resolveRendererUrl = async () => {
-	const developmentUrl = process.env.OPENMEET_RENDERER_URL?.trim();
+	const developmentUrl = process.env.OPENGRAN_RENDERER_URL?.trim();
 	if (developmentUrl) {
 		return developmentUrl;
 	}
@@ -124,7 +124,7 @@ const createMainWindow = async (targetUrl) => {
 		height: 960,
 		minWidth: 1100,
 		minHeight: 720,
-		title: "OpenMeet",
+		title: "OpenGran",
 		backgroundColor: "#f7f7f5",
 		autoHideMenuBar: true,
 		titleBarStyle: isMac ? "hiddenInset" : "default",
@@ -239,7 +239,7 @@ const buildTrayMenu = () =>
 			label: "Quit options",
 			submenu: [
 				{
-					label: "Keep OpenMeet in the menu bar",
+					label: "Keep OpenGran in the menu bar",
 					type: "checkbox",
 					checked: traySettings.keepOpenInMenuBar,
 					click: (menuItem) => {

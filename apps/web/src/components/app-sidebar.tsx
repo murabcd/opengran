@@ -96,14 +96,14 @@ const navigation: Array<Omit<NavItem, "isActive">> = [
 ];
 
 const workspaces = [
-	{ name: "OpenMeet", plan: "Meeting notes", logo: Command },
+	{ name: "OpenGran", plan: "Meeting notes", logo: Command },
 	{ name: "Townhall Ops", plan: "Team Workspace", logo: Home },
 	{ name: "Community Lab", plan: "Shared Notes", logo: Users },
 ];
 
 const currentUser = {
 	name: "Murad",
-	email: "owner@openmeet.app",
+	email: "owner@opengran.app",
 	avatar: "",
 };
 
