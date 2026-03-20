@@ -31,7 +31,6 @@ import {
 	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
-	DropdownMenuShortcut,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -276,34 +275,28 @@ function WorkspaceSwitcher({
 					</DropdownMenuTrigger>
 					<DropdownMenuContent
 						className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-						side={isMobile ? "bottom" : "right"}
+						side="bottom"
 						align="start"
 						sideOffset={4}
 					>
-						<DropdownMenuLabel className="text-xs text-muted-foreground">
-							Workspaces
-						</DropdownMenuLabel>
-						{workspaces.map((workspace, index) => (
+						{workspaces.map((workspace) => (
 							<DropdownMenuItem
 								key={workspace.name}
 								onClick={() => onSelect(workspace)}
 								className="h-8 gap-2 px-2"
 							>
-								<div className="flex size-6 items-center justify-center rounded-md border">
+								<div className="flex size-6 items-center justify-center rounded-md">
 									<workspace.logo className="size-3.5 shrink-0" />
 								</div>
 								{workspace.name}
-								<DropdownMenuShortcut>⌘{index + 1}</DropdownMenuShortcut>
 							</DropdownMenuItem>
 						))}
 						<DropdownMenuSeparator />
 						<DropdownMenuItem className="h-8 gap-2 px-2">
-							<div className="flex size-6 items-center justify-center rounded-md border bg-transparent">
+							<div className="flex size-6 items-center justify-center rounded-md bg-transparent">
 								<Plus className="size-4" />
 							</div>
-							<div className="font-medium text-muted-foreground">
-								Add workspace
-							</div>
+							<div className="font-medium">Add workspace</div>
 						</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenu>
