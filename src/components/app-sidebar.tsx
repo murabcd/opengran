@@ -29,7 +29,6 @@ import {
 	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuItem,
-	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -246,8 +245,6 @@ function WorkspaceSwitcher({
 	activeWorkspace: (typeof workspaces)[number];
 	onSelect: (workspace: (typeof workspaces)[number]) => void;
 }) {
-	const { isMobile } = useSidebar();
-
 	if (!activeWorkspace) {
 		return null;
 	}

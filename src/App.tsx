@@ -77,8 +77,8 @@ export function App() {
 				</header>
 				{currentView === "home" ? (
 					<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
-						<div className="flex w-full max-w-5xl flex-col gap-8 pt-2 md:pt-4">
-							<section className="mx-auto w-full max-w-4xl space-y-4">
+						<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
+							<section className="mx-auto w-full max-w-xl space-y-6">
 								<h1 className="text-lg md:text-xl">Coming up</h1>
 								<div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
 									<div className="flex flex-col gap-6 md:flex-row md:items-start">
@@ -117,7 +117,7 @@ export function App() {
 							</section>
 
 							<section className="flex justify-center py-8">
-								<Empty className="max-w-md">
+								<Empty className="max-w-xl">
 									<EmptyHeader>
 										<EmptyTitle className="text-base">
 											Take your first note
