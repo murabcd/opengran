@@ -172,6 +172,21 @@ export function ChatPage() {
 		setMentionPopoverOpen(false);
 	};
 
+	const handleDraftKeyDown = (
+		event: React.KeyboardEvent<HTMLTextAreaElement>,
+	) => {
+		if (
+			event.key !== "Enter" ||
+			event.shiftKey ||
+			event.nativeEvent.isComposing
+		) {
+			return;
+		}
+
+		event.preventDefault();
+		handleSubmit();
+	};
+
 	return (
 		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
 			<div
@@ -203,7 +218,7 @@ export function ChatPage() {
 					<label htmlFor="chat-prompt" className="sr-only">
 						Prompt
 					</label>
-					<InputGroup className="min-h-[176px] rounded-xl border-border bg-card shadow-sm [--radius:1rem]">
+					<InputGroup className="min-h-[176px] max-h-[32rem] overflow-hidden rounded-xl border-border bg-card shadow-sm [--radius:1rem]">
 						<InputGroupAddon align="block-start" className="px-4 pt-4 pb-0">
 							<Popover
 								open={mentionPopoverOpen}
@@ -314,8 +329,9 @@ export function ChatPage() {
 							id="chat-prompt"
 							value={draft}
 							onChange={(event) => setDraft(event.target.value)}
+							onKeyDown={handleDraftKeyDown}
 							placeholder="Ask, search, or make anything..."
-							className="min-h-[92px] px-4 pt-2"
+							className="min-h-[92px] max-h-[24rem] overflow-y-auto px-4 pt-2"
 						/>
 						<InputGroupAddon align="block-end" className="gap-1 px-4 pb-4">
 							<DropdownMenu
