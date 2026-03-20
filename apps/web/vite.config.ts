@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
 
 	return {
 		envDir: workspaceRoot,
+		envPrefix: ["VITE_", "CONVEX_"],
 		plugins: [react(), tailwindcss(), openGranChatPlugin()],
 		resolve: {
 			alias: {

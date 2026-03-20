@@ -6,6 +6,12 @@ declare global {
 				version: string;
 				platform: NodeJS.Platform;
 			}>;
+			getAuthCallbackUrl: () => Promise<{
+				url: string;
+			}>;
+			openExternalUrl: (url: string) => Promise<{
+				ok: boolean;
+			}>;
 		};
 	}
 }

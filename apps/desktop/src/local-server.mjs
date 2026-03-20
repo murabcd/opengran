@@ -169,8 +169,40 @@ const serveStaticAsset = async (request, response) => {
 	serveFile(response, join(webDistDir, "index.html"));
 };
 
-export const startLocalServer = async () => {
+export const startLocalServer = async ({ onAuthCallback } = {}) => {
 	const server = createServer((request, response) => {
+		const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+
+		if (requestUrl.pathname === "/auth/callback") {
+			void Promise.resolve(onAuthCallback?.(requestUrl.toString()))
+				.then(() => {
+					response.statusCode = 200;
+					response.setHeader("Content-Type", "text/html; charset=utf-8");
+					response.end(`<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>OpenGran</title>
+	</head>
+	<body style="margin:0;font-family:ui-sans-serif,system-ui,sans-serif;background:#0a0a0a;color:#fafafa;display:grid;place-items:center;min-height:100vh;">
+		<div style="text-align:center;padding:24px;">
+			<p style="margin:0 0 8px;font-size:18px;font-weight:600;">Authentication complete</p>
+			<p style="margin:0;color:#a1a1aa;">You can close this window and return to OpenGran.</p>
+		</div>
+	</body>
+</html>`);
+				})
+				.catch((error) => {
+					const message =
+						error instanceof Error ? error.message : "Authentication failed.";
+					response.statusCode = 500;
+					response.setHeader("Content-Type", "text/plain; charset=utf-8");
+					response.end(message);
+				});
+			return;
+		}
+
 		if (request.url?.split("?")[0] === "/api/chat") {
 			if (request.method !== "POST") {
 				response.statusCode = 405;

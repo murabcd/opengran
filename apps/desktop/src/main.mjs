@@ -8,6 +8,7 @@ import {
 	ipcMain,
 	Menu,
 	nativeImage,
+	shell,
 	Tray,
 } from "electron";
 import { loadRootEnv } from "./env.mjs";
@@ -16,6 +17,8 @@ import { startLocalServer } from "./local-server.mjs";
 loadRootEnv();
 
 app.setName("OpenGran");
+
+const desktopProtocol = "opengran";
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
 const trayIconPath = join(runtimeDir, "assets", "OpenGranTemplate.png");
@@ -36,6 +39,17 @@ let isQuitting = false;
 let traySettings = defaultTraySettings;
 let trayStatusLabel = "Update checks are not configured yet";
 
+const registerDesktopProtocol = () => {
+	if (process.defaultApp && process.argv.length >= 2) {
+		app.setAsDefaultProtocolClient(desktopProtocol, process.execPath, [
+			process.argv[1],
+		]);
+		return;
+	}
+
+	app.setAsDefaultProtocolClient(desktopProtocol);
+};
+
 const closeLocalServer = async () => {
 	if (!localServer) {
 		return;
@@ -46,17 +60,23 @@ const closeLocalServer = async () => {
 	await server.close();
 };
 
+const ensureLocalServer = async () => {
+	if (!localServer) {
+		localServer = await startLocalServer({
+			onAuthCallback: handleDesktopAuthCallback,
+		});
+	}
+
+	return localServer;
+};
+
 const resolveRendererUrl = async () => {
 	const developmentUrl = process.env.OPENGRAN_RENDERER_URL?.trim();
 	if (developmentUrl) {
 		return developmentUrl;
 	}
 
-	if (!localServer) {
-		localServer = await startLocalServer();
-	}
-
-	return localServer.origin;
+	return (await ensureLocalServer()).origin;
 };
 
 const loadTraySettings = async () => {
@@ -105,12 +125,82 @@ const getNavigationUrl = async ({ pathname = "/home", hash = "" } = {}) => {
 	return targetUrl.toString();
 };
 
+const buildAuthCallbackUrl = async (callbackUrl) => {
+	const rendererUrl = new URL(await resolveRendererUrl());
+	const incomingUrl = new URL(callbackUrl);
+	const ott = incomingUrl.searchParams.get("ott");
+	const authError = incomingUrl.searchParams.get("error");
+	const authErrorDescription =
+		incomingUrl.searchParams.get("error_description");
+
+	rendererUrl.pathname = "/home";
+	rendererUrl.hash = "";
+	rendererUrl.search = "";
+
+	if (ott) {
+		rendererUrl.searchParams.set("ott", ott);
+	}
+
+	if (authError) {
+		rendererUrl.searchParams.set("authError", authError);
+	}
+
+	if (authErrorDescription) {
+		rendererUrl.searchParams.set("authErrorDescription", authErrorDescription);
+	}
+
+	return rendererUrl.toString();
+};
+
+const getDesktopAuthCallbackUrl = async () => {
+	const server = await ensureLocalServer();
+	return `${server.origin}/auth/callback`;
+};
+
 const showMainWindow = async (options = {}) => {
 	const targetUrl = await getNavigationUrl(options);
 
 	if (!mainWindow) {
 		await createMainWindow(targetUrl);
 	} else if (mainWindow.webContents.getURL() !== targetUrl) {
+		await mainWindow.loadURL(targetUrl);
+	}
+
+	if (mainWindow.isMinimized()) {
+		mainWindow.restore();
+	}
+
+	mainWindow.show();
+	mainWindow.focus();
+};
+
+const handleDesktopProtocolUrl = async (callbackUrl) => {
+	if (!callbackUrl?.startsWith(`${desktopProtocol}://`)) {
+		return;
+	}
+
+	const targetUrl = await buildAuthCallbackUrl(callbackUrl);
+
+	if (!mainWindow) {
+		await createMainWindow(targetUrl);
+	} else {
+		await mainWindow.loadURL(targetUrl);
+	}
+
+	if (mainWindow.isMinimized()) {
+		mainWindow.restore();
+	}
+
+	mainWindow.show();
+	mainWindow.focus();
+};
+
+const handleDesktopAuthCallback = async (callbackUrl) => {
+	const targetUrl = await buildAuthCallbackUrl(callbackUrl);
+
+	if (!mainWindow) {
+		await createMainWindow(targetUrl);
+	} else {
 		await mainWindow.loadURL(targetUrl);
 	}
 
@@ -168,6 +258,21 @@ ipcMain.handle("app:get-meta", () => ({
 	version: app.getVersion(),
 	platform: process.platform,
 }));
+
+ipcMain.handle("app:open-external-url", async (_event, url) => {
+	if (typeof url !== "string" || !url.startsWith("http")) {
+		throw new Error("Invalid external URL.");
+	}
+
+	await shell.openExternal(url);
+	return { ok: true };
+});
+
+ipcMain.handle("app:get-auth-callback-url", async () => {
+	return {
+		url: await getDesktopAuthCallbackUrl(),
+	};
+});
 
 const quitCompletely = () => {
 	isQuitting = true;
@@ -297,29 +402,61 @@ const createTray = () => {
 	});
 };
 
-app.whenReady().then(async () => {
-	if (process.platform === "darwin") {
-		app.dock?.setIcon(dockIconPath);
-	}
+const singleInstanceLock = app.requestSingleInstanceLock();
 
-	await loadTraySettings();
-	await createMainWindow();
-	createTray();
+if (!singleInstanceLock) {
+	app.quit();
+} else {
+	registerDesktopProtocol();
 
-	app.on("activate", async () => {
-		await showMainWindow();
+	app.on("open-url", (event, url) => {
+		event.preventDefault();
+		void handleDesktopProtocolUrl(url);
 	});
-});
 
-app.on("window-all-closed", async () => {
-	await closeLocalServer();
+	app.on("second-instance", (_event, argv) => {
+		const deepLinkUrl = argv.find((value) =>
+			value.startsWith(`${desktopProtocol}://`),
+		);
+		if (deepLinkUrl) {
+			void handleDesktopProtocolUrl(deepLinkUrl);
+			return;
+		}
 
-	if (process.platform !== "darwin" || !traySettings.keepOpenInMenuBar) {
-		quitCompletely();
-	}
-});
+		void showMainWindow();
+	});
 
-app.on("before-quit", () => {
-	isQuitting = true;
-	void closeLocalServer();
-});
+	app.whenReady().then(async () => {
+		if (process.platform === "darwin") {
+			app.dock?.setIcon(dockIconPath);
+		}
+
+		await loadTraySettings();
+		await createMainWindow();
+		createTray();
+
+		const initialDeepLink = process.argv.find((value) =>
+			value.startsWith(`${desktopProtocol}://`),
+		);
+		if (initialDeepLink) {
+			await handleDesktopProtocolUrl(initialDeepLink);
+		}
+
+		app.on("activate", async () => {
+			await showMainWindow();
+		});
+	});
+
+	app.on("window-all-closed", async () => {
+		await closeLocalServer();
+
+		if (process.platform !== "darwin" || !traySettings.keepOpenInMenuBar) {
+			quitCompletely();
+		}
+	});
+
+	app.on("before-quit", () => {
+		isQuitting = true;
+		void closeLocalServer();
+	});
+}

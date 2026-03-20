@@ -101,30 +101,39 @@ const workspaces = [
 	{ name: "Community Lab", plan: "Shared Notes", logo: Users },
 ];
 
-const currentUser = {
-	name: "Murad",
-	email: "owner@opengran.app",
-	avatar: "",
-};
-
 export function AppSidebar({
 	currentView,
+	user,
 	onViewChange,
 	settingsOpen,
 	onSettingsOpenChange,
+	onSignOut,
+	signingOut = false,
 	desktopSafeTop = false,
 	...props
 }: React.ComponentProps<typeof Sidebar> & {
 	currentView: "home" | "chat" | "shared" | "quick-note";
+	user: {
+		name: string;
+		email: string;
+		avatar: string;
+	};
 	onViewChange: (view: "home" | "chat" | "shared" | "quick-note") => void;
 	settingsOpen: boolean;
 	onSettingsOpenChange: (open: boolean) => void;
+	onSignOut: () => void;
+	signingOut?: boolean;
 	desktopSafeTop?: boolean;
 }) {
 	const [activeWorkspace, setActiveWorkspace] = React.useState(workspaces[0]);
 	const [searchOpen, setSearchOpen] = React.useState(false);
 	const [trashOpen, setTrashOpen] = React.useState(false);
-	const [user, setUser] = React.useState(currentUser);
+	const [draftUser, setDraftUser] = React.useState(user);
+
+	React.useEffect(() => {
+		setDraftUser(user);
+	}, [user]);
+
 	const navItems = React.useMemo(
 		() =>
 			navigation.map((item) => ({
@@ -138,17 +147,24 @@ export function AppSidebar({
 	return (
 		<>
 			<Sidebar {...props}>
-				<SidebarHeader className={desktopSafeTop ? "pt-8" : undefined}>
-					<WorkspaceSwitcher
-						activeWorkspace={activeWorkspace}
-						onSelect={setActiveWorkspace}
-					/>
-					<NavMain
-						className="px-0"
-						items={navItems}
-						onViewChange={onViewChange}
-						onSearchOpen={() => setSearchOpen(true)}
-					/>
+				<SidebarHeader
+					data-app-region={desktopSafeTop ? "drag" : undefined}
+					className={desktopSafeTop ? "pt-8" : undefined}
+				>
+					<div data-app-region={desktopSafeTop ? "no-drag" : undefined}>
+						<WorkspaceSwitcher
+							activeWorkspace={activeWorkspace}
+							onSelect={setActiveWorkspace}
+						/>
+					</div>
+					<div data-app-region={desktopSafeTop ? "no-drag" : undefined}>
+						<NavMain
+							className="px-0"
+							items={navItems}
+							onViewChange={onViewChange}
+							onSearchOpen={() => setSearchOpen(true)}
+						/>
+					</div>
 				</SidebarHeader>
 				<SidebarContent>
 					<NavProjects />
@@ -156,8 +172,10 @@ export function AppSidebar({
 				<SidebarFooter>
 					<NavTrash open={trashOpen} onOpenChange={setTrashOpen} />
 					<NavUser
-						user={user}
+						user={draftUser}
 						onSettingsOpen={() => onSettingsOpenChange(true)}
+						onSignOut={onSignOut}
+						signingOut={signingOut}
 					/>
 				</SidebarFooter>
 			</Sidebar>
@@ -175,8 +193,8 @@ export function AppSidebar({
 			<SettingsDialog
 				open={settingsOpen}
 				onOpenChange={onSettingsOpenChange}
-				user={user}
-				onUserChange={setUser}
+				user={draftUser}
+				onUserChange={setDraftUser}
 			/>
 		</>
 	);
@@ -351,6 +369,8 @@ function WorkspaceSwitcher({
 function NavUser({
 	user,
 	onSettingsOpen,
+	onSignOut,
+	signingOut,
 }: {
 	user: {
 		name: string;
@@ -358,6 +378,8 @@ function NavUser({
 		avatar: string;
 	};
 	onSettingsOpen: () => void;
+	onSignOut: () => void;
+	signingOut: boolean;
 }) {
 	const { isMobile } = useSidebar();
 	const { theme, setTheme } = useTheme();
@@ -419,9 +441,13 @@ function NavUser({
 							Settings
 						</DropdownMenuItem>
 						<DropdownMenuSeparator />
-						<DropdownMenuItem className="h-8 gap-2 px-2">
+						<DropdownMenuItem
+							className="h-8 gap-2 px-2"
+							onClick={onSignOut}
+							disabled={signingOut}
+						>
 							<LogOut />
-							Log out
+							{signingOut ? "Signing out..." : "Log out"}
 						</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenu>

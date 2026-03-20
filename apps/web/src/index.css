@@ -1,5 +1,14 @@
 @import "@workspace/ui/globals.css";
 
+[data-app-region="drag"] {
+	-webkit-app-region: drag;
+	user-select: none;
+}
+
+[data-app-region="no-drag"] {
+	-webkit-app-region: no-drag;
+}
+
 @source "../../../node_modules/streamdown/dist/*.js";
 @source "./**/*.{ts,tsx}";
 @source "../../../packages/*/src/**/*.{js,jsx,ts,tsx}";

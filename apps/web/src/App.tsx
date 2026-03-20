@@ -7,7 +7,14 @@ import {
 	BreadcrumbSeparator,
 } from "@workspace/ui/components/breadcrumb";
 import { Button } from "@workspace/ui/components/button";
-import { Card, CardContent } from "@workspace/ui/components/card";
+import {
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@workspace/ui/components/card";
+import { Checkbox } from "@workspace/ui/components/checkbox";
 import {
 	Empty,
 	EmptyContent,
@@ -16,6 +23,13 @@ import {
 	EmptyMedia,
 	EmptyTitle,
 } from "@workspace/ui/components/empty";
+import {
+	Field,
+	FieldDescription,
+	FieldGroup,
+	FieldLabel,
+} from "@workspace/ui/components/field";
+import { Icons } from "@workspace/ui/components/icons";
 import { Separator } from "@workspace/ui/components/separator";
 import {
 	SidebarInset,
@@ -23,13 +37,125 @@ import {
 	SidebarTrigger,
 } from "@workspace/ui/components/sidebar";
 import { cn } from "@workspace/ui/lib/utils";
-import { CalendarClock, Plus } from "lucide-react";
+import { AlertCircle, CalendarClock, LoaderCircle, Plus } from "lucide-react";
 import * as React from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ChatPage } from "@/components/chat/chat-page";
 import { QuickNotePage } from "@/components/quick-note/quick-note-page";
+import { type AuthSession, authClient } from "@/lib/auth-client";
+
+type AppUser = {
+	name: string;
+	email: string;
+	avatar: string;
+};
 
 export function App() {
+	const { data: session } = authClient.useSession();
+	const [authError, setAuthError] = React.useState<string | null>(null);
+	const [isAuthenticating, startAuthentication] = React.useTransition();
+	const [isDesktopMac, setIsDesktopMac] = React.useState(false);
+
+	React.useEffect(() => {
+		void window.openGranDesktop
+			?.getMeta()
+			.then((meta) => {
+				setIsDesktopMac(meta.platform === "darwin");
+			})
+			.catch(() => {
+				setIsDesktopMac(false);
+			});
+	}, []);
+
+	React.useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+
+		const url = new URL(window.location.href);
+		const authErrorParam = url.searchParams.get("authError");
+		if (!authErrorParam) {
+			return;
+		}
+
+		const authErrorDescription = url.searchParams.get("authErrorDescription");
+		const message = authErrorDescription
+			? `${authErrorParam}: ${authErrorDescription}`
+			: authErrorParam.replaceAll("_", " ");
+
+		setAuthError(message);
+		url.searchParams.delete("authError");
+		url.searchParams.delete("authErrorDescription");
+		window.history.replaceState({}, "", url);
+	}, []);
+
+	const handleGitHubSignIn = React.useCallback(() => {
+		startAuthentication(async () => {
+			try {
+				setAuthError(null);
+				if (window.openGranDesktop) {
+					const { url: callbackURL } =
+						await window.openGranDesktop.getAuthCallbackUrl();
+					const result = await authClient.signIn.social({
+						provider: "github",
+						callbackURL,
+						errorCallbackURL: callbackURL,
+						disableRedirect: true,
+					});
+
+					if (result.error) {
+						const message =
+							result.error.message ||
+							result.error.statusText ||
+							"GitHub sign-in failed.";
+						throw new Error(message);
+					}
+
+					const url = result.data?.url;
+
+					if (!url) {
+						throw new Error("GitHub sign-in URL was not returned.");
+					}
+
+					await window.openGranDesktop.openExternalUrl(url);
+					return;
+				}
+
+				await authClient.signIn.social({
+					provider: "github",
+					callbackURL: window.location.href,
+				});
+			} catch (error) {
+				setAuthError(
+					error instanceof Error
+						? error.message
+						: "GitHub sign-in failed. Check your Better Auth setup.",
+				);
+			}
+		});
+	}, []);
+
+	if (!session?.user) {
+		return (
+			<AuthScreen
+				error={authError}
+				isAuthenticating={isAuthenticating}
+				isDesktopMac={isDesktopMac}
+				onGitHubSignIn={handleGitHubSignIn}
+			/>
+		);
+	}
+
+	return <AppShell session={session} initialDesktopMac={isDesktopMac} />;
+}
+
+function AppShell({
+	session,
+	initialDesktopMac,
+}: {
+	session: AuthSession;
+	initialDesktopMac: boolean;
+}) {
 	const [currentView, setCurrentView] = React.useState<
 		"home" | "chat" | "shared" | "quick-note"
 	>(() => {
@@ -53,8 +179,10 @@ export function App() {
 	});
 	const [chatSession, setChatSession] = React.useState(0);
 	const [quickNoteSession, setQuickNoteSession] = React.useState(0);
-	const [isDesktopMac, setIsDesktopMac] = React.useState(false);
+	const [isDesktopMac, setIsDesktopMac] = React.useState(initialDesktopMac);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
+	const [isSigningOut, startSignOut] = React.useTransition();
+	const user = React.useMemo(() => toAppUser(session), [session]);
 
 	React.useEffect(() => {
 		const syncViewFromLocation = () => {
@@ -142,23 +270,40 @@ export function App() {
 		);
 	}, []);
 
+	const handleSignOut = React.useCallback(() => {
+		startSignOut(async () => {
+			try {
+				await authClient.signOut();
+			} catch (error) {
+				console.error("Failed to sign out", error);
+			}
+		});
+	}, []);
+
 	return (
 		<SidebarProvider>
 			<AppSidebar
 				currentView={currentView}
+				user={user}
 				onViewChange={handleViewChange}
 				settingsOpen={settingsOpen}
 				onSettingsOpenChange={handleSettingsOpenChange}
+				onSignOut={handleSignOut}
+				signingOut={isSigningOut}
 				desktopSafeTop={isDesktopMac}
 			/>
 			<SidebarInset>
 				<header
+					data-app-region={isDesktopMac ? "drag" : undefined}
 					className={cn(
 						"sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between bg-background/95 px-4 backdrop-blur transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 md:px-6",
 						isDesktopMac && "h-24 pt-8",
 					)}
 				>
-					<div className="flex items-center gap-2">
+					<div
+						data-app-region={isDesktopMac ? "no-drag" : undefined}
+						className="flex items-center gap-2"
+					>
 						<SidebarTrigger className="-ml-1" />
 						<Separator
 							orientation="vertical"
@@ -191,7 +336,10 @@ export function App() {
 							</BreadcrumbList>
 						</Breadcrumb>
 					</div>
-					<div className="ml-auto">
+					<div
+						data-app-region={isDesktopMac ? "no-drag" : undefined}
+						className="ml-auto"
+					>
 						{currentView === "home" || currentView === "quick-note" ? (
 							<Button
 								variant="outline"
@@ -317,6 +465,158 @@ export function App() {
 			</SidebarInset>
 		</SidebarProvider>
 	);
+}
+
+function AuthScreen({
+	error,
+	isAuthenticating,
+	isDesktopMac,
+	onGitHubSignIn,
+}: {
+	error: string | null;
+	isAuthenticating: boolean;
+	isDesktopMac: boolean;
+	onGitHubSignIn: () => void;
+}) {
+	return (
+		<div
+			data-app-region={isDesktopMac ? "drag" : undefined}
+			className={cn(
+				"flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6 md:p-10",
+				isDesktopMac && "pt-20 md:pt-24",
+			)}
+		>
+			<LoginForm
+				error={error}
+				isAuthenticating={isAuthenticating}
+				isDesktopMac={isDesktopMac}
+				onGitHubSignIn={onGitHubSignIn}
+			/>
+		</div>
+	);
+}
+
+function LoginForm({
+	className,
+	error,
+	isAuthenticating,
+	isDesktopMac,
+	onGitHubSignIn,
+	...props
+}: React.ComponentProps<"div"> & {
+	error: string | null;
+	isAuthenticating: boolean;
+	isDesktopMac: boolean;
+	onGitHubSignIn: () => void;
+}) {
+	const [hasAcceptedTerms, setHasAcceptedTerms] = React.useState(false);
+
+	return (
+		<div
+			data-app-region={isDesktopMac ? "no-drag" : undefined}
+			className={cn("flex w-full max-w-sm flex-col gap-6", className)}
+			{...props}
+		>
+			<div className="flex items-center gap-2 self-center font-medium">
+				<div className="flex size-6 items-center justify-center rounded-md border bg-card text-foreground">
+					<OpenGranMark className="size-4" />
+				</div>
+				OpenGran
+			</div>
+			<Card>
+				<CardHeader className="text-center">
+					<CardTitle className="text-xl">Welcome back</CardTitle>
+					<CardDescription>Login with your GitHub account</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<form>
+						<FieldGroup>
+							<Field>
+								<Button
+									variant="outline"
+									type="button"
+									className="w-full"
+									onClick={onGitHubSignIn}
+									disabled={isAuthenticating || !hasAcceptedTerms}
+								>
+									{isAuthenticating ? (
+										<LoaderCircle className="animate-spin" />
+									) : (
+										<Icons.githubLogo />
+									)}
+									Login with GitHub
+								</Button>
+							</Field>
+							{error ? (
+								<Field>
+									<FieldDescription className="flex items-center justify-center gap-2 text-center text-destructive">
+										<AlertCircle className="size-4 shrink-0" />
+										<span>{error}</span>
+									</FieldDescription>
+								</Field>
+							) : null}
+							<Field orientation="horizontal">
+								<Checkbox
+									id="terms"
+									checked={hasAcceptedTerms}
+									onCheckedChange={(checked) =>
+										setHasAcceptedTerms(checked === true)
+									}
+								/>
+								<FieldLabel
+									htmlFor="terms"
+									className="text-xs leading-none font-normal whitespace-nowrap text-muted-foreground"
+								>
+									I agree to the{" "}
+									<a
+										href="https://openmeet.app/terms"
+										className="underline underline-offset-4"
+									>
+										Terms of Service
+									</a>{" "}
+									and{" "}
+									<a
+										href="https://openmeet.app/privacy"
+										className="underline underline-offset-4"
+									>
+										Privacy Policy
+									</a>
+									.
+								</FieldLabel>
+							</Field>
+						</FieldGroup>
+					</form>
+				</CardContent>
+			</Card>
+		</div>
+	);
+}
+
+function OpenGranMark({ className }: { className?: string }) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			fill="none"
+			className={className}
+			aria-hidden="true"
+		>
+			<path
+				d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"
+				stroke="currentColor"
+				strokeWidth="2"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+		</svg>
+	);
+}
+
+function toAppUser(session: AuthSession): AppUser {
+	return {
+		name: session.user.name?.trim() || session.user.email,
+		email: session.user.email,
+		avatar: session.user.image ?? "",
+	};
 }
 
 export default App;

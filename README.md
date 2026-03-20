@@ -32,6 +32,9 @@
 - [Better Auth](https://www.better-auth.com/)
   - Secure authentication with [Better Auth for Convex](https://labs.convex.dev/better-auth)
   - GitHub OAuth integration
+- [Convex](https://www.convex.dev/)
+  - Realtime backend for data sync, queries, mutations, and HTTP auth routes
+  - Handles authenticated app state and server-side application logic
 - [Shadcn/UI](https://ui.shadcn.com)
   - Styling with [Tailwind CSS](https://tailwindcss.com)
   - Component primitives from [Radix UI](https://radix-ui.com) for accessibility and flexibility
