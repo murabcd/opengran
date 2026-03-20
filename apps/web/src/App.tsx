@@ -36,6 +36,7 @@ import {
 	SidebarProvider,
 	SidebarTrigger,
 } from "@workspace/ui/components/sidebar";
+import { Skeleton } from "@workspace/ui/components/skeleton";
 import {
 	Tooltip,
 	TooltipContent,
@@ -66,8 +67,15 @@ type AppUser = {
 	avatar: string;
 };
 
+const HOME_QUICK_NOTE_SKELETON_IDS = [
+	"home-quick-note-skeleton-1",
+	"home-quick-note-skeleton-2",
+	"home-quick-note-skeleton-3",
+] as const;
+
 export function App() {
-	const { data: session, isPending: isSessionPending } = authClient.useSession();
+	const { data: session, isPending: isSessionPending } =
+		authClient.useSession();
 	const [authError, setAuthError] = React.useState<string | null>(null);
 	const [isAuthenticating, startAuthentication] = React.useTransition();
 	const [isDesktopMac, setIsDesktopMac] = React.useState(false);
@@ -169,11 +177,7 @@ export function App() {
 	return <AppShell session={session} initialDesktopMac={isDesktopMac} />;
 }
 
-function AuthBootstrapScreen({
-	isDesktopMac,
-}: {
-	isDesktopMac: boolean;
-}) {
+function AuthBootstrapScreen({ isDesktopMac }: { isDesktopMac: boolean }) {
 	return (
 		<div
 			data-app-region={isDesktopMac ? "drag" : undefined}
@@ -412,6 +416,7 @@ function AppShell({
 			<AppSidebar
 				currentView={currentView}
 				user={user}
+				quickNotes={quickNotes}
 				onViewChange={handleViewChange}
 				settingsOpen={settingsOpen}
 				onSettingsOpenChange={handleSettingsOpenChange}
@@ -546,7 +551,9 @@ function AppShell({
 							</section>
 
 							<section className="flex justify-center py-8">
-								{quickNotes && quickNotes.length > 0 ? (
+								{quickNotes === undefined ? (
+									<HomeQuickNotesSkeleton />
+								) : quickNotes.length > 0 ? (
 									<HomeQuickNotesList
 										notes={quickNotes}
 										activeNoteId={currentQuickNoteId}
@@ -606,6 +613,27 @@ function AppShell({
 				)}
 			</SidebarInset>
 		</SidebarProvider>
+	);
+}
+
+function HomeQuickNotesSkeleton() {
+	return (
+		<div className="w-full max-w-xl space-y-3">
+			<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
+				Today
+			</div>
+			<div className="space-y-2">
+				{HOME_QUICK_NOTE_SKELETON_IDS.map((id) => (
+					<div key={id} className="flex items-center gap-3 rounded-xl p-1">
+						<Skeleton className="size-8 rounded-lg" />
+						<div className="min-w-0 flex-1 space-y-2">
+							<Skeleton className="h-4 w-32" />
+							<Skeleton className="h-3 w-48" />
+						</div>
+					</div>
+				))}
+			</div>
+		</div>
 	);
 }
 

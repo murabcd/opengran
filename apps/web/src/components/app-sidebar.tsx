@@ -51,6 +51,7 @@ import {
 	SidebarMenuItem,
 	useSidebar,
 } from "@workspace/ui/components/sidebar";
+import { Skeleton } from "@workspace/ui/components/skeleton";
 import { useTheme } from "@workspace/ui/components/theme-provider";
 import {
 	Tooltip,
@@ -82,7 +83,7 @@ import { QuickNoteActionsMenu } from "@/components/quick-note/quick-note-actions
 import { SearchCommand } from "@/components/search/search-command";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { api } from "../../../../convex/_generated/api";
-import type { Id } from "../../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import type { SearchCommandItem } from "./search/search-command";
 
 type NavItem = {
@@ -126,10 +127,17 @@ const workspaces = [
 ];
 
 const MAX_VISIBLE_NOTES = 5;
+const SIDEBAR_NOTE_SKELETON_IDS = [
+	"sidebar-note-skeleton-1",
+	"sidebar-note-skeleton-2",
+	"sidebar-note-skeleton-3",
+	"sidebar-note-skeleton-4",
+] as const;
 
 export function AppSidebar({
 	currentView,
 	user,
+	quickNotes,
 	onViewChange,
 	settingsOpen,
 	onSettingsOpenChange,
@@ -148,6 +156,7 @@ export function AppSidebar({
 		email: string;
 		avatar: string;
 	};
+	quickNotes: Array<Doc<"quickNotes">> | undefined;
 	onViewChange: (view: "home" | "chat" | "shared" | "quick-note") => void;
 	settingsOpen: boolean;
 	onSettingsOpenChange: (open: boolean) => void;
@@ -163,7 +172,6 @@ export function AppSidebar({
 	const [searchOpen, setSearchOpen] = React.useState(false);
 	const [trashOpen, setTrashOpen] = React.useState(false);
 	const [draftUser, setDraftUser] = React.useState(user);
-	const notes = useQuery(api.quickNotes.list, {});
 
 	React.useEffect(() => {
 		setDraftUser(user);
@@ -179,7 +187,7 @@ export function AppSidebar({
 	);
 	const searchItems = React.useMemo<SearchCommandItem[]>(
 		() =>
-			(notes ?? []).map((note) => ({
+			(quickNotes ?? []).map((note) => ({
 				id: note._id,
 				title:
 					note._id === currentQuickNoteId && currentQuickNoteTitle?.trim()
@@ -187,7 +195,7 @@ export function AppSidebar({
 						: note.title || "New note",
 				icon: FileText,
 			})),
-		[notes, currentQuickNoteId, currentQuickNoteTitle],
+		[quickNotes, currentQuickNoteId, currentQuickNoteTitle],
 	);
 
 	return (
@@ -214,6 +222,7 @@ export function AppSidebar({
 				</SidebarHeader>
 				<SidebarContent>
 					<NavProjects
+						notes={quickNotes}
 						currentNoteId={
 							currentView === "quick-note" ? currentQuickNoteId : null
 						}
@@ -344,18 +353,20 @@ function NavMain({
 }
 
 function NavProjects({
+	notes,
 	currentNoteId,
 	currentNoteTitle,
 	onQuickNoteSelect,
 	onQuickNoteTrashed,
 }: {
+	notes: Array<Doc<"quickNotes">> | undefined;
 	currentNoteId: Id<"quickNotes"> | null;
 	currentNoteTitle?: string;
 	onQuickNoteSelect: (noteId: Id<"quickNotes">) => void;
 	onQuickNoteTrashed?: (noteId: Id<"quickNotes">) => void;
 }) {
-	const notes = useQuery(api.quickNotes.list, {});
 	const [showAllNotes, setShowAllNotes] = React.useState(false);
+	const isNotesPending = notes === undefined;
 	const hasMoreNotes = (notes?.length ?? 0) > MAX_VISIBLE_NOTES;
 	const visibleNotes = showAllNotes
 		? (notes ?? [])
@@ -364,12 +375,13 @@ function NavProjects({
 	return (
 		<SidebarGroup className="group-data-[collapsible=icon]:hidden">
 			<SidebarGroupLabel>Notes</SidebarGroupLabel>
+			{isNotesPending ? <NavProjectsSkeleton /> : null}
 			{notes && notes.length === 0 ? (
 				<div className="px-2 text-xs text-muted-foreground/50">
 					No notes yet
 				</div>
 			) : null}
-			<SidebarGroupContent>
+			<SidebarGroupContent className={isNotesPending ? "hidden" : undefined}>
 				<SidebarMenu>
 					{visibleNotes.map((note) => {
 						const isActive = note._id === currentNoteId;
@@ -421,6 +433,21 @@ function NavProjects({
 				) : null}
 			</SidebarGroupContent>
 		</SidebarGroup>
+	);
+}
+
+function NavProjectsSkeleton() {
+	return (
+		<div className="px-2">
+			<div className="space-y-2">
+				{SIDEBAR_NOTE_SKELETON_IDS.map((id) => (
+					<div key={id} className="flex items-center gap-2 rounded-md py-1">
+						<Skeleton className="size-4 rounded-sm" />
+						<Skeleton className="h-4 flex-1" />
+					</div>
+				))}
+			</div>
+		</div>
 	);
 }
 
