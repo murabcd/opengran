@@ -78,7 +78,7 @@ const navigation: Array<Omit<NavItem, "isActive">> = [
 		icon: Home,
 	},
 	{
-		title: "Shared with me",
+		title: "Shared",
 		action: "view",
 		view: "shared",
 		icon: Share2,
@@ -92,9 +92,9 @@ const navigation: Array<Omit<NavItem, "isActive">> = [
 ];
 
 const workspaces = [
-	{ name: "OpenMeet", plan: "Starter", logo: Command },
-	{ name: "Townhall Ops", plan: "Growth", logo: Home },
-	{ name: "Community Lab", plan: "Trial", logo: Users },
+	{ name: "OpenMeet", plan: "Meeting notes", logo: Command },
+	{ name: "Townhall Ops", plan: "Team Workspace", logo: Home },
+	{ name: "Community Lab", plan: "Shared Notes", logo: Users },
 ];
 
 const currentUser = {
@@ -108,8 +108,8 @@ export function AppSidebar({
 	onViewChange,
 	...props
 }: React.ComponentProps<typeof Sidebar> & {
-	currentView: "home" | "chat" | "shared";
-	onViewChange: (view: "home" | "chat" | "shared") => void;
+	currentView: "home" | "chat" | "shared" | "quick-note";
+	onViewChange: (view: "home" | "chat" | "shared" | "quick-note") => void;
 }) {
 	const [activeWorkspace, setActiveWorkspace] = React.useState(workspaces[0]);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -178,7 +178,7 @@ function NavMain({
 }: {
 	className?: string;
 	items: NavItem[];
-	onViewChange: (view: "home" | "chat" | "shared") => void;
+	onViewChange: (view: "home" | "chat" | "shared" | "quick-note") => void;
 	onSearchOpen: () => void;
 }) {
 	React.useEffect(() => {
@@ -193,11 +193,49 @@ function NavMain({
 		return () => document.removeEventListener("keydown", down);
 	}, [onSearchOpen]);
 
+	const searchItem = items.find((item) => item.action === "search");
+	const viewItems = items.filter((item) => item.action !== "search");
+
 	return (
 		<SidebarGroup className={className}>
-			<SidebarGroupLabel>Platform</SidebarGroupLabel>
 			<SidebarMenu>
-				{items.map((item) => (
+				{searchItem ? (
+					<SidebarMenuItem key={searchItem.title}>
+						<SidebarMenuButton
+							asChild
+							tooltip={searchItem.title}
+							isActive={searchItem.isActive}
+						>
+							<button
+								type="button"
+								onClick={() => {
+									if (searchItem.action === "search") {
+										onSearchOpen();
+										return;
+									}
+
+									if (searchItem.action !== "view" || !searchItem.view) {
+										return;
+									}
+									onViewChange(searchItem.view);
+								}}
+								className="flex w-full items-center gap-2"
+							>
+								{searchItem.icon && <searchItem.icon />}
+								<span>{searchItem.title}</span>
+								{searchItem.action === "search" ? (
+									<Kbd className="ml-auto font-mono text-[10px]">
+										<span className="text-xs">⌘</span>K
+									</Kbd>
+								) : null}
+							</button>
+						</SidebarMenuButton>
+					</SidebarMenuItem>
+				) : null}
+			</SidebarMenu>
+			<SidebarGroupLabel className="mt-6">Platform</SidebarGroupLabel>
+			<SidebarMenu>
+				{viewItems.map((item) => (
 					<SidebarMenuItem key={item.title}>
 						<SidebarMenuButton
 							asChild
@@ -207,11 +245,6 @@ function NavMain({
 							<button
 								type="button"
 								onClick={() => {
-									if (item.action === "search") {
-										onSearchOpen();
-										return;
-									}
-
 									if (item.action !== "view" || !item.view) {
 										return;
 									}
@@ -221,11 +254,6 @@ function NavMain({
 							>
 								{item.icon && <item.icon />}
 								<span>{item.title}</span>
-								{item.action === "search" ? (
-									<Kbd className="ml-auto font-mono text-[10px]">
-										<span className="text-xs">⌘</span>K
-									</Kbd>
-								) : null}
 							</button>
 						</SidebarMenuButton>
 					</SidebarMenuItem>

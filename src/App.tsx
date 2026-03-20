@@ -2,6 +2,7 @@ import { CalendarClock, Plus } from "lucide-react";
 import * as React from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ChatPage } from "@/components/chat/chat-page";
+import { QuickNotePage } from "@/components/quick-note/quick-note-page";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -29,10 +30,14 @@ import {
 
 export function App() {
 	const [currentView, setCurrentView] = React.useState<
-		"home" | "chat" | "shared"
+		"home" | "chat" | "shared" | "quick-note"
 	>(() => {
 		if (typeof window === "undefined") {
 			return "home";
+		}
+
+		if (window.location.pathname === "/quick-note") {
+			return "quick-note";
 		}
 
 		if (window.location.pathname === "/chat") {
@@ -46,25 +51,32 @@ export function App() {
 		return "home";
 	});
 	const [chatSession, setChatSession] = React.useState(0);
+	const [quickNoteSession, setQuickNoteSession] = React.useState(0);
 
 	React.useEffect(() => {
 		const syncViewFromLocation = () => {
 			const nextView =
-				window.location.pathname === "/chat" || window.location.hash === "#chat"
-					? "chat"
-					: window.location.pathname === "/shared" ||
-							window.location.hash === "#shared"
-						? "shared"
-						: "home";
+				window.location.pathname === "/quick-note" ||
+				window.location.hash === "#quick-note"
+					? "quick-note"
+					: window.location.pathname === "/chat" ||
+							window.location.hash === "#chat"
+						? "chat"
+						: window.location.pathname === "/shared" ||
+								window.location.hash === "#shared"
+							? "shared"
+							: "home";
 
 			setCurrentView(nextView);
 
 			const nextPath =
-				nextView === "chat"
-					? "/chat"
-					: nextView === "shared"
-						? "/shared"
-						: "/home";
+				nextView === "quick-note"
+					? "/quick-note"
+					: nextView === "chat"
+						? "/chat"
+						: nextView === "shared"
+							? "/shared"
+							: "/home";
 			if (window.location.pathname !== nextPath || window.location.hash) {
 				window.history.replaceState(null, "", nextPath);
 			}
@@ -79,12 +91,18 @@ export function App() {
 	}, []);
 
 	const handleViewChange = React.useCallback(
-		(view: "home" | "chat" | "shared") => {
+		(view: "home" | "chat" | "shared" | "quick-note") => {
 			setCurrentView(view);
 			window.history.pushState(
 				null,
 				"",
-				view === "chat" ? "/chat" : view === "shared" ? "/shared" : "/home",
+				view === "quick-note"
+					? "/quick-note"
+					: view === "chat"
+						? "/chat"
+						: view === "shared"
+							? "/shared"
+							: "/home",
 			);
 		},
 		[],
@@ -111,17 +129,25 @@ export function App() {
 									<BreadcrumbPage>
 										{currentView === "home"
 											? "Home"
-											: currentView === "shared"
-												? "Shared with me"
-												: "Chat"}
+											: currentView === "quick-note"
+												? "Quick note"
+												: currentView === "shared"
+													? "Shared with others"
+													: "Chat"}
 									</BreadcrumbPage>
 								</BreadcrumbItem>
 							</BreadcrumbList>
 						</Breadcrumb>
 					</div>
 					<div className="ml-auto">
-						{currentView === "home" ? (
-							<Button variant="outline">
+						{currentView === "home" || currentView === "quick-note" ? (
+							<Button
+								variant="outline"
+								onClick={() => {
+									handleViewChange("quick-note");
+									setQuickNoteSession((current) => current + 1);
+								}}
+							>
 								<Plus />
 								Quick note
 							</Button>
@@ -197,7 +223,14 @@ export function App() {
 										</EmptyDescription>
 									</EmptyHeader>
 									<EmptyContent>
-										<Button>Quick note</Button>
+										<Button
+											onClick={() => {
+												handleViewChange("quick-note");
+												setQuickNoteSession((current) => current + 1);
+											}}
+										>
+											Quick note
+										</Button>
 									</EmptyContent>
 								</Empty>
 							</section>
@@ -207,7 +240,7 @@ export function App() {
 					<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
 						<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
 							<section className="mx-auto w-full max-w-xl space-y-6">
-								<h1 className="text-lg md:text-xl">Shared with me</h1>
+								<h1 className="text-lg md:text-xl">Shared with others</h1>
 							</section>
 							<section className="flex justify-center py-8">
 								<Empty className="max-w-xl">
@@ -216,13 +249,16 @@ export function App() {
 											No shared notes yet
 										</EmptyTitle>
 										<EmptyDescription>
-											When someone shares a note with you, it will show up here
+											When you share a note with someone else, it will show up
+											here
 										</EmptyDescription>
 									</EmptyHeader>
 								</Empty>
 							</section>
 						</div>
 					</div>
+				) : currentView === "quick-note" ? (
+					<QuickNotePage key={quickNoteSession} />
 				) : (
 					<ChatPage key={chatSession} />
 				)}
