@@ -1,26 +1,22 @@
 "use client";
 
 import {
-	CalendarDays,
 	ChevronsUpDown,
 	Command,
-	Folder,
-	Forward,
 	Home,
-	LifeBuoy,
 	LogOut,
 	type LucideIcon,
 	MessageSquare,
 	Moon,
-	MoreHorizontal,
 	Plus,
+	Search,
 	Settings,
 	Share2,
 	Sun,
-	Trash2,
 	Users,
 } from "lucide-react";
 import * as React from "react";
+import { SearchCommand } from "@/components/search/search-command";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { useTheme } from "@/components/theme-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -32,6 +28,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Kbd } from "@/components/ui/kbd";
 import {
 	Sidebar,
 	SidebarContent,
@@ -40,41 +37,44 @@ import {
 	SidebarGroupLabel,
 	SidebarHeader,
 	SidebarMenu,
-	SidebarMenuAction,
 	SidebarMenuButton,
 	SidebarMenuItem,
 	useSidebar,
 } from "@/components/ui/sidebar";
+import type { SearchCommandItem } from "./search/search-command";
 
 type NavItem = {
 	title: string;
-	view: "home" | "chat" | "shared";
 	icon: LucideIcon;
+	action: "search" | "view" | "disabled";
+	view?: "home" | "chat" | "shared";
 	isActive?: boolean;
 };
 
 const navigation: Array<Omit<NavItem, "isActive">> = [
 	{
+		title: "Search",
+		action: "search",
+		icon: Search,
+	},
+	{
 		title: "Home",
+		action: "view",
 		view: "home",
 		icon: Home,
 	},
 	{
 		title: "Shared with me",
+		action: "disabled",
 		view: "shared",
 		icon: Share2,
 	},
 	{
 		title: "Chat",
+		action: "view",
 		view: "chat",
 		icon: MessageSquare,
 	},
-];
-
-const quickLinks = [
-	{ title: "Calendar", url: "#calendar", icon: CalendarDays },
-	{ title: "Inbox", url: "#inbox", icon: MessageSquare },
-	{ title: "Support", url: "#support", icon: LifeBuoy },
 ];
 
 const workspaces = [
@@ -99,15 +99,17 @@ export function AppSidebar({
 }) {
 	const [activeWorkspace, setActiveWorkspace] = React.useState(workspaces[0]);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
+	const [searchOpen, setSearchOpen] = React.useState(false);
 	const [user, setUser] = React.useState(currentUser);
 	const navItems = React.useMemo(
 		() =>
 			navigation.map((item) => ({
 				...item,
-				isActive: item.view === currentView,
+				isActive: item.action === "view" && item.view === currentView,
 			})),
 		[currentView],
 	);
+	const searchItems = React.useMemo<SearchCommandItem[]>(() => [], []);
 
 	return (
 		<>
@@ -117,15 +119,31 @@ export function AppSidebar({
 						activeWorkspace={activeWorkspace}
 						onSelect={setActiveWorkspace}
 					/>
+					<NavMain
+						className="px-0"
+						items={navItems}
+						onViewChange={onViewChange}
+						onSearchOpen={() => setSearchOpen(true)}
+					/>
 				</SidebarHeader>
 				<SidebarContent>
-					<NavMain items={navItems} onViewChange={onViewChange} />
-					<NavProjects projects={quickLinks} />
+					<NavProjects />
 				</SidebarContent>
 				<SidebarFooter>
 					<NavUser user={user} onSettingsOpen={() => setSettingsOpen(true)} />
 				</SidebarFooter>
 			</Sidebar>
+			<SearchCommand
+				open={searchOpen}
+				onOpenChange={setSearchOpen}
+				items={searchItems}
+				onSelectItem={(itemId) => {
+					onViewChange("home");
+					queueMicrotask(() => {
+						window.history.replaceState(null, "", `/home#${itemId}`);
+					});
+				}}
+			/>
 			<SettingsDialog
 				open={settingsOpen}
 				onOpenChange={setSettingsOpen}
@@ -137,14 +155,30 @@ export function AppSidebar({
 }
 
 function NavMain({
+	className,
 	items,
 	onViewChange,
+	onSearchOpen,
 }: {
+	className?: string;
 	items: NavItem[];
 	onViewChange: (view: "home" | "chat") => void;
+	onSearchOpen: () => void;
 }) {
+	React.useEffect(() => {
+		const down = (event: KeyboardEvent) => {
+			if (event.key === "k" && (event.metaKey || event.ctrlKey)) {
+				event.preventDefault();
+				onSearchOpen();
+			}
+		};
+
+		document.addEventListener("keydown", down);
+		return () => document.removeEventListener("keydown", down);
+	}, [onSearchOpen]);
+
 	return (
-		<SidebarGroup>
+		<SidebarGroup className={className}>
 			<SidebarGroupLabel>Platform</SidebarGroupLabel>
 			<SidebarMenu>
 				{items.map((item) => (
@@ -157,7 +191,12 @@ function NavMain({
 							<button
 								type="button"
 								onClick={() => {
-									if (item.view === "shared") {
+									if (item.action === "search") {
+										onSearchOpen();
+										return;
+									}
+
+									if (item.action !== "view" || item.view === "shared") {
 										return;
 									}
 									onViewChange(item.view);
@@ -166,6 +205,11 @@ function NavMain({
 							>
 								{item.icon && <item.icon />}
 								<span>{item.title}</span>
+								{item.action === "search" ? (
+									<Kbd className="ml-auto font-mono text-[10px]">
+										<span className="text-xs">⌘</span>K
+									</Kbd>
+								) : null}
 							</button>
 						</SidebarMenuButton>
 					</SidebarMenuItem>
@@ -175,65 +219,11 @@ function NavMain({
 	);
 }
 
-function NavProjects({
-	projects,
-}: {
-	projects: Array<{
-		title: string;
-		url: string;
-		icon: LucideIcon;
-	}>;
-}) {
-	const { isMobile } = useSidebar();
-
+function NavProjects() {
 	return (
 		<SidebarGroup className="group-data-[collapsible=icon]:hidden">
-			<SidebarGroupLabel>Projects</SidebarGroupLabel>
-			<SidebarMenu>
-				{projects.map((item) => (
-					<SidebarMenuItem key={item.title}>
-						<SidebarMenuButton asChild>
-							<a href={item.url}>
-								<item.icon />
-								<span>{item.title}</span>
-							</a>
-						</SidebarMenuButton>
-						<DropdownMenu>
-							<DropdownMenuTrigger asChild>
-								<SidebarMenuAction showOnHover>
-									<MoreHorizontal />
-									<span className="sr-only">More</span>
-								</SidebarMenuAction>
-							</DropdownMenuTrigger>
-							<DropdownMenuContent
-								className="w-48 rounded-lg"
-								side={isMobile ? "bottom" : "right"}
-								align={isMobile ? "end" : "start"}
-							>
-								<DropdownMenuItem>
-									<Folder className="text-muted-foreground" />
-									<span>View Project</span>
-								</DropdownMenuItem>
-								<DropdownMenuItem>
-									<Forward className="text-muted-foreground" />
-									<span>Share Project</span>
-								</DropdownMenuItem>
-								<DropdownMenuSeparator />
-								<DropdownMenuItem>
-									<Trash2 className="text-muted-foreground" />
-									<span>Delete Project</span>
-								</DropdownMenuItem>
-							</DropdownMenuContent>
-						</DropdownMenu>
-					</SidebarMenuItem>
-				))}
-				<SidebarMenuItem>
-					<SidebarMenuButton className="text-sidebar-foreground/70">
-						<MoreHorizontal className="text-sidebar-foreground/70" />
-						<span>More</span>
-					</SidebarMenuButton>
-				</SidebarMenuItem>
-			</SidebarMenu>
+			<SidebarGroupLabel>Notes</SidebarGroupLabel>
+			<SidebarMenu />
 		</SidebarGroup>
 	);
 }
