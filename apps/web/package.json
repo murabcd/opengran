@@ -16,6 +16,10 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.41",
     "@ai-sdk/react": "^3.0.118",
+    "@tiptap/extension-placeholder": "^3.20.4",
+    "@tiptap/pm": "^3.20.4",
+    "@tiptap/react": "^3.20.4",
+    "@tiptap/starter-kit": "^3.20.4",
     "@workspace/ui": "workspace:*",
     "ai": "^6.0.116",
     "lucide-react": "^0.577.0",

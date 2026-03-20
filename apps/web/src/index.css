@@ -12,3 +12,34 @@
 @source "../../../node_modules/streamdown/dist/*.js";
 @source "./**/*.{ts,tsx}";
 @source "../../../packages/*/src/**/*.{js,jsx,ts,tsx}";
+
+.quick-note-tiptap {
+	caret-color: #f2ebde;
+}
+
+.quick-note-tiptap .ProseMirror {
+	position: relative;
+	white-space: pre-wrap;
+	word-wrap: break-word;
+	color: inherit;
+}
+
+.quick-note-tiptap .ProseMirror:focus {
+	outline: none;
+}
+
+.quick-note-tiptap .ProseMirror p {
+	margin: 0;
+}
+
+.quick-note-tiptap ::selection {
+	background: rgb(240 234 223 / 18%);
+}
+
+.quick-note-tiptap p.is-editor-empty:first-child::before {
+	color: #7b776f;
+	content: attr(data-placeholder);
+	float: left;
+	height: 0;
+	pointer-events: none;
+}

@@ -1,6 +1,16 @@
 "use client";
 
 import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@workspace/ui/components/alert-dialog";
+import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
@@ -32,33 +42,47 @@ import {
 	SidebarContent,
 	SidebarFooter,
 	SidebarGroup,
+	SidebarGroupContent,
 	SidebarGroupLabel,
 	SidebarHeader,
 	SidebarMenu,
+	SidebarMenuAction,
 	SidebarMenuButton,
 	SidebarMenuItem,
 	useSidebar,
 } from "@workspace/ui/components/sidebar";
 import { useTheme } from "@workspace/ui/components/theme-provider";
 import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
+import { useMutation, useQuery } from "convex/react";
+import {
 	ChevronsUpDown,
 	Command,
+	FileText,
 	Home,
 	LogOut,
 	type LucideIcon,
-	MessageSquare,
+	MessageCircle,
 	Moon,
+	MoreHorizontal,
 	Plus,
 	Search,
 	Settings,
-	Share2,
 	Sun,
 	Trash2,
+	Undo2,
 	Users,
+	UsersRound,
 } from "lucide-react";
 import * as React from "react";
+import { QuickNoteActionsMenu } from "@/components/quick-note/quick-note-actions-menu";
 import { SearchCommand } from "@/components/search/search-command";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
+import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import type { SearchCommandItem } from "./search/search-command";
 
 type NavItem = {
@@ -85,13 +109,13 @@ const navigation: Array<Omit<NavItem, "isActive">> = [
 		title: "Shared",
 		action: "view",
 		view: "shared",
-		icon: Share2,
+		icon: UsersRound,
 	},
 	{
 		title: "Chat",
 		action: "view",
 		view: "chat",
-		icon: MessageSquare,
+		icon: MessageCircle,
 	},
 ];
 
@@ -100,6 +124,8 @@ const workspaces = [
 	{ name: "Townhall Ops", plan: "Team Workspace", logo: Home },
 	{ name: "Community Lab", plan: "Shared Notes", logo: Users },
 ];
+
+const MAX_VISIBLE_NOTES = 5;
 
 export function AppSidebar({
 	currentView,
@@ -110,6 +136,10 @@ export function AppSidebar({
 	onSignOut,
 	signingOut = false,
 	desktopSafeTop = false,
+	currentQuickNoteId,
+	currentQuickNoteTitle,
+	onQuickNoteSelect,
+	onQuickNoteTrashed,
 	...props
 }: React.ComponentProps<typeof Sidebar> & {
 	currentView: "home" | "chat" | "shared" | "quick-note";
@@ -124,11 +154,16 @@ export function AppSidebar({
 	onSignOut: () => void;
 	signingOut?: boolean;
 	desktopSafeTop?: boolean;
+	currentQuickNoteId: Id<"quickNotes"> | null;
+	currentQuickNoteTitle?: string;
+	onQuickNoteSelect: (noteId: Id<"quickNotes">) => void;
+	onQuickNoteTrashed?: (noteId: Id<"quickNotes">) => void;
 }) {
 	const [activeWorkspace, setActiveWorkspace] = React.useState(workspaces[0]);
 	const [searchOpen, setSearchOpen] = React.useState(false);
 	const [trashOpen, setTrashOpen] = React.useState(false);
 	const [draftUser, setDraftUser] = React.useState(user);
+	const notes = useQuery(api.quickNotes.list, {});
 
 	React.useEffect(() => {
 		setDraftUser(user);
@@ -142,7 +177,18 @@ export function AppSidebar({
 			})),
 		[currentView],
 	);
-	const searchItems = React.useMemo<SearchCommandItem[]>(() => [], []);
+	const searchItems = React.useMemo<SearchCommandItem[]>(
+		() =>
+			(notes ?? []).map((note) => ({
+				id: note._id,
+				title:
+					note._id === currentQuickNoteId && currentQuickNoteTitle?.trim()
+						? currentQuickNoteTitle
+						: note.title || "New note",
+				icon: FileText,
+			})),
+		[notes, currentQuickNoteId, currentQuickNoteTitle],
+	);
 
 	return (
 		<>
@@ -167,7 +213,14 @@ export function AppSidebar({
 					</div>
 				</SidebarHeader>
 				<SidebarContent>
-					<NavProjects />
+					<NavProjects
+						currentNoteId={
+							currentView === "quick-note" ? currentQuickNoteId : null
+						}
+						currentNoteTitle={currentQuickNoteTitle}
+						onQuickNoteSelect={onQuickNoteSelect}
+						onQuickNoteTrashed={onQuickNoteTrashed}
+					/>
 				</SidebarContent>
 				<SidebarFooter>
 					<NavTrash open={trashOpen} onOpenChange={setTrashOpen} />
@@ -184,10 +237,7 @@ export function AppSidebar({
 				onOpenChange={setSearchOpen}
 				items={searchItems}
 				onSelectItem={(itemId) => {
-					onViewChange("home");
-					queueMicrotask(() => {
-						window.history.replaceState(null, "", `/home#${itemId}`);
-					});
+					onQuickNoteSelect(itemId as Id<"quickNotes">);
 				}}
 			/>
 			<SettingsDialog
@@ -249,7 +299,7 @@ function NavMain({
 									}
 									onViewChange(searchItem.view);
 								}}
-								className="flex w-full items-center gap-2"
+								className="flex w-full cursor-text items-center gap-2"
 							>
 								{searchItem.icon && <searchItem.icon />}
 								<span>{searchItem.title}</span>
@@ -293,11 +343,83 @@ function NavMain({
 	);
 }
 
-function NavProjects() {
+function NavProjects({
+	currentNoteId,
+	currentNoteTitle,
+	onQuickNoteSelect,
+	onQuickNoteTrashed,
+}: {
+	currentNoteId: Id<"quickNotes"> | null;
+	currentNoteTitle?: string;
+	onQuickNoteSelect: (noteId: Id<"quickNotes">) => void;
+	onQuickNoteTrashed?: (noteId: Id<"quickNotes">) => void;
+}) {
+	const notes = useQuery(api.quickNotes.list, {});
+	const [showAllNotes, setShowAllNotes] = React.useState(false);
+	const hasMoreNotes = (notes?.length ?? 0) > MAX_VISIBLE_NOTES;
+	const visibleNotes = showAllNotes
+		? (notes ?? [])
+		: (notes ?? []).slice(0, MAX_VISIBLE_NOTES);
+
 	return (
 		<SidebarGroup className="group-data-[collapsible=icon]:hidden">
 			<SidebarGroupLabel>Notes</SidebarGroupLabel>
-			<SidebarMenu />
+			{notes && notes.length === 0 ? (
+				<div className="px-2 text-xs text-muted-foreground/50">
+					No notes yet
+				</div>
+			) : null}
+			<SidebarGroupContent>
+				<SidebarMenu>
+					{visibleNotes.map((note) => {
+						const isActive = note._id === currentNoteId;
+						const title =
+							isActive && currentNoteTitle?.trim()
+								? currentNoteTitle
+								: note.title || "New note";
+
+						return (
+							<SidebarMenuItem key={note._id}>
+								<SidebarMenuButton
+									isActive={isActive}
+									onClick={() => onQuickNoteSelect(note._id)}
+									tooltip={title}
+								>
+									<FileText />
+									<span>{title}</span>
+								</SidebarMenuButton>
+								<QuickNoteActionsMenu
+									noteId={note._id}
+									onMoveToTrash={onQuickNoteTrashed}
+									align="start"
+									side="right"
+								>
+									<SidebarMenuAction
+										showOnHover
+										className="cursor-pointer"
+										aria-label={`Open actions for ${title}`}
+									>
+										<MoreHorizontal />
+									</SidebarMenuAction>
+								</QuickNoteActionsMenu>
+							</SidebarMenuItem>
+						);
+					})}
+				</SidebarMenu>
+				{hasMoreNotes ? (
+					<SidebarMenu>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								className="text-sidebar-foreground/70"
+								onClick={() => setShowAllNotes((prev) => !prev)}
+							>
+								<MoreHorizontal />
+								<span>{showAllNotes ? "Show less" : "Show more"}</span>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					</SidebarMenu>
+				) : null}
+			</SidebarGroupContent>
 		</SidebarGroup>
 	);
 }
@@ -405,7 +527,7 @@ function NavUser({
 							size="lg"
 							className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
 						>
-							<Avatar className="h-8 w-8 rounded-lg">
+							<Avatar className="size-8 rounded-lg">
 								<AvatarImage src={user.avatar} alt={user.name} />
 								<AvatarFallback className="rounded-lg">
 									{initials}
@@ -491,40 +613,208 @@ function NavTrash({
 
 function TrashPopoverContent() {
 	const [search, setSearch] = React.useState("");
+	const [deleteNoteId, setDeleteNoteId] =
+		React.useState<Id<"quickNotes"> | null>(null);
+	const archivedNotes = useQuery(api.quickNotes.listArchived, {});
+	const restore = useMutation(api.quickNotes.restore).withOptimisticUpdate(
+		(localStore, args) => {
+			const archived = localStore.getQuery(api.quickNotes.listArchived, {});
+			const note = archived?.find((item) => item._id === args.id) ?? null;
+
+			if (archived !== undefined) {
+				localStore.setQuery(
+					api.quickNotes.listArchived,
+					{},
+					archived.filter((item) => item._id !== args.id),
+				);
+			}
+
+			if (note) {
+				const active = localStore.getQuery(api.quickNotes.list, {}) ?? [];
+				localStore.setQuery(api.quickNotes.list, {}, [
+					{
+						...note,
+						isArchived: false,
+						archivedAt: undefined,
+					},
+					...active.filter((item) => item._id !== args.id),
+				]);
+			}
+		},
+	);
+	const remove = useMutation(api.quickNotes.remove).withOptimisticUpdate(
+		(localStore, args) => {
+			const archived = localStore.getQuery(api.quickNotes.listArchived, {});
+			if (archived !== undefined) {
+				localStore.setQuery(
+					api.quickNotes.listArchived,
+					{},
+					archived.filter((item) => item._id !== args.id),
+				);
+			}
+		},
+	);
+	const filteredNotes = React.useMemo(() => {
+		const query = search.trim().toLowerCase();
+		if (!archivedNotes) {
+			return [];
+		}
+
+		if (!query) {
+			return archivedNotes;
+		}
+
+		return archivedNotes.filter((note) => {
+			const haystack = [
+				note.title,
+				note.searchableText,
+				note.authorName ?? "",
+			].join(" ");
+
+			return haystack.toLowerCase().includes(query);
+		});
+	}, [archivedNotes, search]);
+	const hasArchivedNotes = (archivedNotes?.length ?? 0) > 0;
+
+	const handleRestore = React.useCallback(
+		(noteId: Id<"quickNotes">) => {
+			void restore({ id: noteId }).catch((error) => {
+				console.error("Failed to restore quick note", error);
+			});
+		},
+		[restore],
+	);
+
+	const handleDelete = React.useCallback(() => {
+		if (!deleteNoteId) {
+			return;
+		}
+
+		void remove({ id: deleteNoteId })
+			.then(() => {
+				setDeleteNoteId(null);
+			})
+			.catch((error) => {
+				console.error("Failed to delete quick note", error);
+			});
+	}, [deleteNoteId, remove]);
 
 	return (
-		<div className="flex h-full flex-col text-sm">
-			<div className="p-2 pb-1">
-				<div className="relative">
-					<Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-					<Input
-						value={search}
-						onChange={(event) => setSearch(event.target.value)}
-						className="h-8 bg-secondary pr-2 pl-8 focus-visible:ring-transparent"
-						placeholder="Search notes..."
-					/>
+		<>
+			<div className="flex h-full flex-col text-sm">
+				<div className="p-2 pb-1">
+					<div className="relative">
+						<Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+						<Input
+							value={search}
+							onChange={(event) => setSearch(event.target.value)}
+							className="h-8 bg-secondary pr-2 pl-8 focus-visible:ring-transparent"
+							placeholder="Search notes..."
+						/>
+					</div>
+				</div>
+
+				<div className="min-h-0 flex-1 overflow-y-auto p-2 pt-1">
+					{hasArchivedNotes && filteredNotes.length > 0 ? (
+						<div className="space-y-1">
+							{filteredNotes.map((note) => (
+								<div
+									key={note._id}
+									className="group grid h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md px-1.5 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+								>
+									<div className="flex min-w-0 items-center gap-1.5">
+										<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+											<FileText className="size-4" />
+										</div>
+										<div className="min-w-0 flex-1">
+											<div className="truncate text-sm">
+												{note.title || "New note"}
+											</div>
+										</div>
+									</div>
+									<div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<button
+													type="button"
+													className="flex size-5 cursor-pointer items-center justify-center rounded-md p-0 text-sidebar-foreground outline-hidden transition-transform focus-visible:ring-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0"
+													onClick={() => handleRestore(note._id)}
+													aria-label={`Restore ${note.title || "New note"}`}
+												>
+													<Undo2 className="size-4" />
+												</button>
+											</TooltipTrigger>
+											<TooltipContent>Restore</TooltipContent>
+										</Tooltip>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<button
+													type="button"
+													className="flex size-5 cursor-pointer items-center justify-center rounded-md p-0 text-destructive outline-hidden transition-transform focus-visible:ring-2 hover:bg-sidebar-accent hover:text-destructive [&>svg]:size-4 [&>svg]:shrink-0 dark:text-red-500"
+													onClick={() => setDeleteNoteId(note._id)}
+													aria-label={`Delete ${note.title || "New note"}`}
+												>
+													<Trash2 className="size-4" />
+												</button>
+											</TooltipTrigger>
+											<TooltipContent>Delete</TooltipContent>
+										</Tooltip>
+									</div>
+								</div>
+							))}
+						</div>
+					) : (
+						<div className="flex h-full items-center justify-center p-6">
+							<Empty className="w-full gap-3 border-0 p-0">
+								<EmptyHeader className="gap-1">
+									<EmptyMedia variant="icon" className="text-muted-foreground">
+										<Trash2 />
+									</EmptyMedia>
+									<EmptyTitle>No results</EmptyTitle>
+									<EmptyDescription className="text-xs">
+										{hasArchivedNotes
+											? "Try a different search."
+											: "Deleted notes will appear here."}
+									</EmptyDescription>
+								</EmptyHeader>
+							</Empty>
+						</div>
+					)}
+				</div>
+
+				<div className="border-t px-3 py-2">
+					<div className="text-xs text-muted-foreground">
+						Notes older than 30 days will be automatically deleted.
+					</div>
 				</div>
 			</div>
-
-			<div className="flex min-h-0 flex-1 items-center justify-center p-6">
-				<Empty className="w-full gap-3 border-0 p-0">
-					<EmptyHeader className="gap-1">
-						<EmptyMedia variant="icon" className="text-muted-foreground">
-							<Trash2 />
-						</EmptyMedia>
-						<EmptyTitle>No results</EmptyTitle>
-						<EmptyDescription className="text-xs">
-							Deleted notes will appear here.
-						</EmptyDescription>
-					</EmptyHeader>
-				</Empty>
-			</div>
-
-			<div className="border-t px-3 py-2">
-				<div className="text-xs text-muted-foreground">
-					Notes older than 30 days will be automatically deleted.
-				</div>
-			</div>
-		</div>
+			<AlertDialog
+				open={deleteNoteId !== null}
+				onOpenChange={(open) => {
+					if (!open) {
+						setDeleteNoteId(null);
+					}
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+						<AlertDialogDescription>
+							This action cannot be undone. This will permanently delete your
+							account from our servers.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
+							onClick={handleDelete}
+						>
+							Delete
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</>
 	);
 }

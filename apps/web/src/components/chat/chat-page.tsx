@@ -302,11 +302,16 @@ export function ChatPage() {
 								open={modelPopoverOpen}
 								onOpenChange={setModelPopoverOpen}
 							>
-								<DropdownMenuTrigger asChild>
-									<InputGroupButton size="sm" className="rounded-full">
-										{selectedModel.name}
-									</InputGroupButton>
-								</DropdownMenuTrigger>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<DropdownMenuTrigger asChild>
+											<InputGroupButton size="sm" className="rounded-full">
+												{selectedModel.name}
+											</InputGroupButton>
+										</DropdownMenuTrigger>
+									</TooltipTrigger>
+									<TooltipContent>Select model</TooltipContent>
+								</Tooltip>
 								<DropdownMenuContent
 									side="top"
 									align="start"
@@ -334,14 +339,19 @@ export function ChatPage() {
 								</DropdownMenuContent>
 							</DropdownMenu>
 							<DropdownMenu open={sourcesOpen} onOpenChange={setSourcesOpen}>
-								<DropdownMenuTrigger asChild>
-									<InputGroupButton size="sm" className="rounded-full">
-										<Globe />
-										<span className="max-w-[160px] truncate">
-											{scopesLabel}
-										</span>
-									</InputGroupButton>
-								</DropdownMenuTrigger>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<DropdownMenuTrigger asChild>
+											<InputGroupButton size="sm" className="rounded-full">
+												<Globe />
+												<span className="max-w-[160px] truncate">
+													{scopesLabel}
+												</span>
+											</InputGroupButton>
+										</DropdownMenuTrigger>
+									</TooltipTrigger>
+									<TooltipContent>Select search scope</TooltipContent>
+								</Tooltip>
 								<DropdownMenuContent
 									side="top"
 									align="end"

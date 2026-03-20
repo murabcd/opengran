@@ -36,13 +36,29 @@ import {
 	SidebarProvider,
 	SidebarTrigger,
 } from "@workspace/ui/components/sidebar";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
-import { AlertCircle, CalendarClock, LoaderCircle, Plus } from "lucide-react";
+import { useMutation, useQuery } from "convex/react";
+import {
+	AlertCircle,
+	CalendarClock,
+	FileText,
+	LoaderCircle,
+	MoreHorizontal,
+	Plus,
+} from "lucide-react";
 import * as React from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ChatPage } from "@/components/chat/chat-page";
+import { QuickNoteActionsMenu } from "@/components/quick-note/quick-note-actions-menu";
 import { QuickNotePage } from "@/components/quick-note/quick-note-page";
 import { type AuthSession, authClient } from "@/lib/auth-client";
+import { api } from "../../../convex/_generated/api";
+import type { Doc, Id } from "../../../convex/_generated/dataModel";
 
 type AppUser = {
 	name: string;
@@ -178,28 +194,53 @@ function AppShell({
 		return "home";
 	});
 	const [chatSession, setChatSession] = React.useState(0);
-	const [quickNoteSession, setQuickNoteSession] = React.useState(0);
 	const [isDesktopMac, setIsDesktopMac] = React.useState(initialDesktopMac);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
 	const [isSigningOut, startSignOut] = React.useTransition();
+	const [currentQuickNoteId, setCurrentQuickNoteId] =
+		React.useState<Id<"quickNotes"> | null>(() => {
+			if (typeof window === "undefined") {
+				return null;
+			}
+
+			return (
+				(new URL(window.location.href).searchParams.get(
+					"noteId",
+				) as Id<"quickNotes"> | null) ?? null
+			);
+		});
+	const [currentQuickNoteTitle, setCurrentQuickNoteTitle] =
+		React.useState("New note");
+	const creatingQuickNoteRef = React.useRef(false);
 	const user = React.useMemo(() => toAppUser(session), [session]);
+	const createQuickNote = useMutation(api.quickNotes.create);
+	const quickNotes = useQuery(api.quickNotes.list, {});
+	const selectedQuickNote = useQuery(
+		api.quickNotes.get,
+		currentQuickNoteId
+			? {
+					id: currentQuickNoteId,
+				}
+			: "skip",
+	);
 
 	React.useEffect(() => {
 		const syncViewFromLocation = () => {
-			const nextSettingsOpen = window.location.hash === "#settings";
+			const url = new URL(window.location.href);
+			const nextSettingsOpen = url.hash === "#settings";
 			const nextView =
-				window.location.pathname === "/quick-note" ||
-				window.location.hash === "#quick-note"
+				window.location.pathname === "/quick-note" || url.hash === "#quick-note"
 					? "quick-note"
-					: window.location.pathname === "/chat" ||
-							window.location.hash === "#chat"
+					: window.location.pathname === "/chat" || url.hash === "#chat"
 						? "chat"
-						: window.location.pathname === "/shared" ||
-								window.location.hash === "#shared"
+						: window.location.pathname === "/shared" || url.hash === "#shared"
 							? "shared"
 							: "home";
+			const nextQuickNoteId =
+				(url.searchParams.get("noteId") as Id<"quickNotes"> | null) ?? null;
 
 			setCurrentView(nextView);
+			setCurrentQuickNoteId(nextQuickNoteId);
 
 			const nextPath =
 				nextView === "quick-note"
@@ -209,9 +250,14 @@ function AppShell({
 						: nextView === "shared"
 							? "/shared"
 							: "/home";
-			const nextLocation = `${nextPath}${nextSettingsOpen ? "#settings" : ""}`;
+			const nextSearch =
+				nextView === "quick-note" && nextQuickNoteId
+					? `?noteId=${nextQuickNoteId}`
+					: "";
+			const nextLocation = `${nextPath}${nextSearch}${nextSettingsOpen ? "#settings" : ""}`;
 			if (
 				window.location.pathname !== nextPath ||
+				window.location.search !== nextSearch ||
 				window.location.hash !== (nextSettingsOpen ? "#settings" : "")
 			) {
 				window.history.replaceState(null, "", nextLocation);
@@ -229,6 +275,17 @@ function AppShell({
 	}, []);
 
 	React.useEffect(() => {
+		if (selectedQuickNote?.title) {
+			setCurrentQuickNoteTitle(selectedQuickNote.title);
+			return;
+		}
+
+		if (currentView === "quick-note") {
+			setCurrentQuickNoteTitle("New note");
+		}
+	}, [currentView, selectedQuickNote?.title]);
+
+	React.useEffect(() => {
 		void window.openGranDesktop
 			?.getMeta()
 			.then((meta) => {
@@ -243,11 +300,15 @@ function AppShell({
 		(view: "home" | "chat" | "shared" | "quick-note") => {
 			setCurrentView(view);
 			setSettingsOpen(false);
+			const search =
+				view === "quick-note" && currentQuickNoteId
+					? `?noteId=${currentQuickNoteId}`
+					: "";
 			window.history.pushState(
 				null,
 				"",
 				view === "quick-note"
-					? "/quick-note"
+					? `/quick-note${search}`
 					: view === "chat"
 						? "/chat"
 						: view === "shared"
@@ -255,8 +316,41 @@ function AppShell({
 							: "/home",
 			);
 		},
-		[],
+		[currentQuickNoteId],
 	);
+
+	const openQuickNote = React.useCallback((noteId: Id<"quickNotes">) => {
+		setCurrentView("quick-note");
+		setSettingsOpen(false);
+		setCurrentQuickNoteId(noteId);
+		window.history.pushState(null, "", `/quick-note?noteId=${noteId}`);
+	}, []);
+
+	const handleCreateQuickNote = React.useCallback(() => {
+		if (creatingQuickNoteRef.current) {
+			return;
+		}
+
+		creatingQuickNoteRef.current = true;
+
+		void createQuickNote()
+			.then((noteId) => {
+				setCurrentQuickNoteTitle("New note");
+				openQuickNote(noteId);
+			})
+			.catch((error) => {
+				console.error("Failed to create quick note", error);
+			})
+			.finally(() => {
+				creatingQuickNoteRef.current = false;
+			});
+	}, [createQuickNote, openQuickNote]);
+
+	React.useEffect(() => {
+		if (currentView === "quick-note" && !currentQuickNoteId) {
+			handleCreateQuickNote();
+		}
+	}, [currentQuickNoteId, currentView, handleCreateQuickNote]);
 
 	const handleSettingsOpenChange = React.useCallback((open: boolean) => {
 		setSettingsOpen(open);
@@ -280,6 +374,19 @@ function AppShell({
 		});
 	}, []);
 
+	const handleQuickNoteTrashed = React.useCallback(
+		(noteId: Id<"quickNotes">) => {
+			if (noteId !== currentQuickNoteId) {
+				return;
+			}
+
+			setCurrentQuickNoteId(null);
+			setCurrentQuickNoteTitle("New note");
+			handleViewChange("home");
+		},
+		[currentQuickNoteId, handleViewChange],
+	);
+
 	return (
 		<SidebarProvider>
 			<AppSidebar
@@ -291,6 +398,10 @@ function AppShell({
 				onSignOut={handleSignOut}
 				signingOut={isSigningOut}
 				desktopSafeTop={isDesktopMac}
+				currentQuickNoteId={currentQuickNoteId}
+				currentQuickNoteTitle={currentQuickNoteTitle}
+				onQuickNoteSelect={openQuickNote}
+				onQuickNoteTrashed={handleQuickNoteTrashed}
 			/>
 			<SidebarInset>
 				<header
@@ -304,7 +415,19 @@ function AppShell({
 						data-app-region={isDesktopMac ? "no-drag" : undefined}
 						className="flex items-center gap-2"
 					>
-						<SidebarTrigger className="-ml-1" />
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<SidebarTrigger className="-ml-1" />
+							</TooltipTrigger>
+							<TooltipContent align="start">
+								<div className="flex items-center gap-2">
+									<span>Toggle sidebar</span>
+									<kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
+										<span className="text-xs">⌘</span>B
+									</kbd>
+								</div>
+							</TooltipContent>
+						</Tooltip>
 						<Separator
 							orientation="vertical"
 							className="mr-2 data-[orientation=vertical]:h-4"
@@ -327,7 +450,7 @@ function AppShell({
 										{currentView === "home"
 											? "Home"
 											: currentView === "quick-note"
-												? "Quick note"
+												? currentQuickNoteTitle
 												: currentView === "shared"
 													? "Shared with others"
 													: "Chat"}
@@ -341,13 +464,7 @@ function AppShell({
 						className="ml-auto"
 					>
 						{currentView === "home" || currentView === "quick-note" ? (
-							<Button
-								variant="outline"
-								onClick={() => {
-									handleViewChange("quick-note");
-									setQuickNoteSession((current) => current + 1);
-								}}
-							>
+							<Button variant="outline" onClick={handleCreateQuickNote}>
 								<Plus />
 								Quick note
 							</Button>
@@ -387,52 +504,54 @@ function AppShell({
 													</p>
 												</div>
 											</div>
-											<Card className="ml-auto w-full rounded-xl border-border py-0 shadow-none">
-												<CardContent className="p-3">
-													<Empty className="min-h-[176px] rounded-xl border-border">
-														<EmptyHeader>
-															<EmptyMedia variant="icon">
-																<CalendarClock className="size-6" />
-															</EmptyMedia>
-															<EmptyTitle>No upcoming events</EmptyTitle>
-															<EmptyDescription>
-																Check your visible calendars
-															</EmptyDescription>
-														</EmptyHeader>
-														<EmptyContent>
-															<Button variant="outline">
-																Calendar settings
-															</Button>
-														</EmptyContent>
-													</Empty>
-												</CardContent>
-											</Card>
+											<div className="ml-auto flex min-h-[176px] w-full items-center justify-center">
+												<Empty className="min-h-[176px] rounded-xl border border-solid border-border px-4 py-5">
+													<EmptyHeader>
+														<EmptyMedia variant="icon">
+															<CalendarClock className="size-4" />
+														</EmptyMedia>
+														<EmptyTitle>No upcoming events</EmptyTitle>
+														<EmptyDescription>
+															Check your visible calendars
+														</EmptyDescription>
+													</EmptyHeader>
+													<EmptyContent>
+														<Button variant="outline">Calendar settings</Button>
+													</EmptyContent>
+												</Empty>
+											</div>
 										</div>
 									</CardContent>
 								</Card>
 							</section>
 
 							<section className="flex justify-center py-8">
-								<Empty className="max-w-xl">
-									<EmptyHeader>
-										<EmptyTitle className="text-base">
-											Take your first note
-										</EmptyTitle>
-										<EmptyDescription>
-											Your meeting notes will appear here
-										</EmptyDescription>
-									</EmptyHeader>
-									<EmptyContent>
-										<Button
-											onClick={() => {
-												handleViewChange("quick-note");
-												setQuickNoteSession((current) => current + 1);
-											}}
-										>
-											Quick note
-										</Button>
-									</EmptyContent>
-								</Empty>
+								{quickNotes && quickNotes.length > 0 ? (
+									<HomeQuickNotesList
+										notes={quickNotes}
+										activeNoteId={currentQuickNoteId}
+										activeNoteTitle={currentQuickNoteTitle}
+										currentUserName={user.name}
+										onOpenNote={openQuickNote}
+										onQuickNoteTrashed={handleQuickNoteTrashed}
+									/>
+								) : (
+									<Empty className="max-w-xl">
+										<EmptyHeader>
+											<EmptyTitle className="text-base">
+												Take your first note
+											</EmptyTitle>
+											<EmptyDescription>
+												Your meeting notes will appear here
+											</EmptyDescription>
+										</EmptyHeader>
+										<EmptyContent>
+											<Button onClick={handleCreateQuickNote}>
+												Quick note
+											</Button>
+										</EmptyContent>
+									</Empty>
+								)}
 							</section>
 						</div>
 					</div>
@@ -458,12 +577,93 @@ function AppShell({
 						</div>
 					</div>
 				) : currentView === "quick-note" ? (
-					<QuickNotePage key={quickNoteSession} />
+					<QuickNotePage
+						noteId={currentQuickNoteId}
+						onTitleChange={setCurrentQuickNoteTitle}
+					/>
 				) : (
 					<ChatPage key={chatSession} />
 				)}
 			</SidebarInset>
 		</SidebarProvider>
+	);
+}
+
+function HomeQuickNotesList({
+	notes,
+	activeNoteId,
+	activeNoteTitle,
+	currentUserName,
+	onOpenNote,
+	onQuickNoteTrashed,
+}: {
+	notes: Array<Doc<"quickNotes">>;
+	activeNoteId: Id<"quickNotes"> | null;
+	activeNoteTitle: string;
+	currentUserName: string;
+	onOpenNote: (noteId: Id<"quickNotes">) => void;
+	onQuickNoteTrashed: (noteId: Id<"quickNotes">) => void;
+}) {
+	return (
+		<div className="w-full max-w-xl space-y-1">
+			<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
+				Today
+			</div>
+			<div className="space-y-2">
+				{notes.map((note) => {
+					const isActive = note._id === activeNoteId;
+					const title =
+						isActive && activeNoteTitle.trim()
+							? activeNoteTitle
+							: note.title || "New note";
+					const preview =
+						note.searchableText.trim() ||
+						note.authorName?.trim() ||
+						currentUserName;
+
+					return (
+						<div
+							key={note._id}
+							className={cn(
+								"group flex items-center rounded-xl p-1 transition-colors hover:bg-card/50 has-[[data-note-actions]:focus-visible]:bg-transparent has-[[data-note-actions]:hover]:bg-transparent",
+								isActive ? "bg-transparent" : "bg-transparent",
+							)}
+						>
+							<button
+								type="button"
+								onClick={() => onOpenNote(note._id)}
+								className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
+							>
+								<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+									<FileText className="size-4" />
+								</div>
+								<div className="min-w-0 flex-1">
+									<div className="truncate text-sm font-medium">{title}</div>
+									<div className="truncate text-xs text-muted-foreground">
+										{preview}
+									</div>
+								</div>
+							</button>
+							<QuickNoteActionsMenu
+								noteId={note._id}
+								onMoveToTrash={onQuickNoteTrashed}
+								align="end"
+							>
+								<button
+									type="button"
+									data-note-actions
+									className="flex aspect-square size-5 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground opacity-0 outline-hidden transition-[color,opacity] group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+									aria-label={`Open actions for ${title}`}
+									onClick={(event) => event.stopPropagation()}
+								>
+									<MoreHorizontal className="size-4" />
+								</button>
+							</QuickNoteActionsMenu>
+						</div>
+					);
+				})}
+			</div>
+		</div>
 	);
 }
 

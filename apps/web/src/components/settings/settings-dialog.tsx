@@ -19,6 +19,13 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@workspace/ui/components/dialog";
+import {
+	Field,
+	FieldDescription,
+	FieldGroup,
+	FieldLabel,
+	FieldTitle,
+} from "@workspace/ui/components/field";
 import { Input } from "@workspace/ui/components/input";
 import {
 	Sidebar,
@@ -147,12 +154,12 @@ function ManageAccountForm({
 	const initials = getInitials(name, user.email);
 
 	return (
-		<div className="flex h-full flex-col">
-			<div className="grid flex-grow gap-6 py-4">
-				<div className="grid gap-2">
-					<div className="text-sm font-medium">Avatar</div>
+		<div className="py-4">
+			<FieldGroup className="gap-6">
+				<Field>
+					<FieldTitle>Avatar</FieldTitle>
 					<div className="flex items-center gap-4">
-						<Avatar className="h-20 w-20 border">
+						<Avatar className="size-20 rounded-lg">
 							{avatarPreview ? (
 								<AvatarImage
 									src={avatarPreview}
@@ -160,7 +167,7 @@ function ManageAccountForm({
 									className="object-cover"
 								/>
 							) : null}
-							<AvatarFallback className="bg-muted/40">
+							<AvatarFallback className="rounded-lg bg-muted/40">
 								{avatarPreview ? initials : <ImageUp className="size-8" />}
 							</AvatarFallback>
 						</Avatar>
@@ -189,26 +196,27 @@ function ManageAccountForm({
 									setAvatarPreview(objectUrl);
 								}}
 							/>
-							<p className="text-xs text-muted-foreground">
+							<FieldDescription>
 								Recommend size 1:1, up to 5MB.
-							</p>
+							</FieldDescription>
 						</div>
 					</div>
-				</div>
-				<div className="grid gap-2">
-					<div className="text-sm font-medium">Full name</div>
+				</Field>
+				<Field>
+					<FieldLabel htmlFor="settings-name">Full name</FieldLabel>
 					<Input
+						id="settings-name"
 						value={name}
 						onChange={(event) => setName(event.target.value)}
 						placeholder="Enter your name"
 					/>
-				</div>
-				<div className="grid gap-2">
-					<div className="text-sm font-medium">Email</div>
-					<Input value={user.email} disabled />
-				</div>
-			</div>
-			<div className="flex justify-end gap-2 py-4">
+				</Field>
+				<Field>
+					<FieldLabel htmlFor="settings-email">Email</FieldLabel>
+					<Input id="settings-email" value={user.email} disabled />
+				</Field>
+			</FieldGroup>
+			<div className="flex justify-end gap-2 pt-6">
 				<Button variant="ghost" onClick={onCancel}>
 					Cancel
 				</Button>
