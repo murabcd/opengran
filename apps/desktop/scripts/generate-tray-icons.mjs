@@ -7,6 +7,7 @@ import { app, BrowserWindow } from "electron";
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const assetsDir = resolve(packageRoot, "src/assets");
 const sourceIconPath = resolve(assetsDir, "OpenGranTemplate.svg");
+const dockSourceIconPath = resolve(assetsDir, "OpenGranDock.svg");
 
 const buildMarkup = (svgMarkup, _canvasSize, iconSize) => `<!doctype html>
 <html>
@@ -82,6 +83,7 @@ app.whenReady().then(async () => {
 	try {
 		await mkdir(assetsDir, { recursive: true });
 		const svgMarkup = await readFile(sourceIconPath, "utf8");
+		const dockSvgMarkup = await readFile(dockSourceIconPath, "utf8");
 
 		await renderIcon({
 			svgMarkup,
@@ -94,6 +96,12 @@ app.whenReady().then(async () => {
 			canvasSize: 32,
 			iconSize: 16,
 			outputPath: resolve(assetsDir, "OpenGranTemplate@2x.png"),
+		});
+		await renderIcon({
+			svgMarkup: dockSvgMarkup,
+			canvasSize: 256,
+			iconSize: 192,
+			outputPath: resolve(assetsDir, "OpenGranDock.png"),
 		});
 		app.exit(0);
 	} catch (error) {

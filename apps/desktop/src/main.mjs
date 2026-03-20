@@ -15,9 +15,16 @@ import { startLocalServer } from "./local-server.mjs";
 
 loadRootEnv();
 
+app.setName("OpenGran");
+
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
 const trayIconPath = join(runtimeDir, "assets", "OpenGranTemplate.png");
+const dockIconPath = join(runtimeDir, "assets", "OpenGranDock.png");
 const traySettingsPath = join(app.getPath("userData"), "tray-settings.json");
+const minimumWindowSize = {
+	width: 390,
+	height: 640,
+};
 const defaultTraySettings = {
 	keepOpenInMenuBar: true,
 };
@@ -122,8 +129,8 @@ const createMainWindow = async (targetUrl) => {
 	mainWindow = new BrowserWindow({
 		width: 1440,
 		height: 960,
-		minWidth: 1100,
-		minHeight: 720,
+		minWidth: minimumWindowSize.width,
+		minHeight: minimumWindowSize.height,
 		title: "OpenGran",
 		backgroundColor: "#f7f7f5",
 		autoHideMenuBar: true,
@@ -291,6 +298,10 @@ const createTray = () => {
 };
 
 app.whenReady().then(async () => {
+	if (process.platform === "darwin") {
+		app.dock?.setIcon(dockIconPath);
+	}
+
 	await loadTraySettings();
 	await createMainWindow();
 	createTray();
