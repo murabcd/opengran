@@ -89,10 +89,25 @@ type GroupedQuickNotes = {
 	older: Array<Doc<"quickNotes">>;
 };
 
+const currentMonthFormatter = new Intl.DateTimeFormat(undefined, {
+	month: "long",
+});
+
+const currentWeekdayFormatter = new Intl.DateTimeFormat(undefined, {
+	weekday: "short",
+});
+
 const isSameCalendarDay = (left: Date, right: Date) =>
 	left.getFullYear() === right.getFullYear() &&
 	left.getMonth() === right.getMonth() &&
 	left.getDate() === right.getDate();
+
+const getDelayUntilNextMidnight = (now: Date) => {
+	const nextMidnight = new Date(now);
+	nextMidnight.setHours(24, 0, 0, 0);
+
+	return nextMidnight.getTime() - now.getTime();
+};
 
 const groupQuickNotesByDate = (
 	notes: Array<Doc<"quickNotes">>,
@@ -131,6 +146,33 @@ const groupQuickNotesByDate = (
 			older: [],
 		},
 	);
+};
+
+const useCurrentDate = () => {
+	const [currentDate, setCurrentDate] = React.useState(() => new Date());
+
+	React.useEffect(() => {
+		let timeoutId: number | undefined;
+
+		const scheduleNextUpdate = () => {
+			const now = new Date();
+			setCurrentDate(now);
+			timeoutId = window.setTimeout(
+				scheduleNextUpdate,
+				getDelayUntilNextMidnight(now),
+			);
+		};
+
+		scheduleNextUpdate();
+
+		return () => {
+			if (timeoutId !== undefined) {
+				window.clearTimeout(timeoutId);
+			}
+		};
+	}, []);
+
+	return currentDate;
 };
 
 export function App() {
@@ -299,6 +341,10 @@ function AppShell({
 		React.useState<QuickNoteEditorActions | null>(null);
 	const creatingQuickNoteRef = React.useRef(false);
 	const user = React.useMemo(() => toAppUser(session), [session]);
+	const currentDate = useCurrentDate();
+	const currentDayOfMonth = currentDate.getDate();
+	const currentMonthLabel = currentMonthFormatter.format(currentDate);
+	const currentWeekdayLabel = currentWeekdayFormatter.format(currentDate);
 	const createQuickNote = useMutation(api.quickNotes.create);
 	const quickNotes = useQuery(api.quickNotes.list, {});
 	const selectedQuickNote = useQuery(
@@ -651,19 +697,17 @@ function AppShell({
 								<Card className="min-h-[176px] rounded-xl border-border py-0 shadow-sm">
 									<CardContent className="p-5">
 										<div className="flex flex-col gap-6 md:flex-row md:items-start">
-											<div className="flex shrink-0 items-start gap-3 pt-1">
-												<div className="text-5xl leading-none tracking-tight">
-													20
+											<div className="grid shrink-0 grid-cols-[auto_auto] items-start gap-x-3 gap-y-1 pt-1">
+												<div className="row-span-2 text-5xl leading-none tracking-tight tabular-nums">
+													{currentDayOfMonth}
 												</div>
-												<div className="pt-1 leading-none">
-													<div className="flex items-center gap-2 text-base">
-														<span>March</span>
-														<span className="size-2 rounded-full bg-primary" />
-													</div>
-													<p className="mt-1 text-base text-muted-foreground">
-														Fri
-													</p>
+												<div className="flex items-center gap-2 pt-1 text-base leading-none">
+													<span>{currentMonthLabel}</span>
+													<span className="h-1.5 w-1.5 rounded-full bg-green-500" />
 												</div>
+												<p className="text-base leading-none text-muted-foreground">
+													{currentWeekdayLabel}
+												</p>
 											</div>
 											<div className="ml-auto flex min-h-[176px] w-full items-center justify-center">
 												<Empty className="min-h-[176px] rounded-xl border border-solid border-border px-4 py-5">
