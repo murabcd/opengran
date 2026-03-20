@@ -150,6 +150,13 @@ const SIDEBAR_NOTE_SKELETON_IDS = [
 	"sidebar-note-skeleton-4",
 ] as const;
 
+const TRASH_NOTE_SKELETON_IDS = [
+	"trash-note-skeleton-1",
+	"trash-note-skeleton-2",
+	"trash-note-skeleton-3",
+	"trash-note-skeleton-4",
+] as const;
+
 export function AppSidebar({
 	currentView,
 	user,
@@ -794,7 +801,9 @@ function TrashPopoverContent() {
 				</div>
 
 				<div className="min-h-0 flex-1 overflow-y-auto p-2 pt-1">
-					{hasArchivedNotes && filteredNotes.length > 0 ? (
+					{archivedNotes === undefined ? (
+						<TrashPopoverSkeleton />
+					) : hasArchivedNotes && filteredNotes.length > 0 ? (
 						<div className="space-y-1">
 							{filteredNotes.map((note) => (
 								<div
@@ -895,5 +904,29 @@ function TrashPopoverContent() {
 				</AlertDialogContent>
 			</AlertDialog>
 		</>
+	);
+}
+
+function TrashPopoverSkeleton() {
+	return (
+		<div className="space-y-1">
+			{TRASH_NOTE_SKELETON_IDS.map((id) => (
+				<div
+					key={id}
+					className="grid h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md px-1.5"
+				>
+					<div className="flex min-w-0 items-center gap-1.5">
+						<div className="flex size-6 shrink-0 items-center justify-center">
+							<Skeleton className="size-4 rounded-sm" />
+						</div>
+						<Skeleton className="h-4 w-32 max-w-full" />
+					</div>
+					<div className="flex shrink-0 items-center gap-1">
+						<Skeleton className="size-5 rounded-md" />
+						<Skeleton className="size-5 rounded-md" />
+					</div>
+				</div>
+			))}
+		</div>
 	);
 }
