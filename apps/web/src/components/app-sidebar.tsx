@@ -79,6 +79,7 @@ import {
 	UsersRound,
 } from "lucide-react";
 import * as React from "react";
+import { toast } from "sonner";
 import { QuickNoteActionsMenu } from "@/components/quick-note/quick-note-actions-menu";
 import { SearchCommand } from "@/components/search/search-command";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
@@ -705,9 +706,14 @@ function TrashPopoverContent() {
 
 	const handleRestore = React.useCallback(
 		(noteId: Id<"quickNotes">) => {
-			void restore({ id: noteId }).catch((error) => {
-				console.error("Failed to restore quick note", error);
-			});
+			void restore({ id: noteId })
+				.then(() => {
+					toast.success("Note restored");
+				})
+				.catch((error) => {
+					console.error("Failed to restore quick note", error);
+					toast.error("Failed to restore note");
+				});
 		},
 		[restore],
 	);
@@ -720,9 +726,11 @@ function TrashPopoverContent() {
 		void remove({ id: deleteNoteId })
 			.then(() => {
 				setDeleteNoteId(null);
+				toast.success("Note deleted permanently");
 			})
 			.catch((error) => {
 				console.error("Failed to delete quick note", error);
+				toast.error("Failed to delete note");
 			});
 	}, [deleteNoteId, remove]);
 

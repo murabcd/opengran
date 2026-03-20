@@ -15,6 +15,7 @@ import {
 	CardTitle,
 } from "@workspace/ui/components/card";
 import { Checkbox } from "@workspace/ui/components/checkbox";
+import { DropdownMenuItem } from "@workspace/ui/components/dropdown-menu";
 import {
 	Empty,
 	EmptyContent,
@@ -46,17 +47,24 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
 	AlertCircle,
+	ArrowDown,
 	CalendarClock,
+	Copy,
 	FileText,
 	LoaderCircle,
 	MoreHorizontal,
 	Plus,
+	Redo2,
+	Undo2,
 } from "lucide-react";
 import * as React from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ChatPage } from "@/components/chat/chat-page";
 import { QuickNoteActionsMenu } from "@/components/quick-note/quick-note-actions-menu";
-import { QuickNotePage } from "@/components/quick-note/quick-note-page";
+import {
+	type QuickNoteEditorActions,
+	QuickNotePage,
+} from "@/components/quick-note/quick-note-page";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
@@ -287,6 +295,8 @@ function AppShell({
 		});
 	const [currentQuickNoteTitle, setCurrentQuickNoteTitle] =
 		React.useState("New note");
+	const [currentQuickNoteEditorActions, setCurrentQuickNoteEditorActions] =
+		React.useState<QuickNoteEditorActions | null>(null);
 	const creatingQuickNoteRef = React.useRef(false);
 	const user = React.useMemo(() => toAppUser(session), [session]);
 	const createQuickNote = useMutation(api.quickNotes.create);
@@ -317,6 +327,7 @@ function AppShell({
 
 			setCurrentView(nextView);
 			setCurrentQuickNoteId(nextQuickNoteId);
+			setCurrentQuickNoteEditorActions(null);
 
 			const nextPath =
 				nextView === "quick-note"
@@ -376,6 +387,7 @@ function AppShell({
 		(view: "home" | "chat" | "shared" | "quick-note") => {
 			setCurrentView(view);
 			setSettingsOpen(false);
+			setCurrentQuickNoteEditorActions(null);
 			const search =
 				view === "quick-note" && currentQuickNoteId
 					? `?noteId=${currentQuickNoteId}`
@@ -399,6 +411,7 @@ function AppShell({
 		setCurrentView("quick-note");
 		setSettingsOpen(false);
 		setCurrentQuickNoteId(noteId);
+		setCurrentQuickNoteEditorActions(null);
 		window.history.pushState(null, "", `/quick-note?noteId=${noteId}`);
 	}, []);
 
@@ -458,6 +471,7 @@ function AppShell({
 
 			setCurrentQuickNoteId(null);
 			setCurrentQuickNoteTitle("New note");
+			setCurrentQuickNoteEditorActions(null);
 			handleViewChange("home");
 		},
 		[currentQuickNoteId, handleViewChange],
@@ -540,11 +554,81 @@ function AppShell({
 						data-app-region={isDesktopMac ? "no-drag" : undefined}
 						className="ml-auto"
 					>
-						{currentView === "home" || currentView === "quick-note" ? (
+						{currentView === "home" ? (
 							<Button variant="outline" onClick={handleCreateQuickNote}>
 								<Plus />
 								Quick note
 							</Button>
+						) : currentView === "quick-note" && currentQuickNoteId ? (
+							<QuickNoteActionsMenu
+								noteId={currentQuickNoteId}
+								onMoveToTrash={handleQuickNoteTrashed}
+								align="end"
+								itemsBeforeDefaults={
+									currentQuickNoteEditorActions ? (
+										<DropdownMenuItem
+											className="cursor-pointer"
+											disabled={!currentQuickNoteEditorActions.canCopyText}
+											onSelect={(event) => {
+												event.preventDefault();
+												currentQuickNoteEditorActions.copyText();
+											}}
+										>
+											<Copy />
+											Copy text
+										</DropdownMenuItem>
+									) : null
+								}
+								itemsAfterDefaults={
+									currentQuickNoteEditorActions ? (
+										<>
+											<DropdownMenuItem
+												className="cursor-pointer"
+												disabled={!currentQuickNoteEditorActions.canUndo}
+												onSelect={(event) => {
+													event.preventDefault();
+													currentQuickNoteEditorActions.undo();
+												}}
+											>
+												<Undo2 />
+												Undo
+											</DropdownMenuItem>
+											<DropdownMenuItem
+												className="cursor-pointer"
+												disabled={!currentQuickNoteEditorActions.canRedo}
+												onSelect={(event) => {
+													event.preventDefault();
+													currentQuickNoteEditorActions.redo();
+												}}
+											>
+												<Redo2 />
+												Redo
+											</DropdownMenuItem>
+											<DropdownMenuItem
+												className="cursor-pointer"
+												disabled={!currentQuickNoteEditorActions.canCopyText}
+												onSelect={(event) => {
+													event.preventDefault();
+													currentQuickNoteEditorActions.exportNote();
+												}}
+											>
+												<ArrowDown />
+												Export
+											</DropdownMenuItem>
+										</>
+									) : null
+								}
+							>
+								<Button
+									type="button"
+									variant="ghost"
+									size="icon"
+									className="text-muted-foreground hover:text-foreground"
+									aria-label={`Open actions for ${currentQuickNoteTitle || "note"}`}
+								>
+									<MoreHorizontal className="size-4" />
+								</Button>
+							</QuickNoteActionsMenu>
 						) : currentView === "chat" ? (
 							<Button
 								variant="outline"
@@ -659,6 +743,7 @@ function AppShell({
 					<QuickNotePage
 						noteId={currentQuickNoteId}
 						onTitleChange={setCurrentQuickNoteTitle}
+						onEditorActionsChange={setCurrentQuickNoteEditorActions}
 					/>
 				) : (
 					<ChatPage key={chatSession} />

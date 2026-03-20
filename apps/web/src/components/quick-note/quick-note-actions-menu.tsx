@@ -12,11 +12,13 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import { useMutation } from "convex/react";
-import { Copy, Trash2 } from "lucide-react";
+import { Link2, Trash2 } from "lucide-react";
 import * as React from "react";
+import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
@@ -26,12 +28,16 @@ export function QuickNoteActionsMenu({
 	children,
 	align = "start",
 	side = "bottom",
+	itemsBeforeDefaults,
+	itemsAfterDefaults,
 }: {
 	noteId: Id<"quickNotes">;
 	onMoveToTrash?: (noteId: Id<"quickNotes">) => void;
 	children: React.ReactNode;
 	align?: "start" | "center" | "end";
 	side?: "top" | "right" | "bottom" | "left";
+	itemsBeforeDefaults?: React.ReactNode;
+	itemsAfterDefaults?: React.ReactNode;
 }) {
 	const [confirmOpen, setConfirmOpen] = React.useState(false);
 	const [isMovingToTrash, setIsMovingToTrash] = React.useState(false);
@@ -73,9 +79,11 @@ export function QuickNoteActionsMenu({
 			.then(() => {
 				onMoveToTrash?.(noteId);
 				setConfirmOpen(false);
+				toast.success("Note moved to trash");
 			})
 			.catch((error) => {
 				console.error("Failed to move quick note to trash", error);
+				toast.error("Failed to move note to trash");
 			})
 			.finally(() => {
 				setIsMovingToTrash(false);
@@ -87,18 +95,42 @@ export function QuickNoteActionsMenu({
 			<DropdownMenu>
 				<DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
 				<DropdownMenuContent align={align} side={side}>
+					{itemsBeforeDefaults}
 					<DropdownMenuItem
 						className="cursor-pointer"
 						onClick={() => {
 							const url = new URL(window.location.href);
 							url.pathname = "/quick-note";
 							url.searchParams.set("noteId", noteId);
-							void navigator.clipboard.writeText(url.toString());
+							if (window.openGranDesktop) {
+								void window.openGranDesktop
+									.writeClipboardText(url.toString())
+									.then(() => {
+										toast.success("Link copied");
+									})
+									.catch((error) => {
+										console.error("Failed to copy note link", error);
+										toast.error("Failed to copy link");
+									});
+								return;
+							}
+
+							void navigator.clipboard
+								.writeText(url.toString())
+								.then(() => {
+									toast.success("Link copied");
+								})
+								.catch((error) => {
+									console.error("Failed to copy note link", error);
+									toast.error("Failed to copy link");
+								});
 						}}
 					>
-						<Copy />
+						<Link2 />
 						Copy link
 					</DropdownMenuItem>
+					{itemsAfterDefaults}
+					<DropdownMenuSeparator />
 					<DropdownMenuItem
 						variant="destructive"
 						className="cursor-pointer"

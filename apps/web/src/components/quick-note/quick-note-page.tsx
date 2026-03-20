@@ -23,6 +23,7 @@ import {
 	Sparkles,
 } from "lucide-react";
 import * as React from "react";
+import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
@@ -33,12 +34,103 @@ const EMPTY_DOCUMENT: JSONContent = {
 
 const EMPTY_DOCUMENT_STRING = JSON.stringify(EMPTY_DOCUMENT);
 
+const getPlainTextContent = ({
+	editor,
+	title,
+	searchableText,
+}: {
+	editor: NonNullable<ReturnType<typeof useEditor>>;
+	title: string;
+	searchableText: string;
+}) => {
+	const editorText = editor.getText({ blockSeparator: "\n\n" }).trim();
+	return [title.trim(), editorText || searchableText.trim()]
+		.filter(Boolean)
+		.join("\n\n");
+};
+
+const getExportFileName = (title: string) =>
+	`${
+		title
+			.trim()
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "") || "note"
+	}.txt`;
+
+const writeTextToClipboard = async (value: string) => {
+	if (window.openGranDesktop) {
+		await window.openGranDesktop.writeClipboardText(value);
+		return;
+	}
+
+	if (navigator.clipboard?.writeText) {
+		await navigator.clipboard.writeText(value);
+		return;
+	}
+
+	const textarea = document.createElement("textarea");
+	textarea.value = value;
+	textarea.setAttribute("readonly", "");
+	textarea.style.position = "fixed";
+	textarea.style.opacity = "0";
+	document.body.appendChild(textarea);
+	textarea.select();
+	document.execCommand("copy");
+	document.body.removeChild(textarea);
+};
+
+const exportTextFile = async ({
+	fileName,
+	content,
+}: {
+	fileName: string;
+	content: string;
+}) => {
+	if (window.openGranDesktop) {
+		return await window.openGranDesktop.saveTextFile(fileName, content);
+	}
+
+	const blob = new Blob([content], {
+		type: "text/plain;charset=utf-8",
+	});
+	const downloadUrl = URL.createObjectURL(blob);
+	const anchor = document.createElement("a");
+	anchor.href = downloadUrl;
+	anchor.download = fileName;
+	anchor.click();
+	URL.revokeObjectURL(downloadUrl);
+
+	return {
+		ok: true,
+		canceled: false,
+		filePath: fileName,
+	};
+};
+
+const showActionError = (message: string, error: unknown) => {
+	console.error(message, error);
+	toast.error(message);
+};
+
+export type QuickNoteEditorActions = {
+	canCopyText: boolean;
+	canUndo: boolean;
+	canRedo: boolean;
+	copyText: () => Promise<void>;
+	undo: () => void;
+	redo: () => void;
+	exportNote: () => Promise<void>;
+};
+
 export function QuickNotePage({
 	noteId,
 	onTitleChange,
+	onEditorActionsChange,
 }: {
 	noteId: Id<"quickNotes"> | null;
 	onTitleChange?: (title: string) => void;
+	onEditorActionsChange?: (actions: QuickNoteEditorActions | null) => void;
 }) {
 	const [message, setMessage] = React.useState("");
 	const [title, setTitle] = React.useState("");
@@ -214,6 +306,88 @@ export function QuickNotePage({
 	React.useEffect(() => {
 		onTitleChange?.(title || "New note");
 	}, [onTitleChange, title]);
+
+	React.useEffect(() => {
+		if (!noteId || !editor) {
+			onEditorActionsChange?.(null);
+			return;
+		}
+
+		const publishEditorActions = () => {
+			const serializedText = getPlainTextContent({
+				editor,
+				title,
+				searchableText,
+			});
+			const hasText = Boolean(serializedText);
+
+			onEditorActionsChange?.({
+				canCopyText: hasText,
+				canUndo: editor.can().undo(),
+				canRedo: editor.can().redo(),
+				copyText: async () => {
+					if (!hasText) {
+						toast("Nothing to copy yet");
+						return;
+					}
+
+					try {
+						await writeTextToClipboard(serializedText);
+						toast.success("Text copied");
+					} catch (error) {
+						showActionError("Failed to copy text", error);
+					}
+				},
+				undo: () => {
+					if (!editor.can().undo()) {
+						toast("Nothing to undo");
+						return;
+					}
+
+					editor.chain().focus().undo().run();
+					toast.success("Undid last change");
+				},
+				redo: () => {
+					if (!editor.can().redo()) {
+						toast("Nothing to redo");
+						return;
+					}
+
+					editor.chain().focus().redo().run();
+					toast.success("Redid last change");
+				},
+				exportNote: async () => {
+					if (!hasText) {
+						toast("Nothing to export yet");
+						return;
+					}
+
+					try {
+						const result = await exportTextFile({
+							fileName: getExportFileName(title),
+							content: serializedText,
+						});
+
+						if (result.canceled) {
+							toast("Export canceled");
+							return;
+						}
+
+						toast.success("Note exported");
+					} catch (error) {
+						showActionError("Failed to export note", error);
+					}
+				},
+			});
+		};
+
+		publishEditorActions();
+		editor.on("transaction", publishEditorActions);
+
+		return () => {
+			editor.off("transaction", publishEditorActions);
+		};
+	}, [editor, noteId, onEditorActionsChange, searchableText, title]);
 
 	const resetTextareaHeight = React.useCallback(() => {
 		if (!textareaRef.current) {

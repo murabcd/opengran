@@ -12,6 +12,17 @@ declare global {
 			openExternalUrl: (url: string) => Promise<{
 				ok: boolean;
 			}>;
+			writeClipboardText: (value: string) => Promise<{
+				ok: boolean;
+			}>;
+			saveTextFile: (
+				defaultFileName: string,
+				content: string,
+			) => Promise<{
+				ok: boolean;
+				canceled: boolean;
+				filePath?: string;
+			}>;
 		};
 	}
 }

@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import "./index.css";
+import { Toaster } from "@workspace/ui/components/sonner";
 import { ThemeProvider } from "@workspace/ui/components/theme-provider";
 import App from "./App.tsx";
 import { authClient } from "./lib/auth-client";
@@ -19,6 +20,7 @@ createRoot(rootElement).render(
 		<ConvexBetterAuthProvider client={convex} authClient={authClient}>
 			<ThemeProvider>
 				<App />
+				<Toaster />
 			</ThemeProvider>
 		</ConvexBetterAuthProvider>
 	</StrictMode>,

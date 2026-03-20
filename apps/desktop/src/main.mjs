@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
 	app,
 	BrowserWindow,
+	clipboard,
 	dialog,
 	ipcMain,
 	Menu,
@@ -273,6 +274,45 @@ ipcMain.handle("app:get-auth-callback-url", async () => {
 		url: await getDesktopAuthCallbackUrl(),
 	};
 });
+
+ipcMain.handle("app:write-clipboard-text", async (_event, value) => {
+	if (typeof value !== "string") {
+		throw new Error("Clipboard value must be a string.");
+	}
+
+	clipboard.writeText(value);
+	return { ok: true };
+});
+
+ipcMain.handle(
+	"app:save-text-file",
+	async (_event, defaultFileName, content) => {
+		if (typeof defaultFileName !== "string" || !defaultFileName.trim()) {
+			throw new Error("Default file name must be a non-empty string.");
+		}
+
+		if (typeof content !== "string") {
+			throw new Error("File content must be a string.");
+		}
+
+		const result = await dialog.showSaveDialog(mainWindow ?? undefined, {
+			defaultPath: defaultFileName,
+			filters: [{ name: "Text", extensions: ["txt"] }],
+		});
+
+		if (result.canceled || !result.filePath) {
+			return { ok: true, canceled: true };
+		}
+
+		await writeFile(result.filePath, content, "utf8");
+
+		return {
+			ok: true,
+			canceled: false,
+			filePath: result.filePath,
+		};
+	},
+);
 
 const quitCompletely = () => {
 	isQuitting = true;
