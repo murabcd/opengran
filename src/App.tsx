@@ -122,7 +122,14 @@ export function App() {
 						<Breadcrumb>
 							<BreadcrumbList>
 								<BreadcrumbItem className="hidden md:block">
-									<BreadcrumbLink href="#">OpenMeet</BreadcrumbLink>
+									<BreadcrumbLink asChild>
+										<button
+											type="button"
+											onClick={() => handleViewChange("home")}
+										>
+											OpenMeet
+										</button>
+									</BreadcrumbLink>
 								</BreadcrumbItem>
 								<BreadcrumbSeparator className="hidden md:block" />
 								<BreadcrumbItem>
