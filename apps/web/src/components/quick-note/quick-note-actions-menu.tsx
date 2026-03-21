@@ -52,6 +52,7 @@ export function QuickNoteActionsMenu({
 	const [isMovingToTrash, setIsMovingToTrash] = React.useState(false);
 	const [isUpdatingShare, setIsUpdatingShare] = React.useState(false);
 	const note = useQuery(api.quickNotes.get, { id: noteId });
+	const ensureShareId = useMutation(api.quickNotes.ensureShareId);
 	const moveToTrash = useMutation(
 		api.quickNotes.moveToTrash,
 	).withOptimisticUpdate((localStore, args) => {
@@ -89,19 +90,17 @@ export function QuickNoteActionsMenu({
 	});
 	const updateVisibility = useMutation(api.quickNotes.updateVisibility);
 
-	const handleCopyInternalLink = React.useCallback(async () => {
+	const handleCopyLink = React.useCallback(async () => {
 		try {
-			const url = new URL(window.location.href);
-			url.pathname = "/quick-note";
-			url.searchParams.set("noteId", noteId);
-			url.hash = "";
-			await writeTextToClipboard(url.toString());
-			toast.success("Internal link copied");
+			const result = await ensureShareId({ id: noteId });
+			const shareUrl = await buildQuickNoteShareUrl(result.shareId);
+			await writeTextToClipboard(shareUrl);
+			toast.success("Link copied");
 		} catch (error) {
 			console.error("Failed to copy note link", error);
 			toast.error("Failed to copy link");
 		}
-	}, [noteId]);
+	}, [ensureShareId, noteId]);
 
 	const handleSetVisibility = React.useCallback(
 		async (visibility: QuickNoteVisibility) => {
@@ -225,11 +224,11 @@ export function QuickNoteActionsMenu({
 						className="cursor-pointer"
 						onSelect={(event) => {
 							event.preventDefault();
-							void handleCopyInternalLink();
+							void handleCopyLink();
 						}}
 					>
 						<Link2 />
-						Copy internal link
+						Copy link
 					</DropdownMenuItem>
 					{itemsAfterDefaults}
 					<DropdownMenuSeparator />

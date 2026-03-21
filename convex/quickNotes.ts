@@ -331,6 +331,36 @@ export const updateVisibility = mutation({
 	},
 });
 
+export const ensureShareId = mutation({
+	args: {
+		id: v.id("quickNotes"),
+	},
+	returns: v.object({
+		shareId: v.string(),
+	}),
+	handler: async (ctx, args) => {
+		const note = await requireOwnedNote(ctx, args.id);
+
+		if (note.isArchived) {
+			throw new ConvexError({
+				code: "NOTE_NOT_FOUND",
+				message: "Quick note not found.",
+			});
+		}
+
+		const shareId = note.shareId ?? createShareId();
+
+		if (!note.shareId) {
+			await ctx.db.patch(args.id, {
+				shareId,
+				updatedAt: Date.now(),
+			});
+		}
+
+		return { shareId };
+	},
+});
+
 export const moveToTrash = mutation({
 	args: {
 		id: v.id("quickNotes"),
