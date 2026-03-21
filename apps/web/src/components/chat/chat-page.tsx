@@ -709,6 +709,9 @@ export function ChatPage({
 												</div>
 												<div className="space-y-2">
 													{section.chats.map((chat) => {
+														const preview =
+															chat.authorName?.trim() || "Unknown user";
+
 														return (
 															<div
 																key={chat._id}
@@ -732,7 +735,7 @@ export function ChatPage({
 																			{chat.title || "New chat"}
 																		</div>
 																		<div className="truncate text-xs text-muted-foreground">
-																			{chat.preview || "No messages yet"}
+																			{preview}
 																		</div>
 																	</div>
 																</button>

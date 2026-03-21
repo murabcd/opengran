@@ -34,6 +34,7 @@ export default defineSchema({
 		.index("by_shareId", ["shareId"]),
 	chats: defineTable({
 		ownerTokenIdentifier: v.string(),
+		authorName: v.optional(v.string()),
 		chatKey: v.string(),
 		title: v.string(),
 		preview: v.string(),

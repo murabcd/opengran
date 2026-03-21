@@ -14,6 +14,7 @@ const chatFields = {
 	_id: v.id("chats"),
 	_creationTime: v.number(),
 	ownerTokenIdentifier: v.string(),
+	authorName: v.optional(v.string()),
 	chatKey: v.string(),
 	title: v.string(),
 	preview: v.string(),
@@ -75,6 +76,9 @@ const requireTokenIdentifier = async (ctx: QueryCtx | MutationCtx) => {
 
 	return identity.tokenIdentifier;
 };
+
+const getAuthorName = (identity: Awaited<ReturnType<typeof requireIdentity>>) =>
+	identity.name?.trim() || identity.email?.trim() || "Unknown user";
 
 const clampWhitespace = (value: string) => value.replace(/\s+/g, " ").trim();
 
@@ -255,7 +259,9 @@ export const saveMessage = mutation({
 		message: chatMessageValidator,
 	}),
 	handler: async (ctx, args) => {
-		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		const identity = await requireIdentity(ctx);
+		const ownerTokenIdentifier = identity.tokenIdentifier;
+		const authorName = getAuthorName(identity);
 		const now = Date.now();
 		const normalizedTitle = normalizeChatTitle(args.title);
 		const normalizedPreview = normalizeChatPreview(
@@ -272,6 +278,7 @@ export const saveMessage = mutation({
 			existingChat?._id ??
 			(await ctx.db.insert("chats", {
 				ownerTokenIdentifier,
+				authorName,
 				chatKey: args.chatKey,
 				title: normalizedTitle,
 				preview: normalizedPreview,
@@ -289,6 +296,7 @@ export const saveMessage = mutation({
 				: existingChat.title;
 
 			await ctx.db.patch(existingChat._id, {
+				authorName: existingChat.authorName ?? authorName,
 				title: nextTitle,
 				preview: normalizedPreview,
 				model: args.model ?? existingChat.model,

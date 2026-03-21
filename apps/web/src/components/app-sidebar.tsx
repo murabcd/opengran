@@ -805,7 +805,7 @@ function TrashPopoverContent() {
 		}
 
 		return archivedChats.filter((chat) =>
-			[chat.title, chat.preview, chat.model ?? ""]
+			[chat.title, chat.preview, chat.authorName ?? "", chat.model ?? ""]
 				.join(" ")
 				.toLowerCase()
 				.includes(query),
