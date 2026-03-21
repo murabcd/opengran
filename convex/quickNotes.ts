@@ -1,7 +1,8 @@
 import { ConvexError, v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 
 const noteVisibilityValidator = v.union(
 	v.literal("private"),
@@ -37,6 +38,13 @@ const quickNoteChatContextValidator = v.object({
 	title: v.string(),
 	searchableText: v.string(),
 });
+
+const removeAllQuickNotesResultValidator = v.object({
+	deletedCount: v.number(),
+	hasMore: v.boolean(),
+});
+
+const REMOVE_ALL_QUICK_NOTES_BATCH_SIZE = 100;
 
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
@@ -90,6 +98,25 @@ const requireOwnedNote = async (
 };
 
 const createShareId = () => crypto.randomUUID().replaceAll("-", "");
+
+const deleteQuickNoteBatch = async (
+	ctx: MutationCtx,
+	ownerTokenIdentifier: string,
+) => {
+	const notes = await ctx.db
+		.query("quickNotes")
+		.withIndex("by_ownerTokenIdentifier_and_updatedAt", (q) =>
+			q.eq("ownerTokenIdentifier", ownerTokenIdentifier),
+		)
+		.take(REMOVE_ALL_QUICK_NOTES_BATCH_SIZE);
+
+	await Promise.all(notes.map((note) => ctx.db.delete(note._id)));
+
+	return {
+		deletedCount: notes.length,
+		hasMore: notes.length === REMOVE_ALL_QUICK_NOTES_BATCH_SIZE,
+	};
+};
 
 export const getLatest = query({
 	args: {},
@@ -443,5 +470,40 @@ export const remove = mutation({
 		await ctx.db.delete(args.id);
 
 		return null;
+	},
+});
+
+export const removeAllForOwner = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const result = await deleteQuickNoteBatch(ctx, args.ownerTokenIdentifier);
+
+		if (result.hasMore) {
+			await ctx.scheduler.runAfter(0, internal.quickNotes.removeAllForOwner, {
+				ownerTokenIdentifier: args.ownerTokenIdentifier,
+			});
+		}
+
+		return null;
+	},
+});
+
+export const removeAll = mutation({
+	args: {},
+	returns: removeAllQuickNotesResultValidator,
+	handler: async (ctx) => {
+		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		const result = await deleteQuickNoteBatch(ctx, ownerTokenIdentifier);
+
+		if (result.hasMore) {
+			await ctx.scheduler.runAfter(0, internal.quickNotes.removeAllForOwner, {
+				ownerTokenIdentifier,
+			});
+		}
+
+		return result;
 	},
 });

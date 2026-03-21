@@ -1,7 +1,8 @@
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
+import { requireRunMutationCtx } from "@convex-dev/better-auth/utils";
 import { betterAuth } from "better-auth";
-import { components } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { query } from "./_generated/server";
 import authConfig from "./auth.config";
@@ -40,6 +41,23 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 		baseURL: requireEnv("CONVEX_SITE_URL"),
 		trustedOrigins: [siteUrl, ...LOCAL_SITE_URLS, ...DESKTOP_CALLBACK_ORIGINS],
 		database: authComponent.adapter(ctx),
+		user: {
+			deleteUser: {
+				enabled: true,
+				beforeDelete: async () => {
+					const identity = await ctx.auth.getUserIdentity();
+
+					if (!identity) {
+						return;
+					}
+
+					const runCtx = requireRunMutationCtx(ctx);
+					await runCtx.runMutation(internal.quickNotes.removeAllForOwner, {
+						ownerTokenIdentifier: identity.tokenIdentifier,
+					});
+				},
+			},
+		},
 		socialProviders: {
 			github: {
 				clientId: envOrPlaceholder("GITHUB_CLIENT_ID", "github-client-id"),

@@ -19,8 +19,6 @@ import {
 	AudioLines,
 	Paperclip,
 	Plus,
-	Search,
-	Sparkles,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -502,15 +500,7 @@ export function QuickNotePage({
 												onClick={() => fileInputRef.current?.click()}
 											>
 												<Paperclip size={20} className="opacity-60" />
-												Add photos & files
-											</DropdownMenuItem>
-											<DropdownMenuItem className="rounded-md">
-												<Sparkles size={20} className="opacity-60" />
-												Agent mode
-											</DropdownMenuItem>
-											<DropdownMenuItem className="rounded-md">
-												<Search size={20} className="opacity-60" />
-												Deep research
+												Add photos or files
 											</DropdownMenuItem>
 										</DropdownMenuGroup>
 									</DropdownMenuContent>
@@ -535,9 +525,9 @@ export function QuickNotePage({
 									) : (
 										<Button
 											type="button"
-											variant="ghost"
+											variant="default"
 											size="icon-sm"
-											className="rounded-full text-muted-foreground"
+											className="rounded-full"
 											aria-label="Audio visualization"
 										>
 											<AudioLines className="size-4" />

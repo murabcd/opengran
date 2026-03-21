@@ -1,4 +1,15 @@
 import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogTrigger,
+} from "@workspace/ui/components/alert-dialog";
+import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
@@ -37,14 +48,20 @@ import {
 	SidebarMenuItem,
 	SidebarProvider,
 } from "@workspace/ui/components/sidebar";
-import { ImageUp, UserRound } from "lucide-react";
+import { useMutation } from "convex/react";
+import { Database, ImageUp, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { authClient } from "@/lib/auth-client";
+import { api } from "../../../../../convex/_generated/api";
 
 type SettingsUser = {
 	name: string;
 	email: string;
 	avatar: string;
 };
+
+type SettingsPage = "Profile" | "Data controls";
 
 type SettingsDialogProps = {
 	open: boolean;
@@ -53,7 +70,10 @@ type SettingsDialogProps = {
 	onUserChange: (user: SettingsUser) => void;
 };
 
-const settingsNav = [{ name: "Profile", icon: UserRound }] as const;
+const settingsNav = [
+	{ name: "Profile", icon: UserRound },
+	{ name: "Data controls", icon: Database },
+] as const;
 
 export function SettingsDialog({
 	open,
@@ -61,6 +81,15 @@ export function SettingsDialog({
 	user,
 	onUserChange,
 }: SettingsDialogProps) {
+	const [activePage, setActivePage] = useState<SettingsPage>("Profile");
+	const { data: session } = authClient.useSession();
+
+	useEffect(() => {
+		if (open) {
+			setActivePage("Profile");
+		}
+	}, [open]);
+
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="overflow-hidden p-0 md:max-h-[500px] md:max-w-[700px] lg:max-w-[800px]">
@@ -79,8 +108,14 @@ export function SettingsDialog({
 									<SidebarMenu>
 										{settingsNav.map((item) => (
 											<SidebarMenuItem key={item.name}>
-												<SidebarMenuButton asChild isActive>
-													<button type="button">
+												<SidebarMenuButton
+													asChild
+													isActive={activePage === item.name}
+												>
+													<button
+														type="button"
+														onClick={() => setActivePage(item.name)}
+													>
 														<item.icon />
 														<span>{item.name}</span>
 													</button>
@@ -102,32 +137,203 @@ export function SettingsDialog({
 										</BreadcrumbItem>
 										<BreadcrumbSeparator className="hidden md:block" />
 										<BreadcrumbItem>
-											<BreadcrumbPage>Profile</BreadcrumbPage>
+											<BreadcrumbPage>{activePage}</BreadcrumbPage>
 										</BreadcrumbItem>
 									</BreadcrumbList>
 								</Breadcrumb>
-								<div className="md:hidden">
-									<Button variant="secondary" size="sm">
-										<UserRound />
-										Profile
-									</Button>
+								<div className="flex gap-2 md:hidden">
+									{settingsNav.map((item) => (
+										<Button
+											key={item.name}
+											variant={activePage === item.name ? "secondary" : "ghost"}
+											size="sm"
+											onClick={() => setActivePage(item.name)}
+										>
+											<item.icon />
+											{item.name}
+										</Button>
+									))}
 								</div>
 							</div>
 						</header>
 						<div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0">
-							<ManageAccountForm
-								user={user}
-								onCancel={() => onOpenChange(false)}
-								onSave={(nextUser) => {
-									onUserChange(nextUser);
-									onOpenChange(false);
-								}}
-							/>
+							{activePage === "Profile" ? (
+								<ManageAccountForm
+									user={user}
+									onCancel={() => onOpenChange(false)}
+									onSave={(nextUser) => {
+										onUserChange(nextUser);
+										onOpenChange(false);
+									}}
+								/>
+							) : (
+								<DataControlsSettings
+									canDeleteData={Boolean(session?.user)}
+									onClose={() => onOpenChange(false)}
+								/>
+							)}
 						</div>
 					</main>
 				</SidebarProvider>
 			</DialogContent>
 		</Dialog>
+	);
+}
+
+function DataControlsSettings({
+	canDeleteData,
+	onClose,
+}: {
+	canDeleteData: boolean;
+	onClose: () => void;
+}) {
+	const [showDeleteAccountDialog, setShowDeleteAccountDialog] = useState(false);
+	const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+	const [showDeleteAllNotesDialog, setShowDeleteAllNotesDialog] =
+		useState(false);
+	const [isDeletingAllNotes, setIsDeletingAllNotes] = useState(false);
+	const removeAllNotes = useMutation(api.quickNotes.removeAll);
+
+	const navigateTo = (pathname: string) => {
+		window.history.pushState(null, "", pathname);
+		window.dispatchEvent(new PopStateEvent("popstate"));
+	};
+
+	const handleDeleteAccount = async () => {
+		setIsDeletingAccount(true);
+
+		try {
+			await authClient.$fetch("/delete-user", {
+				method: "POST",
+				body: { callbackURL: "/" },
+			});
+			setShowDeleteAccountDialog(false);
+			onClose();
+			window.location.assign("/");
+		} catch (error) {
+			console.error("Failed to delete account", error);
+			setShowDeleteAccountDialog(false);
+			toast.error("Failed to delete account");
+		} finally {
+			setIsDeletingAccount(false);
+		}
+	};
+
+	const handleDeleteAllNotes = async () => {
+		setIsDeletingAllNotes(true);
+
+		try {
+			const result = await removeAllNotes({});
+			setShowDeleteAllNotesDialog(false);
+			onClose();
+			navigateTo("/home");
+			toast.success(
+				result.hasMore ? "Note deletion started" : "All notes deleted",
+			);
+		} catch (error) {
+			console.error("Failed to delete all notes", error);
+			setShowDeleteAllNotesDialog(false);
+			toast.error("Failed to delete all notes");
+		} finally {
+			setIsDeletingAllNotes(false);
+		}
+	};
+
+	return (
+		<div className="py-4">
+			<FieldGroup className="gap-6">
+				<Field>
+					<FieldTitle>Data controls</FieldTitle>
+					<FieldDescription>
+						Permanently remove your OpenGran account or wipe every quick note
+						you own.
+					</FieldDescription>
+				</Field>
+				<DataControlAction
+					title="Delete account"
+					description="Permanently delete your account and all of your notes."
+					buttonLabel={isDeletingAccount ? "Deleting..." : "Delete"}
+					dialogOpen={showDeleteAccountDialog}
+					onDialogOpenChange={setShowDeleteAccountDialog}
+					onConfirm={handleDeleteAccount}
+					confirmDisabled={isDeletingAccount}
+					buttonDisabled={isDeletingAccount || !canDeleteData}
+					dialogDescription="This action cannot be undone. Your account will be permanently deleted, and OpenGran will remove your notes from the backend."
+				/>
+				<DataControlAction
+					title="Delete all notes"
+					description="Permanently delete every quick note you own, including archived and shared notes."
+					buttonLabel={isDeletingAllNotes ? "Deleting..." : "Delete"}
+					dialogOpen={showDeleteAllNotesDialog}
+					onDialogOpenChange={setShowDeleteAllNotesDialog}
+					onConfirm={handleDeleteAllNotes}
+					confirmDisabled={isDeletingAllNotes}
+					buttonDisabled={isDeletingAllNotes || !canDeleteData}
+					dialogDescription="This action cannot be undone. All quick notes you own will be permanently deleted."
+				/>
+			</FieldGroup>
+		</div>
+	);
+}
+
+function DataControlAction({
+	title,
+	description,
+	buttonLabel,
+	dialogOpen,
+	onDialogOpenChange,
+	onConfirm,
+	confirmDisabled,
+	buttonDisabled,
+	dialogDescription,
+}: {
+	title: string;
+	description: string;
+	buttonLabel: string;
+	dialogOpen: boolean;
+	onDialogOpenChange: (open: boolean) => void;
+	onConfirm: () => void;
+	confirmDisabled: boolean;
+	buttonDisabled: boolean;
+	dialogDescription: string;
+}) {
+	return (
+		<div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+			<div className="space-y-1">
+				<div className="text-sm font-medium">{title}</div>
+				<p className="text-sm text-muted-foreground">{description}</p>
+			</div>
+			<AlertDialog open={dialogOpen} onOpenChange={onDialogOpenChange}>
+				<AlertDialogTrigger asChild>
+					<Button
+						variant="outline"
+						size="sm"
+						className="shrink-0 text-destructive hover:text-destructive focus:text-destructive dark:text-red-500"
+						disabled={buttonDisabled}
+					>
+						{buttonLabel}
+					</Button>
+				</AlertDialogTrigger>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+						<AlertDialogDescription>{dialogDescription}</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={confirmDisabled}>
+							Cancel
+						</AlertDialogCancel>
+						<AlertDialogAction
+							className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
+							onClick={onConfirm}
+							disabled={confirmDisabled}
+						>
+							Delete
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</div>
 	);
 }
 
