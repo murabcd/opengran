@@ -14,12 +14,7 @@ import { Input } from "@workspace/ui/components/input";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
-import {
-	ArrowUp,
-	AudioLines,
-	Paperclip,
-	Plus,
-} from "lucide-react";
+import { ArrowUp, AudioLines, Paperclip, Plus } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
@@ -407,6 +402,8 @@ export function QuickNotePage({
 		}
 	};
 
+	const hasMessage = message.trim().length > 0;
+
 	return (
 		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
 			<div className="flex w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
@@ -447,7 +444,7 @@ export function QuickNotePage({
 
 						<div
 							className={cn(
-								"w-full overflow-clip rounded-3xl border border-border bg-card bg-clip-padding p-2.5 shadow-sm transition-[border-radius] duration-200 ease-out",
+								"w-full overflow-clip rounded-3xl border border-border bg-card bg-clip-padding p-2.5 shadow-sm transition-[border-radius] duration-200 ease-out has-disabled:bg-input/50 has-disabled:opacity-50 dark:has-disabled:bg-input/80",
 								isExpanded
 									? "grid [grid-template-areas:'header'_'primary'_'footer'] [grid-template-columns:1fr] [grid-template-rows:auto_1fr_auto]"
 									: "grid [grid-template-areas:'header_header_header'_'leading_primary_trailing'_'._footer_.'] [grid-template-columns:auto_1fr_auto] [grid-template-rows:auto_1fr_auto]",
@@ -512,7 +509,7 @@ export function QuickNotePage({
 								style={{ gridArea: isExpanded ? "footer" : "trailing" }}
 							>
 								<div className="ms-auto flex items-center gap-1.5">
-									{message.trim() ? (
+									{hasMessage ? (
 										<Button
 											type="submit"
 											variant="default"
@@ -529,6 +526,7 @@ export function QuickNotePage({
 											size="icon-sm"
 											className="rounded-full"
 											aria-label="Audio visualization"
+											disabled
 										>
 											<AudioLines className="size-4" />
 										</Button>

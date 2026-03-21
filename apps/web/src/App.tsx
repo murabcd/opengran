@@ -44,6 +44,7 @@ import {
 	TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
+import type { UIMessage } from "ai";
 import { useMutation, useQuery } from "convex/react";
 import {
 	AlertCircle,
@@ -82,12 +83,12 @@ const HOME_QUICK_NOTE_SKELETON_IDS = [
 	"home-quick-note-skeleton-3",
 ] as const;
 
-type GroupedQuickNotes = {
-	today: Array<Doc<"quickNotes">>;
-	yesterday: Array<Doc<"quickNotes">>;
-	lastWeek: Array<Doc<"quickNotes">>;
-	lastMonth: Array<Doc<"quickNotes">>;
-	older: Array<Doc<"quickNotes">>;
+type GroupedItems<T> = {
+	today: T[];
+	yesterday: T[];
+	lastWeek: T[];
+	lastMonth: T[];
+	older: T[];
 };
 
 const currentMonthFormatter = new Intl.DateTimeFormat(undefined, {
@@ -110,31 +111,37 @@ const getDelayUntilNextMidnight = (now: Date) => {
 	return nextMidnight.getTime() - now.getTime();
 };
 
-const groupQuickNotesByDate = (
-	notes: Array<Doc<"quickNotes">>,
-): GroupedQuickNotes => {
+const groupItemsByDate = <
+	T extends {
+		_creationTime: number;
+		createdAt?: number;
+		updatedAt?: number;
+	},
+>(
+	items: T[],
+): GroupedItems<T> => {
 	const now = new Date();
 	const yesterday = new Date(now);
 	yesterday.setDate(now.getDate() - 1);
 	const oneWeekAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
 	const oneMonthAgo = now.getTime() - 30 * 24 * 60 * 60 * 1000;
 
-	return notes.reduce<GroupedQuickNotes>(
-		(groups, note) => {
+	return items.reduce<GroupedItems<T>>(
+		(groups, item) => {
 			const noteDate = new Date(
-				note.updatedAt || note.createdAt || note._creationTime,
+				item.updatedAt || item.createdAt || item._creationTime,
 			);
 
 			if (isSameCalendarDay(noteDate, now)) {
-				groups.today.push(note);
+				groups.today.push(item);
 			} else if (isSameCalendarDay(noteDate, yesterday)) {
-				groups.yesterday.push(note);
+				groups.yesterday.push(item);
 			} else if (noteDate.getTime() > oneWeekAgo) {
-				groups.lastWeek.push(note);
+				groups.lastWeek.push(item);
 			} else if (noteDate.getTime() > oneMonthAgo) {
-				groups.lastMonth.push(note);
+				groups.lastMonth.push(item);
 			} else {
-				groups.older.push(note);
+				groups.older.push(item);
 			}
 
 			return groups;
@@ -159,6 +166,31 @@ const getSharedNoteShareId = (pathname: string) => {
 	const nextValue = pathname.slice(sharedPrefix.length).trim();
 	return nextValue ? decodeURIComponent(nextValue) : null;
 };
+
+const getChatKeyFromUrl = (url: URL) => {
+	const nextValue =
+		url.searchParams.get("chatId")?.trim() ||
+		url.searchParams.get("chatKey")?.trim();
+
+	return nextValue ? nextValue : null;
+};
+
+const toStoredChatMessages = (
+	messages: Array<{
+		id: string;
+		role: "system" | "user" | "assistant";
+		partsJson: string;
+		metadataJson?: string;
+	}>,
+): UIMessage[] =>
+	messages.map((message) => ({
+		id: message.id,
+		role: message.role,
+		metadata: message.metadataJson
+			? (JSON.parse(message.metadataJson) as UIMessage["metadata"])
+			: undefined,
+		parts: JSON.parse(message.partsJson) as UIMessage["parts"],
+	}));
 
 const useCurrentDate = () => {
 	const [currentDate, setCurrentDate] = React.useState(() => new Date());
@@ -310,7 +342,7 @@ export function App() {
 	const handleOpenOwnedSharedNote = React.useCallback(
 		(noteId: Id<"quickNotes">) => {
 			setSharedNoteShareId(null);
-			window.history.pushState(null, "", `/quick-note?noteId=${noteId}`);
+			window.history.pushState(null, "", `/note?noteId=${noteId}`);
 		},
 		[],
 	);
@@ -368,7 +400,11 @@ function AppShell({
 			return "home";
 		}
 
-		if (window.location.pathname === "/quick-note") {
+		if (
+			window.location.pathname === "/note" ||
+			window.location.pathname === "/notes" ||
+			window.location.pathname === "/quick-note"
+		) {
 			return "quick-note";
 		}
 
@@ -382,10 +418,27 @@ function AppShell({
 
 		return "home";
 	});
-	const [chatSession, setChatSession] = React.useState(0);
 	const [isDesktopMac, setIsDesktopMac] = React.useState(initialDesktopMac);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
 	const [isSigningOut, startSignOut] = React.useTransition();
+	const [currentChatKey, setCurrentChatKey] = React.useState<string | null>(
+		() => {
+			if (typeof window === "undefined") {
+				return null;
+			}
+
+			return getChatKeyFromUrl(new URL(window.location.href));
+		},
+	);
+	const [chatComposerId, setChatComposerId] = React.useState(() => {
+		if (typeof window === "undefined") {
+			return crypto.randomUUID();
+		}
+
+		return (
+			getChatKeyFromUrl(new URL(window.location.href)) ?? crypto.randomUUID()
+		);
+	});
 	const [currentQuickNoteId, setCurrentQuickNoteId] =
 		React.useState<Id<"quickNotes"> | null>(() => {
 			if (typeof window === "undefined") {
@@ -409,8 +462,17 @@ function AppShell({
 	const currentMonthLabel = currentMonthFormatter.format(currentDate);
 	const currentWeekdayLabel = currentWeekdayFormatter.format(currentDate);
 	const createQuickNote = useMutation(api.quickNotes.create);
+	const chats = useQuery(api.chats.list, {});
 	const quickNotes = useQuery(api.quickNotes.list, {});
 	const sharedNotes = useQuery(api.quickNotes.listShared, {});
+	const selectedChatMessages = useQuery(
+		api.chats.getMessages,
+		currentView === "chat" && currentChatKey
+			? {
+					chatKey: currentChatKey,
+				}
+			: "skip",
+	);
 	const selectedQuickNote = useQuery(
 		api.quickNotes.get,
 		currentQuickNoteId
@@ -424,8 +486,14 @@ function AppShell({
 		const syncViewFromLocation = () => {
 			const url = new URL(window.location.href);
 			const nextSettingsOpen = url.hash === "#settings";
+			const nextChatKey = getChatKeyFromUrl(url);
 			const nextView =
-				window.location.pathname === "/quick-note" || url.hash === "#quick-note"
+				window.location.pathname === "/note" ||
+				window.location.pathname === "/notes" ||
+				window.location.pathname === "/quick-note" ||
+				url.hash === "#note" ||
+				url.hash === "#notes" ||
+				url.hash === "#quick-note"
 					? "quick-note"
 					: window.location.pathname === "/chat" || url.hash === "#chat"
 						? "chat"
@@ -436,12 +504,14 @@ function AppShell({
 				(url.searchParams.get("noteId") as Id<"quickNotes"> | null) ?? null;
 
 			setCurrentView(nextView);
+			setCurrentChatKey(nextChatKey);
+			setChatComposerId(nextChatKey ?? crypto.randomUUID());
 			setCurrentQuickNoteId(nextQuickNoteId);
 			setCurrentQuickNoteEditorActions(null);
 
 			const nextPath =
 				nextView === "quick-note"
-					? "/quick-note"
+					? "/note"
 					: nextView === "chat"
 						? "/chat"
 						: nextView === "shared"
@@ -450,7 +520,9 @@ function AppShell({
 			const nextSearch =
 				nextView === "quick-note" && nextQuickNoteId
 					? `?noteId=${nextQuickNoteId}`
-					: "";
+					: nextView === "chat" && nextChatKey
+						? `?chatId=${encodeURIComponent(nextChatKey)}`
+						: "";
 			const nextLocation = `${nextPath}${nextSearch}${nextSettingsOpen ? "#settings" : ""}`;
 			if (
 				window.location.pathname !== nextPath ||
@@ -493,8 +565,21 @@ function AppShell({
 			});
 	}, []);
 
+	const openFreshChat = React.useCallback(() => {
+		setCurrentView("chat");
+		setSettingsOpen(false);
+		setCurrentChatKey(null);
+		setChatComposerId(crypto.randomUUID());
+		window.history.pushState(null, "", "/chat");
+	}, []);
+
 	const handleViewChange = React.useCallback(
 		(view: "home" | "chat" | "shared" | "quick-note") => {
+			if (view === "chat") {
+				openFreshChat();
+				return;
+			}
+
 			setCurrentView(view);
 			setSettingsOpen(false);
 			setCurrentQuickNoteEditorActions(null);
@@ -506,15 +591,13 @@ function AppShell({
 				null,
 				"",
 				view === "quick-note"
-					? `/quick-note${search}`
-					: view === "chat"
-						? "/chat"
-						: view === "shared"
-							? "/shared"
-							: "/home",
+					? `/note${search}`
+					: view === "shared"
+						? "/shared"
+						: "/home",
 			);
 		},
-		[currentQuickNoteId],
+		[currentQuickNoteId, openFreshChat],
 	);
 
 	const openQuickNote = React.useCallback((noteId: Id<"quickNotes">) => {
@@ -522,7 +605,7 @@ function AppShell({
 		setSettingsOpen(false);
 		setCurrentQuickNoteId(noteId);
 		setCurrentQuickNoteEditorActions(null);
-		window.history.pushState(null, "", `/quick-note?noteId=${noteId}`);
+		window.history.pushState(null, "", `/note?noteId=${noteId}`);
 	}, []);
 
 	const handleCreateQuickNote = React.useCallback(() => {
@@ -586,6 +669,56 @@ function AppShell({
 		},
 		[currentQuickNoteId, handleViewChange],
 	);
+	const handleOpenChat = React.useCallback((chatKey: string) => {
+		setCurrentView("chat");
+		setSettingsOpen(false);
+		setCurrentChatKey(chatKey);
+		setChatComposerId(chatKey);
+		window.history.pushState(
+			null,
+			"",
+			`/chat?chatId=${encodeURIComponent(chatKey)}`,
+		);
+	}, []);
+
+	const handleNewChat = React.useCallback(() => {
+		openFreshChat();
+	}, [openFreshChat]);
+
+	const handleChatPersisted = React.useCallback(
+		(chatKey: string) => {
+			if (currentChatKey === chatKey) {
+				return;
+			}
+
+			setCurrentChatKey(chatKey);
+			window.history.replaceState(
+				null,
+				"",
+				`/chat?chatId=${encodeURIComponent(chatKey)}`,
+			);
+		},
+		[currentChatKey],
+	);
+	const handleChatRemoved = React.useCallback(
+		(chatKey: string) => {
+			if (currentChatKey !== chatKey) {
+				return;
+			}
+
+			const nextChatId = crypto.randomUUID();
+			setCurrentChatKey(null);
+			setChatComposerId(nextChatId);
+			window.history.replaceState(null, "", "/chat");
+		},
+		[currentChatKey],
+	);
+	const currentChatTitle =
+		chats?.find((chat) => chat.chatKey === currentChatKey)?.title || "Chat";
+	const initialChatMessages = React.useMemo(
+		() => toStoredChatMessages(selectedChatMessages ?? []),
+		[selectedChatMessages],
+	);
 
 	return (
 		<SidebarProvider>
@@ -639,6 +772,7 @@ function AppShell({
 									<BreadcrumbLink asChild>
 										<button
 											type="button"
+											className="cursor-pointer"
 											onClick={() => handleViewChange("home")}
 										>
 											OpenGran
@@ -654,7 +788,7 @@ function AppShell({
 												? currentQuickNoteTitle
 												: currentView === "shared"
 													? "Shared with others"
-													: "Chat"}
+													: currentChatTitle}
 									</BreadcrumbPage>
 								</BreadcrumbItem>
 							</BreadcrumbList>
@@ -740,13 +874,7 @@ function AppShell({
 								</Button>
 							</QuickNoteActionsMenu>
 						) : currentView === "chat" ? (
-							<Button
-								variant="outline"
-								onClick={() => {
-									handleViewChange("chat");
-									setChatSession((current) => current + 1);
-								}}
-							>
+							<Button variant="outline" onClick={handleNewChat}>
 								<Plus />
 								New chat
 							</Button>
@@ -863,7 +991,17 @@ function AppShell({
 						onEditorActionsChange={setCurrentQuickNoteEditorActions}
 					/>
 				) : (
-					<ChatPage key={chatSession} />
+					<ChatPage
+						key={chatComposerId}
+						chatId={chatComposerId}
+						initialMessages={initialChatMessages}
+						onChatPersisted={handleChatPersisted}
+						chats={chats ?? []}
+						isChatsLoading={chats === undefined}
+						activeChatKey={currentChatKey}
+						onOpenChat={handleOpenChat}
+						onChatRemoved={handleChatRemoved}
+					/>
 				)}
 			</SidebarInset>
 		</SidebarProvider>
@@ -927,7 +1065,7 @@ function SharedQuickNotesList({
 	onOpenNote: (noteId: Id<"quickNotes">) => void;
 	onQuickNoteTrashed: (noteId: Id<"quickNotes">) => void;
 }) {
-	const groupedNotes = groupQuickNotesByDate(notes);
+	const groupedNotes = groupItemsByDate(notes);
 	const sections = [
 		{ key: "today", label: "Today", notes: groupedNotes.today },
 		{ key: "yesterday", label: "Yesterday", notes: groupedNotes.yesterday },
@@ -1030,7 +1168,7 @@ function HomeQuickNotesList({
 	onOpenNote: (noteId: Id<"quickNotes">) => void;
 	onQuickNoteTrashed: (noteId: Id<"quickNotes">) => void;
 }) {
-	const groupedNotes = groupQuickNotesByDate(notes);
+	const groupedNotes = groupItemsByDate(notes);
 	const sections = [
 		{ key: "today", label: "Today", notes: groupedNotes.today },
 		{ key: "yesterday", label: "Yesterday", notes: groupedNotes.yesterday },

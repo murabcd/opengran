@@ -366,7 +366,7 @@ const buildTrayMenu = () =>
 		{
 			label: "Quick note",
 			click: () => {
-				void showMainWindow({ pathname: "/quick-note" });
+				void showMainWindow({ pathname: "/note" });
 			},
 		},
 		{

@@ -694,7 +694,9 @@ function TrashPopoverContent() {
 	const [search, setSearch] = React.useState("");
 	const [deleteNoteId, setDeleteNoteId] =
 		React.useState<Id<"quickNotes"> | null>(null);
+	const [deleteChatKey, setDeleteChatKey] = React.useState<string | null>(null);
 	const archivedNotes = useQuery(api.quickNotes.listArchived, {});
+	const archivedChats = useQuery(api.chats.listArchived, {});
 	const restore = useMutation(api.quickNotes.restore).withOptimisticUpdate(
 		(localStore, args) => {
 			const archived = localStore.getQuery(api.quickNotes.listArchived, {});
@@ -733,6 +735,45 @@ function TrashPopoverContent() {
 			}
 		},
 	);
+	const restoreChat = useMutation(api.chats.restore).withOptimisticUpdate(
+		(localStore, args) => {
+			const archived = localStore.getQuery(api.chats.listArchived, {});
+			const chat =
+				archived?.find((item) => item.chatKey === args.chatKey) ?? null;
+
+			if (archived !== undefined) {
+				localStore.setQuery(
+					api.chats.listArchived,
+					{},
+					archived.filter((item) => item.chatKey !== args.chatKey),
+				);
+			}
+
+			if (chat) {
+				const active = localStore.getQuery(api.chats.list, {}) ?? [];
+				localStore.setQuery(api.chats.list, {}, [
+					{
+						...chat,
+						isArchived: false,
+						archivedAt: undefined,
+					},
+					...active.filter((item) => item.chatKey !== args.chatKey),
+				]);
+			}
+		},
+	);
+	const removeChat = useMutation(api.chats.remove).withOptimisticUpdate(
+		(localStore, args) => {
+			const archived = localStore.getQuery(api.chats.listArchived, {});
+			if (archived !== undefined) {
+				localStore.setQuery(
+					api.chats.listArchived,
+					{},
+					archived.filter((item) => item.chatKey !== args.chatKey),
+				);
+			}
+		},
+	);
 	const filteredNotes = React.useMemo(() => {
 		const query = search.trim().toLowerCase();
 		if (!archivedNotes) {
@@ -753,7 +794,26 @@ function TrashPopoverContent() {
 			return haystack.toLowerCase().includes(query);
 		});
 	}, [archivedNotes, search]);
+	const filteredChats = React.useMemo(() => {
+		const query = search.trim().toLowerCase();
+		if (!archivedChats) {
+			return [];
+		}
+
+		if (!query) {
+			return archivedChats;
+		}
+
+		return archivedChats.filter((chat) =>
+			[chat.title, chat.preview, chat.model ?? ""]
+				.join(" ")
+				.toLowerCase()
+				.includes(query),
+		);
+	}, [archivedChats, search]);
 	const hasArchivedNotes = (archivedNotes?.length ?? 0) > 0;
+	const hasArchivedChats = (archivedChats?.length ?? 0) > 0;
+	const hasArchivedItems = hasArchivedNotes || hasArchivedChats;
 
 	const handleRestore = React.useCallback(
 		(noteId: Id<"quickNotes">) => {
@@ -767,6 +827,19 @@ function TrashPopoverContent() {
 				});
 		},
 		[restore],
+	);
+	const handleRestoreChat = React.useCallback(
+		(chatKey: string) => {
+			void restoreChat({ chatKey })
+				.then(() => {
+					toast.success("Chat restored");
+				})
+				.catch((error) => {
+					console.error("Failed to restore chat", error);
+					toast.error("Failed to restore chat");
+				});
+		},
+		[restoreChat],
 	);
 
 	const handleDelete = React.useCallback(() => {
@@ -784,6 +857,21 @@ function TrashPopoverContent() {
 				toast.error("Failed to delete note");
 			});
 	}, [deleteNoteId, remove]);
+	const handleDeleteChat = React.useCallback(() => {
+		if (!deleteChatKey) {
+			return;
+		}
+
+		void removeChat({ chatKey: deleteChatKey })
+			.then(() => {
+				setDeleteChatKey(null);
+				toast.success("Chat deleted permanently");
+			})
+			.catch((error) => {
+				console.error("Failed to delete chat", error);
+				toast.error("Failed to delete chat");
+			});
+	}, [deleteChatKey, removeChat]);
 
 	return (
 		<>
@@ -801,55 +889,114 @@ function TrashPopoverContent() {
 				</div>
 
 				<div className="min-h-0 flex-1 overflow-y-auto p-2 pt-1">
-					{archivedNotes === undefined ? (
+					{archivedNotes === undefined || archivedChats === undefined ? (
 						<TrashPopoverSkeleton />
-					) : hasArchivedNotes && filteredNotes.length > 0 ? (
+					) : filteredNotes.length > 0 || filteredChats.length > 0 ? (
 						<div className="space-y-1">
-							{filteredNotes.map((note) => (
-								<div
-									key={note._id}
-									className="group grid h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md px-1.5 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-								>
-									<div className="flex min-w-0 items-center gap-1.5">
-										<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
-											<FileText className="size-4" />
-										</div>
-										<div className="min-w-0 flex-1">
-											<div className="truncate text-sm">
-												{note.title || "New note"}
+							{filteredNotes.length > 0 ? (
+								<div className="space-y-1">
+									<div className="px-1.5 pt-1 text-xs font-medium text-muted-foreground">
+										Notes
+									</div>
+									{filteredNotes.map((note) => (
+										<div
+											key={note._id}
+											className="group grid h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md px-1.5 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+										>
+											<div className="flex min-w-0 items-center gap-1.5">
+												<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+													<FileText className="size-4" />
+												</div>
+												<div className="min-w-0 flex-1">
+													<div className="truncate text-sm">
+														{note.title || "New note"}
+													</div>
+												</div>
+											</div>
+											<div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<button
+															type="button"
+															className="flex size-5 cursor-pointer items-center justify-center rounded-md p-0 text-sidebar-foreground outline-hidden transition-transform focus-visible:ring-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0"
+															onClick={() => handleRestore(note._id)}
+															aria-label={`Restore ${note.title || "New note"}`}
+														>
+															<Undo2 className="size-4" />
+														</button>
+													</TooltipTrigger>
+													<TooltipContent>Restore</TooltipContent>
+												</Tooltip>
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<button
+															type="button"
+															className="flex size-5 cursor-pointer items-center justify-center rounded-md p-0 text-destructive outline-hidden transition-transform focus-visible:ring-2 hover:bg-sidebar-accent hover:text-destructive [&>svg]:size-4 [&>svg]:shrink-0 dark:text-red-500"
+															onClick={() => setDeleteNoteId(note._id)}
+															aria-label={`Delete ${note.title || "New note"}`}
+														>
+															<Trash2 className="size-4" />
+														</button>
+													</TooltipTrigger>
+													<TooltipContent>Delete</TooltipContent>
+												</Tooltip>
 											</div>
 										</div>
-									</div>
-									<div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<button
-													type="button"
-													className="flex size-5 cursor-pointer items-center justify-center rounded-md p-0 text-sidebar-foreground outline-hidden transition-transform focus-visible:ring-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0"
-													onClick={() => handleRestore(note._id)}
-													aria-label={`Restore ${note.title || "New note"}`}
-												>
-													<Undo2 className="size-4" />
-												</button>
-											</TooltipTrigger>
-											<TooltipContent>Restore</TooltipContent>
-										</Tooltip>
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<button
-													type="button"
-													className="flex size-5 cursor-pointer items-center justify-center rounded-md p-0 text-destructive outline-hidden transition-transform focus-visible:ring-2 hover:bg-sidebar-accent hover:text-destructive [&>svg]:size-4 [&>svg]:shrink-0 dark:text-red-500"
-													onClick={() => setDeleteNoteId(note._id)}
-													aria-label={`Delete ${note.title || "New note"}`}
-												>
-													<Trash2 className="size-4" />
-												</button>
-											</TooltipTrigger>
-											<TooltipContent>Delete</TooltipContent>
-										</Tooltip>
-									</div>
+									))}
 								</div>
-							))}
+							) : null}
+							{filteredChats.length > 0 ? (
+								<div className="space-y-1">
+									<div className="px-1.5 pt-1 text-xs font-medium text-muted-foreground">
+										Chats
+									</div>
+									{filteredChats.map((chat) => (
+										<div
+											key={chat._id}
+											className="group grid h-8 grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md px-1.5 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+										>
+											<div className="flex min-w-0 items-center gap-1.5">
+												<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+													<MessageCircle className="size-4" />
+												</div>
+												<div className="min-w-0 flex-1">
+													<div className="truncate text-sm">
+														{chat.title || "New chat"}
+													</div>
+												</div>
+											</div>
+											<div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<button
+															type="button"
+															className="flex size-5 cursor-pointer items-center justify-center rounded-md p-0 text-sidebar-foreground outline-hidden transition-transform focus-visible:ring-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0"
+															onClick={() => handleRestoreChat(chat.chatKey)}
+															aria-label={`Restore ${chat.title || "New chat"}`}
+														>
+															<Undo2 className="size-4" />
+														</button>
+													</TooltipTrigger>
+													<TooltipContent>Restore</TooltipContent>
+												</Tooltip>
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<button
+															type="button"
+															className="flex size-5 cursor-pointer items-center justify-center rounded-md p-0 text-destructive outline-hidden transition-transform focus-visible:ring-2 hover:bg-sidebar-accent hover:text-destructive [&>svg]:size-4 [&>svg]:shrink-0 dark:text-red-500"
+															onClick={() => setDeleteChatKey(chat.chatKey)}
+															aria-label={`Delete ${chat.title || "New chat"}`}
+														>
+															<Trash2 className="size-4" />
+														</button>
+													</TooltipTrigger>
+													<TooltipContent>Delete</TooltipContent>
+												</Tooltip>
+											</div>
+										</div>
+									))}
+								</div>
+							) : null}
 						</div>
 					) : (
 						<div className="flex h-full items-center justify-center p-6">
@@ -860,9 +1007,9 @@ function TrashPopoverContent() {
 									</EmptyMedia>
 									<EmptyTitle>No results</EmptyTitle>
 									<EmptyDescription className="text-xs">
-										{hasArchivedNotes
+										{hasArchivedItems
 											? "Try a different search."
-											: "Deleted notes will appear here."}
+											: "Deleted notes and chats will appear here."}
 									</EmptyDescription>
 								</EmptyHeader>
 							</Empty>
@@ -872,7 +1019,7 @@ function TrashPopoverContent() {
 
 				<div className="border-t px-3 py-2">
 					<div className="text-xs text-muted-foreground">
-						Notes older than 30 days will be automatically deleted.
+						Items older than 30 days will be automatically deleted.
 					</div>
 				</div>
 			</div>
@@ -897,6 +1044,33 @@ function TrashPopoverContent() {
 						<AlertDialogAction
 							className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
 							onClick={handleDelete}
+						>
+							Delete
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+			<AlertDialog
+				open={deleteChatKey !== null}
+				onOpenChange={(open) => {
+					if (!open) {
+						setDeleteChatKey(null);
+					}
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+						<AlertDialogDescription>
+							This action cannot be undone. This will permanently delete your
+							chat from our servers.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
+							onClick={handleDeleteChat}
 						>
 							Delete
 						</AlertDialogAction>

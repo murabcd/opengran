@@ -1,6 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { openai } from "@ai-sdk/openai";
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import {
+	consumeStream,
+	convertToModelMessages,
+	streamText,
+	type UIMessage,
+	validateUIMessages,
+} from "ai";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../convex/_generated/api";
 import { fallbackChatModel, resolveChatModel } from "../src/lib/ai/models";
@@ -12,6 +18,8 @@ const BASE_SYSTEM_PROMPT = [
 ].join(" ");
 
 type ChatRequestBody = {
+	id?: string;
+	message?: UIMessage;
 	messages?: UIMessage[];
 	model?: string;
 	webSearchEnabled?: boolean;
@@ -19,6 +27,9 @@ type ChatRequestBody = {
 	selectedSourceIds?: string[];
 	convexToken?: string | null;
 };
+
+const MAX_CHAT_PREVIEW_LENGTH = 180;
+const MAX_CHAT_TITLE_LENGTH = 80;
 
 const getConvexUrl = () => {
 	const value = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
@@ -73,6 +84,66 @@ const getNotesContext = async ({
 	].join("\n\n");
 };
 
+const clampWhitespace = (value: string) => value.replace(/\s+/g, " ").trim();
+
+const truncate = (value: string, maxLength: number) =>
+	value.length > maxLength
+		? `${value.slice(0, maxLength - 1).trimEnd()}…`
+		: value;
+
+const getMessageText = (message: UIMessage) =>
+	clampWhitespace(
+		message.parts
+			.filter(
+				(
+					part,
+				): part is Extract<(typeof message.parts)[number], { type: "text" }> =>
+					part.type === "text" &&
+					typeof part.text === "string" &&
+					part.text.length > 0,
+			)
+			.map((part) => part.text)
+			.join("\n\n"),
+	);
+
+const getChatTitleFromMessage = (message: UIMessage) => {
+	const text = getMessageText(message);
+
+	return text ? truncate(text, MAX_CHAT_TITLE_LENGTH) : "New chat";
+};
+
+const getChatPreviewFromMessage = (message: UIMessage) =>
+	truncate(getMessageText(message), MAX_CHAT_PREVIEW_LENGTH);
+
+const toStoredMessage = (message: UIMessage) => ({
+	id: message.id,
+	role: message.role,
+	partsJson: JSON.stringify(message.parts),
+	metadataJson:
+		message.metadata === undefined
+			? undefined
+			: JSON.stringify(message.metadata),
+	text: getMessageText(message),
+	createdAt: Date.now(),
+});
+
+const fromStoredMessages = (
+	messages: Array<{
+		id: string;
+		role: "system" | "user" | "assistant";
+		partsJson: string;
+		metadataJson?: string;
+	}>,
+): UIMessage[] =>
+	messages.map((message) => ({
+		id: message.id,
+		role: message.role,
+		metadata: message.metadataJson
+			? (JSON.parse(message.metadataJson) as UIMessage["metadata"])
+			: undefined,
+		parts: JSON.parse(message.partsJson) as UIMessage["parts"],
+	}));
+
 const readJsonBody = async (request: IncomingMessage) => {
 	const chunks: Uint8Array[] = [];
 
@@ -111,6 +182,8 @@ export const handleChatRequest = async (
 	}
 
 	const {
+		id,
+		message,
 		messages = [],
 		model,
 		webSearchEnabled = false,
@@ -127,6 +200,43 @@ export const handleChatRequest = async (
 	}
 
 	const selectedModel = resolveChatModel(model);
+	const convexClient =
+		convexToken && id
+			? new ConvexHttpClient(getConvexUrl(), { auth: convexToken })
+			: null;
+	const chatMessages = await validateUIMessages({
+		messages:
+			message && convexClient && id
+				? [
+						...fromStoredMessages(
+							await convexClient.query(api.chats.getMessages, { chatKey: id }),
+						),
+						message,
+					]
+				: message
+					? [message]
+					: messages,
+	});
+	const lastUserMessage = message
+		? message
+		: [...chatMessages]
+				.reverse()
+				.find((currentMessage) => currentMessage.role === "user");
+
+	if (convexClient && id && lastUserMessage) {
+		try {
+			await convexClient.mutation(api.chats.saveMessage, {
+				chatKey: id,
+				title: getChatTitleFromMessage(lastUserMessage),
+				preview: getChatPreviewFromMessage(lastUserMessage),
+				model: selectedModel?.model ?? fallbackChatModel.model,
+				message: toStoredMessage(lastUserMessage),
+			});
+		} catch (error) {
+			console.error("Failed to persist user chat message", error);
+		}
+	}
+
 	const notesContext = await getNotesContext({
 		convexToken,
 		mentions,
@@ -145,7 +255,7 @@ export const handleChatRequest = async (
 	const result = streamText({
 		model: openai(selectedModel?.model ?? fallbackChatModel.model),
 		system: systemPrompt,
-		messages: await convertToModelMessages(messages),
+		messages: await convertToModelMessages(chatMessages),
 		tools: webSearchEnabled
 			? {
 					web_search: openai.tools.webSearch({
@@ -160,7 +270,24 @@ export const handleChatRequest = async (
 	});
 
 	result.pipeUIMessageStreamToResponse(response, {
-		originalMessages: messages,
+		originalMessages: chatMessages,
+		consumeSseStream: consumeStream,
+		onFinish: async ({ responseMessage }) => {
+			if (!convexClient || !id) {
+				return;
+			}
+
+			try {
+				await convexClient.mutation(api.chats.saveMessage, {
+					chatKey: id,
+					preview: getChatPreviewFromMessage(responseMessage),
+					model: selectedModel?.model ?? fallbackChatModel.model,
+					message: toStoredMessage(responseMessage),
+				});
+			} catch (error) {
+				console.error("Failed to persist assistant chat message", error);
+			}
+		},
 		onError: () => "Something went wrong.",
 	});
 };

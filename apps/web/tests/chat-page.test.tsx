@@ -7,6 +7,7 @@ const convexTokenMock = vi.fn();
 const sendMessageMock = vi.fn();
 const useChatMock = vi.fn();
 const useQueryMock = vi.fn();
+const useMutationMock = vi.fn();
 
 vi.mock("@ai-sdk/react", () => ({
 	useChat: useChatMock,
@@ -14,6 +15,7 @@ vi.mock("@ai-sdk/react", () => ({
 
 vi.mock("convex/react", () => ({
 	useQuery: useQueryMock,
+	useMutation: useMutationMock,
 }));
 
 vi.mock("ai", () => ({
@@ -189,7 +191,11 @@ describe("ChatPage", () => {
 		convexTokenMock.mockReset();
 		sendMessageMock.mockReset();
 		useQueryMock.mockReset();
+		useMutationMock.mockReset();
 		convexTokenMock.mockResolvedValue({ data: { token: "convex-token" } });
+		useMutationMock.mockReturnValue({
+			withOptimisticUpdate: vi.fn(() => vi.fn()),
+		});
 		useChatMock.mockReturnValue({
 			messages: [],
 			sendMessage: sendMessageMock,
@@ -218,7 +224,18 @@ describe("ChatPage", () => {
 		const user = userEvent.setup();
 		const { ChatPage } = await import("../src/components/chat/chat-page");
 
-		render(<ChatPage />);
+		render(
+			<ChatPage
+				chatId="chat-1"
+				initialMessages={[]}
+				onChatPersisted={vi.fn()}
+				chats={[]}
+				isChatsLoading={false}
+				activeChatKey={null}
+				onOpenChat={vi.fn()}
+				onChatRemoved={vi.fn()}
+			/>,
+		);
 
 		await user.type(
 			screen.getByPlaceholderText("Ask, search, or make anything..."),
