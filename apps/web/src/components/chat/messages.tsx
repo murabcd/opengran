@@ -1,6 +1,7 @@
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
 import { Streamdown } from "streamdown";
+import { ShimmerText } from "@/components/ai-elements/shimmer";
 import {
 	Source,
 	Sources,
@@ -107,6 +108,9 @@ export function ChatMessages({
 	isLoading?: boolean;
 }) {
 	const lastMessage = messages[messages.length - 1];
+	const showLoadingIndicator =
+		isLoading &&
+		(lastMessage === undefined || lastMessage.role !== "assistant");
 
 	return (
 		<div className="flex-1 h-full overflow-y-auto py-8">
@@ -119,8 +123,9 @@ export function ChatMessages({
 						isLoading &&
 						message.role === "assistant" &&
 						message.id === lastMessage?.id;
+					const isEmpty = textParts.length === 0;
 
-					if (textParts.length === 0) {
+					if (isEmpty && !isStreamingAssistantMessage) {
 						return null;
 					}
 
@@ -141,13 +146,19 @@ export function ChatMessages({
 													"rounded-tl-xl rounded-tr-xl rounded-bl-xl bg-secondary px-3 py-2 text-secondary-foreground",
 											)}
 										>
-											<Streamdown
-												isAnimating={isStreamingAssistantMessage}
-												caret="block"
-												controls={false}
-											>
-												{textParts.map((part) => part.text).join("\n\n")}
-											</Streamdown>
+											{isStreamingAssistantMessage && isEmpty ? (
+												<div className="text-sm text-muted-foreground">
+													<ShimmerText>Thinking...</ShimmerText>
+												</div>
+											) : (
+												<Streamdown
+													isAnimating={isStreamingAssistantMessage}
+													caret="block"
+													controls={false}
+												>
+													{textParts.map((part) => part.text).join("\n\n")}
+												</Streamdown>
+											)}
 										</div>
 									</div>
 									{message.role === "assistant" && toolSources.length > 0 ? (
@@ -169,6 +180,20 @@ export function ChatMessages({
 						</div>
 					);
 				})}
+
+				{showLoadingIndicator ? (
+					<div className="mx-auto w-full px-4">
+						<div className="flex w-full gap-4">
+							<div className="flex w-full flex-col space-y-4">
+								<div className="flex w-full flex-row items-start gap-2 pb-4">
+									<div className="flex flex-col gap-4 text-sm leading-6 text-muted-foreground">
+										<ShimmerText>Thinking...</ShimmerText>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				) : null}
 
 				{error ? (
 					<p className="px-4 text-sm text-destructive">{error.message}</p>
