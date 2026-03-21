@@ -761,7 +761,7 @@ function AppShell({
 								<Card className="min-h-[176px] rounded-xl border-border py-0 shadow-sm">
 									<CardContent className="p-5">
 										<div className="flex flex-col gap-6 md:flex-row md:items-start">
-											<div className="grid shrink-0 grid-cols-[auto_auto] items-start gap-x-3 gap-y-1 pt-1">
+											<div className="grid w-fit shrink-0 grid-cols-[auto_auto] items-start gap-x-3 gap-y-1 pt-1">
 												<div className="row-span-2 text-5xl leading-none tracking-tight tabular-nums">
 													{currentDayOfMonth}
 												</div>
