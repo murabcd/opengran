@@ -68,6 +68,7 @@ import {
 } from "@/components/quick-note/quick-note-page";
 import { SharedQuickNotePage } from "@/components/quick-note/shared-note-page";
 import { type AuthSession, authClient } from "@/lib/auth-client";
+import { getChatId } from "@/lib/chat";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 
@@ -167,7 +168,7 @@ const getSharedNoteShareId = (pathname: string) => {
 	return nextValue ? decodeURIComponent(nextValue) : null;
 };
 
-const getChatKeyFromUrl = (url: URL) => {
+const getChatIdFromUrl = (url: URL) => {
 	const nextValue =
 		url.searchParams.get("chatId")?.trim() ||
 		url.searchParams.get("chatKey")?.trim();
@@ -421,13 +422,13 @@ function AppShell({
 	const [isDesktopMac, setIsDesktopMac] = React.useState(initialDesktopMac);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
 	const [isSigningOut, startSignOut] = React.useTransition();
-	const [currentChatKey, setCurrentChatKey] = React.useState<string | null>(
+	const [currentChatId, setCurrentChatId] = React.useState<string | null>(
 		() => {
 			if (typeof window === "undefined") {
 				return null;
 			}
 
-			return getChatKeyFromUrl(new URL(window.location.href));
+			return getChatIdFromUrl(new URL(window.location.href));
 		},
 	);
 	const [chatComposerId, setChatComposerId] = React.useState(() => {
@@ -436,7 +437,7 @@ function AppShell({
 		}
 
 		return (
-			getChatKeyFromUrl(new URL(window.location.href)) ?? crypto.randomUUID()
+			getChatIdFromUrl(new URL(window.location.href)) ?? crypto.randomUUID()
 		);
 	});
 	const [currentQuickNoteId, setCurrentQuickNoteId] =
@@ -467,9 +468,9 @@ function AppShell({
 	const sharedNotes = useQuery(api.quickNotes.listShared, {});
 	const selectedChatMessages = useQuery(
 		api.chats.getMessages,
-		currentView === "chat" && currentChatKey
+		currentView === "chat" && currentChatId
 			? {
-					chatKey: currentChatKey,
+					chatId: currentChatId,
 				}
 			: "skip",
 	);
@@ -486,7 +487,7 @@ function AppShell({
 		const syncViewFromLocation = () => {
 			const url = new URL(window.location.href);
 			const nextSettingsOpen = url.hash === "#settings";
-			const nextChatKey = getChatKeyFromUrl(url);
+			const nextChatId = getChatIdFromUrl(url);
 			const nextView =
 				window.location.pathname === "/note" ||
 				window.location.pathname === "/notes" ||
@@ -504,8 +505,8 @@ function AppShell({
 				(url.searchParams.get("noteId") as Id<"quickNotes"> | null) ?? null;
 
 			setCurrentView(nextView);
-			setCurrentChatKey(nextChatKey);
-			setChatComposerId(nextChatKey ?? crypto.randomUUID());
+			setCurrentChatId(nextChatId);
+			setChatComposerId(nextChatId ?? crypto.randomUUID());
 			setCurrentQuickNoteId(nextQuickNoteId);
 			setCurrentQuickNoteEditorActions(null);
 
@@ -520,8 +521,8 @@ function AppShell({
 			const nextSearch =
 				nextView === "quick-note" && nextQuickNoteId
 					? `?noteId=${nextQuickNoteId}`
-					: nextView === "chat" && nextChatKey
-						? `?chatId=${encodeURIComponent(nextChatKey)}`
+					: nextView === "chat" && nextChatId
+						? `?chatId=${encodeURIComponent(nextChatId)}`
 						: "";
 			const nextLocation = `${nextPath}${nextSearch}${nextSettingsOpen ? "#settings" : ""}`;
 			if (
@@ -568,7 +569,7 @@ function AppShell({
 	const openFreshChat = React.useCallback(() => {
 		setCurrentView("chat");
 		setSettingsOpen(false);
-		setCurrentChatKey(null);
+		setCurrentChatId(null);
 		setChatComposerId(crypto.randomUUID());
 		window.history.pushState(null, "", "/chat");
 	}, []);
@@ -669,15 +670,15 @@ function AppShell({
 		},
 		[currentQuickNoteId, handleViewChange],
 	);
-	const handleOpenChat = React.useCallback((chatKey: string) => {
+	const handleOpenChat = React.useCallback((chatId: string) => {
 		setCurrentView("chat");
 		setSettingsOpen(false);
-		setCurrentChatKey(chatKey);
-		setChatComposerId(chatKey);
+		setCurrentChatId(chatId);
+		setChatComposerId(chatId);
 		window.history.pushState(
 			null,
 			"",
-			`/chat?chatId=${encodeURIComponent(chatKey)}`,
+			`/chat?chatId=${encodeURIComponent(chatId)}`,
 		);
 	}, []);
 
@@ -686,35 +687,61 @@ function AppShell({
 	}, [openFreshChat]);
 
 	const handleChatPersisted = React.useCallback(
-		(chatKey: string) => {
-			if (currentChatKey === chatKey) {
+		(chatId: string) => {
+			if (currentChatId === chatId) {
 				return;
 			}
 
-			setCurrentChatKey(chatKey);
+			setCurrentChatId(chatId);
 			window.history.replaceState(
 				null,
 				"",
-				`/chat?chatId=${encodeURIComponent(chatKey)}`,
+				`/chat?chatId=${encodeURIComponent(chatId)}`,
 			);
 		},
-		[currentChatKey],
+		[currentChatId],
 	);
 	const handleChatRemoved = React.useCallback(
-		(chatKey: string) => {
-			if (currentChatKey !== chatKey) {
+		(chatId: string) => {
+			if (currentChatId !== chatId) {
 				return;
 			}
 
 			const nextChatId = crypto.randomUUID();
-			setCurrentChatKey(null);
+			setCurrentChatId(null);
 			setChatComposerId(nextChatId);
 			window.history.replaceState(null, "", "/chat");
 		},
-		[currentChatKey],
+		[currentChatId],
 	);
 	const currentChatTitle =
-		chats?.find((chat) => chat.chatKey === currentChatKey)?.title || "Chat";
+		chats?.find((chat) => getChatId(chat) === currentChatId)?.title || "Chat";
+	const isSharedQuickNote =
+		currentView === "quick-note" &&
+		(selectedQuickNote?.visibility === "public" ||
+			sharedNotes?.some((note) => note._id === currentQuickNoteId) === true);
+	const breadcrumbSectionLabel =
+		currentView === "chat"
+			? "Chat"
+			: currentView === "shared" || isSharedQuickNote
+				? "Shared"
+				: "Home";
+	const breadcrumbDetailLabel =
+		currentView === "quick-note"
+			? currentQuickNoteTitle
+			: currentView === "chat" && currentChatId
+				? currentChatTitle
+				: null;
+	const handleBreadcrumbSectionClick = () => {
+		if (currentView === "chat") {
+			openFreshChat();
+			return;
+		}
+
+		handleViewChange(
+			currentView === "shared" || isSharedQuickNote ? "shared" : "home",
+		);
+	};
 	const initialChatMessages = React.useMemo(
 		() => toStoredChatMessages(selectedChatMessages ?? []),
 		[selectedChatMessages],
@@ -768,29 +795,29 @@ function AppShell({
 						/>
 						<Breadcrumb>
 							<BreadcrumbList>
-								<BreadcrumbItem className="hidden md:block">
-									<BreadcrumbLink asChild>
-										<button
-											type="button"
-											className="cursor-pointer"
-											onClick={() => handleViewChange("home")}
-										>
-											OpenGran
-										</button>
-									</BreadcrumbLink>
-								</BreadcrumbItem>
-								<BreadcrumbSeparator className="hidden md:block" />
-								<BreadcrumbItem>
-									<BreadcrumbPage>
-										{currentView === "home"
-											? "Home"
-											: currentView === "quick-note"
-												? currentQuickNoteTitle
-												: currentView === "shared"
-													? "Shared with others"
-													: currentChatTitle}
-									</BreadcrumbPage>
-								</BreadcrumbItem>
+								{breadcrumbDetailLabel ? (
+									<>
+										<BreadcrumbItem className="hidden md:block">
+											<BreadcrumbLink asChild>
+												<button
+													type="button"
+													className="cursor-pointer"
+													onClick={handleBreadcrumbSectionClick}
+												>
+													{breadcrumbSectionLabel}
+												</button>
+											</BreadcrumbLink>
+										</BreadcrumbItem>
+										<BreadcrumbSeparator className="hidden md:block" />
+										<BreadcrumbItem>
+											<BreadcrumbPage>{breadcrumbDetailLabel}</BreadcrumbPage>
+										</BreadcrumbItem>
+									</>
+								) : (
+									<BreadcrumbItem>
+										<BreadcrumbPage>{breadcrumbSectionLabel}</BreadcrumbPage>
+									</BreadcrumbItem>
+								)}
 							</BreadcrumbList>
 						</Breadcrumb>
 					</div>
@@ -998,7 +1025,7 @@ function AppShell({
 						onChatPersisted={handleChatPersisted}
 						chats={chats ?? []}
 						isChatsLoading={chats === undefined}
-						activeChatKey={currentChatKey}
+						activeChatId={currentChatId}
 						onOpenChat={handleOpenChat}
 						onChatRemoved={handleChatRemoved}
 					/>
