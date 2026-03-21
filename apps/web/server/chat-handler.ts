@@ -3,6 +3,7 @@ import { openai } from "@ai-sdk/openai";
 import {
 	consumeStream,
 	convertToModelMessages,
+	createIdGenerator,
 	streamText,
 	type UIMessage,
 	validateUIMessages,
@@ -30,6 +31,10 @@ type ChatRequestBody = {
 
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
+const generateMessageId = createIdGenerator({
+	prefix: "msg",
+	size: 16,
+});
 
 const getConvexUrl = () => {
 	const value = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
@@ -116,7 +121,7 @@ const getChatPreviewFromMessage = (message: UIMessage) =>
 	truncate(getMessageText(message), MAX_CHAT_PREVIEW_LENGTH);
 
 const toStoredMessage = (message: UIMessage) => ({
-	id: message.id,
+	id: message.id || generateMessageId(),
 	role: message.role,
 	partsJson: JSON.stringify(message.parts),
 	metadataJson:
@@ -209,7 +214,7 @@ export const handleChatRequest = async (
 			message && convexClient && id
 				? [
 						...fromStoredMessages(
-							await convexClient.query(api.chats.getMessages, { chatKey: id }),
+							await convexClient.query(api.chats.getMessages, { chatId: id }),
 						),
 						message,
 					]
@@ -226,7 +231,7 @@ export const handleChatRequest = async (
 	if (convexClient && id && lastUserMessage) {
 		try {
 			await convexClient.mutation(api.chats.saveMessage, {
-				chatKey: id,
+				chatId: id,
 				title: getChatTitleFromMessage(lastUserMessage),
 				preview: getChatPreviewFromMessage(lastUserMessage),
 				model: selectedModel?.model ?? fallbackChatModel.model,
@@ -271,6 +276,7 @@ export const handleChatRequest = async (
 
 	result.pipeUIMessageStreamToResponse(response, {
 		originalMessages: chatMessages,
+		generateMessageId,
 		consumeSseStream: consumeStream,
 		onFinish: async ({ responseMessage }) => {
 			if (!convexClient || !id) {
@@ -279,7 +285,7 @@ export const handleChatRequest = async (
 
 			try {
 				await convexClient.mutation(api.chats.saveMessage, {
-					chatKey: id,
+					chatId: id,
 					preview: getChatPreviewFromMessage(responseMessage),
 					model: selectedModel?.model ?? fallbackChatModel.model,
 					message: toStoredMessage(responseMessage),

@@ -7,6 +7,7 @@ import { openai } from "@ai-sdk/openai";
 import {
 	consumeStream,
 	convertToModelMessages,
+	createIdGenerator,
 	streamText,
 	validateUIMessages,
 } from "ai";
@@ -42,6 +43,10 @@ const mimeTypes = {
 const fallbackChatModel = chatModels[0];
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
+const generateMessageId = createIdGenerator({
+	prefix: "msg",
+	size: 16,
+});
 
 const getConvexUrl = () => {
 	const value = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
@@ -123,7 +128,7 @@ const getChatPreviewFromMessage = (message) =>
 	truncate(getMessageText(message), MAX_CHAT_PREVIEW_LENGTH);
 
 const toStoredMessage = (message) => ({
-	id: message.id,
+	id: message.id || generateMessageId(),
 	role: message.role,
 	partsJson: JSON.stringify(message.parts),
 	metadataJson:
@@ -207,7 +212,7 @@ const handleChatRequest = async (request, response) => {
 			message && convexClient && id
 				? [
 						...fromStoredMessages(
-							await convexClient.query(api.chats.getMessages, { chatKey: id }),
+							await convexClient.query(api.chats.getMessages, { chatId: id }),
 						),
 						message,
 					]
@@ -224,7 +229,7 @@ const handleChatRequest = async (request, response) => {
 	if (convexClient && id && lastUserMessage) {
 		try {
 			await convexClient.mutation(api.chats.saveMessage, {
-				chatKey: id,
+				chatId: id,
 				title: getChatTitleFromMessage(lastUserMessage),
 				preview: getChatPreviewFromMessage(lastUserMessage),
 				model: selectedModel.model,
@@ -269,6 +274,7 @@ const handleChatRequest = async (request, response) => {
 
 	result.pipeUIMessageStreamToResponse(response, {
 		originalMessages: chatMessages,
+		generateMessageId,
 		consumeSseStream: consumeStream,
 		onFinish: async ({ responseMessage }) => {
 			if (!convexClient || !id) {
@@ -277,7 +283,7 @@ const handleChatRequest = async (request, response) => {
 
 			try {
 				await convexClient.mutation(api.chats.saveMessage, {
-					chatKey: id,
+					chatId: id,
 					preview: getChatPreviewFromMessage(responseMessage),
 					model: selectedModel.model,
 					message: toStoredMessage(responseMessage),

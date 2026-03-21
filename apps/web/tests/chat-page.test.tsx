@@ -231,7 +231,7 @@ describe("ChatPage", () => {
 				onChatPersisted={vi.fn()}
 				chats={[]}
 				isChatsLoading={false}
-				activeChatKey={null}
+				activeChatId={null}
 				onOpenChat={vi.fn()}
 				onChatRemoved={vi.fn()}
 			/>,

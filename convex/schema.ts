@@ -35,7 +35,7 @@ export default defineSchema({
 	chats: defineTable({
 		ownerTokenIdentifier: v.string(),
 		authorName: v.optional(v.string()),
-		chatKey: v.string(),
+		chatId: v.string(),
 		title: v.string(),
 		preview: v.string(),
 		model: v.optional(v.string()),
@@ -50,9 +50,9 @@ export default defineSchema({
 			"isArchived",
 			"updatedAt",
 		])
-		.index("by_ownerTokenIdentifier_and_chatKey", [
+		.index("by_ownerTokenIdentifier_and_chatId", [
 			"ownerTokenIdentifier",
-			"chatKey",
+			"chatId",
 		]),
 	chatMessages: defineTable({
 		chatId: v.id("chats"),

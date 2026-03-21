@@ -83,6 +83,7 @@ import { toast } from "sonner";
 import { QuickNoteActionsMenu } from "@/components/quick-note/quick-note-actions-menu";
 import { SearchCommand } from "@/components/search/search-command";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
+import { getChatId } from "@/lib/chat";
 import { api } from "../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import type { SearchCommandItem } from "./search/search-command";
@@ -694,7 +695,7 @@ function TrashPopoverContent() {
 	const [search, setSearch] = React.useState("");
 	const [deleteNoteId, setDeleteNoteId] =
 		React.useState<Id<"quickNotes"> | null>(null);
-	const [deleteChatKey, setDeleteChatKey] = React.useState<string | null>(null);
+	const [deleteChatId, setDeleteChatId] = React.useState<string | null>(null);
 	const archivedNotes = useQuery(api.quickNotes.listArchived, {});
 	const archivedChats = useQuery(api.chats.listArchived, {});
 	const restore = useMutation(api.quickNotes.restore).withOptimisticUpdate(
@@ -739,13 +740,13 @@ function TrashPopoverContent() {
 		(localStore, args) => {
 			const archived = localStore.getQuery(api.chats.listArchived, {});
 			const chat =
-				archived?.find((item) => item.chatKey === args.chatKey) ?? null;
+				archived?.find((item) => getChatId(item) === args.chatId) ?? null;
 
 			if (archived !== undefined) {
 				localStore.setQuery(
 					api.chats.listArchived,
 					{},
-					archived.filter((item) => item.chatKey !== args.chatKey),
+					archived.filter((item) => getChatId(item) !== args.chatId),
 				);
 			}
 
@@ -757,7 +758,7 @@ function TrashPopoverContent() {
 						isArchived: false,
 						archivedAt: undefined,
 					},
-					...active.filter((item) => item.chatKey !== args.chatKey),
+					...active.filter((item) => getChatId(item) !== args.chatId),
 				]);
 			}
 		},
@@ -769,7 +770,7 @@ function TrashPopoverContent() {
 				localStore.setQuery(
 					api.chats.listArchived,
 					{},
-					archived.filter((item) => item.chatKey !== args.chatKey),
+					archived.filter((item) => getChatId(item) !== args.chatId),
 				);
 			}
 		},
@@ -829,8 +830,8 @@ function TrashPopoverContent() {
 		[restore],
 	);
 	const handleRestoreChat = React.useCallback(
-		(chatKey: string) => {
-			void restoreChat({ chatKey })
+		(chatId: string) => {
+			void restoreChat({ chatId })
 				.then(() => {
 					toast.success("Chat restored");
 				})
@@ -858,20 +859,20 @@ function TrashPopoverContent() {
 			});
 	}, [deleteNoteId, remove]);
 	const handleDeleteChat = React.useCallback(() => {
-		if (!deleteChatKey) {
+		if (!deleteChatId) {
 			return;
 		}
 
-		void removeChat({ chatKey: deleteChatKey })
+		void removeChat({ chatId: deleteChatId })
 			.then(() => {
-				setDeleteChatKey(null);
+				setDeleteChatId(null);
 				toast.success("Chat deleted permanently");
 			})
 			.catch((error) => {
 				console.error("Failed to delete chat", error);
 				toast.error("Failed to delete chat");
 			});
-	}, [deleteChatKey, removeChat]);
+	}, [deleteChatId, removeChat]);
 
 	return (
 		<>
@@ -971,7 +972,7 @@ function TrashPopoverContent() {
 														<button
 															type="button"
 															className="flex size-5 cursor-pointer items-center justify-center rounded-md p-0 text-sidebar-foreground outline-hidden transition-transform focus-visible:ring-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0"
-															onClick={() => handleRestoreChat(chat.chatKey)}
+															onClick={() => handleRestoreChat(getChatId(chat))}
 															aria-label={`Restore ${chat.title || "New chat"}`}
 														>
 															<Undo2 className="size-4" />
@@ -984,7 +985,7 @@ function TrashPopoverContent() {
 														<button
 															type="button"
 															className="flex size-5 cursor-pointer items-center justify-center rounded-md p-0 text-destructive outline-hidden transition-transform focus-visible:ring-2 hover:bg-sidebar-accent hover:text-destructive [&>svg]:size-4 [&>svg]:shrink-0 dark:text-red-500"
-															onClick={() => setDeleteChatKey(chat.chatKey)}
+															onClick={() => setDeleteChatId(getChatId(chat))}
 															aria-label={`Delete ${chat.title || "New chat"}`}
 														>
 															<Trash2 className="size-4" />
@@ -1051,10 +1052,10 @@ function TrashPopoverContent() {
 				</AlertDialogContent>
 			</AlertDialog>
 			<AlertDialog
-				open={deleteChatKey !== null}
+				open={deleteChatId !== null}
 				onOpenChange={(open) => {
 					if (!open) {
-						setDeleteChatKey(null);
+						setDeleteChatId(null);
 					}
 				}}
 			>

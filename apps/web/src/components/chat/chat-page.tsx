@@ -78,6 +78,7 @@ import * as React from "react";
 import { ChatMessages } from "@/components/chat/messages";
 import { chatModels, fallbackChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
+import { getChatId } from "@/lib/chat";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
 
@@ -87,7 +88,7 @@ export function ChatPage({
 	onChatPersisted,
 	chats,
 	isChatsLoading,
-	activeChatKey,
+	activeChatId,
 	onOpenChat,
 	onChatRemoved,
 }: {
@@ -96,12 +97,12 @@ export function ChatPage({
 	onChatPersisted?: (chatId: string) => void;
 	chats: Array<Doc<"chats">>;
 	isChatsLoading: boolean;
-	activeChatKey: string | null;
-	onOpenChat: (chatKey: string) => void;
-	onChatRemoved: (chatKey: string) => void;
+	activeChatId: string | null;
+	onOpenChat: (chatId: string) => void;
+	onChatRemoved: (chatId: string) => void;
 }) {
 	const [draft, setDraft] = React.useState("");
-	const [confirmTrashChatKey, setConfirmTrashChatKey] = React.useState<
+	const [confirmTrashChatId, setConfirmTrashChatId] = React.useState<
 		string | null
 	>(null);
 	const [selectedModel, setSelectedModel] = React.useState(fallbackChatModel);
@@ -128,16 +129,16 @@ export function ChatPage({
 			localStore.setQuery(
 				api.chats.list,
 				{},
-				currentChats.filter((chat) => chat.chatKey !== args.chatKey),
+				currentChats.filter((chat) => getChatId(chat) !== args.chatId),
 			);
 		}
 
 		const currentMessages = localStore.getQuery(api.chats.getMessages, {
-			chatKey: args.chatKey,
+			chatId: args.chatId,
 		});
 
 		if (currentMessages !== undefined) {
-			localStore.setQuery(api.chats.getMessages, { chatKey: args.chatKey }, []);
+			localStore.setQuery(api.chats.getMessages, { chatId: args.chatId }, []);
 		}
 	});
 	const transport = React.useMemo(
@@ -318,16 +319,16 @@ export function ChatPage({
 	};
 
 	const handleMoveChatToTrash = React.useCallback(() => {
-		if (!confirmTrashChatKey || isMovingChatToTrash) {
+		if (!confirmTrashChatId || isMovingChatToTrash) {
 			return;
 		}
 
 		setIsMovingChatToTrash(true);
 
-		void moveChatToTrash({ chatKey: confirmTrashChatKey })
+		void moveChatToTrash({ chatId: confirmTrashChatId })
 			.then(() => {
-				onChatRemoved(confirmTrashChatKey);
-				setConfirmTrashChatKey(null);
+				onChatRemoved(confirmTrashChatId);
+				setConfirmTrashChatId(null);
 			})
 			.catch((error) => {
 				console.error("Failed to move chat to trash", error);
@@ -335,12 +336,7 @@ export function ChatPage({
 			.finally(() => {
 				setIsMovingChatToTrash(false);
 			});
-	}, [
-		confirmTrashChatKey,
-		isMovingChatToTrash,
-		moveChatToTrash,
-		onChatRemoved,
-	]);
+	}, [confirmTrashChatId, isMovingChatToTrash, moveChatToTrash, onChatRemoved]);
 
 	return (
 		<>
@@ -709,6 +705,7 @@ export function ChatPage({
 												</div>
 												<div className="space-y-2">
 													{section.chats.map((chat) => {
+														const storedChatId = getChatId(chat);
 														const preview =
 															chat.authorName?.trim() || "Unknown user";
 
@@ -717,14 +714,14 @@ export function ChatPage({
 																key={chat._id}
 																className={cn(
 																	"group flex items-center rounded-xl p-1 transition-colors hover:bg-card/50 has-[[data-chat-actions]:focus-visible]:bg-transparent has-[[data-chat-actions]:hover]:bg-transparent",
-																	activeChatKey === chat.chatKey
+																	activeChatId === storedChatId
 																		? "bg-transparent"
 																		: "bg-transparent",
 																)}
 															>
 																<button
 																	type="button"
-																	onClick={() => onOpenChat(chat.chatKey)}
+																	onClick={() => onOpenChat(storedChatId)}
 																	className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
 																>
 																	<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
@@ -759,7 +756,7 @@ export function ChatPage({
 																			className="cursor-pointer"
 																			onSelect={(event) => {
 																				event.preventDefault();
-																				setConfirmTrashChatKey(chat.chatKey);
+																				setConfirmTrashChatId(storedChatId);
 																			}}
 																		>
 																			<Trash2 />
@@ -790,10 +787,10 @@ export function ChatPage({
 				</div>
 			</div>
 			<AlertDialog
-				open={confirmTrashChatKey !== null}
+				open={confirmTrashChatId !== null}
 				onOpenChange={(open) => {
 					if (!open) {
-						setConfirmTrashChatKey(null);
+						setConfirmTrashChatId(null);
 					}
 				}}
 			>

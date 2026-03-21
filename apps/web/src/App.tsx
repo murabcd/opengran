@@ -169,9 +169,7 @@ const getSharedNoteShareId = (pathname: string) => {
 };
 
 const getChatIdFromUrl = (url: URL) => {
-	const nextValue =
-		url.searchParams.get("chatId")?.trim() ||
-		url.searchParams.get("chatKey")?.trim();
+	const nextValue = url.searchParams.get("chatId")?.trim();
 
 	return nextValue ? nextValue : null;
 };

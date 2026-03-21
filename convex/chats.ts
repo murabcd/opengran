@@ -15,7 +15,7 @@ const chatFields = {
 	_creationTime: v.number(),
 	ownerTokenIdentifier: v.string(),
 	authorName: v.optional(v.string()),
-	chatKey: v.string(),
+	chatId: v.string(),
 	title: v.string(),
 	preview: v.string(),
 	model: v.optional(v.string()),
@@ -96,15 +96,15 @@ const normalizeChatTitle = (value: string | undefined) => {
 const normalizeChatPreview = (value: string | undefined) =>
 	truncate(clampWhitespace(value ?? ""), MAX_CHAT_PREVIEW_LENGTH);
 
-const getOwnedChatByKey = async (
+const getOwnedChatById = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
-	chatKey: string,
+	chatId: string,
 ) =>
 	await ctx.db
 		.query("chats")
-		.withIndex("by_ownerTokenIdentifier_and_chatKey", (q) =>
-			q.eq("ownerTokenIdentifier", ownerTokenIdentifier).eq("chatKey", chatKey),
+		.withIndex("by_ownerTokenIdentifier_and_chatId", (q) =>
+			q.eq("ownerTokenIdentifier", ownerTokenIdentifier).eq("chatId", chatId),
 		)
 		.unique();
 
@@ -178,15 +178,15 @@ export const listArchived = query({
 
 export const getMessages = query({
 	args: {
-		chatKey: v.string(),
+		chatId: v.string(),
 	},
 	returns: v.array(storedUiMessageValidator),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const chat = await getOwnedChatByKey(
+		const chat = await getOwnedChatById(
 			ctx,
 			ownerTokenIdentifier,
-			args.chatKey,
+			args.chatId,
 		);
 
 		if (!chat) {
@@ -241,7 +241,7 @@ export const removeMessagesAndDeleteChat = internalMutation({
 
 export const saveMessage = mutation({
 	args: {
-		chatKey: v.string(),
+		chatId: v.string(),
 		title: v.optional(v.string()),
 		preview: v.optional(v.string()),
 		model: v.optional(v.string()),
@@ -268,10 +268,14 @@ export const saveMessage = mutation({
 			args.preview ?? args.message.text,
 		);
 		const messageCreatedAt = args.message.createdAt || now;
-		const existingChat = await getOwnedChatByKey(
+		const storedChatId = clampWhitespace(args.chatId);
+		const storedMessageId =
+			clampWhitespace(args.message.id) ||
+			`msg-${now}-${Math.random().toString(36).slice(2, 10)}`;
+		const existingChat = await getOwnedChatById(
 			ctx,
 			ownerTokenIdentifier,
-			args.chatKey,
+			storedChatId,
 		);
 
 		const chatId =
@@ -279,7 +283,7 @@ export const saveMessage = mutation({
 			(await ctx.db.insert("chats", {
 				ownerTokenIdentifier,
 				authorName,
-				chatKey: args.chatKey,
+				chatId: storedChatId,
 				title: normalizedTitle,
 				preview: normalizedPreview,
 				model: args.model,
@@ -296,6 +300,7 @@ export const saveMessage = mutation({
 				: existingChat.title;
 
 			await ctx.db.patch(existingChat._id, {
+				chatId: storedChatId,
 				authorName: existingChat.authorName ?? authorName,
 				title: nextTitle,
 				preview: normalizedPreview,
@@ -310,7 +315,7 @@ export const saveMessage = mutation({
 		const existingMessage = await ctx.db
 			.query("chatMessages")
 			.withIndex("by_chatId_and_messageId", (q) =>
-				q.eq("chatId", chatId).eq("messageId", args.message.id),
+				q.eq("chatId", chatId).eq("messageId", storedMessageId),
 			)
 			.unique();
 
@@ -319,7 +324,7 @@ export const saveMessage = mutation({
 			(await ctx.db.insert("chatMessages", {
 				chatId,
 				ownerTokenIdentifier,
-				messageId: args.message.id,
+				messageId: storedMessageId,
 				role: args.message.role,
 				partsJson: args.message.partsJson,
 				metadataJson: args.message.metadataJson,
@@ -358,15 +363,15 @@ export const saveMessage = mutation({
 
 export const moveToTrash = mutation({
 	args: {
-		chatKey: v.string(),
+		chatId: v.string(),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const chat = await getOwnedChatByKey(
+		const chat = await getOwnedChatById(
 			ctx,
 			ownerTokenIdentifier,
-			args.chatKey,
+			args.chatId,
 		);
 
 		if (!chat) {
@@ -385,15 +390,15 @@ export const moveToTrash = mutation({
 
 export const restore = mutation({
 	args: {
-		chatKey: v.string(),
+		chatId: v.string(),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const chat = await getOwnedChatByKey(
+		const chat = await getOwnedChatById(
 			ctx,
 			ownerTokenIdentifier,
-			args.chatKey,
+			args.chatId,
 		);
 
 		if (!chat) {
@@ -412,15 +417,15 @@ export const restore = mutation({
 
 export const remove = mutation({
 	args: {
-		chatKey: v.string(),
+		chatId: v.string(),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const chat = await getOwnedChatByKey(
+		const chat = await getOwnedChatById(
 			ctx,
 			ownerTokenIdentifier,
-			args.chatKey,
+			args.chatId,
 		);
 
 		if (!chat) {
