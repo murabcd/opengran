@@ -2,15 +2,18 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatPage } from "../src/components/chat/chat-page";
 
-const { sendMessageMock, useChatMock } = vi.hoisted(() => ({
-	sendMessageMock: vi.fn(),
-	useChatMock: vi.fn(),
-}));
+const convexTokenMock = vi.fn();
+const sendMessageMock = vi.fn();
+const useChatMock = vi.fn();
+const useQueryMock = vi.fn();
 
 vi.mock("@ai-sdk/react", () => ({
 	useChat: useChatMock,
+}));
+
+vi.mock("convex/react", () => ({
+	useQuery: useQueryMock,
 }));
 
 vi.mock("ai", () => ({
@@ -21,6 +24,14 @@ vi.mock("ai", () => ({
 
 vi.mock("../src/components/chat/messages", () => ({
 	ChatMessages: () => <div>chat messages</div>,
+}));
+
+vi.mock("@/lib/auth-client", () => ({
+	authClient: {
+		convex: {
+			token: convexTokenMock,
+		},
+	},
 }));
 
 vi.mock("@workspace/ui/components/avatar", () => ({
@@ -175,13 +186,28 @@ vi.mock("@workspace/ui/components/tooltip", () => ({
 
 describe("ChatPage", () => {
 	beforeEach(() => {
+		convexTokenMock.mockReset();
 		sendMessageMock.mockReset();
+		useQueryMock.mockReset();
+		convexTokenMock.mockResolvedValue({ data: { token: "convex-token" } });
 		useChatMock.mockReturnValue({
 			messages: [],
 			sendMessage: sendMessageMock,
 			error: undefined,
 			status: "ready",
 		});
+		useQueryMock.mockReturnValue([
+			{
+				_id: "meeting-notes",
+				title: "Meeting notes",
+				searchableText: "Team sync",
+			},
+			{
+				_id: "guidelines",
+				title: "Brand guidelines",
+				searchableText: "Voice and tone",
+			},
+		]);
 	});
 
 	afterEach(() => {
@@ -190,6 +216,7 @@ describe("ChatPage", () => {
 
 	it("submits the selected AI context in the chat request body", async () => {
 		const user = userEvent.setup();
+		const { ChatPage } = await import("../src/components/chat/chat-page");
 
 		render(<ChatPage />);
 
@@ -197,11 +224,12 @@ describe("ChatPage", () => {
 			screen.getByPlaceholderText("Ask, search, or make anything..."),
 			"hello",
 		);
-		await user.click(screen.getByRole("button", { name: "GPT-4.1" }));
 		await user.click(screen.getByLabelText("Web Search"));
 		await user.click(screen.getByLabelText("Apps and Integrations"));
-		await user.click(screen.getByRole("button", { name: /meeting notes/i }));
-		await user.click(screen.getByRole("button", { name: /brand guidelines/i }));
+		await user.click(screen.getByRole("button", { name: "Meeting notes" }));
+		await user.click(
+			screen.getByRole("button", { name: "Brand guidelines Voice and tone" }),
+		);
 		await user.click(screen.getByRole("button", { name: "Send" }));
 
 		expect(sendMessageMock).toHaveBeenCalledTimes(1);
@@ -209,11 +237,12 @@ describe("ChatPage", () => {
 			{ text: "hello" },
 			{
 				body: {
-					model: "gpt-4.1",
+					model: "gpt-5.4",
 					webSearchEnabled: true,
 					appsEnabled: false,
 					mentions: ["meeting-notes"],
 					selectedSourceIds: ["guidelines"],
+					convexToken: "convex-token",
 				},
 			},
 		);

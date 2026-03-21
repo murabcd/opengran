@@ -32,6 +32,7 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "@workspace/ui/components/popover";
+import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
 import {
 	Tooltip,
@@ -49,13 +50,13 @@ import {
 	FileText,
 	Globe,
 	Grid3x3,
-	Loader2,
 	Plus,
 	X,
 } from "lucide-react";
 import * as React from "react";
 import { ChatMessages } from "@/components/chat/messages";
 import { chatModels, fallbackChatModel } from "@/lib/ai/models";
+import { authClient } from "@/lib/auth-client";
 import { api } from "../../../../../convex/_generated/api";
 
 export function ChatPage() {
@@ -69,6 +70,7 @@ export function ChatPage() {
 	const [sourceSearchTerm, setSourceSearchTerm] = React.useState("");
 	const [webSearchEnabled, setWebSearchEnabled] = React.useState(false);
 	const [appsEnabled, setAppsEnabled] = React.useState(true);
+	const [isPreparingRequest, setIsPreparingRequest] = React.useState(false);
 	const [selectedSourceIds, setSelectedSourceIds] = React.useState<string[]>(
 		[],
 	);
@@ -78,7 +80,8 @@ export function ChatPage() {
 		[],
 	);
 	const { messages, sendMessage, error, status } = useChat({ transport });
-	const isLoading = status === "submitted" || status === "streaming";
+	const isLoading =
+		status === "submitted" || status === "streaming" || isPreparingRequest;
 	const hasMessages = messages.length > 0;
 	const isNotesLoading = quickNotes === undefined;
 	const contextPages = React.useMemo(
@@ -134,26 +137,37 @@ export function ChatPage() {
 		? "No notes found."
 		: "No notes available.";
 
-	const handleSubmit = () => {
+	const handleSubmit = async () => {
 		const value = draft.trim();
 
 		if (!value || isLoading) {
 			return;
 		}
 
-		void sendMessage(
-			{ text: value },
-			{
-				body: {
-					model: selectedModel.model,
-					webSearchEnabled,
-					appsEnabled,
-					mentions,
-					selectedSourceIds,
+		setIsPreparingRequest(true);
+
+		try {
+			const { data } = await authClient.convex.token({
+				fetchOptions: { throw: false },
+			});
+
+			void sendMessage(
+				{ text: value },
+				{
+					body: {
+						model: selectedModel.model,
+						webSearchEnabled,
+						appsEnabled,
+						mentions,
+						selectedSourceIds,
+						convexToken: data?.token ?? null,
+					},
 				},
-			},
-		);
-		setDraft("");
+			);
+			setDraft("");
+		} finally {
+			setIsPreparingRequest(false);
+		}
 	};
 
 	const toggleSource = (sourceId: string) => {
@@ -212,7 +226,7 @@ export function ChatPage() {
 					className={`mx-auto w-full max-w-xl ${hasMessages ? "mt-auto" : ""}`}
 					onSubmit={(event) => {
 						event.preventDefault();
-						handleSubmit();
+						void handleSubmit();
 					}}
 				>
 					<label htmlFor="chat-prompt" className="sr-only">
@@ -253,13 +267,7 @@ export function ChatPage() {
 										<CommandList>
 											{isNotesLoading ? (
 												<CommandGroup heading="Notes">
-													<CommandItem
-														disabled
-														className="gap-2 text-muted-foreground"
-													>
-														<Loader2 className="size-4 animate-spin" />
-														Loading notes...
-													</CommandItem>
+													<ChatNoteListSkeleton />
 												</CommandGroup>
 											) : null}
 											<CommandEmpty>{emptyStateMessage}</CommandEmpty>
@@ -276,16 +284,7 @@ export function ChatPage() {
 															onSelect={() => addMention(document.id)}
 														>
 															<document.icon />
-															<div className="flex min-w-0 flex-col">
-																<span className="truncate">
-																	{document.title}
-																</span>
-																{document.preview ? (
-																	<span className="truncate text-xs text-muted-foreground">
-																		{document.preview}
-																	</span>
-																) : null}
-															</div>
+															<span className="truncate">{document.title}</span>
 														</CommandItem>
 													))}
 												</CommandGroup>
@@ -476,13 +475,7 @@ export function ChatPage() {
 													<CommandList>
 														{isNotesLoading ? (
 															<CommandGroup heading="Notes">
-																<CommandItem
-																	disabled
-																	className="gap-2 text-muted-foreground"
-																>
-																	<Loader2 className="size-4 animate-spin" />
-																	Loading notes...
-																</CommandItem>
+																<ChatNoteListSkeleton />
 															</CommandGroup>
 														) : null}
 														<CommandEmpty>No sources found.</CommandEmpty>
@@ -542,7 +535,9 @@ export function ChatPage() {
 								variant="default"
 								size="icon-sm"
 								disabled={!draft.trim() || isLoading}
-								onClick={handleSubmit}
+								onClick={() => {
+									void handleSubmit();
+								}}
 							>
 								<ArrowUp className="size-4" />
 							</InputGroupButton>
@@ -570,5 +565,21 @@ function OpenGranMark({ className }: { className?: string }) {
 				strokeLinejoin="round"
 			/>
 		</svg>
+	);
+}
+
+function ChatNoteListSkeleton() {
+	return (
+		<div className="space-y-2 px-1 py-1">
+			{["primary", "secondary"].map((item) => (
+				<div
+					key={item}
+					className="flex items-center gap-2 rounded-md px-2 py-2"
+				>
+					<Skeleton className="size-4 rounded-sm" />
+					<Skeleton className="h-4 w-32 max-w-full" />
+				</div>
+			))}
+		</div>
 	);
 }

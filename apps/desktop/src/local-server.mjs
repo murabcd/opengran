@@ -5,6 +5,8 @@ import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openai } from "@ai-sdk/openai";
 import { convertToModelMessages, streamText } from "ai";
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "../../../convex/_generated/api.js";
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
 const webDistDir = resolve(runtimeDir, "../../web/dist");
@@ -33,6 +35,56 @@ const mimeTypes = {
 };
 
 const fallbackChatModel = chatModels[0];
+
+const getConvexUrl = () => {
+	const value = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
+
+	if (!value) {
+		throw new Error("CONVEX_URL is not configured.");
+	}
+
+	return value;
+};
+
+const getReferencedNoteIds = ({ mentions, selectedSourceIds }) =>
+	[...(mentions ?? []), ...(selectedSourceIds ?? [])].filter(
+		(value, index, values) => value && values.indexOf(value) === index,
+	);
+
+const getNotesContext = async ({
+	convexToken,
+	mentions,
+	selectedSourceIds,
+}) => {
+	if (!convexToken) {
+		return "";
+	}
+
+	const noteIds = getReferencedNoteIds({ mentions, selectedSourceIds });
+
+	if (noteIds.length === 0) {
+		return "";
+	}
+
+	const client = new ConvexHttpClient(getConvexUrl(), { auth: convexToken });
+	const notes = await client.query(api.quickNotes.getChatContext, {
+		ids: noteIds,
+	});
+
+	if (notes.length === 0) {
+		return "";
+	}
+
+	return [
+		"Attached notes are available below. Use them when they are relevant to the user's request.",
+		...notes.map((note, index) =>
+			[
+				`Note ${index + 1}: ${note.title}`,
+				note.searchableText || "(empty note)",
+			].join("\n"),
+		),
+	].join("\n\n");
+};
 
 const resolveChatModel = (value) =>
 	chatModels.find((model) => model.id === value || model.model === value) ??
@@ -72,6 +124,9 @@ const handleChatRequest = async (request, response) => {
 		messages = [],
 		model,
 		webSearchEnabled = false,
+		mentions,
+		selectedSourceIds,
+		convexToken,
 	} = await readJsonBody(request);
 
 	if (!Array.isArray(messages)) {
@@ -82,14 +137,20 @@ const handleChatRequest = async (request, response) => {
 	}
 
 	const selectedModel = resolveChatModel(model);
+	const notesContext = await getNotesContext({
+		convexToken,
+		mentions,
+		selectedSourceIds,
+	});
 	const systemPrompt = webSearchEnabled
 		? [
 				BASE_SYSTEM_PROMPT,
+				notesContext,
 				"Web search is enabled.",
 				"Use web search when the answer would benefit from up-to-date or verifiable information.",
 				"When you use web search, rely on the tool results instead of making up citations.",
 			].join(" ")
-		: BASE_SYSTEM_PROMPT;
+		: [BASE_SYSTEM_PROMPT, notesContext].filter(Boolean).join(" ");
 
 	const result = streamText({
 		model: openai(selectedModel.model),

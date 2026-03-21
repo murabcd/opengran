@@ -32,6 +32,12 @@ const sharedQuickNoteValidator = v.object({
 	isOwner: v.boolean(),
 });
 
+const quickNoteChatContextValidator = v.object({
+	id: v.id("quickNotes"),
+	title: v.string(),
+	searchableText: v.string(),
+});
+
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
 
@@ -180,6 +186,36 @@ export const get = query({
 		}
 
 		return normalizeQuickNote(note);
+	},
+});
+
+export const getChatContext = query({
+	args: {
+		ids: v.array(v.id("quickNotes")),
+	},
+	returns: v.array(quickNoteChatContextValidator),
+	handler: async (ctx, args) => {
+		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		const uniqueIds = [...new Set(args.ids)].slice(0, 20);
+		const notes = await Promise.all(uniqueIds.map((id) => ctx.db.get(id)));
+
+		return notes.flatMap((note) => {
+			if (
+				!note ||
+				note.isArchived ||
+				note.ownerTokenIdentifier !== ownerTokenIdentifier
+			) {
+				return [];
+			}
+
+			return [
+				{
+					id: note._id,
+					title: note.title.trim() || "New note",
+					searchableText: note.searchableText.trim(),
+				},
+			];
+		});
 	},
 });
 
