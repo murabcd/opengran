@@ -53,6 +53,7 @@ import { Database, ImageUp, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
+import { getAvatarSrc } from "@/lib/avatar";
 import { api } from "../../../../../convex/_generated/api";
 
 type SettingsUser = {
@@ -358,6 +359,11 @@ function ManageAccountForm({
 	}, [user]);
 
 	const initials = getInitials(name, user.email);
+	const avatarSrc = getAvatarSrc({
+		avatar: avatarPreview,
+		name,
+		email: user.email,
+	});
 
 	return (
 		<div className="py-4">
@@ -366,13 +372,11 @@ function ManageAccountForm({
 					<FieldTitle>Avatar</FieldTitle>
 					<div className="flex items-center gap-4">
 						<Avatar className="size-20 rounded-lg">
-							{avatarPreview ? (
-								<AvatarImage
-									src={avatarPreview}
-									alt="Avatar preview"
-									className="object-cover"
-								/>
-							) : null}
+							<AvatarImage
+								src={avatarSrc}
+								alt="Avatar preview"
+								className="object-cover"
+							/>
 							<AvatarFallback className="rounded-lg bg-muted/40">
 								{avatarPreview ? initials : <ImageUp className="size-8" />}
 							</AvatarFallback>

@@ -83,6 +83,7 @@ import { toast } from "sonner";
 import { QuickNoteActionsMenu } from "@/components/quick-note/quick-note-actions-menu";
 import { SearchCommand } from "@/components/search/search-command";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
+import { getAvatarSrc } from "@/lib/avatar";
 import { getChatId } from "@/lib/chat";
 import { api } from "../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
@@ -572,6 +573,7 @@ function NavUser({
 		.join("")
 		.slice(0, 2)
 		.toUpperCase();
+	const avatarSrc = getAvatarSrc(user);
 	const isDarkTheme =
 		theme === "dark" ||
 		(theme === "system" && document.documentElement.classList.contains("dark"));
@@ -589,7 +591,7 @@ function NavUser({
 							className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
 						>
 							<Avatar className="size-8 rounded-lg">
-								<AvatarImage src={user.avatar} alt={user.name} />
+								<AvatarImage src={avatarSrc} alt={user.name} />
 								<AvatarFallback className="rounded-lg">
 									{initials}
 								</AvatarFallback>
