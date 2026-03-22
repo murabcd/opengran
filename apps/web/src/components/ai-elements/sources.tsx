@@ -9,25 +9,24 @@ import { cn } from "@workspace/ui/lib/utils";
 import { BookIcon, ChevronDownIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 
-export type SourcesProps = ComponentProps<typeof Collapsible>;
-
-export const Sources = ({ className, ...props }: SourcesProps) => (
+export const Sources = ({
+	className,
+	...props
+}: ComponentProps<typeof Collapsible>) => (
 	<Collapsible
 		className={cn("mt-4 mb-4 text-xs text-muted-foreground", className)}
 		{...props}
 	/>
 );
 
-export type SourcesTriggerProps = ComponentProps<typeof CollapsibleTrigger> & {
-	count: number;
-};
-
 export const SourcesTrigger = ({
 	className,
 	count,
 	children,
 	...props
-}: SourcesTriggerProps) => (
+}: ComponentProps<typeof CollapsibleTrigger> & {
+	count: number;
+}) => (
 	<CollapsibleTrigger
 		className={cn(
 			"flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground",
@@ -44,12 +43,10 @@ export const SourcesTrigger = ({
 	</CollapsibleTrigger>
 );
 
-export type SourcesContentProps = ComponentProps<typeof CollapsibleContent>;
-
 export const SourcesContent = ({
 	className,
 	...props
-}: SourcesContentProps) => (
+}: ComponentProps<typeof CollapsibleContent>) => (
 	<CollapsibleContent
 		className={cn(
 			"mt-3 flex w-fit flex-col gap-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:animate-in data-[state=open]:slide-in-from-top-2",
@@ -59,9 +56,12 @@ export const SourcesContent = ({
 	/>
 );
 
-export type SourceProps = ComponentProps<"a">;
-
-export const Source = ({ href, title, children, ...props }: SourceProps) => (
+export const Source = ({
+	href,
+	title,
+	children,
+	...props
+}: ComponentProps<"a">) => (
 	<a
 		className="flex items-start gap-2 text-muted-foreground transition-colors hover:text-foreground"
 		href={href}

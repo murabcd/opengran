@@ -85,14 +85,17 @@ export function SettingsDialog({
 	const [activePage, setActivePage] = useState<SettingsPage>("Profile");
 	const { data: session } = authClient.useSession();
 
-	useEffect(() => {
-		if (open) {
-			setActivePage("Profile");
-		}
-	}, [open]);
-
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog
+			open={open}
+			onOpenChange={(nextOpen) => {
+				if (nextOpen) {
+					setActivePage("Profile");
+				}
+
+				onOpenChange(nextOpen);
+			}}
+		>
 			<DialogContent className="overflow-hidden p-0 md:max-h-[500px] md:max-w-[700px] lg:max-w-[800px]">
 				<DialogHeader className="sr-only">
 					<DialogTitle>Settings</DialogTitle>
@@ -347,21 +350,25 @@ function ManageAccountForm({
 	onCancel: () => void;
 	onSave: (user: SettingsUser) => void;
 }) {
-	const [name, setName] = useState(user.name);
-	const [avatar, setAvatar] = useState(user.avatar);
-	const [avatarPreview, setAvatarPreview] = useState(user.avatar);
+	const [formState, setFormState] = useState(() => ({
+		name: user.name,
+		avatar: user.avatar,
+		avatarPreview: user.avatar,
+	}));
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
-		setName(user.name);
-		setAvatar(user.avatar);
-		setAvatarPreview(user.avatar);
+		setFormState({
+			name: user.name,
+			avatar: user.avatar,
+			avatarPreview: user.avatar,
+		});
 	}, [user]);
 
-	const initials = getInitials(name, user.email);
+	const initials = getInitials(formState.name, user.email);
 	const avatarSrc = getAvatarSrc({
-		avatar: avatarPreview,
-		name,
+		avatar: formState.avatarPreview,
+		name: formState.name,
 		email: user.email,
 	});
 
@@ -378,7 +385,11 @@ function ManageAccountForm({
 								className="object-cover"
 							/>
 							<AvatarFallback className="rounded-lg bg-muted/40">
-								{avatarPreview ? initials : <ImageUp className="size-8" />}
+								{formState.avatarPreview ? (
+									initials
+								) : (
+									<ImageUp className="size-8" />
+								)}
 							</AvatarFallback>
 						</Avatar>
 						<div className="flex flex-col gap-2">
@@ -402,8 +413,11 @@ function ManageAccountForm({
 									}
 
 									const objectUrl = URL.createObjectURL(file);
-									setAvatar(objectUrl);
-									setAvatarPreview(objectUrl);
+									setFormState((current) => ({
+										...current,
+										avatar: objectUrl,
+										avatarPreview: objectUrl,
+									}));
 								}}
 							/>
 							<FieldDescription>
@@ -416,8 +430,14 @@ function ManageAccountForm({
 					<FieldLabel htmlFor="settings-name">Full name</FieldLabel>
 					<Input
 						id="settings-name"
-						value={name}
-						onChange={(event) => setName(event.target.value)}
+						value={formState.name}
+						onChange={(event) => {
+							const nextName = event.target.value;
+							setFormState((current) => ({
+								...current,
+								name: nextName,
+							}));
+						}}
 						placeholder="Enter your name"
 					/>
 				</Field>
@@ -433,12 +453,12 @@ function ManageAccountForm({
 				<Button
 					onClick={() =>
 						onSave({
-							name: name.trim() || user.name,
+							name: formState.name.trim() || user.name,
 							email: user.email,
-							avatar,
+							avatar: formState.avatar,
 						})
 					}
-					disabled={!name.trim()}
+					disabled={!formState.name.trim()}
 				>
 					Save
 				</Button>

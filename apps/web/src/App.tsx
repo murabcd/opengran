@@ -250,7 +250,7 @@ const useCurrentDate = () => {
 	return currentDate;
 };
 
-export function App() {
+function App() {
 	const { data: session, isPending: isSessionPending } =
 		authClient.useSession();
 	const { isAuthenticated: isConvexAuthenticated } = useConvexAuth();

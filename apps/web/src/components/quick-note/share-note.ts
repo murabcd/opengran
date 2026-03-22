@@ -22,7 +22,7 @@ export async function writeTextToClipboard(value: string) {
 	document.body.removeChild(textarea);
 }
 
-export async function getShareBaseUrl() {
+async function getShareBaseUrl() {
 	if (window.openGranDesktop?.getShareBaseUrl) {
 		return (await window.openGranDesktop.getShareBaseUrl()).url;
 	}

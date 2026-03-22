@@ -1,4 +1,4 @@
-export interface ChatModel {
+interface ChatModel {
 	id: string;
 	name: string;
 	model: string;
@@ -22,7 +22,7 @@ export const chatModels: Array<ChatModel> = [
 	},
 ];
 
-export const DEFAULT_CHAT_MODEL = "gpt-5.4";
+const DEFAULT_CHAT_MODEL = "gpt-5.4";
 
 export const fallbackChatModel =
 	chatModels.find((model) => model.id === DEFAULT_CHAT_MODEL) ?? chatModels[0];

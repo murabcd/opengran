@@ -360,12 +360,8 @@ export function ChatPage({
 							/>
 						</div>
 					) : null}
-					<form
+					<div
 						className={`mx-auto w-full max-w-xl ${hasMessages ? "mt-auto" : ""}`}
-						onSubmit={(event) => {
-							event.preventDefault();
-							void handleSubmit();
-						}}
 					>
 						<label htmlFor="chat-prompt" className="sr-only">
 							Prompt
@@ -611,7 +607,6 @@ export function ChatPage({
 													<Command>
 														<CommandInput
 															placeholder="Select a workspace or note"
-															autoFocus
 															value={sourceSearchTerm}
 															onValueChange={setSourceSearchTerm}
 														/>
@@ -686,7 +681,7 @@ export function ChatPage({
 								</InputGroupButton>
 							</InputGroupAddon>
 						</InputGroup>
-					</form>
+					</div>
 					{!hasMessages ? (
 						<div className="mx-auto mt-6 w-full max-w-xl">
 							{isChatsLoading ? (

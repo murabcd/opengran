@@ -6,16 +6,16 @@ import {
 	Users,
 } from "lucide-react";
 
-export const workspaceRoleValues = [
+const workspaceRoleValues = [
 	"startup-generalist",
 	"investing",
 	"recruiting",
 	"customer-facing",
 ] as const;
 
-export type WorkspaceRole = (typeof workspaceRoleValues)[number];
+type WorkspaceRole = (typeof workspaceRoleValues)[number];
 
-export type WorkspaceRoleOption = {
+type WorkspaceRoleOption = {
 	value: WorkspaceRole;
 	title: string;
 	description: string;
@@ -23,7 +23,7 @@ export type WorkspaceRoleOption = {
 	icon: LucideIcon;
 };
 
-export const workspaceRoleOptions: WorkspaceRoleOption[] = [
+const workspaceRoleOptions: WorkspaceRoleOption[] = [
 	{
 		value: "startup-generalist",
 		title: "Startup / Generalist",
@@ -57,9 +57,6 @@ export const workspaceRoleOptions: WorkspaceRoleOption[] = [
 const workspaceRoleOptionsByValue = new Map(
 	workspaceRoleOptions.map((option) => [option.value, option]),
 );
-
-export const isWorkspaceRole = (value: string): value is WorkspaceRole =>
-	workspaceRoleValues.includes(value as WorkspaceRole);
 
 export const getWorkspaceRoleOption = (role: string | undefined | null) => {
 	if (!role) {
