@@ -30,6 +30,10 @@ const minimumWindowSize = {
 	width: 390,
 	height: 640,
 };
+const defaultWindowSize = {
+	width: 1280,
+	height: 860,
+};
 const defaultTraySettings = {
 	keepOpenInMenuBar: true,
 };
@@ -219,8 +223,8 @@ const createMainWindow = async (targetUrl) => {
 	const isMac = process.platform === "darwin";
 
 	mainWindow = new BrowserWindow({
-		width: 1440,
-		height: 960,
+		width: defaultWindowSize.width,
+		height: defaultWindowSize.height,
 		minWidth: minimumWindowSize.width,
 		minHeight: minimumWindowSize.height,
 		title: "OpenGran",
