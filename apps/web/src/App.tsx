@@ -868,7 +868,9 @@ function WelcomeCelebrationScreen({
 			isDesktopMac={isDesktopMac}
 			className="relative overflow-hidden"
 			contentClassName="relative z-10"
-			background={<canvas ref={canvasRef} className="onboarding-confetti-canvas" />}
+			background={
+				<canvas ref={canvasRef} className="onboarding-confetti-canvas" />
+			}
 		>
 			<OnboardingStepCard
 				title="You&apos;re in"
