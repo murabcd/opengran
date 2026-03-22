@@ -40,8 +40,8 @@ export function QuickNoteActionsMenu({
 	itemsBeforeDefaults,
 	itemsAfterDefaults,
 }: {
-	noteId: Id<"quickNotes">;
-	onMoveToTrash?: (noteId: Id<"quickNotes">) => void;
+	noteId: Id<"notes">;
+	onMoveToTrash?: (noteId: Id<"notes">) => void;
 	children: React.ReactNode;
 	align?: "start" | "center" | "end";
 	side?: "top" | "right" | "bottom" | "left";
@@ -51,44 +51,44 @@ export function QuickNoteActionsMenu({
 	const [confirmOpen, setConfirmOpen] = React.useState(false);
 	const [isMovingToTrash, setIsMovingToTrash] = React.useState(false);
 	const [isUpdatingShare, setIsUpdatingShare] = React.useState(false);
-	const note = useQuery(api.quickNotes.get, { id: noteId });
-	const ensureShareId = useMutation(api.quickNotes.ensureShareId);
-	const moveToTrash = useMutation(
-		api.quickNotes.moveToTrash,
-	).withOptimisticUpdate((localStore, args) => {
-		const notes = localStore.getQuery(api.quickNotes.list, {});
-		const sharedNotes = localStore.getQuery(api.quickNotes.listShared, {});
+	const note = useQuery(api.notes.get, { id: noteId });
+	const ensureShareId = useMutation(api.notes.ensureShareId);
+	const moveToTrash = useMutation(api.notes.moveToTrash).withOptimisticUpdate(
+		(localStore, args) => {
+			const notes = localStore.getQuery(api.notes.list, {});
+			const sharedNotes = localStore.getQuery(api.notes.listShared, {});
 
-		if (notes !== undefined) {
-			localStore.setQuery(
-				api.quickNotes.list,
-				{},
-				notes.filter((item) => item._id !== args.id),
-			);
-		}
+			if (notes !== undefined) {
+				localStore.setQuery(
+					api.notes.list,
+					{},
+					notes.filter((item) => item._id !== args.id),
+				);
+			}
 
-		if (sharedNotes !== undefined) {
-			localStore.setQuery(
-				api.quickNotes.listShared,
-				{},
-				sharedNotes.filter((item) => item._id !== args.id),
-			);
-		}
+			if (sharedNotes !== undefined) {
+				localStore.setQuery(
+					api.notes.listShared,
+					{},
+					sharedNotes.filter((item) => item._id !== args.id),
+				);
+			}
 
-		const activeNote = localStore.getQuery(api.quickNotes.get, { id: args.id });
-		if (activeNote !== undefined) {
-			localStore.setQuery(api.quickNotes.get, { id: args.id }, null);
-		}
+			const activeNote = localStore.getQuery(api.notes.get, { id: args.id });
+			if (activeNote !== undefined) {
+				localStore.setQuery(api.notes.get, { id: args.id }, null);
+			}
 
-		const latestNote = localStore.getQuery(api.quickNotes.getLatest, {});
-		if (latestNote?._id === args.id) {
-			const nextLatest =
-				notes?.find((item) => item._id !== args.id) ??
-				(null as Doc<"quickNotes"> | null);
-			localStore.setQuery(api.quickNotes.getLatest, {}, nextLatest);
-		}
-	});
-	const updateVisibility = useMutation(api.quickNotes.updateVisibility);
+			const latestNote = localStore.getQuery(api.notes.getLatest, {});
+			if (latestNote?._id === args.id) {
+				const nextLatest =
+					notes?.find((item) => item._id !== args.id) ??
+					(null as Doc<"notes"> | null);
+				localStore.setQuery(api.notes.getLatest, {}, nextLatest);
+			}
+		},
+	);
+	const updateVisibility = useMutation(api.notes.updateVisibility);
 
 	const handleCopyLink = React.useCallback(async () => {
 		try {
@@ -145,7 +145,7 @@ export function QuickNoteActionsMenu({
 						: "Note shared and link copied",
 				);
 			} catch (error) {
-				console.error("Failed to update quick note visibility", error);
+				console.error("Failed to update note visibility", error);
 				toast.error("Failed to update sharing");
 			} finally {
 				setIsUpdatingShare(false);
@@ -168,7 +168,7 @@ export function QuickNoteActionsMenu({
 				toast.success("Note moved to trash");
 			})
 			.catch((error) => {
-				console.error("Failed to move quick note to trash", error);
+				console.error("Failed to move note to trash", error);
 				toast.error("Failed to move note to trash");
 			})
 			.finally(() => {

@@ -9,8 +9,8 @@ const noteVisibilityValidator = v.union(
 	v.literal("public"),
 );
 
-const quickNoteFields = {
-	_id: v.id("quickNotes"),
+const noteFields = {
+	_id: v.id("notes"),
 	_creationTime: v.number(),
 	ownerTokenIdentifier: v.string(),
 	authorName: v.optional(v.string()),
@@ -26,25 +26,25 @@ const quickNoteFields = {
 	updatedAt: v.number(),
 };
 
-const quickNoteValidator = v.object(quickNoteFields);
+const noteValidator = v.object(noteFields);
 
-const sharedQuickNoteValidator = v.object({
-	...quickNoteFields,
+const sharedNoteValidator = v.object({
+	...noteFields,
 	isOwner: v.boolean(),
 });
 
-const quickNoteChatContextValidator = v.object({
-	id: v.id("quickNotes"),
+const noteChatContextValidator = v.object({
+	id: v.id("notes"),
 	title: v.string(),
 	searchableText: v.string(),
 });
 
-const removeAllQuickNotesResultValidator = v.object({
+const removeAllNotesResultValidator = v.object({
 	deletedCount: v.number(),
 	hasMore: v.boolean(),
 });
 
-const REMOVE_ALL_QUICK_NOTES_BATCH_SIZE = 100;
+const REMOVE_ALL_NOTES_BATCH_SIZE = 100;
 
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
@@ -52,7 +52,7 @@ const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	if (!identity) {
 		throw new ConvexError({
 			code: "UNAUTHENTICATED",
-			message: "You must be signed in to access quick notes.",
+			message: "You must be signed in to access notes.",
 		});
 	}
 
@@ -62,7 +62,7 @@ const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 const getAuthorName = (identity: Awaited<ReturnType<typeof requireIdentity>>) =>
 	identity.name?.trim() || identity.email?.trim() || "Unknown user";
 
-const normalizeQuickNote = (note: Doc<"quickNotes">) => ({
+const normalizeNote = (note: Doc<"notes">) => ({
 	...note,
 	visibility: note.visibility ?? "private",
 });
@@ -75,7 +75,7 @@ const requireTokenIdentifier = async (ctx: QueryCtx | MutationCtx) => {
 
 const requireOwnedNote = async (
 	ctx: QueryCtx | MutationCtx,
-	id: Doc<"quickNotes">["_id"],
+	id: Doc<"notes">["_id"],
 ) => {
 	const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
 	const note = await ctx.db.get(id);
@@ -83,14 +83,14 @@ const requireOwnedNote = async (
 	if (!note) {
 		throw new ConvexError({
 			code: "NOTE_NOT_FOUND",
-			message: "Quick note not found.",
+			message: "Note not found.",
 		});
 	}
 
 	if (note.ownerTokenIdentifier !== ownerTokenIdentifier) {
 		throw new ConvexError({
 			code: "UNAUTHORIZED",
-			message: "You do not have access to this quick note.",
+			message: "You do not have access to this note.",
 		});
 	}
 
@@ -99,32 +99,32 @@ const requireOwnedNote = async (
 
 const createShareId = () => crypto.randomUUID().replaceAll("-", "");
 
-const deleteQuickNoteBatch = async (
+const deleteNoteBatch = async (
 	ctx: MutationCtx,
 	ownerTokenIdentifier: string,
 ) => {
 	const notes = await ctx.db
-		.query("quickNotes")
+		.query("notes")
 		.withIndex("by_ownerTokenIdentifier_and_updatedAt", (q) =>
 			q.eq("ownerTokenIdentifier", ownerTokenIdentifier),
 		)
-		.take(REMOVE_ALL_QUICK_NOTES_BATCH_SIZE);
+		.take(REMOVE_ALL_NOTES_BATCH_SIZE);
 
 	await Promise.all(notes.map((note) => ctx.db.delete(note._id)));
 
 	return {
 		deletedCount: notes.length,
-		hasMore: notes.length === REMOVE_ALL_QUICK_NOTES_BATCH_SIZE,
+		hasMore: notes.length === REMOVE_ALL_NOTES_BATCH_SIZE,
 	};
 };
 
 export const getLatest = query({
 	args: {},
-	returns: v.union(quickNoteValidator, v.null()),
+	returns: v.union(noteValidator, v.null()),
 	handler: async (ctx) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
 		const note = await ctx.db
-			.query("quickNotes")
+			.query("notes")
 			.withIndex("by_ownerTokenIdentifier_and_isArchived_and_updatedAt", (q) =>
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
@@ -133,17 +133,17 @@ export const getLatest = query({
 			.order("desc")
 			.first();
 
-		return note ? normalizeQuickNote(note) : null;
+		return note ? normalizeNote(note) : null;
 	},
 });
 
 export const list = query({
 	args: {},
-	returns: v.array(quickNoteValidator),
+	returns: v.array(noteValidator),
 	handler: async (ctx) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
 		const notes = await ctx.db
-			.query("quickNotes")
+			.query("notes")
 			.withIndex("by_ownerTokenIdentifier_and_isArchived_and_updatedAt", (q) =>
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
@@ -152,17 +152,17 @@ export const list = query({
 			.order("desc")
 			.take(100);
 
-		return notes.map(normalizeQuickNote);
+		return notes.map(normalizeNote);
 	},
 });
 
 export const listShared = query({
 	args: {},
-	returns: v.array(quickNoteValidator),
+	returns: v.array(noteValidator),
 	handler: async (ctx) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
 		const notes = await ctx.db
-			.query("quickNotes")
+			.query("notes")
 			.withIndex("by_owner_visibility_archived_updatedAt", (q) =>
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
@@ -172,17 +172,17 @@ export const listShared = query({
 			.order("desc")
 			.take(100);
 
-		return notes.map(normalizeQuickNote);
+		return notes.map(normalizeNote);
 	},
 });
 
 export const listArchived = query({
 	args: {},
-	returns: v.array(quickNoteValidator),
+	returns: v.array(noteValidator),
 	handler: async (ctx) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
 		const notes = await ctx.db
-			.query("quickNotes")
+			.query("notes")
 			.withIndex("by_ownerTokenIdentifier_and_isArchived_and_updatedAt", (q) =>
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
@@ -191,15 +191,15 @@ export const listArchived = query({
 			.order("desc")
 			.take(100);
 
-		return notes.map(normalizeQuickNote);
+		return notes.map(normalizeNote);
 	},
 });
 
 export const get = query({
 	args: {
-		id: v.id("quickNotes"),
+		id: v.id("notes"),
 	},
-	returns: v.union(quickNoteValidator, v.null()),
+	returns: v.union(noteValidator, v.null()),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
 		const note = await ctx.db.get(args.id);
@@ -212,15 +212,15 @@ export const get = query({
 			return null;
 		}
 
-		return normalizeQuickNote(note);
+		return normalizeNote(note);
 	},
 });
 
 export const getChatContext = query({
 	args: {
-		ids: v.array(v.id("quickNotes")),
+		ids: v.array(v.id("notes")),
 	},
-	returns: v.array(quickNoteChatContextValidator),
+	returns: v.array(noteChatContextValidator),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
 		const uniqueIds = [...new Set(args.ids)].slice(0, 20);
@@ -250,10 +250,10 @@ export const getShared = query({
 	args: {
 		shareId: v.string(),
 	},
-	returns: v.union(sharedQuickNoteValidator, v.null()),
+	returns: v.union(sharedNoteValidator, v.null()),
 	handler: async (ctx, args) => {
 		const note = await ctx.db
-			.query("quickNotes")
+			.query("notes")
 			.withIndex("by_shareId", (q) => q.eq("shareId", args.shareId))
 			.unique();
 
@@ -261,7 +261,7 @@ export const getShared = query({
 			return null;
 		}
 
-		const normalizedNote = normalizeQuickNote(note);
+		const normalizedNote = normalizeNote(note);
 
 		const identity = await ctx.auth.getUserIdentity();
 		const isOwner =
@@ -280,13 +280,13 @@ export const getShared = query({
 
 export const create = mutation({
 	args: {},
-	returns: v.id("quickNotes"),
+	returns: v.id("notes"),
 	handler: async (ctx) => {
 		const identity = await requireIdentity(ctx);
 		const ownerTokenIdentifier = identity.tokenIdentifier;
 		const now = Date.now();
 
-		return await ctx.db.insert("quickNotes", {
+		return await ctx.db.insert("notes", {
 			ownerTokenIdentifier,
 			authorName: getAuthorName(identity),
 			title: "New note",
@@ -308,12 +308,12 @@ export const create = mutation({
 
 export const save = mutation({
 	args: {
-		id: v.optional(v.id("quickNotes")),
+		id: v.optional(v.id("notes")),
 		title: v.string(),
 		content: v.string(),
 		searchableText: v.string(),
 	},
-	returns: v.id("quickNotes"),
+	returns: v.id("notes"),
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
 		const ownerTokenIdentifier = identity.tokenIdentifier;
@@ -339,7 +339,7 @@ export const save = mutation({
 			return args.id;
 		}
 
-		return await ctx.db.insert("quickNotes", {
+		return await ctx.db.insert("notes", {
 			ownerTokenIdentifier,
 			authorName,
 			title: args.title,
@@ -358,7 +358,7 @@ export const save = mutation({
 
 export const updateVisibility = mutation({
 	args: {
-		id: v.id("quickNotes"),
+		id: v.id("notes"),
 		visibility: noteVisibilityValidator,
 	},
 	returns: v.object({
@@ -371,7 +371,7 @@ export const updateVisibility = mutation({
 		if (note.isArchived) {
 			throw new ConvexError({
 				code: "NOTE_NOT_FOUND",
-				message: "Quick note not found.",
+				message: "Note not found.",
 			});
 		}
 
@@ -396,7 +396,7 @@ export const updateVisibility = mutation({
 
 export const ensureShareId = mutation({
 	args: {
-		id: v.id("quickNotes"),
+		id: v.id("notes"),
 	},
 	returns: v.object({
 		shareId: v.string(),
@@ -407,7 +407,7 @@ export const ensureShareId = mutation({
 		if (note.isArchived) {
 			throw new ConvexError({
 				code: "NOTE_NOT_FOUND",
-				message: "Quick note not found.",
+				message: "Note not found.",
 			});
 		}
 
@@ -426,7 +426,7 @@ export const ensureShareId = mutation({
 
 export const moveToTrash = mutation({
 	args: {
-		id: v.id("quickNotes"),
+		id: v.id("notes"),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
@@ -444,7 +444,7 @@ export const moveToTrash = mutation({
 
 export const restore = mutation({
 	args: {
-		id: v.id("quickNotes"),
+		id: v.id("notes"),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
@@ -462,7 +462,7 @@ export const restore = mutation({
 
 export const remove = mutation({
 	args: {
-		id: v.id("quickNotes"),
+		id: v.id("notes"),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
@@ -479,10 +479,10 @@ export const removeAllForOwner = internalMutation({
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
-		const result = await deleteQuickNoteBatch(ctx, args.ownerTokenIdentifier);
+		const result = await deleteNoteBatch(ctx, args.ownerTokenIdentifier);
 
 		if (result.hasMore) {
-			await ctx.scheduler.runAfter(0, internal.quickNotes.removeAllForOwner, {
+			await ctx.scheduler.runAfter(0, internal.notes.removeAllForOwner, {
 				ownerTokenIdentifier: args.ownerTokenIdentifier,
 			});
 		}
@@ -493,13 +493,13 @@ export const removeAllForOwner = internalMutation({
 
 export const removeAll = mutation({
 	args: {},
-	returns: removeAllQuickNotesResultValidator,
+	returns: removeAllNotesResultValidator,
 	handler: async (ctx) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const result = await deleteQuickNoteBatch(ctx, ownerTokenIdentifier);
+		const result = await deleteNoteBatch(ctx, ownerTokenIdentifier);
 
 		if (result.hasMore) {
-			await ctx.scheduler.runAfter(0, internal.quickNotes.removeAllForOwner, {
+			await ctx.scheduler.runAfter(0, internal.notes.removeAllForOwner, {
 				ownerTokenIdentifier,
 			});
 		}

@@ -196,7 +196,7 @@ function DataControlsSettings({
 	const [showDeleteAllNotesDialog, setShowDeleteAllNotesDialog] =
 		useState(false);
 	const [isDeletingAllNotes, setIsDeletingAllNotes] = useState(false);
-	const removeAllNotes = useMutation(api.quickNotes.removeAll);
+	const removeAllNotes = useMutation(api.notes.removeAll);
 
 	const navigateTo = (pathname: string) => {
 		window.history.pushState(null, "", pathname);
@@ -249,8 +249,7 @@ function DataControlsSettings({
 				<Field>
 					<FieldTitle>Data controls</FieldTitle>
 					<FieldDescription>
-						Permanently remove your OpenGran account or wipe every quick note
-						you own.
+						Permanently remove your OpenGran account or wipe every note you own.
 					</FieldDescription>
 				</Field>
 				<DataControlAction
@@ -266,14 +265,14 @@ function DataControlsSettings({
 				/>
 				<DataControlAction
 					title="Delete all notes"
-					description="Permanently delete every quick note you own, including archived and shared notes."
+					description="Permanently delete every note you own, including archived and shared notes."
 					buttonLabel={isDeletingAllNotes ? "Deleting..." : "Delete"}
 					dialogOpen={showDeleteAllNotesDialog}
 					onDialogOpenChange={setShowDeleteAllNotesDialog}
 					onConfirm={handleDeleteAllNotes}
 					confirmDisabled={isDeletingAllNotes}
 					buttonDisabled={isDeletingAllNotes || !canDeleteData}
-					dialogDescription="This action cannot be undone. All quick notes you own will be permanently deleted."
+					dialogDescription="This action cannot be undone. All notes you own will be permanently deleted."
 				/>
 			</FieldGroup>
 		</div>

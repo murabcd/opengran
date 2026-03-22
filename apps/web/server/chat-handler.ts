@@ -70,7 +70,7 @@ const getNotesContext = async ({
 	}
 
 	const client = new ConvexHttpClient(getConvexUrl(), { auth: convexToken });
-	const notes = await client.query(api.quickNotes.getChatContext, {
+	const notes = await client.query(api.notes.getChatContext, {
 		ids: noteIds,
 	});
 

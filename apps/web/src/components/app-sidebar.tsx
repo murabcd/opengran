@@ -152,7 +152,7 @@ export function AppSidebar({
 	activeWorkspaceId,
 	currentView,
 	user,
-	quickNotes,
+	notes,
 	onWorkspaceSelect,
 	onWorkspaceCreate,
 	onViewChange,
@@ -175,7 +175,7 @@ export function AppSidebar({
 		email: string;
 		avatar: string;
 	};
-	quickNotes: Array<Doc<"quickNotes">> | undefined;
+	notes: Array<Doc<"notes">> | undefined;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
 	onWorkspaceCreate: (input: { name: string }) => Promise<Doc<"workspaces">>;
 	onViewChange: (view: "home" | "chat" | "shared" | "quick-note") => void;
@@ -184,10 +184,10 @@ export function AppSidebar({
 	onSignOut: () => void;
 	signingOut?: boolean;
 	desktopSafeTop?: boolean;
-	currentQuickNoteId: Id<"quickNotes"> | null;
+	currentQuickNoteId: Id<"notes"> | null;
 	currentQuickNoteTitle?: string;
-	onQuickNoteSelect: (noteId: Id<"quickNotes">) => void;
-	onQuickNoteTrashed?: (noteId: Id<"quickNotes">) => void;
+	onQuickNoteSelect: (noteId: Id<"notes">) => void;
+	onQuickNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
 	const [searchOpen, setSearchOpen] = React.useState(false);
 	const [trashOpen, setTrashOpen] = React.useState(false);
@@ -207,7 +207,7 @@ export function AppSidebar({
 	);
 	const searchItems = React.useMemo<SearchCommandItem[]>(
 		() =>
-			(quickNotes ?? []).map((note) => ({
+			(notes ?? []).map((note) => ({
 				id: note._id,
 				title:
 					note._id === currentQuickNoteId && currentQuickNoteTitle?.trim()
@@ -215,7 +215,7 @@ export function AppSidebar({
 						: note.title || "New note",
 				icon: FileText,
 			})),
-		[quickNotes, currentQuickNoteId, currentQuickNoteTitle],
+		[notes, currentQuickNoteId, currentQuickNoteTitle],
 	);
 
 	return (
@@ -244,7 +244,7 @@ export function AppSidebar({
 				</SidebarHeader>
 				<SidebarContent>
 					<NavProjects
-						notes={quickNotes}
+						notes={notes}
 						currentNoteId={
 							currentView === "quick-note" ? currentQuickNoteId : null
 						}
@@ -268,7 +268,7 @@ export function AppSidebar({
 				onOpenChange={setSearchOpen}
 				items={searchItems}
 				onSelectItem={(itemId) => {
-					onQuickNoteSelect(itemId as Id<"quickNotes">);
+					onQuickNoteSelect(itemId as Id<"notes">);
 				}}
 			/>
 			<SettingsDialog
@@ -381,11 +381,11 @@ function NavProjects({
 	onQuickNoteSelect,
 	onQuickNoteTrashed,
 }: {
-	notes: Array<Doc<"quickNotes">> | undefined;
-	currentNoteId: Id<"quickNotes"> | null;
+	notes: Array<Doc<"notes">> | undefined;
+	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
-	onQuickNoteSelect: (noteId: Id<"quickNotes">) => void;
-	onQuickNoteTrashed?: (noteId: Id<"quickNotes">) => void;
+	onQuickNoteSelect: (noteId: Id<"notes">) => void;
+	onQuickNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
 	const [showAllNotes, setShowAllNotes] = React.useState(false);
 	const isNotesPending = notes === undefined;
@@ -775,27 +775,28 @@ function NavTrash({
 
 function TrashPopoverContent() {
 	const [search, setSearch] = React.useState("");
-	const [deleteNoteId, setDeleteNoteId] =
-		React.useState<Id<"quickNotes"> | null>(null);
+	const [deleteNoteId, setDeleteNoteId] = React.useState<Id<"notes"> | null>(
+		null,
+	);
 	const [deleteChatId, setDeleteChatId] = React.useState<string | null>(null);
-	const archivedNotes = useQuery(api.quickNotes.listArchived, {});
+	const archivedNotes = useQuery(api.notes.listArchived, {});
 	const archivedChats = useQuery(api.chats.listArchived, {});
-	const restore = useMutation(api.quickNotes.restore).withOptimisticUpdate(
+	const restore = useMutation(api.notes.restore).withOptimisticUpdate(
 		(localStore, args) => {
-			const archived = localStore.getQuery(api.quickNotes.listArchived, {});
+			const archived = localStore.getQuery(api.notes.listArchived, {});
 			const note = archived?.find((item) => item._id === args.id) ?? null;
 
 			if (archived !== undefined) {
 				localStore.setQuery(
-					api.quickNotes.listArchived,
+					api.notes.listArchived,
 					{},
 					archived.filter((item) => item._id !== args.id),
 				);
 			}
 
 			if (note) {
-				const active = localStore.getQuery(api.quickNotes.list, {}) ?? [];
-				localStore.setQuery(api.quickNotes.list, {}, [
+				const active = localStore.getQuery(api.notes.list, {}) ?? [];
+				localStore.setQuery(api.notes.list, {}, [
 					{
 						...note,
 						isArchived: false,
@@ -806,12 +807,12 @@ function TrashPopoverContent() {
 			}
 		},
 	);
-	const remove = useMutation(api.quickNotes.remove).withOptimisticUpdate(
+	const remove = useMutation(api.notes.remove).withOptimisticUpdate(
 		(localStore, args) => {
-			const archived = localStore.getQuery(api.quickNotes.listArchived, {});
+			const archived = localStore.getQuery(api.notes.listArchived, {});
 			if (archived !== undefined) {
 				localStore.setQuery(
-					api.quickNotes.listArchived,
+					api.notes.listArchived,
 					{},
 					archived.filter((item) => item._id !== args.id),
 				);
@@ -899,13 +900,13 @@ function TrashPopoverContent() {
 	const hasArchivedItems = hasArchivedNotes || hasArchivedChats;
 
 	const handleRestore = React.useCallback(
-		(noteId: Id<"quickNotes">) => {
+		(noteId: Id<"notes">) => {
 			void restore({ id: noteId })
 				.then(() => {
 					toast.success("Note restored");
 				})
 				.catch((error) => {
-					console.error("Failed to restore quick note", error);
+					console.error("Failed to restore note", error);
 					toast.error("Failed to restore note");
 				});
 		},
@@ -936,7 +937,7 @@ function TrashPopoverContent() {
 				toast.success("Note deleted permanently");
 			})
 			.catch((error) => {
-				console.error("Failed to delete quick note", error);
+				console.error("Failed to delete note", error);
 				toast.error("Failed to delete note");
 			});
 	}, [deleteNoteId, remove]);

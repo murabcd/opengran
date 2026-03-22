@@ -100,7 +100,7 @@ export function QuickNotePage({
 	onTitleChange,
 	onEditorActionsChange,
 }: {
-	noteId: Id<"quickNotes"> | null;
+	noteId: Id<"notes"> | null;
 	onTitleChange?: (title: string) => void;
 	onEditorActionsChange?: (actions: QuickNoteEditorActions | null) => void;
 }) {
@@ -112,7 +112,7 @@ export function QuickNotePage({
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
 	const hasHydratedRef = React.useRef(false);
-	const hydratedNoteIdRef = React.useRef<Id<"quickNotes"> | null>(null);
+	const hydratedNoteIdRef = React.useRef<Id<"notes"> | null>(null);
 	const saveInFlightRef = React.useRef(false);
 	const lastSavedSnapshotRef = React.useRef<string | null>(null);
 	const queuedSaveRef = React.useRef<{
@@ -124,18 +124,18 @@ export function QuickNotePage({
 		};
 	} | null>(null);
 	const note = useQuery(
-		api.quickNotes.get,
+		api.notes.get,
 		noteId
 			? {
 					id: noteId,
 				}
 			: "skip",
 	);
-	const saveQuickNote = useMutation(api.quickNotes.save);
+	const saveQuickNote = useMutation(api.notes.save);
 
 	const flushSave = React.useCallback(
 		async (
-			nextNoteId: Id<"quickNotes">,
+			nextNoteId: Id<"notes">,
 			snapshot: string,
 			payload: {
 				title: string;
@@ -157,7 +157,7 @@ export function QuickNotePage({
 				});
 				lastSavedSnapshotRef.current = snapshot;
 			} catch (error) {
-				console.error("Failed to save quick note", error);
+				console.error("Failed to save note", error);
 			} finally {
 				saveInFlightRef.current = false;
 

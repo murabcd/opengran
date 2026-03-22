@@ -284,7 +284,7 @@ function App() {
 		return getSharedNoteShareId(window.location.pathname);
 	});
 	const sharedNote = useQuery(
-		api.quickNotes.getShared,
+		api.notes.getShared,
 		sharedNoteShareId
 			? {
 					shareId: sharedNoteShareId,
@@ -417,13 +417,10 @@ function App() {
 		});
 	}, []);
 
-	const handleOpenOwnedSharedNote = React.useCallback(
-		(noteId: Id<"quickNotes">) => {
-			setSharedNoteShareId(null);
-			window.history.pushState(null, "", `/note?noteId=${noteId}`);
-		},
-		[],
-	);
+	const handleOpenOwnedSharedNote = React.useCallback((noteId: Id<"notes">) => {
+		setSharedNoteShareId(null);
+		window.history.pushState(null, "", `/note?noteId=${noteId}`);
+	}, []);
 
 	React.useEffect(() => {
 		const userEmail = session?.user?.email ?? null;
@@ -1091,7 +1088,7 @@ function AppShell({
 		);
 	});
 	const [currentQuickNoteId, setCurrentQuickNoteId] =
-		React.useState<Id<"quickNotes"> | null>(() => {
+		React.useState<Id<"notes"> | null>(() => {
 			if (typeof window === "undefined") {
 				return null;
 			}
@@ -1099,7 +1096,7 @@ function AppShell({
 			return (
 				(new URL(window.location.href).searchParams.get(
 					"noteId",
-				) as Id<"quickNotes"> | null) ?? null
+				) as Id<"notes"> | null) ?? null
 			);
 		});
 	const [currentQuickNoteTitle, setCurrentQuickNoteTitle] =
@@ -1112,11 +1109,11 @@ function AppShell({
 	const currentDayOfMonth = currentDate.getDate();
 	const currentMonthLabel = currentMonthFormatter.format(currentDate);
 	const currentWeekdayLabel = currentWeekdayFormatter.format(currentDate);
-	const createQuickNote = useMutation(api.quickNotes.create);
+	const createQuickNote = useMutation(api.notes.create);
 	const createWorkspace = useMutation(api.workspaces.create);
 	const chats = useQuery(api.chats.list, {});
-	const quickNotes = useQuery(api.quickNotes.list, {});
-	const sharedNotes = useQuery(api.quickNotes.listShared, {});
+	const notes = useQuery(api.notes.list, {});
+	const sharedNotes = useQuery(api.notes.listShared, {});
 	const selectedChatMessages = useQuery(
 		api.chats.getMessages,
 		currentView === "chat" && currentChatId
@@ -1126,7 +1123,7 @@ function AppShell({
 			: "skip",
 	);
 	const selectedQuickNote = useQuery(
-		api.quickNotes.get,
+		api.notes.get,
 		currentQuickNoteId
 			? {
 					id: currentQuickNoteId,
@@ -1170,7 +1167,7 @@ function AppShell({
 							? "shared"
 							: "home";
 			const nextQuickNoteId =
-				(url.searchParams.get("noteId") as Id<"quickNotes"> | null) ?? null;
+				(url.searchParams.get("noteId") as Id<"notes"> | null) ?? null;
 
 			setCurrentView(nextView);
 			setCurrentChatId(nextChatId);
@@ -1269,7 +1266,7 @@ function AppShell({
 		[currentQuickNoteId, openFreshChat],
 	);
 
-	const openQuickNote = React.useCallback((noteId: Id<"quickNotes">) => {
+	const openQuickNote = React.useCallback((noteId: Id<"notes">) => {
 		setCurrentView("quick-note");
 		setSettingsOpen(false);
 		setCurrentQuickNoteId(noteId);
@@ -1290,7 +1287,7 @@ function AppShell({
 				openQuickNote(noteId);
 			})
 			.catch((error) => {
-				console.error("Failed to create quick note", error);
+				console.error("Failed to create note", error);
 			})
 			.finally(() => {
 				creatingQuickNoteRef.current = false;
@@ -1326,7 +1323,7 @@ function AppShell({
 	}, []);
 
 	const handleQuickNoteTrashed = React.useCallback(
-		(noteId: Id<"quickNotes">) => {
+		(noteId: Id<"notes">) => {
 			if (noteId !== currentQuickNoteId) {
 				return;
 			}
@@ -1422,7 +1419,7 @@ function AppShell({
 				activeWorkspaceId={activeWorkspaceId}
 				currentView={currentView}
 				user={user}
-				quickNotes={quickNotes}
+				notes={notes}
 				onWorkspaceSelect={setActiveWorkspaceId}
 				onWorkspaceCreate={handleWorkspaceCreate}
 				onViewChange={handleViewChange}
@@ -1500,7 +1497,7 @@ function AppShell({
 						{currentView === "home" ? (
 							<Button variant="outline" onClick={handleCreateQuickNote}>
 								<Plus />
-								Quick note
+								Note
 							</Button>
 						) : currentView === "quick-note" && currentQuickNoteId ? (
 							<QuickNoteActionsMenu
@@ -1622,11 +1619,11 @@ function AppShell({
 							</section>
 
 							<section className="flex justify-center py-8">
-								{quickNotes === undefined ? (
+								{notes === undefined ? (
 									<HomeQuickNotesSkeleton />
-								) : quickNotes.length > 0 ? (
+								) : notes.length > 0 ? (
 									<HomeQuickNotesList
-										notes={quickNotes}
+										notes={notes}
 										activeNoteId={currentQuickNoteId}
 										activeNoteTitle={currentQuickNoteTitle}
 										currentUserName={user.name}
@@ -1642,9 +1639,7 @@ function AppShell({
 											</EmptyDescription>
 										</EmptyHeader>
 										<EmptyContent>
-											<Button onClick={handleCreateQuickNote}>
-												Quick note
-											</Button>
+											<Button onClick={handleCreateQuickNote}>Note</Button>
 										</EmptyContent>
 									</Empty>
 								)}
@@ -1802,12 +1797,12 @@ function SharedQuickNotesList({
 	onOpenNote,
 	onQuickNoteTrashed,
 }: {
-	notes: Array<Doc<"quickNotes">>;
-	activeNoteId: Id<"quickNotes"> | null;
+	notes: Array<Doc<"notes">>;
+	activeNoteId: Id<"notes"> | null;
 	activeNoteTitle: string;
 	currentUserName: string;
-	onOpenNote: (noteId: Id<"quickNotes">) => void;
-	onQuickNoteTrashed: (noteId: Id<"quickNotes">) => void;
+	onOpenNote: (noteId: Id<"notes">) => void;
+	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
 	const groupedNotes = groupItemsByDate(notes);
 	const sections = [
@@ -1905,12 +1900,12 @@ function HomeQuickNotesList({
 	onOpenNote,
 	onQuickNoteTrashed,
 }: {
-	notes: Array<Doc<"quickNotes">>;
-	activeNoteId: Id<"quickNotes"> | null;
+	notes: Array<Doc<"notes">>;
+	activeNoteId: Id<"notes"> | null;
 	activeNoteTitle: string;
 	currentUserName: string;
-	onOpenNote: (noteId: Id<"quickNotes">) => void;
-	onQuickNoteTrashed: (noteId: Id<"quickNotes">) => void;
+	onOpenNote: (noteId: Id<"notes">) => void;
+	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
 	const groupedNotes = groupItemsByDate(notes);
 	const sections = [

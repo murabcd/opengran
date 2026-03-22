@@ -119,7 +119,7 @@ export function ChatPage({
 	const [selectedSourceIds, setSelectedSourceIds] = React.useState<string[]>(
 		[],
 	);
-	const quickNotes = useQuery(api.quickNotes.list, {});
+	const notes = useQuery(api.notes.list, {});
 	const moveChatToTrash = useMutation(
 		api.chats.moveToTrash,
 	).withOptimisticUpdate((localStore, args) => {
@@ -187,16 +187,16 @@ export function ChatPage({
 	const isLoading =
 		status === "submitted" || status === "streaming" || isPreparingRequest;
 	const hasMessages = messages.length > 0;
-	const isNotesLoading = quickNotes === undefined;
+	const isNotesLoading = notes === undefined;
 	const contextPages = React.useMemo(
 		() =>
-			(quickNotes ?? []).map((note) => ({
+			(notes ?? []).map((note) => ({
 				id: note._id,
 				title: note.title.trim() || "New note",
 				icon: FileText,
 				preview: note.searchableText.trim(),
 			})),
-		[quickNotes],
+		[notes],
 	);
 	const shouldSearchDocuments = documentSearchTerm.trim().length > 0;
 	const mentionableDocuments = React.useMemo(() => {

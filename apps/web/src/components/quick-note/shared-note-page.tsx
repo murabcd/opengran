@@ -21,7 +21,7 @@ const EMPTY_DOCUMENT: JSONContent = {
 	content: [{ type: "paragraph" }],
 };
 
-type SharedQuickNote = Doc<"quickNotes"> & {
+type SharedQuickNote = Doc<"notes"> & {
 	isOwner: boolean;
 };
 
@@ -37,7 +37,7 @@ export function SharedQuickNotePage({
 	note,
 }: {
 	note: SharedQuickNote | null | undefined;
-	onOpenNote?: (noteId: Doc<"quickNotes">["_id"]) => void;
+	onOpenNote?: (noteId: Doc<"notes">["_id"]) => void;
 }) {
 	const editor = useEditor({
 		extensions: [

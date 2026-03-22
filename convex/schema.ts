@@ -32,7 +32,7 @@ export default defineSchema({
 			"ownerTokenIdentifier",
 			"normalizedName",
 		]),
-	quickNotes: defineTable({
+	notes: defineTable({
 		ownerTokenIdentifier: v.string(),
 		authorName: v.optional(v.string()),
 		title: v.string(),

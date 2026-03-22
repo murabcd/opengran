@@ -52,7 +52,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 					}
 
 					const runCtx = requireRunMutationCtx(ctx);
-					await runCtx.runMutation(internal.quickNotes.removeAllForOwner, {
+					await runCtx.runMutation(internal.notes.removeAllForOwner, {
 						ownerTokenIdentifier: identity.tokenIdentifier,
 					});
 					await runCtx.runMutation(internal.chats.removeAllForOwner, {
