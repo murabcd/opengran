@@ -697,6 +697,71 @@ export function App() {
 	);
 }
 
+function OnboardingStepBrand() {
+	return (
+		<div className="flex items-center gap-2 self-center font-medium">
+			<div className="flex size-6 items-center justify-center rounded-md border bg-card text-foreground">
+				<OpenGranMark className="size-4" />
+			</div>
+			OpenGran
+		</div>
+	);
+}
+
+function OnboardingStepLayout({
+	background,
+	children,
+	className,
+	contentClassName,
+	isDesktopMac,
+}: React.PropsWithChildren<{
+	background?: React.ReactNode;
+	className?: string;
+	contentClassName?: string;
+	isDesktopMac: boolean;
+}>) {
+	return (
+		<div
+			data-app-region={isDesktopMac ? "drag" : undefined}
+			className={cn(
+				"flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6 md:p-10",
+				isDesktopMac && "pt-20 md:pt-24",
+				className,
+			)}
+		>
+			{background}
+			<div
+				data-app-region={isDesktopMac ? "no-drag" : undefined}
+				className={cn("flex w-full max-w-sm flex-col gap-6", contentClassName)}
+			>
+				<OnboardingStepBrand />
+				{children}
+			</div>
+		</div>
+	);
+}
+
+function OnboardingStepCard({
+	children,
+	contentClassName,
+	description,
+	title,
+}: React.PropsWithChildren<{
+	contentClassName?: string;
+	description: React.ReactNode;
+	title: React.ReactNode;
+}>) {
+	return (
+		<Card>
+			<CardHeader className="text-center">
+				<CardTitle className="text-xl">{title}</CardTitle>
+				<CardDescription>{description}</CardDescription>
+			</CardHeader>
+			<CardContent className={contentClassName}>{children}</CardContent>
+		</Card>
+	);
+}
+
 function WelcomeCelebrationScreen({
 	isDesktopMac,
 	isSubmitting,
@@ -799,46 +864,24 @@ function WelcomeCelebrationScreen({
 	}, []);
 
 	return (
-		<div
-			data-app-region={isDesktopMac ? "drag" : undefined}
-			className={cn(
-				"relative flex min-h-svh flex-col items-center justify-center overflow-hidden bg-background p-6 md:p-10",
-				isDesktopMac && "pt-20 md:pt-24",
-			)}
+		<OnboardingStepLayout
+			isDesktopMac={isDesktopMac}
+			className="relative overflow-hidden"
+			contentClassName="relative z-10"
+			background={<canvas ref={canvasRef} className="onboarding-confetti-canvas" />}
 		>
-			<canvas ref={canvasRef} className="onboarding-confetti-canvas" />
-			<div
-				data-app-region={isDesktopMac ? "no-drag" : undefined}
-				className="relative z-10 flex w-full max-w-sm flex-col gap-6"
+			<OnboardingStepCard
+				title="You&apos;re in"
+				description="Your account is ready. Let&apos;s set up your first workspace."
 			>
-				<div className="flex items-center gap-2 self-center font-medium">
-					<div className="flex size-6 items-center justify-center rounded-md border bg-card text-foreground">
-						<OpenGranMark className="size-4" />
-					</div>
-					OpenGran
-				</div>
-				<Card>
-					<CardHeader className="text-center">
-						<CardTitle className="text-xl">You&apos;re in</CardTitle>
-						<CardDescription>
-							Your account is ready. Let&apos;s set up your first workspace.
-						</CardDescription>
-					</CardHeader>
-					<CardContent>
-						<Button
-							className="w-full"
-							onClick={onContinue}
-							disabled={isSubmitting}
-						>
-							{isSubmitting ? (
-								<LoaderCircle className="size-4 animate-spin" />
-							) : null}
-							Set up workspace
-						</Button>
-					</CardContent>
-				</Card>
-			</div>
-		</div>
+				<Button className="w-full" onClick={onContinue} disabled={isSubmitting}>
+					{isSubmitting ? (
+						<LoaderCircle className="size-4 animate-spin" />
+					) : null}
+					Set up workspace
+				</Button>
+			</OnboardingStepCard>
+		</OnboardingStepLayout>
 	);
 }
 
@@ -896,120 +939,95 @@ function DesktopPermissionsOnboardingScreen({
 	}
 
 	return (
-		<div
-			data-app-region={isDesktopMac ? "drag" : undefined}
-			className={cn(
-				"flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6 md:p-10",
-				isDesktopMac && "pt-20 md:pt-24",
-			)}
-		>
-			<div
-				data-app-region={isDesktopMac ? "no-drag" : undefined}
-				className="flex w-full max-w-sm flex-col gap-6"
+		<OnboardingStepLayout isDesktopMac={isDesktopMac}>
+			<OnboardingStepCard
+				title="Enable permissions"
+				description="OpenGran transcribes meetings using your computer&apos;s audio."
+				contentClassName="flex flex-col gap-5"
 			>
-				<div className="flex items-center gap-2 self-center font-medium">
-					<div className="flex size-6 items-center justify-center rounded-md border bg-card text-foreground">
-						<OpenGranMark className="size-4" />
-					</div>
-					OpenGran
-				</div>
-				<Card>
-					<CardHeader className="space-y-3 text-center">
-						<CardTitle className="text-xl leading-tight">
-							Enable permissions
-						</CardTitle>
-						<CardDescription>
-							OpenGran transcribes meetings using your computer&apos;s audio.
-						</CardDescription>
-					</CardHeader>
-					<CardContent className="flex flex-col gap-4">
-						<div className="overflow-hidden rounded-xl border">
-							<div className="flex items-center gap-3 p-4">
-								<div className="min-w-0 flex-1">
-									<p className="font-medium">Transcribe my voice</p>
-								</div>
-								{microphonePermission.state === "granted" ? (
-									<div
-										className={cn(
-											"flex size-8 shrink-0 items-center justify-center rounded-full border",
-											getDesktopPermissionTone(microphonePermission.state),
-										)}
-									>
-										<Check className="size-4" />
-									</div>
-								) : microphonePermission.canRequest ? (
-									<Button
-										type="button"
-										size="sm"
-										className="shrink-0 rounded-full px-4"
-										onClick={() => onRequestPermission(microphonePermission.id)}
-										disabled={isRefreshing || isSubmitting}
-									>
-										{isRefreshing ? (
-											<LoaderCircle className="size-4 animate-spin" />
-										) : (
-											<Mic className="size-4" />
-										)}
-										Enable microphone
-									</Button>
-								) : microphonePermission.canOpenSystemSettings ? (
-									<Button
-										type="button"
-										size="sm"
-										variant="outline"
-										className="shrink-0 rounded-full px-4"
-										onClick={() => onOpenSettings(microphonePermission.id)}
-										disabled={isRefreshing || isSubmitting}
-									>
-										<ExternalLink className="size-4" />
-										Open settings
-									</Button>
-								) : (
-									<div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-										<TriangleAlert className="size-4" />
-										Unavailable
-									</div>
-								)}
-							</div>
-							<Separator />
-							<div className="flex items-center gap-3 p-4">
-								<div className="min-w-0 flex-1">
-									<p className="font-medium">
-										Transcribe other people&apos;s voices
-									</p>
-								</div>
-								<Button
-									type="button"
-									size="sm"
-									variant="secondary"
-									className="shrink-0 rounded-full px-4"
-									disabled
-								>
-									<Volume2 className="size-4" />
-									Enable
-								</Button>
-							</div>
+				<div className="overflow-hidden rounded-xl border">
+					<div className="flex items-center gap-3 p-4">
+						<div className="min-w-0 flex-1">
+							<p className="font-medium">Transcribe my voice</p>
 						</div>
-						{error ? (
-							<div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-								<TriangleAlert className="mt-0.5 size-4 shrink-0" />
-								<p>{error}</p>
+						{microphonePermission.state === "granted" ? (
+							<div
+								className={cn(
+									"flex size-8 shrink-0 items-center justify-center rounded-full border",
+									getDesktopPermissionTone(microphonePermission.state),
+								)}
+							>
+								<Check className="size-4" />
 							</div>
-						) : null}
-						<div>
+						) : microphonePermission.canRequest ? (
 							<Button
 								type="button"
-								onClick={onContinue}
-								className="w-full"
-								disabled={!canContinue || isSubmitting}
+								size="sm"
+								className="shrink-0 rounded-full px-4"
+								onClick={() => onRequestPermission(microphonePermission.id)}
+								disabled={isRefreshing || isSubmitting}
 							>
-								Continue
+								{isRefreshing ? (
+									<LoaderCircle className="size-4 animate-spin" />
+								) : (
+									<Mic className="size-4" />
+								)}
+								Enable microphone
 							</Button>
+						) : microphonePermission.canOpenSystemSettings ? (
+							<Button
+								type="button"
+								size="sm"
+								variant="outline"
+								className="shrink-0 rounded-full px-4"
+								onClick={() => onOpenSettings(microphonePermission.id)}
+								disabled={isRefreshing || isSubmitting}
+							>
+								<ExternalLink className="size-4" />
+								Open settings
+							</Button>
+						) : (
+							<div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+								<TriangleAlert className="size-4" />
+								Unavailable
+							</div>
+						)}
+					</div>
+					<Separator />
+					<div className="flex items-center gap-3 p-4">
+						<div className="min-w-0 flex-1">
+							<p className="font-medium">
+								Transcribe other people&apos;s voices
+							</p>
 						</div>
-					</CardContent>
-				</Card>
-			</div>
-		</div>
+						<Button
+							type="button"
+							size="sm"
+							variant="secondary"
+							className="shrink-0 rounded-full px-4"
+							disabled
+						>
+							<Volume2 className="size-4" />
+							Enable
+						</Button>
+					</div>
+				</div>
+				{error ? (
+					<div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+						<TriangleAlert className="mt-0.5 size-4 shrink-0" />
+						<p>{error}</p>
+					</div>
+				) : null}
+				<Button
+					type="button"
+					onClick={onContinue}
+					className="w-full"
+					disabled={!canContinue || isSubmitting}
+				>
+					Continue
+				</Button>
+			</OnboardingStepCard>
+		</OnboardingStepLayout>
 	);
 }
 
@@ -1703,54 +1721,32 @@ function WorkspaceOnboardingScreen({
 	onSubmit: () => void;
 }) {
 	return (
-		<div
-			data-app-region={isDesktopMac ? "drag" : undefined}
-			className={cn(
-				"flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6 md:p-10",
-				isDesktopMac && "pt-20 md:pt-24",
-			)}
-		>
-			<div
-				data-app-region={isDesktopMac ? "no-drag" : undefined}
-				className="flex w-full max-w-sm flex-col gap-6"
+		<OnboardingStepLayout isDesktopMac={isDesktopMac}>
+			<OnboardingStepCard
+				title="Create workspace"
+				description="Set up your first workspace to continue."
 			>
-				<div className="flex items-center gap-2 self-center font-medium">
-					<div className="flex size-6 items-center justify-center rounded-md border bg-card text-foreground">
-						<OpenGranMark className="size-4" />
+				<form>
+					<div className="flex flex-col gap-5">
+						<WorkspaceComposer
+							name={name}
+							onNameChange={onNameChange}
+							error={error}
+							nameInputId="onboarding-workspace-name"
+						/>
+						<Field>
+							<Button
+								className="w-full"
+								onClick={onSubmit}
+								disabled={isSubmitting || name.trim().length < 2}
+							>
+								Continue
+							</Button>
+						</Field>
 					</div>
-					OpenGran
-				</div>
-				<Card>
-					<CardHeader className="text-center">
-						<CardTitle className="text-xl">Create workspace</CardTitle>
-						<CardDescription>
-							Set up your first workspace to continue.
-						</CardDescription>
-					</CardHeader>
-					<CardContent>
-						<form>
-							<div className="flex flex-col gap-5">
-								<WorkspaceComposer
-									name={name}
-									onNameChange={onNameChange}
-									error={error}
-									nameInputId="onboarding-workspace-name"
-								/>
-								<Field>
-									<Button
-										className="w-full"
-										onClick={onSubmit}
-										disabled={isSubmitting || name.trim().length < 2}
-									>
-										Continue
-									</Button>
-								</Field>
-							</div>
-						</form>
-					</CardContent>
-				</Card>
-			</div>
-		</div>
+				</form>
+			</OnboardingStepCard>
+		</OnboardingStepLayout>
 	);
 }
 
