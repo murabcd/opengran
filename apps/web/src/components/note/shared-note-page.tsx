@@ -21,10 +21,6 @@ const EMPTY_DOCUMENT: JSONContent = {
 	content: [{ type: "paragraph" }],
 };
 
-type SharedQuickNote = Doc<"notes"> & {
-	isOwner: boolean;
-};
-
 function parseNoteContent(content: string) {
 	try {
 		return JSON.parse(content) as JSONContent;
@@ -33,10 +29,10 @@ function parseNoteContent(content: string) {
 	}
 }
 
-export function SharedQuickNotePage({
+export function SharedNotePage({
 	note,
 }: {
-	note: SharedQuickNote | null | undefined;
+	note: Doc<"notes"> | null | undefined;
 	onOpenNote?: (noteId: Doc<"notes">["_id"]) => void;
 }) {
 	const editor = useEditor({
@@ -56,7 +52,7 @@ export function SharedQuickNotePage({
 		editorProps: {
 			attributes: {
 				class:
-					"quick-note-tiptap min-h-[240px] border border-transparent bg-transparent px-0 py-0 text-base outline-none",
+					"note-tiptap min-h-[240px] border border-transparent bg-transparent px-0 py-0 text-base outline-none",
 			},
 		},
 	});
@@ -119,8 +115,8 @@ export function SharedQuickNotePage({
 							<Input
 								value={note.title}
 								readOnly
-								placeholder="New note"
-								aria-label="Note title"
+								placeholder="New quick note"
+								aria-label="Quick note title"
 								className="h-auto border-0 !bg-transparent px-0 py-0 text-3xl font-normal shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
 							/>
 

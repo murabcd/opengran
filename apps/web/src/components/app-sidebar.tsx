@@ -87,7 +87,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import { QuickNoteActionsMenu } from "@/components/quick-note/quick-note-actions-menu";
+import { NoteActionsMenu } from "@/components/note/note-actions-menu";
 import { SearchCommand } from "@/components/search/search-command";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
@@ -161,15 +161,15 @@ export function AppSidebar({
 	onSignOut,
 	signingOut = false,
 	desktopSafeTop = false,
-	currentQuickNoteId,
-	currentQuickNoteTitle,
-	onQuickNoteSelect,
-	onQuickNoteTrashed,
+	currentNoteId,
+	currentNoteTitle,
+	onNoteSelect,
+	onNoteTrashed,
 	...props
 }: React.ComponentProps<typeof Sidebar> & {
 	workspaces: Array<Doc<"workspaces">>;
 	activeWorkspaceId: Id<"workspaces"> | null;
-	currentView: "home" | "chat" | "shared" | "quick-note";
+	currentView: "home" | "chat" | "shared" | "note";
 	user: {
 		name: string;
 		email: string;
@@ -178,16 +178,16 @@ export function AppSidebar({
 	notes: Array<Doc<"notes">> | undefined;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
 	onWorkspaceCreate: (input: { name: string }) => Promise<Doc<"workspaces">>;
-	onViewChange: (view: "home" | "chat" | "shared" | "quick-note") => void;
+	onViewChange: (view: "home" | "chat" | "shared" | "note") => void;
 	settingsOpen: boolean;
 	onSettingsOpenChange: (open: boolean) => void;
 	onSignOut: () => void;
 	signingOut?: boolean;
 	desktopSafeTop?: boolean;
-	currentQuickNoteId: Id<"notes"> | null;
-	currentQuickNoteTitle?: string;
-	onQuickNoteSelect: (noteId: Id<"notes">) => void;
-	onQuickNoteTrashed?: (noteId: Id<"notes">) => void;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle?: string;
+	onNoteSelect: (noteId: Id<"notes">) => void;
+	onNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
 	const [searchOpen, setSearchOpen] = React.useState(false);
 	const [trashOpen, setTrashOpen] = React.useState(false);
@@ -210,12 +210,12 @@ export function AppSidebar({
 			(notes ?? []).map((note) => ({
 				id: note._id,
 				title:
-					note._id === currentQuickNoteId && currentQuickNoteTitle?.trim()
-						? currentQuickNoteTitle
-						: note.title || "New note",
+					note._id === currentNoteId && currentNoteTitle?.trim()
+						? currentNoteTitle
+						: note.title || "New quick note",
 				icon: FileText,
 			})),
-		[notes, currentQuickNoteId, currentQuickNoteTitle],
+		[notes, currentNoteId, currentNoteTitle],
 	);
 
 	return (
@@ -245,12 +245,10 @@ export function AppSidebar({
 				<SidebarContent>
 					<NavProjects
 						notes={notes}
-						currentNoteId={
-							currentView === "quick-note" ? currentQuickNoteId : null
-						}
-						currentNoteTitle={currentQuickNoteTitle}
-						onQuickNoteSelect={onQuickNoteSelect}
-						onQuickNoteTrashed={onQuickNoteTrashed}
+						currentNoteId={currentView === "note" ? currentNoteId : null}
+						currentNoteTitle={currentNoteTitle}
+						onNoteSelect={onNoteSelect}
+						onNoteTrashed={onNoteTrashed}
 					/>
 				</SidebarContent>
 				<SidebarFooter>
@@ -268,7 +266,7 @@ export function AppSidebar({
 				onOpenChange={setSearchOpen}
 				items={searchItems}
 				onSelectItem={(itemId) => {
-					onQuickNoteSelect(itemId as Id<"notes">);
+					onNoteSelect(itemId as Id<"notes">);
 				}}
 			/>
 			<SettingsDialog
@@ -289,7 +287,7 @@ function NavMain({
 }: {
 	className?: string;
 	items: NavItem[];
-	onViewChange: (view: "home" | "chat" | "shared" | "quick-note") => void;
+	onViewChange: (view: "home" | "chat" | "shared" | "note") => void;
 	onSearchOpen: () => void;
 }) {
 	React.useEffect(() => {
@@ -378,14 +376,14 @@ function NavProjects({
 	notes,
 	currentNoteId,
 	currentNoteTitle,
-	onQuickNoteSelect,
-	onQuickNoteTrashed,
+	onNoteSelect,
+	onNoteTrashed,
 }: {
 	notes: Array<Doc<"notes">> | undefined;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
-	onQuickNoteSelect: (noteId: Id<"notes">) => void;
-	onQuickNoteTrashed?: (noteId: Id<"notes">) => void;
+	onNoteSelect: (noteId: Id<"notes">) => void;
+	onNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
 	const [showAllNotes, setShowAllNotes] = React.useState(false);
 	const isNotesPending = notes === undefined;
@@ -396,11 +394,11 @@ function NavProjects({
 
 	return (
 		<SidebarGroup className="group-data-[collapsible=icon]:hidden">
-			<SidebarGroupLabel>Notes</SidebarGroupLabel>
+			<SidebarGroupLabel>Quick notes</SidebarGroupLabel>
 			{isNotesPending ? <NavProjectsSkeleton /> : null}
 			{notes && notes.length === 0 ? (
 				<div className="px-2 text-xs text-muted-foreground/50">
-					No notes yet
+					No quick notes yet
 				</div>
 			) : null}
 			<SidebarGroupContent className={isNotesPending ? "hidden" : undefined}>
@@ -410,21 +408,21 @@ function NavProjects({
 						const title =
 							isActive && currentNoteTitle?.trim()
 								? currentNoteTitle
-								: note.title || "New note";
+								: note.title || "New quick note";
 
 						return (
 							<SidebarMenuItem key={note._id}>
 								<SidebarMenuButton
 									isActive={isActive}
-									onClick={() => onQuickNoteSelect(note._id)}
+									onClick={() => onNoteSelect(note._id)}
 									tooltip={title}
 								>
 									<FileText />
 									<span>{title}</span>
 								</SidebarMenuButton>
-								<QuickNoteActionsMenu
+								<NoteActionsMenu
 									noteId={note._id}
-									onMoveToTrash={onQuickNoteTrashed}
+									onMoveToTrash={onNoteTrashed}
 									align="start"
 									side="right"
 								>
@@ -435,7 +433,7 @@ function NavProjects({
 									>
 										<MoreHorizontal />
 									</SidebarMenuAction>
-								</QuickNoteActionsMenu>
+								</NoteActionsMenu>
 							</SidebarMenuItem>
 						);
 					})}
@@ -903,7 +901,7 @@ function TrashPopoverContent() {
 		(noteId: Id<"notes">) => {
 			void restore({ id: noteId })
 				.then(() => {
-					toast.success("Note restored");
+					toast.success("Quick note restored");
 				})
 				.catch((error) => {
 					console.error("Failed to restore note", error);
@@ -934,7 +932,7 @@ function TrashPopoverContent() {
 		void remove({ id: deleteNoteId })
 			.then(() => {
 				setDeleteNoteId(null);
-				toast.success("Note deleted permanently");
+				toast.success("Quick note deleted permanently");
 			})
 			.catch((error) => {
 				console.error("Failed to delete note", error);
@@ -993,7 +991,7 @@ function TrashPopoverContent() {
 												</div>
 												<div className="min-w-0 flex-1">
 													<div className="truncate text-sm">
-														{note.title || "New note"}
+														{note.title || "New quick note"}
 													</div>
 												</div>
 											</div>
@@ -1004,7 +1002,7 @@ function TrashPopoverContent() {
 															type="button"
 															className="flex size-5 cursor-pointer items-center justify-center rounded-md p-0 text-sidebar-foreground outline-hidden transition-transform focus-visible:ring-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground [&>svg]:size-4 [&>svg]:shrink-0"
 															onClick={() => handleRestore(note._id)}
-															aria-label={`Restore ${note.title || "New note"}`}
+															aria-label={`Restore ${note.title || "New quick note"}`}
 														>
 															<Undo2 className="size-4" />
 														</button>
@@ -1017,7 +1015,7 @@ function TrashPopoverContent() {
 															type="button"
 															className="flex size-5 cursor-pointer items-center justify-center rounded-md p-0 text-destructive outline-hidden transition-transform focus-visible:ring-2 hover:bg-sidebar-accent hover:text-destructive [&>svg]:size-4 [&>svg]:shrink-0 dark:text-red-500"
 															onClick={() => setDeleteNoteId(note._id)}
-															aria-label={`Delete ${note.title || "New note"}`}
+															aria-label={`Delete ${note.title || "New quick note"}`}
 														>
 															<Trash2 className="size-4" />
 														</button>

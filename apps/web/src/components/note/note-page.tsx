@@ -9,7 +9,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import { QuickNoteComposer } from "./quick-note-composer";
+import { NoteComposer } from "./note-composer";
 import { writeTextToClipboard } from "./share-note";
 
 const EMPTY_DOCUMENT: JSONContent = {
@@ -76,7 +76,7 @@ const showActionError = (message: string, error: unknown) => {
 	toast.error(message);
 };
 
-export type QuickNoteEditorActions = {
+export type NoteEditorActions = {
 	canCopyText: boolean;
 	canUndo: boolean;
 	canRedo: boolean;
@@ -86,14 +86,14 @@ export type QuickNoteEditorActions = {
 	exportNote: () => Promise<void>;
 };
 
-export function QuickNotePage({
+export function NotePage({
 	noteId,
 	onTitleChange,
 	onEditorActionsChange,
 }: {
 	noteId: Id<"notes"> | null;
 	onTitleChange?: (title: string) => void;
-	onEditorActionsChange?: (actions: QuickNoteEditorActions | null) => void;
+	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
 }) {
 	const [title, setTitle] = React.useState("");
 	const [content, setContent] = React.useState(EMPTY_DOCUMENT_STRING);
@@ -118,7 +118,7 @@ export function QuickNotePage({
 				}
 			: "skip",
 	);
-	const saveQuickNote = useMutation(api.notes.save);
+	const saveNote = useMutation(api.notes.save);
 
 	const flushSave = React.useCallback(
 		async (
@@ -138,7 +138,7 @@ export function QuickNotePage({
 			saveInFlightRef.current = true;
 
 			try {
-				await saveQuickNote({
+				await saveNote({
 					id: nextNoteId,
 					...payload,
 				});
@@ -159,7 +159,7 @@ export function QuickNotePage({
 				}
 			}
 		},
-		[saveQuickNote],
+		[saveNote],
 	);
 
 	const editor = useEditor({
@@ -179,7 +179,7 @@ export function QuickNotePage({
 		editorProps: {
 			attributes: {
 				class:
-					"quick-note-tiptap min-h-[240px] border border-transparent bg-transparent px-0 py-0 text-base outline-none",
+					"note-tiptap min-h-[240px] border border-transparent bg-transparent px-0 py-0 text-base outline-none",
 			},
 		},
 		onUpdate: ({ editor }) => {
@@ -263,7 +263,7 @@ export function QuickNotePage({
 	}, [content, flushSave, noteId, searchableText, title]);
 
 	React.useEffect(() => {
-		onTitleChange?.(title || "New note");
+		onTitleChange?.(title || "New quick note");
 	}, [onTitleChange, title]);
 
 	React.useEffect(() => {
@@ -332,7 +332,7 @@ export function QuickNotePage({
 							return;
 						}
 
-						toast.success("Note exported");
+						toast.success("Quick note exported");
 					} catch (error) {
 						showActionError("Failed to export note", error);
 					}
@@ -357,8 +357,8 @@ export function QuickNotePage({
 							<Input
 								value={title}
 								onChange={(event) => setTitle(event.target.value)}
-								placeholder="New note"
-								aria-label="Note title"
+								placeholder="New quick note"
+								aria-label="Quick note title"
 								className="h-auto border-0 !bg-transparent px-0 py-0 text-3xl font-normal shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
 							/>
 
@@ -377,7 +377,7 @@ export function QuickNotePage({
 						</div>
 					</div>
 
-					<QuickNoteComposer />
+					<NoteComposer />
 				</div>
 			</div>
 		</div>

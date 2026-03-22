@@ -66,9 +66,9 @@ import {
 import * as React from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ChatPage } from "@/components/chat/chat-page";
-import { QuickNoteActionsMenu } from "@/components/quick-note/quick-note-actions-menu";
-import { type QuickNoteEditorActions, QuickNotePage } from "@/components/quick-note/quick-note-page";
-import { SharedQuickNotePage } from "@/components/quick-note/shared-note-page";
+import { NoteActionsMenu } from "@/components/note/note-actions-menu";
+import { type NoteEditorActions, NotePage } from "@/components/note/note-page";
+import { SharedNotePage } from "@/components/note/shared-note-page";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
@@ -82,7 +82,7 @@ type AppUser = {
 	avatar: string;
 };
 
-type AppView = "home" | "chat" | "shared" | "quick-note";
+type AppView = "home" | "chat" | "shared" | "note";
 
 type DesktopPermissionRow = {
 	id: DesktopPermissionId;
@@ -99,10 +99,10 @@ const isMissingDesktopPermissionHandlerError = (error: unknown) =>
 		"No handler registered for 'app:get-permissions-status'",
 	);
 
-const HOME_QUICK_NOTE_SKELETON_IDS = [
-	"home-quick-note-skeleton-1",
-	"home-quick-note-skeleton-2",
-	"home-quick-note-skeleton-3",
+const HOME_NOTE_SKELETON_IDS = [
+	"home-note-skeleton-1",
+	"home-note-skeleton-2",
+	"home-note-skeleton-3",
 ] as const;
 const WELCOME_FIREWORK_COLORS = [
 	"#ffd44d",
@@ -418,7 +418,7 @@ function App() {
 
 	const handleOpenOwnedSharedNote = React.useCallback((noteId: Id<"notes">) => {
 		setSharedNoteShareId(null);
-		window.history.pushState(null, "", `/quick-note?noteId=${noteId}`);
+		window.history.pushState(null, "", `/note?noteId=${noteId}`);
 	}, []);
 
 	React.useEffect(() => {
@@ -611,9 +611,9 @@ function App() {
 
 	if (sharedNoteShareId) {
 		return (
-			<SharedQuickNotePage
+			<SharedNotePage
 				note={sharedNote}
-				onOpenQuickNote={handleOpenOwnedSharedNote}
+				onOpenNote={handleOpenOwnedSharedNote}
 			/>
 		);
 	}
@@ -788,7 +788,7 @@ function AppGate({
 }) {
 	if (sharedNoteShareId) {
 		return (
-			<SharedQuickNotePage note={sharedNote} onOpenQuickNote={onOpenOwnedSharedNote} />
+			<SharedNotePage note={sharedNote} onOpenNote={onOpenOwnedSharedNote} />
 		);
 	}
 
@@ -1213,8 +1213,8 @@ function AppShell({
 			return "home";
 		}
 
-		if (window.location.pathname === "/quick-note") {
-			return "quick-note";
+		if (window.location.pathname === "/note") {
+			return "note";
 		}
 
 		if (window.location.pathname === "/chat") {
@@ -1250,7 +1250,7 @@ function AppShell({
 			getChatIdFromUrl(new URL(window.location.href)) ?? crypto.randomUUID()
 		);
 	});
-	const [currentQuickNoteId, setCurrentQuickNoteId] = React.useState<Id<"notes"> | null>(
+	const [currentNoteId, setCurrentNoteId] = React.useState<Id<"notes"> | null>(
 		() => {
 			if (typeof window === "undefined") {
 				return null;
@@ -1263,17 +1263,17 @@ function AppShell({
 			);
 		},
 	);
-	const [currentQuickNoteTitle, setCurrentQuickNoteTitle] =
+	const [currentNoteTitle, setCurrentNoteTitle] =
 		React.useState("New quick note");
-	const [currentQuickNoteEditorActions, setCurrentQuickNoteEditorActions] =
-		React.useState<QuickNoteEditorActions | null>(null);
-	const creatingQuickNoteRef = React.useRef(false);
+	const [currentNoteEditorActions, setCurrentNoteEditorActions] =
+		React.useState<NoteEditorActions | null>(null);
+	const creatingNoteRef = React.useRef(false);
 	const user = React.useMemo(() => toAppUser(session), [session]);
 	const currentDate = useCurrentDate();
 	const currentDayOfMonth = currentDate.getDate();
 	const currentMonthLabel = currentMonthFormatter.format(currentDate);
 	const currentWeekdayLabel = currentWeekdayFormatter.format(currentDate);
-	const createQuickNote = useMutation(api.notes.create);
+	const createNote = useMutation(api.notes.create);
 	const createWorkspace = useMutation(api.workspaces.create);
 	const chats = useQuery(api.chats.list, {});
 	const notes = useQuery(api.notes.list, {});
@@ -1286,11 +1286,11 @@ function AppShell({
 				}
 			: "skip",
 	);
-	const selectedQuickNote = useQuery(
+	const selectedNote = useQuery(
 		api.notes.get,
-		currentQuickNoteId
+		currentNoteId
 			? {
-					id: currentQuickNoteId,
+					id: currentNoteId,
 				}
 			: "skip",
 	);
@@ -1318,33 +1318,33 @@ function AppShell({
 			const nextSettingsOpen = url.hash === "#settings";
 			const nextChatId = getChatIdFromUrl(url);
 			const nextView =
-				window.location.pathname === "/quick-note" || url.hash === "#quick-note"
-					? "quick-note"
+				window.location.pathname === "/note" || url.hash === "#note"
+					? "note"
 					: window.location.pathname === "/chat" || url.hash === "#chat"
 						? "chat"
 						: window.location.pathname === "/shared" || url.hash === "#shared"
 							? "shared"
 							: "home";
-			const nextQuickNoteId =
+			const nextNoteId =
 				(url.searchParams.get("noteId") as Id<"notes"> | null) ?? null;
 
 			setCurrentView(nextView);
 			setCurrentChatId(nextChatId);
 			setChatComposerId(nextChatId ?? crypto.randomUUID());
-			setCurrentQuickNoteId(nextQuickNoteId);
-			setCurrentQuickNoteEditorActions(null);
+			setCurrentNoteId(nextNoteId);
+			setCurrentNoteEditorActions(null);
 
 			const nextPath =
-				nextView === "quick-note"
-					? "/quick-note"
+				nextView === "note"
+					? "/note"
 					: nextView === "chat"
 						? "/chat"
 						: nextView === "shared"
 							? "/shared"
 							: "/home";
 			const nextSearch =
-				nextView === "quick-note" && nextQuickNoteId
-					? `?noteId=${nextQuickNoteId}`
+				nextView === "note" && nextNoteId
+					? `?noteId=${nextNoteId}`
 					: nextView === "chat" && nextChatId
 						? `?chatId=${encodeURIComponent(nextChatId)}`
 						: "";
@@ -1369,15 +1369,15 @@ function AppShell({
 	}, []);
 
 	React.useEffect(() => {
-		if (selectedQuickNote?.title) {
-			setCurrentQuickNoteTitle(selectedQuickNote.title);
+		if (selectedNote?.title) {
+			setCurrentNoteTitle(selectedNote.title);
 			return;
 		}
 
-		if (currentView === "quick-note") {
-			setCurrentQuickNoteTitle("New quick note");
+		if (currentView === "note") {
+			setCurrentNoteTitle("New quick note");
 		}
-	}, [currentView, selectedQuickNote?.title]);
+	}, [currentView, selectedNote?.title]);
 
 	React.useEffect(() => {
 		void window.openGranDesktop
@@ -1407,55 +1407,55 @@ function AppShell({
 
 			setCurrentView(view);
 			setSettingsOpen(false);
-			setCurrentQuickNoteEditorActions(null);
+			setCurrentNoteEditorActions(null);
 			const search =
-				view === "quick-note" && currentQuickNoteId ? `?noteId=${currentQuickNoteId}` : "";
+				view === "note" && currentNoteId ? `?noteId=${currentNoteId}` : "";
 			window.history.pushState(
 				null,
 				"",
-				view === "quick-note"
-					? `/quick-note${search}`
+				view === "note"
+					? `/note${search}`
 					: view === "shared"
 						? "/shared"
 						: "/home",
 			);
 		},
-		[currentQuickNoteId, openFreshChat],
+		[currentNoteId, openFreshChat],
 	);
 
 	const openNote = React.useCallback((noteId: Id<"notes">) => {
-		setCurrentView("quick-note");
+		setCurrentView("note");
 		setSettingsOpen(false);
-		setCurrentQuickNoteId(noteId);
-		setCurrentQuickNoteEditorActions(null);
-		window.history.pushState(null, "", `/quick-note?noteId=${noteId}`);
+		setCurrentNoteId(noteId);
+		setCurrentNoteEditorActions(null);
+		window.history.pushState(null, "", `/note?noteId=${noteId}`);
 	}, []);
 
-	const handleCreateQuickNote = React.useCallback(() => {
-		if (creatingQuickNoteRef.current) {
+	const handleCreateNote = React.useCallback(() => {
+		if (creatingNoteRef.current) {
 			return;
 		}
 
-		creatingQuickNoteRef.current = true;
+		creatingNoteRef.current = true;
 
-		void createQuickNote()
+		void createNote()
 			.then((noteId) => {
-				setCurrentQuickNoteTitle("New quick note");
+				setCurrentNoteTitle("New quick note");
 				openNote(noteId);
 			})
 			.catch((error) => {
 				console.error("Failed to create note", error);
 			})
 			.finally(() => {
-				creatingQuickNoteRef.current = false;
+				creatingNoteRef.current = false;
 			});
-	}, [createQuickNote, openNote]);
+	}, [createNote, openNote]);
 
 	React.useEffect(() => {
-		if (currentView === "quick-note" && !currentQuickNoteId) {
-			handleCreateQuickNote();
+		if (currentView === "note" && !currentNoteId) {
+			handleCreateNote();
 		}
-	}, [currentQuickNoteId, currentView, handleCreateQuickNote]);
+	}, [currentNoteId, currentView, handleCreateNote]);
 
 	const handleSettingsOpenChange = React.useCallback((open: boolean) => {
 		setSettingsOpen(open);
@@ -1479,18 +1479,18 @@ function AppShell({
 		});
 	}, []);
 
-	const handleQuickNoteTrashed = React.useCallback(
+	const handleNoteTrashed = React.useCallback(
 		(noteId: Id<"notes">) => {
-			if (noteId !== currentQuickNoteId) {
+			if (noteId !== currentNoteId) {
 				return;
 			}
 
-			setCurrentQuickNoteId(null);
-			setCurrentQuickNoteTitle("New quick note");
-			setCurrentQuickNoteEditorActions(null);
+			setCurrentNoteId(null);
+			setCurrentNoteTitle("New quick note");
+			setCurrentNoteEditorActions(null);
 			handleViewChange("home");
 		},
-		[currentQuickNoteId, handleViewChange],
+		[currentNoteId, handleViewChange],
 	);
 	const handleOpenChat = React.useCallback((chatId: string) => {
 		setCurrentView("chat");
@@ -1538,19 +1538,19 @@ function AppShell({
 	);
 	const currentChatTitle =
 		chats?.find((chat) => getChatId(chat) === currentChatId)?.title || "Chat";
-	const isSharedQuickNote =
-		currentView === "quick-note" &&
-		(selectedQuickNote?.visibility === "public" ||
-			sharedNotes?.some((note) => note._id === currentQuickNoteId) === true);
+	const isSharedNote =
+		currentView === "note" &&
+		(selectedNote?.visibility === "public" ||
+			sharedNotes?.some((note) => note._id === currentNoteId) === true);
 	const breadcrumbSectionLabel =
 		currentView === "chat"
 			? "Chat"
-			: currentView === "shared" || isSharedQuickNote
+			: currentView === "shared" || isSharedNote
 				? "Shared"
 				: "Home";
 	const breadcrumbDetailLabel =
-		currentView === "quick-note"
-			? currentQuickNoteTitle
+		currentView === "note"
+			? currentNoteTitle
 			: currentView === "chat" && currentChatId
 				? currentChatTitle
 				: null;
@@ -1561,7 +1561,7 @@ function AppShell({
 		}
 
 		handleViewChange(
-			currentView === "shared" || isSharedQuickNote ? "shared" : "home",
+			currentView === "shared" || isSharedNote ? "shared" : "home",
 		);
 	};
 	const initialChatMessages = React.useMemo(
@@ -1585,10 +1585,10 @@ function AppShell({
 				onSignOut={handleSignOut}
 				signingOut={isSigningOut}
 				desktopSafeTop={isDesktopMac}
-				currentQuickNoteId={currentQuickNoteId}
-				currentQuickNoteTitle={currentQuickNoteTitle}
-				onQuickNoteSelect={openNote}
-				onQuickNoteTrashed={handleQuickNoteTrashed}
+				currentNoteId={currentNoteId}
+				currentNoteTitle={currentNoteTitle}
+				onNoteSelect={openNote}
+				onNoteTrashed={handleNoteTrashed}
 			/>
 			<SidebarInset>
 				<AppShellHeader
@@ -1597,11 +1597,11 @@ function AppShell({
 					breadcrumbDetailLabel={breadcrumbDetailLabel}
 					onBreadcrumbSectionClick={handleBreadcrumbSectionClick}
 					currentView={currentView}
-					currentQuickNoteId={currentQuickNoteId}
-					currentQuickNoteTitle={currentQuickNoteTitle}
-					currentQuickNoteEditorActions={currentQuickNoteEditorActions}
-					onCreateQuickNote={handleCreateQuickNote}
-					onQuickNoteTrashed={handleQuickNoteTrashed}
+					currentNoteId={currentNoteId}
+					currentNoteTitle={currentNoteTitle}
+					currentNoteEditorActions={currentNoteEditorActions}
+					onCreateNote={handleCreateNote}
+					onNoteTrashed={handleNoteTrashed}
 					onNewChat={handleNewChat}
 				/>
 				<AppShellContent
@@ -1611,12 +1611,12 @@ function AppShell({
 					currentWeekdayLabel={currentWeekdayLabel}
 					notes={notes}
 					sharedNotes={sharedNotes}
-					currentQuickNoteId={currentQuickNoteId}
-					currentQuickNoteTitle={currentQuickNoteTitle}
+					currentNoteId={currentNoteId}
+					currentNoteTitle={currentNoteTitle}
 					userName={user.name}
-					onOpenQuickNote={openNote}
-					onQuickNoteTrashed={handleQuickNoteTrashed}
-					onCreateQuickNote={handleCreateQuickNote}
+					onOpenNote={openNote}
+					onNoteTrashed={handleNoteTrashed}
+					onCreateNote={handleCreateNote}
 					chatComposerId={chatComposerId}
 					initialChatMessages={initialChatMessages}
 					chats={chats}
@@ -1624,8 +1624,8 @@ function AppShell({
 					onChatPersisted={handleChatPersisted}
 					onOpenChat={handleOpenChat}
 					onChatRemoved={handleChatRemoved}
-					onQuickNoteTitleChange={setCurrentQuickNoteTitle}
-					onQuickNoteEditorActionsChange={setCurrentQuickNoteEditorActions}
+					onNoteTitleChange={setCurrentNoteTitle}
+					onNoteEditorActionsChange={setCurrentNoteEditorActions}
 				/>
 			</SidebarInset>
 		</SidebarProvider>
@@ -1638,11 +1638,11 @@ function AppShellHeader({
 	breadcrumbDetailLabel,
 	onBreadcrumbSectionClick,
 	currentView,
-	currentQuickNoteId,
-	currentQuickNoteTitle,
-	currentQuickNoteEditorActions,
-	onCreateQuickNote,
-	onQuickNoteTrashed,
+	currentNoteId,
+	currentNoteTitle,
+	currentNoteEditorActions,
+	onCreateNote,
+	onNoteTrashed,
 	onNewChat,
 }: {
 	isDesktopMac: boolean;
@@ -1650,11 +1650,11 @@ function AppShellHeader({
 	breadcrumbDetailLabel: string | null;
 	onBreadcrumbSectionClick: () => void;
 	currentView: AppView;
-	currentQuickNoteId: Id<"notes"> | null;
-	currentQuickNoteTitle: string;
-	currentQuickNoteEditorActions: QuickNoteEditorActions | null;
-	onCreateQuickNote: () => void;
-	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle: string;
+	currentNoteEditorActions: NoteEditorActions | null;
+	onCreateNote: () => void;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
 	onNewChat: () => void;
 }) {
 	return (
@@ -1719,23 +1719,23 @@ function AppShellHeader({
 				className="ml-auto"
 			>
 				{currentView === "home" ? (
-					<Button variant="outline" onClick={onCreateQuickNote}>
+					<Button variant="outline" onClick={onCreateNote}>
 						<Plus />
 						Quick note
 					</Button>
-				) : currentView === "quick-note" && currentQuickNoteId ? (
-					<QuickNoteActionsMenu
-						noteId={currentQuickNoteId}
-						onMoveToTrash={onQuickNoteTrashed}
+				) : currentView === "note" && currentNoteId ? (
+					<NoteActionsMenu
+						noteId={currentNoteId}
+						onMoveToTrash={onNoteTrashed}
 						align="end"
 						itemsBeforeDefaults={
-							currentQuickNoteEditorActions ? (
+							currentNoteEditorActions ? (
 								<DropdownMenuItem
 									className="cursor-pointer"
-									disabled={!currentQuickNoteEditorActions.canCopyText}
+									disabled={!currentNoteEditorActions.canCopyText}
 									onSelect={(event) => {
 										event.preventDefault();
-										currentQuickNoteEditorActions.copyText();
+										currentNoteEditorActions.copyText();
 									}}
 								>
 									<Copy />
@@ -1744,14 +1744,14 @@ function AppShellHeader({
 							) : null
 						}
 						itemsAfterDefaults={
-							currentQuickNoteEditorActions ? (
+							currentNoteEditorActions ? (
 								<>
 									<DropdownMenuItem
 										className="cursor-pointer"
-										disabled={!currentQuickNoteEditorActions.canUndo}
+										disabled={!currentNoteEditorActions.canUndo}
 										onSelect={(event) => {
 											event.preventDefault();
-											currentQuickNoteEditorActions.undo();
+											currentNoteEditorActions.undo();
 										}}
 									>
 										<Undo2 />
@@ -1759,10 +1759,10 @@ function AppShellHeader({
 									</DropdownMenuItem>
 									<DropdownMenuItem
 										className="cursor-pointer"
-										disabled={!currentQuickNoteEditorActions.canRedo}
+										disabled={!currentNoteEditorActions.canRedo}
 										onSelect={(event) => {
 											event.preventDefault();
-											currentQuickNoteEditorActions.redo();
+											currentNoteEditorActions.redo();
 										}}
 									>
 										<Redo2 />
@@ -1770,10 +1770,10 @@ function AppShellHeader({
 									</DropdownMenuItem>
 									<DropdownMenuItem
 										className="cursor-pointer"
-										disabled={!currentQuickNoteEditorActions.canCopyText}
+										disabled={!currentNoteEditorActions.canCopyText}
 										onSelect={(event) => {
 											event.preventDefault();
-											currentQuickNoteEditorActions.exportNote();
+											currentNoteEditorActions.exportNote();
 										}}
 									>
 										<ArrowDown />
@@ -1788,11 +1788,11 @@ function AppShellHeader({
 							variant="ghost"
 							size="icon"
 							className="text-muted-foreground hover:text-foreground"
-							aria-label={`Open actions for ${currentQuickNoteTitle || "quick note"}`}
+							aria-label={`Open actions for ${currentNoteTitle || "quick note"}`}
 						>
 							<MoreHorizontal className="size-4" />
 						</Button>
-					</QuickNoteActionsMenu>
+					</NoteActionsMenu>
 				) : currentView === "chat" ? (
 					<Button variant="outline" onClick={onNewChat}>
 						<Plus />
@@ -1811,12 +1811,12 @@ function AppShellContent({
 	currentWeekdayLabel,
 	notes,
 	sharedNotes,
-	currentQuickNoteId,
-	currentQuickNoteTitle,
+	currentNoteId,
+	currentNoteTitle,
 	userName,
-	onOpenQuickNote,
-	onQuickNoteTrashed,
-	onCreateQuickNote,
+	onOpenNote,
+	onNoteTrashed,
+	onCreateNote,
 	chatComposerId,
 	initialChatMessages,
 	chats,
@@ -1824,8 +1824,8 @@ function AppShellContent({
 	onChatPersisted,
 	onOpenChat,
 	onChatRemoved,
-	onQuickNoteTitleChange,
-	onQuickNoteEditorActionsChange,
+	onNoteTitleChange,
+	onNoteEditorActionsChange,
 }: {
 	currentView: AppView;
 	currentDayOfMonth: number;
@@ -1833,12 +1833,12 @@ function AppShellContent({
 	currentWeekdayLabel: string;
 	notes: Array<Doc<"notes">> | undefined;
 	sharedNotes: Array<Doc<"notes">> | undefined;
-	currentQuickNoteId: Id<"notes"> | null;
-	currentQuickNoteTitle: string;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle: string;
 	userName: string;
-	onOpenQuickNote: (noteId: Id<"notes">) => void;
-	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
-	onCreateQuickNote: () => void;
+	onOpenNote: (noteId: Id<"notes">) => void;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
+	onCreateNote: () => void;
 	chatComposerId: string;
 	initialChatMessages: UIMessage[];
 	chats: Array<Doc<"chats">> | undefined;
@@ -1846,8 +1846,8 @@ function AppShellContent({
 	onChatPersisted?: (chatId: string) => void;
 	onOpenChat: (chatId: string) => void;
 	onChatRemoved: (chatId: string) => void;
-	onQuickNoteTitleChange: (title: string) => void;
-	onQuickNoteEditorActionsChange: (actions: QuickNoteEditorActions | null) => void;
+	onNoteTitleChange: (title: string) => void;
+	onNoteEditorActionsChange: (actions: NoteEditorActions | null) => void;
 }) {
 	if (currentView === "home") {
 		return (
@@ -1856,12 +1856,12 @@ function AppShellContent({
 				currentMonthLabel={currentMonthLabel}
 				currentWeekdayLabel={currentWeekdayLabel}
 				notes={notes}
-				currentQuickNoteId={currentQuickNoteId}
-				currentQuickNoteTitle={currentQuickNoteTitle}
+				currentNoteId={currentNoteId}
+				currentNoteTitle={currentNoteTitle}
 				currentUserName={userName}
-				onOpenQuickNote={onOpenQuickNote}
-				onQuickNoteTrashed={onQuickNoteTrashed}
-				onCreateQuickNote={onCreateQuickNote}
+				onOpenNote={onOpenNote}
+				onNoteTrashed={onNoteTrashed}
+				onCreateNote={onCreateNote}
 			/>
 		);
 	}
@@ -1870,21 +1870,21 @@ function AppShellContent({
 		return (
 			<SharedView
 				sharedNotes={sharedNotes}
-				currentQuickNoteId={currentQuickNoteId}
-				currentQuickNoteTitle={currentQuickNoteTitle}
+				currentNoteId={currentNoteId}
+				currentNoteTitle={currentNoteTitle}
 				currentUserName={userName}
-				onOpenQuickNote={onOpenQuickNote}
-				onQuickNoteTrashed={onQuickNoteTrashed}
+				onOpenNote={onOpenNote}
+				onNoteTrashed={onNoteTrashed}
 			/>
 		);
 	}
 
-	if (currentView === "quick-note") {
+	if (currentView === "note") {
 		return (
-			<QuickNotePage
-				noteId={currentQuickNoteId}
-				onTitleChange={onQuickNoteTitleChange}
-				onEditorActionsChange={onQuickNoteEditorActionsChange}
+			<NotePage
+				noteId={currentNoteId}
+				onTitleChange={onNoteTitleChange}
+				onEditorActionsChange={onNoteEditorActionsChange}
 			/>
 		);
 	}
@@ -1909,23 +1909,23 @@ function HomeView({
 	currentMonthLabel,
 	currentWeekdayLabel,
 	notes,
-	currentQuickNoteId,
-	currentQuickNoteTitle,
+	currentNoteId,
+	currentNoteTitle,
 	currentUserName,
-	onOpenQuickNote,
-	onQuickNoteTrashed,
-	onCreateQuickNote,
+	onOpenNote,
+	onNoteTrashed,
+	onCreateNote,
 }: {
 	currentDayOfMonth: number;
 	currentMonthLabel: string;
 	currentWeekdayLabel: string;
 	notes: Array<Doc<"notes">> | undefined;
-	currentQuickNoteId: Id<"notes"> | null;
-	currentQuickNoteTitle: string;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle: string;
 	currentUserName: string;
-	onOpenQuickNote: (noteId: Id<"notes">) => void;
-	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
-	onCreateQuickNote: () => void;
+	onOpenNote: (noteId: Id<"notes">) => void;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
+	onCreateNote: () => void;
 }) {
 	return (
 		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
@@ -1974,11 +1974,11 @@ function HomeView({
 					) : notes.length > 0 ? (
 						<HomeNotesList
 							notes={notes}
-							activeNoteId={currentQuickNoteId}
-							activeNoteTitle={currentQuickNoteTitle}
+							activeNoteId={currentNoteId}
+							activeNoteTitle={currentNoteTitle}
 							currentUserName={currentUserName}
-							onOpenQuickNote={onOpenQuickNote}
-							onQuickNoteTrashed={onQuickNoteTrashed}
+							onOpenNote={onOpenNote}
+							onNoteTrashed={onNoteTrashed}
 						/>
 					) : (
 						<Empty className="max-w-xl">
@@ -1989,7 +1989,7 @@ function HomeView({
 								</EmptyDescription>
 							</EmptyHeader>
 							<EmptyContent>
-								<Button onClick={onCreateQuickNote}>Quick note</Button>
+								<Button onClick={onCreateNote}>Quick note</Button>
 							</EmptyContent>
 						</Empty>
 					)}
@@ -2001,18 +2001,18 @@ function HomeView({
 
 function SharedView({
 	sharedNotes,
-	currentQuickNoteId,
-	currentQuickNoteTitle,
+	currentNoteId,
+	currentNoteTitle,
 	currentUserName,
-	onOpenQuickNote,
-	onQuickNoteTrashed,
+	onOpenNote,
+	onNoteTrashed,
 }: {
 	sharedNotes: Array<Doc<"notes">> | undefined;
-	currentQuickNoteId: Id<"notes"> | null;
-	currentQuickNoteTitle: string;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle: string;
 	currentUserName: string;
-	onOpenQuickNote: (noteId: Id<"notes">) => void;
-	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
+	onOpenNote: (noteId: Id<"notes">) => void;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
 	return (
 		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
@@ -2026,11 +2026,11 @@ function SharedView({
 					) : sharedNotes.length > 0 ? (
 						<SharedNotesList
 							notes={sharedNotes}
-							activeNoteId={currentQuickNoteId}
-							activeNoteTitle={currentQuickNoteTitle}
+							activeNoteId={currentNoteId}
+							activeNoteTitle={currentNoteTitle}
 							currentUserName={currentUserName}
-							onOpenQuickNote={onOpenQuickNote}
-							onQuickNoteTrashed={onQuickNoteTrashed}
+							onOpenNote={onOpenNote}
+							onNoteTrashed={onNoteTrashed}
 						/>
 					) : (
 						<Empty className="max-w-xl">
@@ -2100,7 +2100,7 @@ function HomeNotesSkeleton() {
 				Today
 			</div>
 			<div className="space-y-2">
-				{HOME_QUICK_NOTE_SKELETON_IDS.map((id) => (
+				{HOME_NOTE_SKELETON_IDS.map((id) => (
 					<div key={id} className="flex items-center gap-3 rounded-xl p-1">
 						<Skeleton className="size-8 rounded-lg" />
 						<div className="min-w-0 flex-1 space-y-2">
@@ -2121,7 +2121,7 @@ function SharedNotesSkeleton() {
 				Today
 			</div>
 			<div className="space-y-2">
-				{HOME_QUICK_NOTE_SKELETON_IDS.map((id) => (
+				{HOME_NOTE_SKELETON_IDS.map((id) => (
 					<div key={id} className="flex items-center gap-3 rounded-xl p-1">
 						<Skeleton className="size-8 rounded-lg" />
 						<div className="min-w-0 flex-1 space-y-2">
@@ -2140,15 +2140,15 @@ function SharedNotesList({
 	activeNoteId,
 	activeNoteTitle,
 	currentUserName,
-	onOpenQuickNote,
-	onQuickNoteTrashed,
+	onOpenNote,
+	onNoteTrashed,
 }: {
 	notes: Array<Doc<"notes">>;
 	activeNoteId: Id<"notes"> | null;
 	activeNoteTitle: string;
 	currentUserName: string;
-	onOpenQuickNote: (noteId: Id<"notes">) => void;
-	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
+	onOpenNote: (noteId: Id<"notes">) => void;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
 	const groupedNotes = groupItemsByDate(notes);
 	const sections = [
@@ -2197,7 +2197,7 @@ function SharedNotesList({
 									>
 										<button
 											type="button"
-											onClick={() => onOpenQuickNote(note._id)}
+											onClick={() => onOpenNote(note._id)}
 											className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
 										>
 											<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
@@ -2212,9 +2212,9 @@ function SharedNotesList({
 												</div>
 											</div>
 										</button>
-										<QuickNoteActionsMenu
+										<NoteActionsMenu
 											noteId={note._id}
-											onMoveToTrash={onQuickNoteTrashed}
+											onMoveToTrash={onNoteTrashed}
 											align="end"
 										>
 											<button
@@ -2226,7 +2226,7 @@ function SharedNotesList({
 											>
 												<MoreHorizontal className="size-4" />
 											</button>
-										</QuickNoteActionsMenu>
+										</NoteActionsMenu>
 									</div>
 								);
 							})}
@@ -2243,15 +2243,15 @@ function HomeNotesList({
 	activeNoteId,
 	activeNoteTitle,
 	currentUserName,
-	onOpenQuickNote,
-	onQuickNoteTrashed,
+	onOpenNote,
+	onNoteTrashed,
 }: {
 	notes: Array<Doc<"notes">>;
 	activeNoteId: Id<"notes"> | null;
 	activeNoteTitle: string;
 	currentUserName: string;
-	onOpenQuickNote: (noteId: Id<"notes">) => void;
-	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
+	onOpenNote: (noteId: Id<"notes">) => void;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
 	const groupedNotes = groupItemsByDate(notes);
 	const sections = [
@@ -2300,7 +2300,7 @@ function HomeNotesList({
 									>
 										<button
 											type="button"
-											onClick={() => onOpenQuickNote(note._id)}
+											onClick={() => onOpenNote(note._id)}
 											className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
 										>
 											<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
@@ -2315,9 +2315,9 @@ function HomeNotesList({
 												</div>
 											</div>
 										</button>
-										<QuickNoteActionsMenu
+										<NoteActionsMenu
 											noteId={note._id}
-											onMoveToTrash={onQuickNoteTrashed}
+											onMoveToTrash={onNoteTrashed}
 											align="end"
 										>
 											<button
@@ -2329,7 +2329,7 @@ function HomeNotesList({
 											>
 												<MoreHorizontal className="size-4" />
 											</button>
-										</QuickNoteActionsMenu>
+										</NoteActionsMenu>
 									</div>
 								);
 							})}

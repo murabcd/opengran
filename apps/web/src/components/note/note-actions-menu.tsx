@@ -26,12 +26,12 @@ import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import {
-	buildQuickNoteShareUrl,
-	type QuickNoteVisibility,
+	buildNoteShareUrl,
+	type NoteVisibility,
 	writeTextToClipboard,
 } from "./share-note";
 
-export function QuickNoteActionsMenu({
+export function NoteActionsMenu({
 	noteId,
 	onMoveToTrash,
 	children,
@@ -93,7 +93,7 @@ export function QuickNoteActionsMenu({
 	const handleCopyLink = React.useCallback(async () => {
 		try {
 			const result = await ensureShareId({ id: noteId });
-			const shareUrl = await buildQuickNoteShareUrl(result.shareId);
+			const shareUrl = await buildNoteShareUrl(result.shareId);
 			await writeTextToClipboard(shareUrl);
 			toast.success("Link copied");
 		} catch (error) {
@@ -103,7 +103,7 @@ export function QuickNoteActionsMenu({
 	}, [ensureShareId, noteId]);
 
 	const handleSetVisibility = React.useCallback(
-		async (visibility: QuickNoteVisibility) => {
+		async (visibility: NoteVisibility) => {
 			if (!note || isUpdatingShare) {
 				return;
 			}
@@ -120,7 +120,7 @@ export function QuickNoteActionsMenu({
 						id: noteId,
 						visibility: "private",
 					});
-					toast.success("Note is now private");
+					toast.success("Quick note is now private");
 					return;
 				}
 
@@ -137,12 +137,12 @@ export function QuickNoteActionsMenu({
 					throw new Error("Missing share identifier.");
 				}
 
-				const shareUrl = await buildQuickNoteShareUrl(shareId);
+				const shareUrl = await buildNoteShareUrl(shareId);
 				await writeTextToClipboard(shareUrl);
 				toast.success(
 					note.visibility === "public"
 						? "Share link copied"
-						: "Note shared and link copied",
+						: "Quick note shared and link copied",
 				);
 			} catch (error) {
 				console.error("Failed to update note visibility", error);
@@ -165,7 +165,7 @@ export function QuickNoteActionsMenu({
 			.then(() => {
 				onMoveToTrash?.(noteId);
 				setConfirmOpen(false);
-				toast.success("Note moved to trash");
+				toast.success("Quick note moved to trash");
 			})
 			.catch((error) => {
 				console.error("Failed to move note to trash", error);

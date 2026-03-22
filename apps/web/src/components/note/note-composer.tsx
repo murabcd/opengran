@@ -11,7 +11,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { ArrowUp, AudioLines, Paperclip, Plus } from "lucide-react";
 import * as React from "react";
 
-export function QuickNoteComposer() {
+export function NoteComposer() {
 	const [message, setMessage] = React.useState("");
 	const [isExpanded, setIsExpanded] = React.useState(false);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);

@@ -1,4 +1,4 @@
-export type QuickNoteVisibility = "private" | "public";
+export type NoteVisibility = "private" | "public";
 
 export async function writeTextToClipboard(value: string) {
 	if (window.openGranDesktop) {
@@ -30,7 +30,7 @@ async function getShareBaseUrl() {
 	return window.location.origin;
 }
 
-export async function buildQuickNoteShareUrl(shareId: string) {
+export async function buildNoteShareUrl(shareId: string) {
 	const baseUrl = new URL(await getShareBaseUrl());
 
 	baseUrl.pathname = `/shared/${shareId}`;
