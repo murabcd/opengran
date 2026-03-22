@@ -9,6 +9,13 @@ const workspaceRoleValidator = v.union(
 );
 
 export default defineSchema({
+	onboardingStates: defineTable({
+		ownerTokenIdentifier: v.string(),
+		hasSeenWelcomeCelebration: v.boolean(),
+		hasCompletedDesktopPermissions: v.boolean(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_ownerTokenIdentifier", ["ownerTokenIdentifier"]),
 	workspaces: defineTable({
 		ownerTokenIdentifier: v.string(),
 		name: v.string(),

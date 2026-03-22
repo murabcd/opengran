@@ -10,6 +10,7 @@ import {
 	Menu,
 	nativeImage,
 	shell,
+	systemPreferences,
 	Tray,
 } from "electron";
 import { loadRootEnv } from "./env.mjs";
@@ -254,11 +255,88 @@ const createMainWindow = async (targetUrl) => {
 	await mainWindow.loadURL(navigationUrl);
 };
 
+const getMicrophonePermission = () => {
+	if (process.platform !== "darwin" && process.platform !== "win32") {
+		return {
+			id: "microphone",
+			required: false,
+			state: "unsupported",
+			canRequest: false,
+			canOpenSystemSettings: false,
+		};
+	}
+
+	const rawStatus = systemPreferences.getMediaAccessStatus("microphone");
+	const canRequest =
+		process.platform === "darwin" && rawStatus === "not-determined";
+
+	return {
+		id: "microphone",
+		required: true,
+		state:
+			rawStatus === "granted"
+				? "granted"
+				: rawStatus === "denied" || rawStatus === "restricted"
+					? "blocked"
+					: rawStatus === "not-determined"
+						? canRequest
+							? "prompt"
+							: "blocked"
+						: "unknown",
+		canRequest,
+		canOpenSystemSettings: true,
+	};
+};
+
+const getPermissionsStatus = () => ({
+	isDesktop: true,
+	platform: process.platform,
+	permissions: [getMicrophonePermission()],
+});
+
+const requestPermission = async (permissionId) => {
+	if (permissionId !== "microphone") {
+		throw new Error("Unsupported desktop permission.");
+	}
+
+	if (
+		process.platform === "darwin" &&
+		systemPreferences.getMediaAccessStatus("microphone") === "not-determined"
+	) {
+		await systemPreferences.askForMediaAccess("microphone");
+	}
+
+	return getPermissionsStatus();
+};
+
+const openPermissionSettings = async (permissionId) => {
+	if (permissionId !== "microphone") {
+		throw new Error("Unsupported desktop permission.");
+	}
+
+	const settingsUrl =
+		process.platform === "darwin"
+			? "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+			: process.platform === "win32"
+				? "ms-settings:privacy-microphone"
+				: null;
+
+	if (!settingsUrl) {
+		throw new Error("System settings are not available on this platform.");
+	}
+
+	await shell.openExternal(settingsUrl);
+
+	return { ok: true };
+};
+
 ipcMain.handle("app:get-meta", () => ({
 	name: app.getName(),
 	version: app.getVersion(),
 	platform: process.platform,
 }));
+
+ipcMain.handle("app:get-permissions-status", () => getPermissionsStatus());
 
 ipcMain.handle("app:open-external-url", async (_event, url) => {
 	if (typeof url !== "string" || !url.startsWith("http")) {
@@ -267,6 +345,22 @@ ipcMain.handle("app:open-external-url", async (_event, url) => {
 
 	await shell.openExternal(url);
 	return { ok: true };
+});
+
+ipcMain.handle("app:request-permission", async (_event, permissionId) => {
+	if (typeof permissionId !== "string") {
+		throw new Error("Permission id must be a string.");
+	}
+
+	return await requestPermission(permissionId);
+});
+
+ipcMain.handle("app:open-permission-settings", async (_event, permissionId) => {
+	if (typeof permissionId !== "string") {
+		throw new Error("Permission id must be a string.");
+	}
+
+	return await openPermissionSettings(permissionId);
 });
 
 ipcMain.handle("app:get-auth-callback-url", async () => {
