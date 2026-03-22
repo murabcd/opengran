@@ -45,7 +45,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import {
 	AlertCircle,
 	ArrowDown,
@@ -221,6 +221,7 @@ const useCurrentDate = () => {
 export function App() {
 	const { data: session, isPending: isSessionPending } =
 		authClient.useSession();
+	const { isAuthenticated: isConvexAuthenticated } = useConvexAuth();
 	const [authError, setAuthError] = React.useState<string | null>(null);
 	const [isAuthenticating, startAuthentication] = React.useTransition();
 	const [isDesktopMac, setIsDesktopMac] = React.useState(false);
@@ -240,6 +241,10 @@ export function App() {
 					shareId: sharedNoteShareId,
 				}
 			: "skip",
+	);
+	const workspaces = useQuery(
+		api.workspaces.list,
+		session?.user && isConvexAuthenticated ? {} : "skip",
 	);
 
 	React.useEffect(() => {
@@ -355,7 +360,7 @@ export function App() {
 		);
 	}
 
-	if (isSessionPending) {
+	if (isSessionPending || (session?.user && !isConvexAuthenticated)) {
 		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
 	}
 
@@ -370,7 +375,17 @@ export function App() {
 		);
 	}
 
-	return <AppShell session={session} initialDesktopMac={isDesktopMac} />;
+	if (workspaces === undefined) {
+		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
+	}
+
+	return (
+		<AppShell
+			session={session}
+			workspaces={workspaces}
+			initialDesktopMac={isDesktopMac}
+		/>
+	);
 }
 
 function AuthBootstrapScreen({ isDesktopMac }: { isDesktopMac: boolean }) {
@@ -387,9 +402,11 @@ function AuthBootstrapScreen({ isDesktopMac }: { isDesktopMac: boolean }) {
 
 function AppShell({
 	session,
+	workspaces,
 	initialDesktopMac,
 }: {
 	session: AuthSession;
+	workspaces: Array<Doc<"workspaces">>;
 	initialDesktopMac: boolean;
 }) {
 	const [currentView, setCurrentView] = React.useState<
@@ -420,6 +437,8 @@ function AppShell({
 	const [isDesktopMac, setIsDesktopMac] = React.useState(initialDesktopMac);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
 	const [isSigningOut, startSignOut] = React.useTransition();
+	const [activeWorkspaceId, setActiveWorkspaceId] =
+		React.useState<Id<"workspaces"> | null>(() => workspaces[0]?._id ?? null);
 	const [currentChatId, setCurrentChatId] = React.useState<string | null>(
 		() => {
 			if (typeof window === "undefined") {
@@ -461,6 +480,7 @@ function AppShell({
 	const currentMonthLabel = currentMonthFormatter.format(currentDate);
 	const currentWeekdayLabel = currentWeekdayFormatter.format(currentDate);
 	const createQuickNote = useMutation(api.quickNotes.create);
+	const createWorkspace = useMutation(api.workspaces.create);
 	const chats = useQuery(api.chats.list, {});
 	const quickNotes = useQuery(api.quickNotes.list, {});
 	const sharedNotes = useQuery(api.quickNotes.listShared, {});
@@ -479,6 +499,23 @@ function AppShell({
 					id: currentQuickNoteId,
 				}
 			: "skip",
+	);
+
+	React.useEffect(() => {
+		if (workspaces.some((workspace) => workspace._id === activeWorkspaceId)) {
+			return;
+		}
+
+		setActiveWorkspaceId(workspaces[0]?._id ?? null);
+	}, [activeWorkspaceId, workspaces]);
+
+	const handleWorkspaceCreate = React.useCallback(
+		async (input: { name: string }) => {
+			const workspace = await createWorkspace(input);
+			setActiveWorkspaceId(workspace._id);
+			return workspace;
+		},
+		[createWorkspace],
 	);
 
 	React.useEffect(() => {
@@ -748,9 +785,13 @@ function AppShell({
 	return (
 		<SidebarProvider>
 			<AppSidebar
+				workspaces={workspaces}
+				activeWorkspaceId={activeWorkspaceId}
 				currentView={currentView}
 				user={user}
 				quickNotes={quickNotes}
+				onWorkspaceSelect={setActiveWorkspaceId}
+				onWorkspaceCreate={handleWorkspaceCreate}
 				onViewChange={handleViewChange}
 				settingsOpen={settingsOpen}
 				onSettingsOpenChange={handleSettingsOpenChange}

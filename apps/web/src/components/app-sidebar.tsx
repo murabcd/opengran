@@ -15,6 +15,14 @@ import {
 	AvatarFallback,
 	AvatarImage,
 } from "@workspace/ui/components/avatar";
+import { Button } from "@workspace/ui/components/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "@workspace/ui/components/dialog";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -58,12 +66,12 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
-import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
 	ChevronsUpDown,
 	FileText,
 	Home,
+	LoaderCircle,
 	LogOut,
 	type LucideIcon,
 	MessageCircle,
@@ -75,7 +83,6 @@ import {
 	Sun,
 	Trash2,
 	Undo2,
-	Users,
 	UsersRound,
 } from "lucide-react";
 import * as React from "react";
@@ -83,8 +90,10 @@ import { toast } from "sonner";
 import { QuickNoteActionsMenu } from "@/components/quick-note/quick-note-actions-menu";
 import { SearchCommand } from "@/components/search/search-command";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
+import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { getAvatarSrc } from "@/lib/avatar";
 import { getChatId } from "@/lib/chat";
+import { getWorkspaceRoleOption } from "@/lib/workspaces";
 import { api } from "../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import type { SearchCommandItem } from "./search/search-command";
@@ -123,27 +132,6 @@ const navigation: Array<Omit<NavItem, "isActive">> = [
 	},
 ];
 
-const workspaces = [
-	{
-		name: "OpenGran",
-		plan: "Meeting notes",
-		logo: OpenGranMark,
-		logoTileClassName: "bg-foreground text-background",
-	},
-	{
-		name: "Townhall Ops",
-		plan: "Team Workspace",
-		logo: Home,
-		logoTileClassName: "bg-muted text-foreground",
-	},
-	{
-		name: "Community Lab",
-		plan: "Shared Notes",
-		logo: Users,
-		logoTileClassName: "bg-muted text-foreground",
-	},
-] as const;
-
 const MAX_VISIBLE_NOTES = 5;
 const SIDEBAR_NOTE_SKELETON_IDS = [
 	"sidebar-note-skeleton-1",
@@ -160,9 +148,13 @@ const TRASH_NOTE_SKELETON_IDS = [
 ] as const;
 
 export function AppSidebar({
+	workspaces,
+	activeWorkspaceId,
 	currentView,
 	user,
 	quickNotes,
+	onWorkspaceSelect,
+	onWorkspaceCreate,
 	onViewChange,
 	settingsOpen,
 	onSettingsOpenChange,
@@ -175,6 +167,8 @@ export function AppSidebar({
 	onQuickNoteTrashed,
 	...props
 }: React.ComponentProps<typeof Sidebar> & {
+	workspaces: Array<Doc<"workspaces">>;
+	activeWorkspaceId: Id<"workspaces"> | null;
 	currentView: "home" | "chat" | "shared" | "quick-note";
 	user: {
 		name: string;
@@ -182,6 +176,8 @@ export function AppSidebar({
 		avatar: string;
 	};
 	quickNotes: Array<Doc<"quickNotes">> | undefined;
+	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
+	onWorkspaceCreate: (input: { name: string }) => Promise<Doc<"workspaces">>;
 	onViewChange: (view: "home" | "chat" | "shared" | "quick-note") => void;
 	settingsOpen: boolean;
 	onSettingsOpenChange: (open: boolean) => void;
@@ -193,7 +189,6 @@ export function AppSidebar({
 	onQuickNoteSelect: (noteId: Id<"quickNotes">) => void;
 	onQuickNoteTrashed?: (noteId: Id<"quickNotes">) => void;
 }) {
-	const [activeWorkspace, setActiveWorkspace] = React.useState(workspaces[0]);
 	const [searchOpen, setSearchOpen] = React.useState(false);
 	const [trashOpen, setTrashOpen] = React.useState(false);
 	const [draftUser, setDraftUser] = React.useState(user);
@@ -232,8 +227,10 @@ export function AppSidebar({
 				>
 					<div data-app-region={desktopSafeTop ? "no-drag" : undefined}>
 						<WorkspaceSwitcher
-							activeWorkspace={activeWorkspace}
-							onSelect={setActiveWorkspace}
+							workspaces={workspaces}
+							activeWorkspaceId={activeWorkspaceId}
+							onSelect={onWorkspaceSelect}
+							onCreateWorkspace={onWorkspaceCreate}
 						/>
 					</div>
 					<div data-app-region={desktopSafeTop ? "no-drag" : undefined}>
@@ -477,76 +474,178 @@ function NavProjectsSkeleton() {
 }
 
 function WorkspaceSwitcher({
-	activeWorkspace,
+	workspaces,
+	activeWorkspaceId,
 	onSelect,
+	onCreateWorkspace,
 }: {
-	activeWorkspace: (typeof workspaces)[number];
-	onSelect: (workspace: (typeof workspaces)[number]) => void;
+	workspaces: Array<Doc<"workspaces">>;
+	activeWorkspaceId: Id<"workspaces"> | null;
+	onSelect: (workspaceId: Id<"workspaces">) => void;
+	onCreateWorkspace: (input: { name: string }) => Promise<Doc<"workspaces">>;
 }) {
+	const [createOpen, setCreateOpen] = React.useState(false);
+	const [name, setName] = React.useState("");
+	const [createError, setCreateError] = React.useState<string | null>(null);
+	const [isCreatingWorkspace, startWorkspaceCreation] = React.useTransition();
+	const activeWorkspace =
+		workspaces.find((workspace) => workspace._id === activeWorkspaceId) ??
+		workspaces[0];
+
+	React.useEffect(() => {
+		if (createOpen) {
+			return;
+		}
+
+		setName("");
+		setCreateError(null);
+	}, [createOpen]);
+
 	if (!activeWorkspace) {
 		return null;
 	}
 
+	const activeWorkspaceMeta = getWorkspaceRoleOption(activeWorkspace.role);
+	const activeWorkspaceAvatarSrc = getAvatarSrc({
+		name: activeWorkspace.name,
+	});
+	const getWorkspaceInitials = (name: string) =>
+		name
+			.split(" ")
+			.map((part) => part[0])
+			.join("")
+			.slice(0, 2)
+			.toUpperCase();
+	const handleCreateWorkspace = () => {
+		startWorkspaceCreation(async () => {
+			try {
+				setCreateError(null);
+				const workspace = await onCreateWorkspace({
+					name,
+				});
+				onSelect(workspace._id);
+				setCreateOpen(false);
+			} catch (error) {
+				setCreateError(
+					error instanceof Error
+						? error.message
+						: "Failed to create workspace.",
+				);
+			}
+		});
+	};
+
 	return (
-		<SidebarMenu>
-			<SidebarMenuItem>
-				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<SidebarMenuButton
-							size="lg"
-							className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-						>
-							<div
-								className={cn(
-									"flex aspect-square size-8 items-center justify-center rounded-lg",
-									activeWorkspace.logoTileClassName,
-								)}
+		<>
+			<SidebarMenu>
+				<SidebarMenuItem>
+					<DropdownMenu>
+						<DropdownMenuTrigger asChild>
+							<SidebarMenuButton
+								size="lg"
+								className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
 							>
-								<activeWorkspace.logo className="size-4" />
-							</div>
-							<div className="grid flex-1 text-left text-sm leading-tight">
-								<span className="truncate font-medium">
-									{activeWorkspace.name}
-								</span>
-								<span className="truncate text-xs">{activeWorkspace.plan}</span>
-							</div>
-							<ChevronsUpDown className="ml-auto" />
-						</SidebarMenuButton>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent
-						className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-						side="bottom"
-						align="start"
-						sideOffset={4}
-					>
-						{workspaces.map((workspace) => (
-							<DropdownMenuItem
-								key={workspace.name}
-								onClick={() => onSelect(workspace)}
-								className="h-8 gap-2 px-2"
-							>
-								<div
-									className={cn(
-										"flex size-6 items-center justify-center rounded-md",
-										workspace.logoTileClassName,
-									)}
-								>
-									<workspace.logo className="size-3.5 shrink-0" />
+								<Avatar className="size-8 rounded-lg">
+									<AvatarImage
+										src={activeWorkspaceAvatarSrc}
+										alt={activeWorkspace.name}
+									/>
+									<AvatarFallback className="rounded-lg">
+										{getWorkspaceInitials(activeWorkspace.name)}
+									</AvatarFallback>
+								</Avatar>
+								<div className="grid flex-1 text-left text-sm leading-tight">
+									<span className="truncate font-medium">
+										{activeWorkspace.name}
+									</span>
+									<span className="truncate text-xs">
+										{activeWorkspaceMeta.summary}
+									</span>
 								</div>
-								{workspace.name}
+								<ChevronsUpDown className="ml-auto" />
+							</SidebarMenuButton>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent
+							className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+							side="bottom"
+							align="start"
+							sideOffset={4}
+						>
+							{workspaces.map((workspace) => {
+								const workspaceAvatarSrc = getAvatarSrc({
+									name: workspace.name,
+								});
+
+								return (
+									<DropdownMenuItem
+										key={workspace._id}
+										onClick={() => onSelect(workspace._id)}
+										className="h-8 gap-2 px-2"
+									>
+										<Avatar className="size-6 rounded-md">
+											<AvatarImage
+												src={workspaceAvatarSrc}
+												alt={workspace.name}
+											/>
+											<AvatarFallback className="rounded-md text-[10px]">
+												{getWorkspaceInitials(workspace.name)}
+											</AvatarFallback>
+										</Avatar>
+										{workspace.name}
+									</DropdownMenuItem>
+								);
+							})}
+							<DropdownMenuSeparator />
+							<DropdownMenuItem
+								className="h-8 gap-2 px-2"
+								onSelect={(event) => {
+									event.preventDefault();
+									setCreateOpen(true);
+								}}
+							>
+								<div className="flex size-6 items-center justify-center rounded-md bg-transparent">
+									<Plus className="size-4" />
+								</div>
+								<div className="font-medium">Add workspace</div>
 							</DropdownMenuItem>
-						))}
-						<DropdownMenuSeparator />
-						<DropdownMenuItem className="h-8 gap-2 px-2">
-							<div className="flex size-6 items-center justify-center rounded-md bg-transparent">
-								<Plus className="size-4" />
-							</div>
-							<div className="font-medium">Add workspace</div>
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
-			</SidebarMenuItem>
-		</SidebarMenu>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</SidebarMenuItem>
+			</SidebarMenu>
+			<Dialog open={createOpen} onOpenChange={setCreateOpen}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Create a workspace</DialogTitle>
+						<DialogDescription>
+							Add another workspace to keep your notes and context organized.
+						</DialogDescription>
+					</DialogHeader>
+					<WorkspaceComposer
+						name={name}
+						onNameChange={setName}
+						error={createError}
+						nameInputId="workspace-dialog-name"
+					/>
+					<div className="flex items-center justify-end gap-2">
+						<Button variant="ghost" onClick={() => setCreateOpen(false)}>
+							Cancel
+						</Button>
+						<Button
+							onClick={handleCreateWorkspace}
+							disabled={isCreatingWorkspace || name.trim().length < 2}
+						>
+							{isCreatingWorkspace ? (
+								<LoaderCircle
+									data-icon="inline-start"
+									className="animate-spin"
+								/>
+							) : null}
+							Create workspace
+						</Button>
+					</div>
+				</DialogContent>
+			</Dialog>
+		</>
 	);
 }
 
@@ -638,25 +737,6 @@ function NavUser({
 				</DropdownMenu>
 			</SidebarMenuItem>
 		</SidebarMenu>
-	);
-}
-
-function OpenGranMark({ className }: { className?: string }) {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			fill="none"
-			className={className}
-			aria-hidden="true"
-		>
-			<path
-				d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"
-				stroke="currentColor"
-				strokeWidth="2"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-			/>
-		</svg>
 	);
 }
 

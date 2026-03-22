@@ -12,6 +12,7 @@ import type * as auth from "../auth.js";
 import type * as chats from "../chats.js";
 import type * as http from "../http.js";
 import type * as quickNotes from "../quickNotes.js";
+import type * as workspaces from "../workspaces.js";
 
 import type {
   ApiFromModules,
@@ -24,6 +25,7 @@ declare const fullApi: ApiFromModules<{
   chats: typeof chats;
   http: typeof http;
   quickNotes: typeof quickNotes;
+  workspaces: typeof workspaces;
 }>;
 
 /**

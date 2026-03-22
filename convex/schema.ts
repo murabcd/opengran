@@ -1,7 +1,30 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const workspaceRoleValidator = v.union(
+	v.literal("startup-generalist"),
+	v.literal("investing"),
+	v.literal("recruiting"),
+	v.literal("customer-facing"),
+);
+
 export default defineSchema({
+	workspaces: defineTable({
+		ownerTokenIdentifier: v.string(),
+		name: v.string(),
+		normalizedName: v.string(),
+		role: workspaceRoleValidator,
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_ownerTokenIdentifier_and_createdAt", [
+			"ownerTokenIdentifier",
+			"createdAt",
+		])
+		.index("by_ownerTokenIdentifier_and_normalizedName", [
+			"ownerTokenIdentifier",
+			"normalizedName",
+		]),
 	quickNotes: defineTable({
 		ownerTokenIdentifier: v.string(),
 		authorName: v.optional(v.string()),
@@ -45,6 +68,10 @@ export default defineSchema({
 		updatedAt: v.number(),
 		lastMessageAt: v.number(),
 	})
+		.index("by_ownerTokenIdentifier_and_updatedAt", [
+			"ownerTokenIdentifier",
+			"updatedAt",
+		])
 		.index("by_ownerTokenIdentifier_and_isArchived_and_updatedAt", [
 			"ownerTokenIdentifier",
 			"isArchived",
