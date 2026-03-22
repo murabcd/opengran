@@ -470,7 +470,7 @@ const buildTrayMenu = () =>
 		{
 			label: "Settings",
 			click: () => {
-				void showMainWindow({ pathname: "/home", hash: "settings" });
+				void showMainWindow({ pathname: "/settings/profile" });
 			},
 		},
 		{

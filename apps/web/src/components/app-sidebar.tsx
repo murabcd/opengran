@@ -89,7 +89,10 @@ import * as React from "react";
 import { toast } from "sonner";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
 import { SearchCommand } from "@/components/search/search-command";
-import { SettingsDialog } from "@/components/settings/settings-dialog";
+import {
+	SettingsDialog,
+	type SettingsPage,
+} from "@/components/settings/settings-dialog";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { getAvatarSrc } from "@/lib/avatar";
 import { getChatId } from "@/lib/chat";
@@ -157,6 +160,7 @@ export function AppSidebar({
 	onWorkspaceCreate,
 	onViewChange,
 	settingsOpen,
+	settingsPage = "Profile",
 	onSettingsOpenChange,
 	onSignOut,
 	signingOut = false,
@@ -180,7 +184,8 @@ export function AppSidebar({
 	onWorkspaceCreate: (input: { name: string }) => Promise<Doc<"workspaces">>;
 	onViewChange: (view: "home" | "chat" | "shared" | "note") => void;
 	settingsOpen: boolean;
-	onSettingsOpenChange: (open: boolean) => void;
+	settingsPage?: SettingsPage;
+	onSettingsOpenChange: (open: boolean, page?: SettingsPage) => void;
 	onSignOut: () => void;
 	signingOut?: boolean;
 	desktopSafeTop?: boolean;
@@ -255,7 +260,7 @@ export function AppSidebar({
 					<NavTrash open={trashOpen} onOpenChange={setTrashOpen} />
 					<NavUser
 						user={draftUser}
-						onSettingsOpen={() => onSettingsOpenChange(true)}
+						onSettingsOpen={() => onSettingsOpenChange(true, "Profile")}
 						onSignOut={onSignOut}
 						signingOut={signingOut}
 					/>
@@ -274,6 +279,8 @@ export function AppSidebar({
 				onOpenChange={onSettingsOpenChange}
 				user={draftUser}
 				onUserChange={setDraftUser}
+				initialPage={settingsPage}
+				onPageChange={(page) => onSettingsOpenChange(true, page)}
 			/>
 		</>
 	);

@@ -45,7 +45,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useAction, useConvexAuth, useMutation, useQuery } from "convex/react";
 import {
 	AlertCircle,
 	ArrowDown,
@@ -69,6 +69,7 @@ import { ChatPage } from "@/components/chat/chat-page";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
 import { type NoteEditorActions, NotePage } from "@/components/note/note-page";
 import { SharedNotePage } from "@/components/note/shared-note-page";
+import type { SettingsPage } from "@/components/settings/settings-dialog";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
@@ -83,6 +84,18 @@ type AppUser = {
 };
 
 type AppView = "home" | "chat" | "shared" | "note";
+
+const SETTINGS_PAGE_BY_SLUG = {
+	profile: "Profile",
+	calendar: "Calendar",
+	"data-controls": "Data controls",
+} as const satisfies Record<string, SettingsPage>;
+
+const SETTINGS_SLUG_BY_PAGE: Record<SettingsPage, string> = {
+	Profile: "profile",
+	Calendar: "calendar",
+	"Data controls": "data-controls",
+};
 
 type DesktopPermissionRow = {
 	id: DesktopPermissionId;
@@ -123,6 +136,26 @@ type GroupedItems<T> = {
 	older: T[];
 };
 
+type UpcomingCalendarEvent = {
+	id: string;
+	calendarId: string;
+	calendarName: string;
+	title: string;
+	startAt: string;
+	endAt: string;
+	isAllDay: boolean;
+	htmlLink?: string;
+	meetingUrl?: string;
+	location?: string;
+};
+
+const GOOGLE_CALENDAR_SCOPES = [
+	"openid",
+	"email",
+	"profile",
+	"https://www.googleapis.com/auth/calendar.readonly",
+] as const;
+
 const currentMonthFormatter = new Intl.DateTimeFormat(undefined, {
 	month: "long",
 });
@@ -131,10 +164,114 @@ const currentWeekdayFormatter = new Intl.DateTimeFormat(undefined, {
 	weekday: "short",
 });
 
+const upcomingEventDateFormatter = new Intl.DateTimeFormat(undefined, {
+	month: "short",
+	day: "numeric",
+	weekday: "short",
+});
+
+const upcomingEventTimeFormatter = new Intl.DateTimeFormat(undefined, {
+	hour: "numeric",
+	minute: "2-digit",
+});
+
 const isSameCalendarDay = (left: Date, right: Date) =>
 	left.getFullYear() === right.getFullYear() &&
 	left.getMonth() === right.getMonth() &&
 	left.getDate() === right.getDate();
+
+const isUpcomingEventLive = (
+	event: UpcomingCalendarEvent,
+	currentDate: Date,
+) => {
+	const startAt = new Date(event.startAt).getTime();
+	const endAt = new Date(event.endAt).getTime();
+	const now = currentDate.getTime();
+	const liveWindowStart = startAt - 5 * 60 * 1000;
+
+	return now >= liveWindowStart && now <= endAt;
+};
+
+const formatUpcomingEventMeta = (
+	event: UpcomingCalendarEvent,
+	currentDate: Date,
+) => {
+	const startAt = new Date(event.startAt);
+	const endAt = new Date(event.endAt);
+
+	if (event.isAllDay) {
+		return isSameCalendarDay(startAt, currentDate)
+			? "Today · All day"
+			: `${upcomingEventDateFormatter.format(startAt)} · All day`;
+	}
+
+	const timeRange = `${upcomingEventTimeFormatter.format(startAt)} - ${upcomingEventTimeFormatter.format(endAt)}`;
+
+	if (isUpcomingEventLive(event, currentDate)) {
+		return `Now · ${timeRange}`;
+	}
+
+	return isSameCalendarDay(startAt, currentDate)
+		? timeRange
+		: `${upcomingEventDateFormatter.format(startAt)} · ${timeRange}`;
+};
+
+const isUpcomingEventToday = (
+	event: UpcomingCalendarEvent,
+	currentDate: Date,
+) => {
+	const startAt = new Date(event.startAt);
+	const endAt = new Date(event.endAt).getTime();
+
+	return (
+		isSameCalendarDay(startAt, currentDate) && endAt >= currentDate.getTime()
+	);
+};
+
+const getSettingsPageFromPath = (pathname: string): SettingsPage | null => {
+	const normalizedPath = pathname.replace(/\/+$/, "") || "/";
+
+	if (normalizedPath === "/settings") {
+		return "Profile";
+	}
+
+	if (!normalizedPath.startsWith("/settings/")) {
+		return null;
+	}
+
+	const slug = normalizedPath.slice("/settings/".length);
+	return (
+		SETTINGS_PAGE_BY_SLUG[slug as keyof typeof SETTINGS_PAGE_BY_SLUG] ??
+		"Profile"
+	);
+};
+
+const getSettingsPath = (page: SettingsPage) =>
+	`/settings/${SETTINGS_SLUG_BY_PAGE[page]}`;
+
+const getAppViewFromUrl = (url: URL): AppView =>
+	url.pathname === "/note" || url.hash === "#note"
+		? "note"
+		: url.pathname === "/chat" || url.hash === "#chat"
+			? "chat"
+			: url.pathname === "/shared" || url.hash === "#shared"
+				? "shared"
+				: "home";
+
+const getInitialNonSettingsLocation = () => {
+	if (typeof window === "undefined") {
+		return "/home";
+	}
+
+	const url = new URL(window.location.href);
+	const settingsPage = getSettingsPageFromPath(url.pathname);
+
+	if (settingsPage || url.hash === "#settings") {
+		return "/home";
+	}
+
+	return `${url.pathname}${url.search}${url.hash}`;
+};
 
 const getDelayUntilNextMidnight = (now: Date) => {
 	const nextMidnight = new Date(now);
@@ -370,51 +507,68 @@ function App() {
 		return status;
 	}, []);
 
-	const handleGitHubSignIn = React.useCallback(() => {
-		startAuthentication(async () => {
-			try {
-				setAuthError(null);
-				if (window.openGranDesktop) {
-					const { url: callbackURL } =
-						await window.openGranDesktop.getAuthCallbackUrl();
-					const result = await authClient.signIn.social({
-						provider: "github",
-						callbackURL,
-						errorCallbackURL: callbackURL,
-						disableRedirect: true,
+	const handleSocialSignIn = React.useCallback(
+		(provider: "github" | "google") => {
+			startAuthentication(async () => {
+				try {
+					setAuthError(null);
+					const scopes =
+						provider === "google" ? [...GOOGLE_CALENDAR_SCOPES] : undefined;
+					if (window.openGranDesktop) {
+						const { url: callbackURL } =
+							await window.openGranDesktop.getAuthCallbackUrl();
+						const result = await authClient.signIn.social({
+							provider,
+							callbackURL,
+							errorCallbackURL: callbackURL,
+							disableRedirect: true,
+							scopes,
+						});
+
+						if (result.error) {
+							const message =
+								result.error.message ||
+								result.error.statusText ||
+								"GitHub sign-in failed.";
+							throw new Error(message);
+						}
+
+						const url = result.data?.url;
+
+						if (!url) {
+							throw new Error(
+								`${provider === "google" ? "Google" : "GitHub"} sign-in URL was not returned.`,
+							);
+						}
+
+						await window.openGranDesktop.openExternalUrl(url);
+						return;
+					}
+
+					await authClient.signIn.social({
+						provider,
+						callbackURL: window.location.href,
+						scopes,
 					});
-
-					if (result.error) {
-						const message =
-							result.error.message ||
-							result.error.statusText ||
-							"GitHub sign-in failed.";
-						throw new Error(message);
-					}
-
-					const url = result.data?.url;
-
-					if (!url) {
-						throw new Error("GitHub sign-in URL was not returned.");
-					}
-
-					await window.openGranDesktop.openExternalUrl(url);
-					return;
+				} catch (error) {
+					setAuthError(
+						error instanceof Error
+							? error.message
+							: `${provider === "google" ? "Google" : "GitHub"} sign-in failed. Check your Better Auth setup.`,
+					);
 				}
+			});
+		},
+		[],
+	);
 
-				await authClient.signIn.social({
-					provider: "github",
-					callbackURL: window.location.href,
-				});
-			} catch (error) {
-				setAuthError(
-					error instanceof Error
-						? error.message
-						: "GitHub sign-in failed. Check your Better Auth setup.",
-				);
-			}
-		});
-	}, []);
+	const handleGitHubSignIn = React.useCallback(() => {
+		handleSocialSignIn("github");
+	}, [handleSocialSignIn]);
+
+	const handleGoogleSignIn = React.useCallback(() => {
+		handleSocialSignIn("google");
+	}, [handleSocialSignIn]);
 
 	const handleOpenOwnedSharedNote = React.useCallback((noteId: Id<"notes">) => {
 		setSharedNoteShareId(null);
@@ -629,6 +783,7 @@ function App() {
 				isAuthenticating={isAuthenticating}
 				isDesktopMac={isDesktopMac}
 				onGitHubSignIn={handleGitHubSignIn}
+				onGoogleSignIn={handleGoogleSignIn}
 			/>
 		);
 	}
@@ -695,6 +850,7 @@ function App() {
 			isAuthenticating={isAuthenticating}
 			isDesktopMac={isDesktopMac}
 			onGitHubSignIn={handleGitHubSignIn}
+			onGoogleSignIn={handleGoogleSignIn}
 			workspaces={workspaces}
 			onboardingStatus={onboardingStatus}
 			isCreatingWorkspace={isCreatingWorkspace}
@@ -729,6 +885,7 @@ function AppGate({
 	isAuthenticating,
 	isDesktopMac,
 	onGitHubSignIn,
+	onGoogleSignIn,
 	workspaces,
 	onboardingStatus,
 	isCreatingWorkspace,
@@ -759,6 +916,7 @@ function AppGate({
 	isAuthenticating: boolean;
 	isDesktopMac: boolean;
 	onGitHubSignIn: () => void;
+	onGoogleSignIn: () => void;
 	workspaces: Array<Doc<"workspaces">> | undefined;
 	onboardingStatus:
 		| {
@@ -803,6 +961,7 @@ function AppGate({
 				isAuthenticating={isAuthenticating}
 				isDesktopMac={isDesktopMac}
 				onGitHubSignIn={onGitHubSignIn}
+				onGoogleSignIn={onGoogleSignIn}
 			/>
 		);
 	}
@@ -1208,27 +1367,18 @@ function AppShell({
 	workspaces: Array<Doc<"workspaces">>;
 	initialDesktopMac: boolean;
 }) {
+	const { isAuthenticated: isConvexAuthenticated } = useConvexAuth();
 	const [currentView, setCurrentView] = React.useState<AppView>(() => {
 		if (typeof window === "undefined") {
 			return "home";
 		}
 
-		if (window.location.pathname === "/note") {
-			return "note";
-		}
-
-		if (window.location.pathname === "/chat") {
-			return "chat";
-		}
-
-		if (window.location.pathname === "/shared") {
-			return "shared";
-		}
-
-		return "home";
+		return getAppViewFromUrl(new URL(window.location.href));
 	});
 	const [isDesktopMac, setIsDesktopMac] = React.useState(initialDesktopMac);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
+	const [settingsPage, setSettingsPage] =
+		React.useState<SettingsPage>("Profile");
 	const [isSigningOut, startSignOut] = React.useTransition();
 	const [activeWorkspaceId, setActiveWorkspaceId] =
 		React.useState<Id<"workspaces"> | null>(() => workspaces[0]?._id ?? null);
@@ -1268,13 +1418,30 @@ function AppShell({
 	const [currentNoteEditorActions, setCurrentNoteEditorActions] =
 		React.useState<NoteEditorActions | null>(null);
 	const creatingNoteRef = React.useRef(false);
+	const lastNonSettingsLocationRef = React.useRef(
+		getInitialNonSettingsLocation(),
+	);
 	const user = React.useMemo(() => toAppUser(session), [session]);
 	const currentDate = useCurrentDate();
 	const currentDayOfMonth = currentDate.getDate();
 	const currentMonthLabel = currentMonthFormatter.format(currentDate);
 	const currentWeekdayLabel = currentWeekdayFormatter.format(currentDate);
+	const [upcomingCalendarEvents, setUpcomingCalendarEvents] = React.useState<
+		UpcomingCalendarEvent[]
+	>([]);
+	const [upcomingCalendarStatus, setUpcomingCalendarStatus] = React.useState<
+		"idle" | "ready" | "not_connected" | "error"
+	>("idle");
+	const [isLoadingUpcomingCalendarEvents, setIsLoadingUpcomingCalendarEvents] =
+		React.useState(false);
+	const upcomingCalendarLoadKey = session?.user?.email
+		? `${isConvexAuthenticated ? "authenticated" : "unauthenticated"}:${session.user.email}`
+		: "anonymous";
 	const createNote = useMutation(api.notes.create);
 	const createWorkspace = useMutation(api.workspaces.create);
+	const listUpcomingGoogleEvents = useAction(
+		api.calendar.listUpcomingGoogleEvents,
+	);
 	const chats = useQuery(api.chats.list, {});
 	const notes = useQuery(api.notes.list, {});
 	const sharedNotes = useQuery(api.notes.listShared, {});
@@ -1294,6 +1461,57 @@ function AppShell({
 				}
 			: "skip",
 	);
+
+	const refreshUpcomingCalendarEvents = React.useEffectEvent(async () => {
+		if (!session?.user?.email || !isConvexAuthenticated) {
+			setUpcomingCalendarEvents([]);
+			setUpcomingCalendarStatus("not_connected");
+			return;
+		}
+
+		setIsLoadingUpcomingCalendarEvents(true);
+
+		try {
+			const result = await listUpcomingGoogleEvents({});
+
+			if (result.status === "not_connected") {
+				setUpcomingCalendarEvents([]);
+				setUpcomingCalendarStatus("not_connected");
+				return;
+			}
+
+			setUpcomingCalendarEvents(result.events);
+			setUpcomingCalendarStatus("ready");
+		} catch (error) {
+			console.error("Failed to load upcoming calendar events", error);
+			setUpcomingCalendarEvents([]);
+			setUpcomingCalendarStatus("error");
+		} finally {
+			setIsLoadingUpcomingCalendarEvents(false);
+		}
+	});
+
+	React.useEffect(() => {
+		if (upcomingCalendarLoadKey === "anonymous") {
+			void refreshUpcomingCalendarEvents();
+			return;
+		}
+
+		void refreshUpcomingCalendarEvents();
+	}, [upcomingCalendarLoadKey]);
+
+	React.useEffect(() => {
+		if (upcomingCalendarLoadKey === "anonymous") {
+			return;
+		}
+
+		const handleFocus = () => {
+			void refreshUpcomingCalendarEvents();
+		};
+
+		window.addEventListener("focus", handleFocus);
+		return () => window.removeEventListener("focus", handleFocus);
+	}, [upcomingCalendarLoadKey]);
 
 	React.useEffect(() => {
 		if (workspaces.some((workspace) => workspace._id === activeWorkspaceId)) {
@@ -1315,44 +1533,52 @@ function AppShell({
 	React.useEffect(() => {
 		const syncViewFromLocation = () => {
 			const url = new URL(window.location.href);
-			const nextSettingsOpen = url.hash === "#settings";
-			const nextChatId = getChatIdFromUrl(url);
-			const nextView =
-				window.location.pathname === "/note" || url.hash === "#note"
-					? "note"
-					: window.location.pathname === "/chat" || url.hash === "#chat"
-						? "chat"
-						: window.location.pathname === "/shared" || url.hash === "#shared"
-							? "shared"
-							: "home";
+			const nextSettingsPage =
+				getSettingsPageFromPath(url.pathname) ??
+				(url.hash === "#settings" ? "Profile" : null);
+			const nextSettingsOpen = nextSettingsPage !== null;
+
+			if (!nextSettingsOpen) {
+				lastNonSettingsLocationRef.current = `${url.pathname}${url.search}${url.hash}`;
+			}
+
+			const contentUrl = nextSettingsOpen
+				? new URL(lastNonSettingsLocationRef.current, url.origin)
+				: url;
+			const nextChatId = getChatIdFromUrl(contentUrl);
+			const nextView = getAppViewFromUrl(contentUrl);
 			const nextNoteId =
-				(url.searchParams.get("noteId") as Id<"notes"> | null) ?? null;
+				(contentUrl.searchParams.get("noteId") as Id<"notes"> | null) ?? null;
 
 			setCurrentView(nextView);
 			setCurrentChatId(nextChatId);
 			setChatComposerId(nextChatId ?? crypto.randomUUID());
 			setCurrentNoteId(nextNoteId);
 			setCurrentNoteEditorActions(null);
+			setSettingsPage(nextSettingsPage ?? "Profile");
 
-			const nextPath =
-				nextView === "note"
+			const nextPath = nextSettingsOpen
+				? getSettingsPath(nextSettingsPage ?? "Profile")
+				: nextView === "note"
 					? "/note"
 					: nextView === "chat"
 						? "/chat"
 						: nextView === "shared"
 							? "/shared"
 							: "/home";
-			const nextSearch =
-				nextView === "note" && nextNoteId
+			const nextSearch = nextSettingsOpen
+				? ""
+				: nextView === "note" && nextNoteId
 					? `?noteId=${nextNoteId}`
 					: nextView === "chat" && nextChatId
 						? `?chatId=${encodeURIComponent(nextChatId)}`
 						: "";
-			const nextLocation = `${nextPath}${nextSearch}${nextSettingsOpen ? "#settings" : ""}`;
+			const nextHash = "";
+			const nextLocation = `${nextPath}${nextSearch}${nextHash}`;
 			if (
 				window.location.pathname !== nextPath ||
 				window.location.search !== nextSearch ||
-				window.location.hash !== (nextSettingsOpen ? "#settings" : "")
+				window.location.hash !== nextHash
 			) {
 				window.history.replaceState(null, "", nextLocation);
 			}
@@ -1457,17 +1683,30 @@ function AppShell({
 		}
 	}, [currentNoteId, currentView, handleCreateNote]);
 
-	const handleSettingsOpenChange = React.useCallback((open: boolean) => {
-		setSettingsOpen(open);
+	const handleSettingsOpenChange = React.useCallback(
+		(open: boolean, page: SettingsPage = "Profile") => {
+			setSettingsOpen(open);
+			if (!open) {
+				setSettingsPage("Profile");
+				const nextLocation = lastNonSettingsLocationRef.current || "/home";
+				window.history.pushState(null, "", nextLocation);
+				return;
+			}
 
-		const nextUrl = new URL(window.location.href);
-		nextUrl.hash = open ? "settings" : "";
-		window.history.replaceState(
-			null,
-			"",
-			`${nextUrl.pathname}${nextUrl.hash ? `#${nextUrl.hash}` : ""}`,
-		);
-	}, []);
+			const currentUrl = new URL(window.location.href);
+			if (getSettingsPageFromPath(currentUrl.pathname) === null) {
+				lastNonSettingsLocationRef.current = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+			}
+
+			setSettingsPage(page);
+			window.history.pushState(null, "", getSettingsPath(page));
+		},
+		[],
+	);
+
+	const handleOpenCalendarSettings = React.useCallback(() => {
+		handleSettingsOpenChange(true, "Calendar");
+	}, [handleSettingsOpenChange]);
 
 	const handleSignOut = React.useCallback(() => {
 		startSignOut(async () => {
@@ -1581,6 +1820,7 @@ function AppShell({
 				onWorkspaceCreate={handleWorkspaceCreate}
 				onViewChange={handleViewChange}
 				settingsOpen={settingsOpen}
+				settingsPage={settingsPage}
 				onSettingsOpenChange={handleSettingsOpenChange}
 				onSignOut={handleSignOut}
 				signingOut={isSigningOut}
@@ -1606,9 +1846,13 @@ function AppShell({
 				/>
 				<AppShellContent
 					currentView={currentView}
+					currentDate={currentDate}
 					currentDayOfMonth={currentDayOfMonth}
 					currentMonthLabel={currentMonthLabel}
 					currentWeekdayLabel={currentWeekdayLabel}
+					upcomingCalendarEvents={upcomingCalendarEvents}
+					upcomingCalendarStatus={upcomingCalendarStatus}
+					isLoadingUpcomingCalendarEvents={isLoadingUpcomingCalendarEvents}
 					notes={notes}
 					sharedNotes={sharedNotes}
 					currentNoteId={currentNoteId}
@@ -1617,6 +1861,7 @@ function AppShell({
 					onOpenNote={openNote}
 					onNoteTrashed={handleNoteTrashed}
 					onCreateNote={handleCreateNote}
+					onOpenCalendarSettings={handleOpenCalendarSettings}
 					chatComposerId={chatComposerId}
 					initialChatMessages={initialChatMessages}
 					chats={chats}
@@ -1806,9 +2051,13 @@ function AppShellHeader({
 
 function AppShellContent({
 	currentView,
+	currentDate,
 	currentDayOfMonth,
 	currentMonthLabel,
 	currentWeekdayLabel,
+	upcomingCalendarEvents,
+	upcomingCalendarStatus,
+	isLoadingUpcomingCalendarEvents,
 	notes,
 	sharedNotes,
 	currentNoteId,
@@ -1817,6 +2066,7 @@ function AppShellContent({
 	onOpenNote,
 	onNoteTrashed,
 	onCreateNote,
+	onOpenCalendarSettings,
 	chatComposerId,
 	initialChatMessages,
 	chats,
@@ -1828,9 +2078,13 @@ function AppShellContent({
 	onNoteEditorActionsChange,
 }: {
 	currentView: AppView;
+	currentDate: Date;
 	currentDayOfMonth: number;
 	currentMonthLabel: string;
 	currentWeekdayLabel: string;
+	upcomingCalendarEvents: UpcomingCalendarEvent[];
+	upcomingCalendarStatus: "idle" | "ready" | "not_connected" | "error";
+	isLoadingUpcomingCalendarEvents: boolean;
 	notes: Array<Doc<"notes">> | undefined;
 	sharedNotes: Array<Doc<"notes">> | undefined;
 	currentNoteId: Id<"notes"> | null;
@@ -1839,6 +2093,7 @@ function AppShellContent({
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 	onCreateNote: () => void;
+	onOpenCalendarSettings: () => void;
 	chatComposerId: string;
 	initialChatMessages: UIMessage[];
 	chats: Array<Doc<"chats">> | undefined;
@@ -1852,9 +2107,13 @@ function AppShellContent({
 	if (currentView === "home") {
 		return (
 			<HomeView
+				currentDate={currentDate}
 				currentDayOfMonth={currentDayOfMonth}
 				currentMonthLabel={currentMonthLabel}
 				currentWeekdayLabel={currentWeekdayLabel}
+				upcomingCalendarEvents={upcomingCalendarEvents}
+				upcomingCalendarStatus={upcomingCalendarStatus}
+				isLoadingUpcomingCalendarEvents={isLoadingUpcomingCalendarEvents}
 				notes={notes}
 				currentNoteId={currentNoteId}
 				currentNoteTitle={currentNoteTitle}
@@ -1862,6 +2121,7 @@ function AppShellContent({
 				onOpenNote={onOpenNote}
 				onNoteTrashed={onNoteTrashed}
 				onCreateNote={onCreateNote}
+				onOpenCalendarSettings={onOpenCalendarSettings}
 			/>
 		);
 	}
@@ -1905,9 +2165,13 @@ function AppShellContent({
 }
 
 function HomeView({
+	currentDate,
 	currentDayOfMonth,
 	currentMonthLabel,
 	currentWeekdayLabel,
+	upcomingCalendarEvents,
+	upcomingCalendarStatus,
+	isLoadingUpcomingCalendarEvents,
 	notes,
 	currentNoteId,
 	currentNoteTitle,
@@ -1915,10 +2179,15 @@ function HomeView({
 	onOpenNote,
 	onNoteTrashed,
 	onCreateNote,
+	onOpenCalendarSettings,
 }: {
+	currentDate: Date;
 	currentDayOfMonth: number;
 	currentMonthLabel: string;
 	currentWeekdayLabel: string;
+	upcomingCalendarEvents: UpcomingCalendarEvent[];
+	upcomingCalendarStatus: "idle" | "ready" | "not_connected" | "error";
+	isLoadingUpcomingCalendarEvents: boolean;
 	notes: Array<Doc<"notes">> | undefined;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle: string;
@@ -1926,42 +2195,147 @@ function HomeView({
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 	onCreateNote: () => void;
+	onOpenCalendarSettings: () => void;
 }) {
+	const visibleUpcomingEvents = upcomingCalendarEvents
+		.filter((event) => isUpcomingEventToday(event, currentDate))
+		.slice(0, 5);
+
+	const openMeetingLink = React.useCallback(async (url: string) => {
+		if (window.openGranDesktop) {
+			await window.openGranDesktop.openExternalUrl(url);
+			return;
+		}
+
+		window.open(url, "_blank", "noopener,noreferrer");
+	}, []);
+
 	return (
 		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
 			<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
 				<section className="mx-auto w-full max-w-xl space-y-6">
 					<h1 className="text-lg md:text-xl">Coming up</h1>
-					<Card className="min-h-[176px] rounded-xl border-border py-0 shadow-sm">
-						<CardContent className="p-5">
-							<div className="flex flex-col gap-6 md:flex-row md:items-start">
-								<div className="grid w-fit shrink-0 grid-cols-[auto_auto] items-start gap-x-3 gap-y-1 pt-1">
-									<div className="row-span-2 text-5xl leading-none tracking-tight tabular-nums">
-										{currentDayOfMonth}
+					<Card className="overflow-hidden rounded-xl border-border py-0 shadow-sm">
+						<CardContent className="p-0">
+							<div className="grid min-h-[152px] md:grid-cols-[184px_minmax(0,1fr)]">
+								<div className="flex items-start border-b border-border/60 px-5 py-4 md:border-b-0 md:border-r">
+									<div className="grid grid-cols-[auto_auto] items-start gap-x-3 gap-y-1">
+										<div className="row-span-2 text-5xl leading-none tracking-tight tabular-nums">
+											{currentDayOfMonth}
+										</div>
+										<div className="flex items-center gap-2 pt-1 text-base leading-none">
+											<span>{currentMonthLabel}</span>
+											<span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+										</div>
+										<p className="text-base leading-none text-muted-foreground">
+											{currentWeekdayLabel}
+										</p>
 									</div>
-									<div className="flex items-center gap-2 pt-1 text-base leading-none">
-										<span>{currentMonthLabel}</span>
-										<span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-									</div>
-									<p className="text-base leading-none text-muted-foreground">
-										{currentWeekdayLabel}
-									</p>
 								</div>
-								<div className="ml-auto flex min-h-[176px] w-full items-center justify-center">
-									<Empty className="min-h-[176px] rounded-xl border border-solid border-border px-4 py-5">
-										<EmptyHeader>
-											<EmptyMedia variant="icon">
-												<CalendarClock className="size-4" />
-											</EmptyMedia>
-											<EmptyTitle>No upcoming events</EmptyTitle>
-											<EmptyDescription>
-												Check your visible calendars
-											</EmptyDescription>
-										</EmptyHeader>
-										<EmptyContent>
-											<Button variant="outline">Calendar settings</Button>
-										</EmptyContent>
-									</Empty>
+								<div className="flex min-h-[152px] w-full items-start justify-center p-3">
+									{isLoadingUpcomingCalendarEvents ? (
+										<div className="flex min-h-[120px] w-full flex-col justify-center gap-3 rounded-xl border border-solid border-border px-4 py-3">
+											<Skeleton className="h-5 w-40" />
+											<Skeleton className="h-14 w-full rounded-xl" />
+											<Skeleton className="h-14 w-full rounded-xl" />
+										</div>
+									) : visibleUpcomingEvents.length > 0 ? (
+										<div className="w-full px-1 py-1">
+											<div className="space-y-1.5">
+												{visibleUpcomingEvents.map((event) => {
+													const isLive = isUpcomingEventLive(
+														event,
+														currentDate,
+													);
+													const canJoinNow = Boolean(event.meetingUrl);
+
+													return (
+														<div
+															key={`${event.id}:${event.startAt}`}
+															className={cn(
+																"flex items-start gap-3 rounded-lg px-3 py-2 transition-colors",
+																isLive && "bg-muted/50",
+															)}
+														>
+															<div
+																className={cn(
+																	"mt-0.5 h-8 w-1 shrink-0 rounded-full bg-[#8f88ff]",
+																	isLive && "bg-green-500",
+																)}
+															/>
+															<div className="min-w-0 flex-1">
+																<div className="flex items-start justify-between gap-4">
+																	<div className="min-w-0">
+																		<p className="truncate text-sm font-medium text-foreground">
+																			{event.title}
+																		</p>
+																		<p
+																			className={cn(
+																				"mt-0.5 text-xs text-muted-foreground",
+																				isLive && "text-green-500",
+																			)}
+																		>
+																			{formatUpcomingEventMeta(
+																				event,
+																				currentDate,
+																			)}
+																		</p>
+																	</div>
+																	{canJoinNow ? (
+																		<Button
+																			type="button"
+																			variant="default"
+																			size="sm"
+																			className="h-8 shrink-0 px-3.5 text-xs"
+																			onClick={() => {
+																				if (event.meetingUrl) {
+																					void openMeetingLink(
+																						event.meetingUrl,
+																					);
+																				}
+																			}}
+																		>
+																			Start now
+																		</Button>
+																	) : null}
+																</div>
+															</div>
+														</div>
+													);
+												})}
+											</div>
+										</div>
+									) : (
+										<Empty className="min-h-[152px] rounded-xl border border-solid border-border px-4 py-4">
+											<EmptyHeader>
+												<EmptyMedia variant="icon">
+													<CalendarClock className="size-4" />
+												</EmptyMedia>
+												<EmptyTitle>
+													{upcomingCalendarStatus === "not_connected"
+														? "Connect Google Calendar"
+														: upcomingCalendarStatus === "error"
+															? "Couldn’t load calendar"
+															: "No upcoming events today"}
+												</EmptyTitle>
+												<EmptyDescription>
+													{upcomingCalendarStatus === "not_connected"
+														? "Link Google Calendar in settings to see upcoming meetings."
+														: upcomingCalendarStatus === "error"
+															? "Try reconnecting Google Calendar or refresh the app."
+															: "Check your visible calendars for today"}
+												</EmptyDescription>
+											</EmptyHeader>
+											<EmptyContent>
+												<Button
+													variant="outline"
+													onClick={onOpenCalendarSettings}
+												>
+													Calendar settings
+												</Button>
+											</EmptyContent>
+										</Empty>
+									)}
 								</div>
 							</div>
 						</CardContent>
@@ -2346,11 +2720,13 @@ function AuthScreen({
 	isAuthenticating,
 	isDesktopMac,
 	onGitHubSignIn,
+	onGoogleSignIn,
 }: {
 	error: string | null;
 	isAuthenticating: boolean;
 	isDesktopMac: boolean;
 	onGitHubSignIn: () => void;
+	onGoogleSignIn: () => void;
 }) {
 	return (
 		<div
@@ -2365,6 +2741,7 @@ function AuthScreen({
 				isAuthenticating={isAuthenticating}
 				isDesktopMac={isDesktopMac}
 				onGitHubSignIn={onGitHubSignIn}
+				onGoogleSignIn={onGoogleSignIn}
 			/>
 		</div>
 	);
@@ -2376,12 +2753,14 @@ function LoginForm({
 	isAuthenticating,
 	isDesktopMac,
 	onGitHubSignIn,
+	onGoogleSignIn,
 	...props
 }: React.ComponentProps<"div"> & {
 	error: string | null;
 	isAuthenticating: boolean;
 	isDesktopMac: boolean;
 	onGitHubSignIn: () => void;
+	onGoogleSignIn: () => void;
 }) {
 	const [hasAcceptedTerms, setHasAcceptedTerms] = React.useState(false);
 
@@ -2400,11 +2779,29 @@ function LoginForm({
 			<Card>
 				<CardHeader className="text-center">
 					<CardTitle className="text-xl">Welcome back</CardTitle>
-					<CardDescription>Login with your GitHub account</CardDescription>
+					<CardDescription>
+						Login with your GitHub or Google account
+					</CardDescription>
 				</CardHeader>
 				<CardContent>
 					<form>
 						<FieldGroup>
+							<Field>
+								<Button
+									variant="outline"
+									type="button"
+									className="w-full"
+									onClick={onGoogleSignIn}
+									disabled={isAuthenticating || !hasAcceptedTerms}
+								>
+									{isAuthenticating ? (
+										<LoaderCircle className="animate-spin" />
+									) : (
+										<Icons.googleLogo className="size-4" />
+									)}
+									Login with Google
+								</Button>
+							</Field>
 							<Field>
 								<Button
 									variant="outline"

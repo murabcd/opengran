@@ -49,8 +49,14 @@ import {
 	SidebarProvider,
 } from "@workspace/ui/components/sidebar";
 import { useMutation } from "convex/react";
-import { Database, ImageUp, UserRound } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+	CalendarDays,
+	Database,
+	ImageUp,
+	LoaderCircle,
+	UserRound,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { getAvatarSrc } from "@/lib/avatar";
@@ -62,35 +68,65 @@ type SettingsUser = {
 	avatar: string;
 };
 
-type SettingsPage = "Profile" | "Data controls";
+export type SettingsPage = "Profile" | "Calendar" | "Data controls";
 
 type SettingsDialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	user: SettingsUser;
 	onUserChange: (user: SettingsUser) => void;
+	initialPage?: SettingsPage;
+	onPageChange?: (page: SettingsPage) => void;
 };
 
 const settingsNav = [
 	{ name: "Profile", icon: UserRound },
+	{ name: "Calendar", icon: CalendarDays },
 	{ name: "Data controls", icon: Database },
 ] as const;
+
+const GOOGLE_CALENDAR_SCOPES = [
+	"openid",
+	"email",
+	"profile",
+	"https://www.googleapis.com/auth/calendar.readonly",
+] as const;
+
+type LinkedAccount = {
+	id: string;
+	providerId: string;
+	accountId: string;
+	scopes: string[];
+};
 
 export function SettingsDialog({
 	open,
 	onOpenChange,
 	user,
 	onUserChange,
+	initialPage = "Profile",
+	onPageChange,
 }: SettingsDialogProps) {
-	const [activePage, setActivePage] = useState<SettingsPage>("Profile");
+	const [activePage, setActivePage] = useState<SettingsPage>(initialPage);
 	const { data: session } = authClient.useSession();
+
+	const handlePageSelect = (page: SettingsPage) => {
+		setActivePage(page);
+		onPageChange?.(page);
+	};
+
+	useEffect(() => {
+		if (open) {
+			setActivePage(initialPage);
+		}
+	}, [initialPage, open]);
 
 	return (
 		<Dialog
 			open={open}
 			onOpenChange={(nextOpen) => {
 				if (nextOpen) {
-					setActivePage("Profile");
+					setActivePage(initialPage);
 				}
 
 				onOpenChange(nextOpen);
@@ -118,7 +154,7 @@ export function SettingsDialog({
 												>
 													<button
 														type="button"
-														onClick={() => setActivePage(item.name)}
+														onClick={() => handlePageSelect(item.name)}
 													>
 														<item.icon />
 														<span>{item.name}</span>
@@ -151,7 +187,7 @@ export function SettingsDialog({
 											key={item.name}
 											variant={activePage === item.name ? "secondary" : "ghost"}
 											size="sm"
-											onClick={() => setActivePage(item.name)}
+											onClick={() => handlePageSelect(item.name)}
 										>
 											<item.icon />
 											{item.name}
@@ -170,6 +206,8 @@ export function SettingsDialog({
 										onOpenChange(false);
 									}}
 								/>
+							) : activePage === "Calendar" ? (
+								<CalendarSettings />
 							) : (
 								<DataControlsSettings
 									canDeleteData={Boolean(session?.user)}
@@ -181,6 +219,136 @@ export function SettingsDialog({
 				</SidebarProvider>
 			</DialogContent>
 		</Dialog>
+	);
+}
+
+function CalendarSettings() {
+	const { data: session } = authClient.useSession();
+	const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
+	const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
+	const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+
+	const loadAccounts = useCallback(async () => {
+		if (!session?.user) {
+			setAccounts([]);
+			return;
+		}
+
+		setIsLoadingAccounts(true);
+
+		try {
+			const result = await authClient.$fetch("/list-accounts", {
+				method: "GET",
+				throw: true,
+			});
+			setAccounts(Array.isArray(result) ? (result as LinkedAccount[]) : []);
+		} catch (error) {
+			console.error("Failed to load linked accounts", error);
+			toast.error("Failed to load linked calendar accounts");
+		} finally {
+			setIsLoadingAccounts(false);
+		}
+	}, [session?.user]);
+
+	useEffect(() => {
+		void loadAccounts();
+	}, [loadAccounts]);
+
+	useEffect(() => {
+		const handleFocus = () => {
+			void loadAccounts();
+		};
+
+		window.addEventListener("focus", handleFocus);
+		return () => window.removeEventListener("focus", handleFocus);
+	}, [loadAccounts]);
+
+	const googleAccount = accounts.find(
+		(account) => account.providerId === "google",
+	);
+	const hasCalendarScope =
+		googleAccount?.scopes.includes(
+			"https://www.googleapis.com/auth/calendar.readonly",
+		) ?? false;
+
+	const handleConnectGoogleCalendar = async () => {
+		setIsConnectingGoogle(true);
+
+		try {
+			const callbackURL = window.openGranDesktop
+				? (await window.openGranDesktop.getAuthCallbackUrl()).url
+				: window.location.href;
+			const result = await authClient.$fetch("/link-social", {
+				method: "POST",
+				throw: true,
+				body: {
+					provider: "google",
+					callbackURL,
+					errorCallbackURL: callbackURL,
+					disableRedirect: true,
+					scopes: [...GOOGLE_CALENDAR_SCOPES],
+				},
+			});
+			const resultObject = result && typeof result === "object" ? result : null;
+			const url =
+				resultObject && "url" in resultObject
+					? String(resultObject.url ?? "")
+					: "";
+			const linkedWithoutRedirect =
+				resultObject !== null &&
+				"status" in resultObject &&
+				Boolean(resultObject.status) &&
+				"redirect" in resultObject &&
+				resultObject.redirect === false;
+
+			if (!url) {
+				if (linkedWithoutRedirect) {
+					await loadAccounts();
+					toast.success("Google account linked.");
+					return;
+				}
+
+				throw new Error("Google calendar auth URL was not returned.");
+			}
+
+			if (window.openGranDesktop) {
+				await window.openGranDesktop.openExternalUrl(url);
+			} else {
+				window.location.assign(url);
+			}
+		} catch (error) {
+			console.error("Failed to connect Google Calendar", error);
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Failed to connect Google Calendar",
+			);
+		} finally {
+			setIsConnectingGoogle(false);
+		}
+	};
+
+	return (
+		<div className="py-4">
+			<div className="flex items-center justify-between gap-4">
+				<FieldLabel className="text-sm font-medium">Google Calendar</FieldLabel>
+				<Button
+					type="button"
+					variant={googleAccount ? "outline" : "default"}
+					onClick={handleConnectGoogleCalendar}
+					disabled={isConnectingGoogle || !session?.user || isLoadingAccounts}
+				>
+					{isConnectingGoogle ? (
+						<LoaderCircle className="animate-spin" />
+					) : null}
+					{googleAccount
+						? hasCalendarScope
+							? "Reconnect"
+							: "Grant calendar access"
+						: "Connect"}
+				</Button>
+			</div>
+		</div>
 	);
 }
 
@@ -209,6 +377,7 @@ function DataControlsSettings({
 		try {
 			await authClient.$fetch("/delete-user", {
 				method: "POST",
+				throw: true,
 				body: { callbackURL: "/" },
 			});
 			setShowDeleteAccountDialog(false);
@@ -245,16 +414,9 @@ function DataControlsSettings({
 
 	return (
 		<div className="py-4">
-			<FieldGroup className="gap-6">
-				<Field>
-					<FieldTitle>Data controls</FieldTitle>
-					<FieldDescription>
-						Permanently remove your OpenGran account or wipe every note you own.
-					</FieldDescription>
-				</Field>
+			<div className="flex flex-col gap-4">
 				<DataControlAction
 					title="Delete account"
-					description="Permanently delete your account and all of your notes."
 					buttonLabel={isDeletingAccount ? "Deleting..." : "Delete"}
 					dialogOpen={showDeleteAccountDialog}
 					onDialogOpenChange={setShowDeleteAccountDialog}
@@ -265,7 +427,6 @@ function DataControlsSettings({
 				/>
 				<DataControlAction
 					title="Delete all notes"
-					description="Permanently delete every note you own, including archived and shared notes."
 					buttonLabel={isDeletingAllNotes ? "Deleting..." : "Delete"}
 					dialogOpen={showDeleteAllNotesDialog}
 					onDialogOpenChange={setShowDeleteAllNotesDialog}
@@ -274,14 +435,13 @@ function DataControlsSettings({
 					buttonDisabled={isDeletingAllNotes || !canDeleteData}
 					dialogDescription="This action cannot be undone. All notes you own will be permanently deleted."
 				/>
-			</FieldGroup>
+			</div>
 		</div>
 	);
 }
 
 function DataControlAction({
 	title,
-	description,
 	buttonLabel,
 	dialogOpen,
 	onDialogOpenChange,
@@ -291,7 +451,6 @@ function DataControlAction({
 	dialogDescription,
 }: {
 	title: string;
-	description: string;
 	buttonLabel: string;
 	dialogOpen: boolean;
 	onDialogOpenChange: (open: boolean) => void;
@@ -301,11 +460,8 @@ function DataControlAction({
 	dialogDescription: string;
 }) {
 	return (
-		<div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-			<div className="space-y-1">
-				<div className="text-sm font-medium">{title}</div>
-				<p className="text-sm text-muted-foreground">{description}</p>
-			</div>
+		<div className="flex items-center justify-between gap-4">
+			<div className="text-sm font-medium">{title}</div>
 			<AlertDialog open={dialogOpen} onOpenChange={onDialogOpenChange}>
 				<AlertDialogTrigger asChild>
 					<Button

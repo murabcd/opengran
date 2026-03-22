@@ -8,10 +8,7 @@ import { query } from "./_generated/server";
 import authConfig from "./auth.config";
 
 const LOCAL_SITE_URLS = ["http://127.0.0.1:3000", "http://localhost:3000"];
-const DESKTOP_CALLBACK_ORIGINS = [
-	"http://127.0.0.1:*",
-	"http://localhost:*",
-];
+const DESKTOP_CALLBACK_ORIGINS = ["http://127.0.0.1:*", "http://localhost:*"];
 
 function requireEnv(name: string) {
 	const value = process.env[name];
@@ -41,6 +38,12 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 		baseURL: requireEnv("CONVEX_SITE_URL"),
 		trustedOrigins: [siteUrl, ...LOCAL_SITE_URLS, ...DESKTOP_CALLBACK_ORIGINS],
 		database: authComponent.adapter(ctx),
+		account: {
+			accountLinking: {
+				allowDifferentEmails: true,
+				trustedProviders: ["github", "google"],
+			},
+		},
 		user: {
 			deleteUser: {
 				enabled: true,
@@ -75,11 +78,15 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 					"github-client-secret",
 				),
 			},
+			google: {
+				clientId: envOrPlaceholder("GOOGLE_CLIENT_ID", "google-client-id"),
+				clientSecret: envOrPlaceholder(
+					"GOOGLE_CLIENT_SECRET",
+					"google-client-secret",
+				),
+			},
 		},
-		plugins: [
-			convex({ authConfig }),
-			crossDomain({ siteUrl }),
-		],
+		plugins: [convex({ authConfig }), crossDomain({ siteUrl })],
 	});
 };
 

@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as calendar from "../calendar.js";
 import type * as chats from "../chats.js";
 import type * as http from "../http.js";
 import type * as notes from "../notes.js";
@@ -23,6 +24,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  calendar: typeof calendar;
   chats: typeof chats;
   http: typeof http;
   notes: typeof notes;
