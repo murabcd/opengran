@@ -314,99 +314,119 @@ export const listUpcomingGoogleEvents = action({
 	args: {},
 	returns: upcomingEventsResponseValidator,
 	handler: async (ctx) => {
-		const authContext = await getGoogleAuthContext(ctx);
-		const googleTokens = await getGoogleAccessToken(authContext);
+		try {
+			const authContext = await getGoogleAuthContext(ctx);
+			const googleTokens = await getGoogleAccessToken(authContext);
 
-		if (!googleTokens?.accessToken) {
-			return {
-				status: "not_connected" as const,
-				events: [] as UpcomingCalendarEvent[],
-			};
-		}
+			if (!googleTokens?.accessToken) {
+				return {
+					status: "not_connected" as const,
+					events: [] as UpcomingCalendarEvent[],
+				};
+			}
 
-		if (!googleTokens.scopes.includes(GOOGLE_CALENDAR_SCOPE)) {
-			return {
-				status: "not_connected" as const,
-				events: [] as UpcomingCalendarEvent[],
-			};
-		}
+			if (!googleTokens.scopes.includes(GOOGLE_CALENDAR_SCOPE)) {
+				return {
+					status: "not_connected" as const,
+					events: [] as UpcomingCalendarEvent[],
+				};
+			}
 
-		const now = Date.now();
-		const timeMin = new Date(now - CALENDAR_LOOKBACK_MS).toISOString();
-		const timeMax = new Date(
-			now + UPCOMING_EVENTS_WINDOW_DAYS * 24 * 60 * 60 * 1000,
-		).toISOString();
-		const calendarListUrl = new URL(
-			"https://www.googleapis.com/calendar/v3/users/me/calendarList",
-		);
-		calendarListUrl.searchParams.set("showDeleted", "false");
-		calendarListUrl.searchParams.set("minAccessRole", "reader");
+			const now = Date.now();
+			const timeMin = new Date(now - CALENDAR_LOOKBACK_MS).toISOString();
+			const timeMax = new Date(
+				now + UPCOMING_EVENTS_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+			).toISOString();
+			const calendarListUrl = new URL(
+				"https://www.googleapis.com/calendar/v3/users/me/calendarList",
+			);
+			calendarListUrl.searchParams.set("showDeleted", "false");
+			calendarListUrl.searchParams.set("minAccessRole", "reader");
 
-		const calendarList = await fetchGoogleJsonWithRetry<GoogleCalendarListResponse>(
-			authContext,
-			googleTokens,
-			calendarListUrl,
-		);
-		const calendars = (calendarList.items ?? []).filter(isVisibleCalendar);
-
-		if (calendars.length === 0) {
-			return {
-				status: "ready" as const,
-				events: [] as UpcomingCalendarEvent[],
-				connectedCalendarCount: 0,
-			};
-		}
-
-		const perCalendarEvents = await Promise.all(
-			calendars.map(async (calendar) => {
-				const eventsUrl = new URL(
-					`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar.id)}/events`,
+			const calendarList =
+				await fetchGoogleJsonWithRetry<GoogleCalendarListResponse>(
+					authContext,
+					googleTokens,
+					calendarListUrl,
 				);
-				eventsUrl.searchParams.set("singleEvents", "true");
-				eventsUrl.searchParams.set("orderBy", "startTime");
-				eventsUrl.searchParams.set("showDeleted", "false");
-				eventsUrl.searchParams.set("timeMin", timeMin);
-				eventsUrl.searchParams.set("timeMax", timeMax);
-				eventsUrl.searchParams.set("maxResults", String(UPCOMING_EVENTS_LIMIT));
+			const calendars = (calendarList.items ?? []).filter(isVisibleCalendar);
 
-				try {
-					const response =
-						await fetchGoogleJsonWithRetry<GoogleCalendarEventsResponse>(
-							authContext,
-							googleTokens,
-						eventsUrl,
-						);
+			if (calendars.length === 0) {
+				return {
+					status: "ready" as const,
+					events: [] as UpcomingCalendarEvent[],
+					connectedCalendarCount: 0,
+				};
+			}
 
-					return (response.items ?? [])
-						.map((event) => normalizeUpcomingEvent(calendar, event, now))
-						.filter((event): event is UpcomingCalendarEvent => event !== null);
-				} catch {
-					return [];
-				}
-			}),
-		);
+			const perCalendarEvents = await Promise.all(
+				calendars.map(async (calendar) => {
+					const eventsUrl = new URL(
+						`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar.id)}/events`,
+					);
+					eventsUrl.searchParams.set("singleEvents", "true");
+					eventsUrl.searchParams.set("orderBy", "startTime");
+					eventsUrl.searchParams.set("showDeleted", "false");
+					eventsUrl.searchParams.set("timeMin", timeMin);
+					eventsUrl.searchParams.set("timeMax", timeMax);
+					eventsUrl.searchParams.set(
+						"maxResults",
+						String(UPCOMING_EVENTS_LIMIT),
+					);
 
-		const dedupedEvents = new Map<string, UpcomingCalendarEvent>();
+					try {
+						const response =
+							await fetchGoogleJsonWithRetry<GoogleCalendarEventsResponse>(
+								authContext,
+								googleTokens,
+								eventsUrl,
+							);
 
-		for (const events of perCalendarEvents) {
-			for (const event of events) {
-				const key = `${event.id}:${event.startAt}`;
+						return (response.items ?? [])
+							.map((event) => normalizeUpcomingEvent(calendar, event, now))
+							.filter((event): event is UpcomingCalendarEvent => event !== null);
+					} catch {
+						return [];
+					}
+				}),
+			);
 
-				if (!dedupedEvents.has(key)) {
-					dedupedEvents.set(key, event);
+			const dedupedEvents = new Map<string, UpcomingCalendarEvent>();
+
+			for (const events of perCalendarEvents) {
+				for (const event of events) {
+					const key = `${event.id}:${event.startAt}`;
+
+					if (!dedupedEvents.has(key)) {
+						dedupedEvents.set(key, event);
+					}
 				}
 			}
-		}
 
-		return {
-			status: "ready" as const,
-			events: Array.from(dedupedEvents.values())
-				.sort(
-					(left, right) =>
-						new Date(left.startAt).getTime() - new Date(right.startAt).getTime(),
-				)
-				.slice(0, UPCOMING_EVENTS_LIMIT),
-			connectedCalendarCount: calendars.length,
-		};
+			return {
+				status: "ready" as const,
+				events: Array.from(dedupedEvents.values())
+					.sort(
+						(left, right) =>
+							new Date(left.startAt).getTime() -
+							new Date(right.startAt).getTime(),
+					)
+					.slice(0, UPCOMING_EVENTS_LIMIT),
+				connectedCalendarCount: calendars.length,
+			};
+		} catch (error) {
+			if (
+				error instanceof Error &&
+				"status" in error &&
+				error.status === 401
+			) {
+				return {
+					status: "not_connected" as const,
+					events: [] as UpcomingCalendarEvent[],
+				};
+			}
+
+			throw error;
+		}
 	},
 });

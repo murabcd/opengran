@@ -84,6 +84,8 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 					"GOOGLE_CLIENT_SECRET",
 					"google-client-secret",
 				),
+				accessType: "offline",
+				prompt: "consent",
 			},
 		},
 		plugins: [convex({ authConfig }), crossDomain({ siteUrl })],
