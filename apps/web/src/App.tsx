@@ -67,10 +67,7 @@ import * as React from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ChatPage } from "@/components/chat/chat-page";
 import { QuickNoteActionsMenu } from "@/components/quick-note/quick-note-actions-menu";
-import {
-	type QuickNoteEditorActions,
-	QuickNotePage,
-} from "@/components/quick-note/quick-note-page";
+import { type QuickNoteEditorActions, QuickNotePage } from "@/components/quick-note/quick-note-page";
 import { SharedQuickNotePage } from "@/components/quick-note/shared-note-page";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { type AuthSession, authClient } from "@/lib/auth-client";
@@ -84,6 +81,8 @@ type AppUser = {
 	email: string;
 	avatar: string;
 };
+
+type AppView = "home" | "chat" | "shared" | "quick-note";
 
 type DesktopPermissionRow = {
 	id: DesktopPermissionId;
@@ -419,7 +418,7 @@ function App() {
 
 	const handleOpenOwnedSharedNote = React.useCallback((noteId: Id<"notes">) => {
 		setSharedNoteShareId(null);
-		window.history.pushState(null, "", `/note?noteId=${noteId}`);
+		window.history.pushState(null, "", `/quick-note?noteId=${noteId}`);
 	}, []);
 
 	React.useEffect(() => {
@@ -614,7 +613,7 @@ function App() {
 		return (
 			<SharedQuickNotePage
 				note={sharedNote}
-				onOpenNote={handleOpenOwnedSharedNote}
+				onOpenQuickNote={handleOpenOwnedSharedNote}
 			/>
 		);
 	}
@@ -681,6 +680,176 @@ function App() {
 				onContinue={handleCompleteDesktopPermissions}
 				onOpenSettings={handleOpenDesktopPermissionSettings}
 				onRequestPermission={handleRequestDesktopPermission}
+			/>
+		);
+	}
+
+	return (
+		<AppGate
+			sharedNoteShareId={sharedNoteShareId}
+			sharedNote={sharedNote}
+			isSessionPending={isSessionPending}
+			session={session}
+			isConvexAuthenticated={isConvexAuthenticated}
+			authError={authError}
+			isAuthenticating={isAuthenticating}
+			isDesktopMac={isDesktopMac}
+			onGitHubSignIn={handleGitHubSignIn}
+			workspaces={workspaces}
+			onboardingStatus={onboardingStatus}
+			isCreatingWorkspace={isCreatingWorkspace}
+			onContinueFromWelcomeCelebration={handleContinueFromWelcomeCelebration}
+			workspaceError={workspaceError}
+			workspaceName={workspaceName}
+			onWorkspaceNameChange={setWorkspaceName}
+			onCreateWorkspace={handleCreateWorkspace}
+			shouldLoadDesktopPermissions={shouldLoadDesktopPermissions}
+			desktopPermissionsStatus={desktopPermissionsStatus}
+			shouldShowDesktopPermissionsScreen={shouldShowDesktopPermissionsScreen}
+			desktopPermissionsError={desktopPermissionsError}
+			isRefreshingDesktopPermissions={isRefreshingDesktopPermissions}
+			isCompletingDesktopPermissions={isCompletingDesktopPermissions}
+			desktopPermissionRows={desktopPermissionRows}
+			areDesktopPermissionsReady={areDesktopPermissionsReady}
+			onCompleteDesktopPermissions={handleCompleteDesktopPermissions}
+			onOpenDesktopPermissionSettings={handleOpenDesktopPermissionSettings}
+			onRequestDesktopPermission={handleRequestDesktopPermission}
+			onOpenOwnedSharedNote={handleOpenOwnedSharedNote}
+		/>
+	);
+}
+
+function AppGate({
+	sharedNoteShareId,
+	sharedNote,
+	isSessionPending,
+	session,
+	isConvexAuthenticated,
+	authError,
+	isAuthenticating,
+	isDesktopMac,
+	onGitHubSignIn,
+	workspaces,
+	onboardingStatus,
+	isCreatingWorkspace,
+	onContinueFromWelcomeCelebration,
+	workspaceError,
+	workspaceName,
+	onWorkspaceNameChange,
+	onCreateWorkspace,
+	shouldLoadDesktopPermissions,
+	desktopPermissionsStatus,
+	shouldShowDesktopPermissionsScreen,
+	desktopPermissionsError,
+	isRefreshingDesktopPermissions,
+	isCompletingDesktopPermissions,
+	desktopPermissionRows,
+	areDesktopPermissionsReady,
+	onCompleteDesktopPermissions,
+	onOpenDesktopPermissionSettings,
+	onRequestDesktopPermission,
+	onOpenOwnedSharedNote,
+}: {
+	sharedNoteShareId: string | null;
+	sharedNote: Doc<"notes"> | null | undefined;
+	isSessionPending: boolean;
+	session: AuthSession | null | undefined;
+	isConvexAuthenticated: boolean;
+	authError: string | null;
+	isAuthenticating: boolean;
+	isDesktopMac: boolean;
+	onGitHubSignIn: () => void;
+	workspaces: Array<Doc<"workspaces">> | undefined;
+	onboardingStatus:
+		| {
+				hasSeenWelcomeCelebration: boolean;
+				hasCompletedDesktopPermissions: boolean;
+		  }
+		| null
+		| undefined;
+	isCreatingWorkspace: boolean;
+	onContinueFromWelcomeCelebration: () => void;
+	workspaceError: string | null;
+	workspaceName: string;
+	onWorkspaceNameChange: (value: string) => void;
+	onCreateWorkspace: () => void;
+	shouldLoadDesktopPermissions: boolean;
+	desktopPermissionsStatus: DesktopPermissionsStatus | null;
+	shouldShowDesktopPermissionsScreen: boolean;
+	desktopPermissionsError: string | null;
+	isRefreshingDesktopPermissions: boolean;
+	isCompletingDesktopPermissions: boolean;
+	desktopPermissionRows: DesktopPermissionRow[];
+	areDesktopPermissionsReady: boolean;
+	onCompleteDesktopPermissions: () => void;
+	onOpenDesktopPermissionSettings: (permissionId: DesktopPermissionId) => void;
+	onRequestDesktopPermission: (permissionId: DesktopPermissionId) => void;
+	onOpenOwnedSharedNote: (noteId: Id<"notes">) => void;
+}) {
+	if (sharedNoteShareId) {
+		return (
+			<SharedQuickNotePage note={sharedNote} onOpenQuickNote={onOpenOwnedSharedNote} />
+		);
+	}
+
+	if (isSessionPending || (session?.user && !isConvexAuthenticated)) {
+		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
+	}
+
+	if (!session?.user) {
+		return (
+			<AuthScreen
+				error={authError}
+				isAuthenticating={isAuthenticating}
+				isDesktopMac={isDesktopMac}
+				onGitHubSignIn={onGitHubSignIn}
+			/>
+		);
+	}
+
+	if (workspaces === undefined || onboardingStatus == null) {
+		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
+	}
+
+	if (workspaces.length === 0) {
+		if (!onboardingStatus.hasSeenWelcomeCelebration) {
+			return (
+				<WelcomeCelebrationScreen
+					isDesktopMac={isDesktopMac}
+					isSubmitting={isCreatingWorkspace}
+					onContinue={onContinueFromWelcomeCelebration}
+				/>
+			);
+		}
+
+		return (
+			<WorkspaceOnboardingScreen
+				error={workspaceError}
+				isDesktopMac={isDesktopMac}
+				isSubmitting={isCreatingWorkspace}
+				name={workspaceName}
+				onNameChange={onWorkspaceNameChange}
+				onSubmit={onCreateWorkspace}
+			/>
+		);
+	}
+
+	if (shouldLoadDesktopPermissions && desktopPermissionsStatus === null) {
+		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
+	}
+
+	if (shouldShowDesktopPermissionsScreen) {
+		return (
+			<DesktopPermissionsOnboardingScreen
+				error={desktopPermissionsError}
+				isDesktopMac={isDesktopMac}
+				isRefreshing={isRefreshingDesktopPermissions}
+				isSubmitting={isCompletingDesktopPermissions}
+				permissions={desktopPermissionRows}
+				canContinue={areDesktopPermissionsReady}
+				onContinue={onCompleteDesktopPermissions}
+				onOpenSettings={onOpenDesktopPermissionSettings}
+				onRequestPermission={onRequestDesktopPermission}
 			/>
 		);
 	}
@@ -1039,18 +1208,12 @@ function AppShell({
 	workspaces: Array<Doc<"workspaces">>;
 	initialDesktopMac: boolean;
 }) {
-	const [currentView, setCurrentView] = React.useState<
-		"home" | "chat" | "shared" | "quick-note"
-	>(() => {
+	const [currentView, setCurrentView] = React.useState<AppView>(() => {
 		if (typeof window === "undefined") {
 			return "home";
 		}
 
-		if (
-			window.location.pathname === "/note" ||
-			window.location.pathname === "/notes" ||
-			window.location.pathname === "/quick-note"
-		) {
+		if (window.location.pathname === "/quick-note") {
 			return "quick-note";
 		}
 
@@ -1087,8 +1250,8 @@ function AppShell({
 			getChatIdFromUrl(new URL(window.location.href)) ?? crypto.randomUUID()
 		);
 	});
-	const [currentQuickNoteId, setCurrentQuickNoteId] =
-		React.useState<Id<"notes"> | null>(() => {
+	const [currentQuickNoteId, setCurrentQuickNoteId] = React.useState<Id<"notes"> | null>(
+		() => {
 			if (typeof window === "undefined") {
 				return null;
 			}
@@ -1098,9 +1261,10 @@ function AppShell({
 					"noteId",
 				) as Id<"notes"> | null) ?? null
 			);
-		});
+		},
+	);
 	const [currentQuickNoteTitle, setCurrentQuickNoteTitle] =
-		React.useState("New note");
+		React.useState("New quick note");
 	const [currentQuickNoteEditorActions, setCurrentQuickNoteEditorActions] =
 		React.useState<QuickNoteEditorActions | null>(null);
 	const creatingQuickNoteRef = React.useRef(false);
@@ -1154,12 +1318,7 @@ function AppShell({
 			const nextSettingsOpen = url.hash === "#settings";
 			const nextChatId = getChatIdFromUrl(url);
 			const nextView =
-				window.location.pathname === "/note" ||
-				window.location.pathname === "/notes" ||
-				window.location.pathname === "/quick-note" ||
-				url.hash === "#note" ||
-				url.hash === "#notes" ||
-				url.hash === "#quick-note"
+				window.location.pathname === "/quick-note" || url.hash === "#quick-note"
 					? "quick-note"
 					: window.location.pathname === "/chat" || url.hash === "#chat"
 						? "chat"
@@ -1177,7 +1336,7 @@ function AppShell({
 
 			const nextPath =
 				nextView === "quick-note"
-					? "/note"
+					? "/quick-note"
 					: nextView === "chat"
 						? "/chat"
 						: nextView === "shared"
@@ -1216,7 +1375,7 @@ function AppShell({
 		}
 
 		if (currentView === "quick-note") {
-			setCurrentQuickNoteTitle("New note");
+			setCurrentQuickNoteTitle("New quick note");
 		}
 	}, [currentView, selectedQuickNote?.title]);
 
@@ -1240,7 +1399,7 @@ function AppShell({
 	}, []);
 
 	const handleViewChange = React.useCallback(
-		(view: "home" | "chat" | "shared" | "quick-note") => {
+		(view: AppView) => {
 			if (view === "chat") {
 				openFreshChat();
 				return;
@@ -1250,14 +1409,12 @@ function AppShell({
 			setSettingsOpen(false);
 			setCurrentQuickNoteEditorActions(null);
 			const search =
-				view === "quick-note" && currentQuickNoteId
-					? `?noteId=${currentQuickNoteId}`
-					: "";
+				view === "quick-note" && currentQuickNoteId ? `?noteId=${currentQuickNoteId}` : "";
 			window.history.pushState(
 				null,
 				"",
 				view === "quick-note"
-					? `/note${search}`
+					? `/quick-note${search}`
 					: view === "shared"
 						? "/shared"
 						: "/home",
@@ -1266,12 +1423,12 @@ function AppShell({
 		[currentQuickNoteId, openFreshChat],
 	);
 
-	const openQuickNote = React.useCallback((noteId: Id<"notes">) => {
+	const openNote = React.useCallback((noteId: Id<"notes">) => {
 		setCurrentView("quick-note");
 		setSettingsOpen(false);
 		setCurrentQuickNoteId(noteId);
 		setCurrentQuickNoteEditorActions(null);
-		window.history.pushState(null, "", `/note?noteId=${noteId}`);
+		window.history.pushState(null, "", `/quick-note?noteId=${noteId}`);
 	}, []);
 
 	const handleCreateQuickNote = React.useCallback(() => {
@@ -1283,8 +1440,8 @@ function AppShell({
 
 		void createQuickNote()
 			.then((noteId) => {
-				setCurrentQuickNoteTitle("New note");
-				openQuickNote(noteId);
+				setCurrentQuickNoteTitle("New quick note");
+				openNote(noteId);
 			})
 			.catch((error) => {
 				console.error("Failed to create note", error);
@@ -1292,7 +1449,7 @@ function AppShell({
 			.finally(() => {
 				creatingQuickNoteRef.current = false;
 			});
-	}, [createQuickNote, openQuickNote]);
+	}, [createQuickNote, openNote]);
 
 	React.useEffect(() => {
 		if (currentView === "quick-note" && !currentQuickNoteId) {
@@ -1329,7 +1486,7 @@ function AppShell({
 			}
 
 			setCurrentQuickNoteId(null);
-			setCurrentQuickNoteTitle("New note");
+			setCurrentQuickNoteTitle("New quick note");
 			setCurrentQuickNoteEditorActions(null);
 			handleViewChange("home");
 		},
@@ -1430,275 +1587,464 @@ function AppShell({
 				desktopSafeTop={isDesktopMac}
 				currentQuickNoteId={currentQuickNoteId}
 				currentQuickNoteTitle={currentQuickNoteTitle}
-				onQuickNoteSelect={openQuickNote}
+				onQuickNoteSelect={openNote}
 				onQuickNoteTrashed={handleQuickNoteTrashed}
 			/>
 			<SidebarInset>
-				<header
-					data-app-region={isDesktopMac ? "drag" : undefined}
-					className={cn(
-						"sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between bg-background/95 px-4 backdrop-blur transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 md:px-6",
-						isDesktopMac && "h-20 pt-8",
-					)}
-				>
-					<div
-						data-app-region={isDesktopMac ? "no-drag" : undefined}
-						className="flex items-center gap-2"
-					>
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<SidebarTrigger className="-ml-1" />
-							</TooltipTrigger>
-							<TooltipContent align="start">
-								<div className="flex items-center gap-2">
-									<span>Toggle sidebar</span>
-									<kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
-										<span className="text-xs">⌘</span>B
-									</kbd>
-								</div>
-							</TooltipContent>
-						</Tooltip>
-						<Separator
-							orientation="vertical"
-							className="mr-2 data-[orientation=vertical]:h-4"
-						/>
-						<Breadcrumb>
-							<BreadcrumbList>
-								{breadcrumbDetailLabel ? (
-									<>
-										<BreadcrumbItem className="hidden md:block">
-											<BreadcrumbLink asChild>
-												<button
-													type="button"
-													className="cursor-pointer"
-													onClick={handleBreadcrumbSectionClick}
-												>
-													{breadcrumbSectionLabel}
-												</button>
-											</BreadcrumbLink>
-										</BreadcrumbItem>
-										<BreadcrumbSeparator className="hidden md:block" />
-										<BreadcrumbItem>
-											<BreadcrumbPage>{breadcrumbDetailLabel}</BreadcrumbPage>
-										</BreadcrumbItem>
-									</>
-								) : (
-									<BreadcrumbItem>
-										<BreadcrumbPage>{breadcrumbSectionLabel}</BreadcrumbPage>
-									</BreadcrumbItem>
-								)}
-							</BreadcrumbList>
-						</Breadcrumb>
-					</div>
-					<div
-						data-app-region={isDesktopMac ? "no-drag" : undefined}
-						className="ml-auto"
-					>
-						{currentView === "home" ? (
-							<Button variant="outline" onClick={handleCreateQuickNote}>
-								<Plus />
-								Note
-							</Button>
-						) : currentView === "quick-note" && currentQuickNoteId ? (
-							<QuickNoteActionsMenu
-								noteId={currentQuickNoteId}
-								onMoveToTrash={handleQuickNoteTrashed}
-								align="end"
-								itemsBeforeDefaults={
-									currentQuickNoteEditorActions ? (
-										<DropdownMenuItem
-											className="cursor-pointer"
-											disabled={!currentQuickNoteEditorActions.canCopyText}
-											onSelect={(event) => {
-												event.preventDefault();
-												currentQuickNoteEditorActions.copyText();
-											}}
-										>
-											<Copy />
-											Copy text
-										</DropdownMenuItem>
-									) : null
-								}
-								itemsAfterDefaults={
-									currentQuickNoteEditorActions ? (
-										<>
-											<DropdownMenuItem
-												className="cursor-pointer"
-												disabled={!currentQuickNoteEditorActions.canUndo}
-												onSelect={(event) => {
-													event.preventDefault();
-													currentQuickNoteEditorActions.undo();
-												}}
-											>
-												<Undo2 />
-												Undo
-											</DropdownMenuItem>
-											<DropdownMenuItem
-												className="cursor-pointer"
-												disabled={!currentQuickNoteEditorActions.canRedo}
-												onSelect={(event) => {
-													event.preventDefault();
-													currentQuickNoteEditorActions.redo();
-												}}
-											>
-												<Redo2 />
-												Redo
-											</DropdownMenuItem>
-											<DropdownMenuItem
-												className="cursor-pointer"
-												disabled={!currentQuickNoteEditorActions.canCopyText}
-												onSelect={(event) => {
-													event.preventDefault();
-													currentQuickNoteEditorActions.exportNote();
-												}}
-											>
-												<ArrowDown />
-												Export
-											</DropdownMenuItem>
-										</>
-									) : null
-								}
-							>
-								<Button
-									type="button"
-									variant="ghost"
-									size="icon"
-									className="text-muted-foreground hover:text-foreground"
-									aria-label={`Open actions for ${currentQuickNoteTitle || "note"}`}
-								>
-									<MoreHorizontal className="size-4" />
-								</Button>
-							</QuickNoteActionsMenu>
-						) : currentView === "chat" ? (
-							<Button variant="outline" onClick={handleNewChat}>
-								<Plus />
-								New chat
-							</Button>
-						) : null}
-					</div>
-				</header>
-				{currentView === "home" ? (
-					<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
-						<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
-							<section className="mx-auto w-full max-w-xl space-y-6">
-								<h1 className="text-lg md:text-xl">Coming up</h1>
-								<Card className="min-h-[176px] rounded-xl border-border py-0 shadow-sm">
-									<CardContent className="p-5">
-										<div className="flex flex-col gap-6 md:flex-row md:items-start">
-											<div className="grid w-fit shrink-0 grid-cols-[auto_auto] items-start gap-x-3 gap-y-1 pt-1">
-												<div className="row-span-2 text-5xl leading-none tracking-tight tabular-nums">
-													{currentDayOfMonth}
-												</div>
-												<div className="flex items-center gap-2 pt-1 text-base leading-none">
-													<span>{currentMonthLabel}</span>
-													<span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-												</div>
-												<p className="text-base leading-none text-muted-foreground">
-													{currentWeekdayLabel}
-												</p>
-											</div>
-											<div className="ml-auto flex min-h-[176px] w-full items-center justify-center">
-												<Empty className="min-h-[176px] rounded-xl border border-solid border-border px-4 py-5">
-													<EmptyHeader>
-														<EmptyMedia variant="icon">
-															<CalendarClock className="size-4" />
-														</EmptyMedia>
-														<EmptyTitle>No upcoming events</EmptyTitle>
-														<EmptyDescription>
-															Check your visible calendars
-														</EmptyDescription>
-													</EmptyHeader>
-													<EmptyContent>
-														<Button variant="outline">Calendar settings</Button>
-													</EmptyContent>
-												</Empty>
-											</div>
-										</div>
-									</CardContent>
-								</Card>
-							</section>
+				<AppShellHeader
+					isDesktopMac={isDesktopMac}
+					breadcrumbSectionLabel={breadcrumbSectionLabel}
+					breadcrumbDetailLabel={breadcrumbDetailLabel}
+					onBreadcrumbSectionClick={handleBreadcrumbSectionClick}
+					currentView={currentView}
+					currentQuickNoteId={currentQuickNoteId}
+					currentQuickNoteTitle={currentQuickNoteTitle}
+					currentQuickNoteEditorActions={currentQuickNoteEditorActions}
+					onCreateQuickNote={handleCreateQuickNote}
+					onQuickNoteTrashed={handleQuickNoteTrashed}
+					onNewChat={handleNewChat}
+				/>
+				<AppShellContent
+					currentView={currentView}
+					currentDayOfMonth={currentDayOfMonth}
+					currentMonthLabel={currentMonthLabel}
+					currentWeekdayLabel={currentWeekdayLabel}
+					notes={notes}
+					sharedNotes={sharedNotes}
+					currentQuickNoteId={currentQuickNoteId}
+					currentQuickNoteTitle={currentQuickNoteTitle}
+					userName={user.name}
+					onOpenQuickNote={openNote}
+					onQuickNoteTrashed={handleQuickNoteTrashed}
+					onCreateQuickNote={handleCreateQuickNote}
+					chatComposerId={chatComposerId}
+					initialChatMessages={initialChatMessages}
+					chats={chats}
+					currentChatId={currentChatId}
+					onChatPersisted={handleChatPersisted}
+					onOpenChat={handleOpenChat}
+					onChatRemoved={handleChatRemoved}
+					onQuickNoteTitleChange={setCurrentQuickNoteTitle}
+					onQuickNoteEditorActionsChange={setCurrentQuickNoteEditorActions}
+				/>
+			</SidebarInset>
+		</SidebarProvider>
+	);
+}
 
-							<section className="flex justify-center py-8">
-								{notes === undefined ? (
-									<HomeQuickNotesSkeleton />
-								) : notes.length > 0 ? (
-									<HomeQuickNotesList
-										notes={notes}
-										activeNoteId={currentQuickNoteId}
-										activeNoteTitle={currentQuickNoteTitle}
-										currentUserName={user.name}
-										onOpenNote={openQuickNote}
-										onQuickNoteTrashed={handleQuickNoteTrashed}
-									/>
-								) : (
-									<Empty className="max-w-xl">
+function AppShellHeader({
+	isDesktopMac,
+	breadcrumbSectionLabel,
+	breadcrumbDetailLabel,
+	onBreadcrumbSectionClick,
+	currentView,
+	currentQuickNoteId,
+	currentQuickNoteTitle,
+	currentQuickNoteEditorActions,
+	onCreateQuickNote,
+	onQuickNoteTrashed,
+	onNewChat,
+}: {
+	isDesktopMac: boolean;
+	breadcrumbSectionLabel: string;
+	breadcrumbDetailLabel: string | null;
+	onBreadcrumbSectionClick: () => void;
+	currentView: AppView;
+	currentQuickNoteId: Id<"notes"> | null;
+	currentQuickNoteTitle: string;
+	currentQuickNoteEditorActions: QuickNoteEditorActions | null;
+	onCreateQuickNote: () => void;
+	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
+	onNewChat: () => void;
+}) {
+	return (
+		<header
+			data-app-region={isDesktopMac ? "drag" : undefined}
+			className={cn(
+				"sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between bg-background/95 px-4 backdrop-blur transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 md:px-6",
+				isDesktopMac && "h-20 pt-8",
+			)}
+		>
+			<div
+				data-app-region={isDesktopMac ? "no-drag" : undefined}
+				className="flex items-center gap-2"
+			>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<SidebarTrigger className="-ml-1" />
+					</TooltipTrigger>
+					<TooltipContent align="start">
+						<div className="flex items-center gap-2">
+							<span>Toggle sidebar</span>
+							<kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
+								<span className="text-xs">⌘</span>B
+							</kbd>
+						</div>
+					</TooltipContent>
+				</Tooltip>
+				<Separator
+					orientation="vertical"
+					className="mr-2 data-[orientation=vertical]:h-4"
+				/>
+				<Breadcrumb>
+					<BreadcrumbList>
+						{breadcrumbDetailLabel ? (
+							<>
+								<BreadcrumbItem className="hidden md:block">
+									<BreadcrumbLink asChild>
+										<button
+											type="button"
+											className="cursor-pointer"
+											onClick={onBreadcrumbSectionClick}
+										>
+											{breadcrumbSectionLabel}
+										</button>
+									</BreadcrumbLink>
+								</BreadcrumbItem>
+								<BreadcrumbSeparator className="hidden md:block" />
+								<BreadcrumbItem>
+									<BreadcrumbPage>{breadcrumbDetailLabel}</BreadcrumbPage>
+								</BreadcrumbItem>
+							</>
+						) : (
+							<BreadcrumbItem>
+								<BreadcrumbPage>{breadcrumbSectionLabel}</BreadcrumbPage>
+							</BreadcrumbItem>
+						)}
+					</BreadcrumbList>
+				</Breadcrumb>
+			</div>
+			<div
+				data-app-region={isDesktopMac ? "no-drag" : undefined}
+				className="ml-auto"
+			>
+				{currentView === "home" ? (
+					<Button variant="outline" onClick={onCreateQuickNote}>
+						<Plus />
+						Quick note
+					</Button>
+				) : currentView === "quick-note" && currentQuickNoteId ? (
+					<QuickNoteActionsMenu
+						noteId={currentQuickNoteId}
+						onMoveToTrash={onQuickNoteTrashed}
+						align="end"
+						itemsBeforeDefaults={
+							currentQuickNoteEditorActions ? (
+								<DropdownMenuItem
+									className="cursor-pointer"
+									disabled={!currentQuickNoteEditorActions.canCopyText}
+									onSelect={(event) => {
+										event.preventDefault();
+										currentQuickNoteEditorActions.copyText();
+									}}
+								>
+									<Copy />
+									Copy text
+								</DropdownMenuItem>
+							) : null
+						}
+						itemsAfterDefaults={
+							currentQuickNoteEditorActions ? (
+								<>
+									<DropdownMenuItem
+										className="cursor-pointer"
+										disabled={!currentQuickNoteEditorActions.canUndo}
+										onSelect={(event) => {
+											event.preventDefault();
+											currentQuickNoteEditorActions.undo();
+										}}
+									>
+										<Undo2 />
+										Undo
+									</DropdownMenuItem>
+									<DropdownMenuItem
+										className="cursor-pointer"
+										disabled={!currentQuickNoteEditorActions.canRedo}
+										onSelect={(event) => {
+											event.preventDefault();
+											currentQuickNoteEditorActions.redo();
+										}}
+									>
+										<Redo2 />
+										Redo
+									</DropdownMenuItem>
+									<DropdownMenuItem
+										className="cursor-pointer"
+										disabled={!currentQuickNoteEditorActions.canCopyText}
+										onSelect={(event) => {
+											event.preventDefault();
+											currentQuickNoteEditorActions.exportNote();
+										}}
+									>
+										<ArrowDown />
+										Export
+									</DropdownMenuItem>
+								</>
+							) : null
+						}
+					>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon"
+							className="text-muted-foreground hover:text-foreground"
+							aria-label={`Open actions for ${currentQuickNoteTitle || "quick note"}`}
+						>
+							<MoreHorizontal className="size-4" />
+						</Button>
+					</QuickNoteActionsMenu>
+				) : currentView === "chat" ? (
+					<Button variant="outline" onClick={onNewChat}>
+						<Plus />
+						New chat
+					</Button>
+				) : null}
+			</div>
+		</header>
+	);
+}
+
+function AppShellContent({
+	currentView,
+	currentDayOfMonth,
+	currentMonthLabel,
+	currentWeekdayLabel,
+	notes,
+	sharedNotes,
+	currentQuickNoteId,
+	currentQuickNoteTitle,
+	userName,
+	onOpenQuickNote,
+	onQuickNoteTrashed,
+	onCreateQuickNote,
+	chatComposerId,
+	initialChatMessages,
+	chats,
+	currentChatId,
+	onChatPersisted,
+	onOpenChat,
+	onChatRemoved,
+	onQuickNoteTitleChange,
+	onQuickNoteEditorActionsChange,
+}: {
+	currentView: AppView;
+	currentDayOfMonth: number;
+	currentMonthLabel: string;
+	currentWeekdayLabel: string;
+	notes: Array<Doc<"notes">> | undefined;
+	sharedNotes: Array<Doc<"notes">> | undefined;
+	currentQuickNoteId: Id<"notes"> | null;
+	currentQuickNoteTitle: string;
+	userName: string;
+	onOpenQuickNote: (noteId: Id<"notes">) => void;
+	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
+	onCreateQuickNote: () => void;
+	chatComposerId: string;
+	initialChatMessages: UIMessage[];
+	chats: Array<Doc<"chats">> | undefined;
+	currentChatId: string | null;
+	onChatPersisted?: (chatId: string) => void;
+	onOpenChat: (chatId: string) => void;
+	onChatRemoved: (chatId: string) => void;
+	onQuickNoteTitleChange: (title: string) => void;
+	onQuickNoteEditorActionsChange: (actions: QuickNoteEditorActions | null) => void;
+}) {
+	if (currentView === "home") {
+		return (
+			<HomeView
+				currentDayOfMonth={currentDayOfMonth}
+				currentMonthLabel={currentMonthLabel}
+				currentWeekdayLabel={currentWeekdayLabel}
+				notes={notes}
+				currentQuickNoteId={currentQuickNoteId}
+				currentQuickNoteTitle={currentQuickNoteTitle}
+				currentUserName={userName}
+				onOpenQuickNote={onOpenQuickNote}
+				onQuickNoteTrashed={onQuickNoteTrashed}
+				onCreateQuickNote={onCreateQuickNote}
+			/>
+		);
+	}
+
+	if (currentView === "shared") {
+		return (
+			<SharedView
+				sharedNotes={sharedNotes}
+				currentQuickNoteId={currentQuickNoteId}
+				currentQuickNoteTitle={currentQuickNoteTitle}
+				currentUserName={userName}
+				onOpenQuickNote={onOpenQuickNote}
+				onQuickNoteTrashed={onQuickNoteTrashed}
+			/>
+		);
+	}
+
+	if (currentView === "quick-note") {
+		return (
+			<QuickNotePage
+				noteId={currentQuickNoteId}
+				onTitleChange={onQuickNoteTitleChange}
+				onEditorActionsChange={onQuickNoteEditorActionsChange}
+			/>
+		);
+	}
+
+	return (
+		<ChatPage
+			key={chatComposerId}
+			chatId={chatComposerId}
+			initialMessages={initialChatMessages}
+			onChatPersisted={onChatPersisted}
+			chats={chats ?? []}
+			isChatsLoading={chats === undefined}
+			activeChatId={currentChatId}
+			onOpenChat={onOpenChat}
+			onChatRemoved={onChatRemoved}
+		/>
+	);
+}
+
+function HomeView({
+	currentDayOfMonth,
+	currentMonthLabel,
+	currentWeekdayLabel,
+	notes,
+	currentQuickNoteId,
+	currentQuickNoteTitle,
+	currentUserName,
+	onOpenQuickNote,
+	onQuickNoteTrashed,
+	onCreateQuickNote,
+}: {
+	currentDayOfMonth: number;
+	currentMonthLabel: string;
+	currentWeekdayLabel: string;
+	notes: Array<Doc<"notes">> | undefined;
+	currentQuickNoteId: Id<"notes"> | null;
+	currentQuickNoteTitle: string;
+	currentUserName: string;
+	onOpenQuickNote: (noteId: Id<"notes">) => void;
+	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
+	onCreateQuickNote: () => void;
+}) {
+	return (
+		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
+			<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
+				<section className="mx-auto w-full max-w-xl space-y-6">
+					<h1 className="text-lg md:text-xl">Coming up</h1>
+					<Card className="min-h-[176px] rounded-xl border-border py-0 shadow-sm">
+						<CardContent className="p-5">
+							<div className="flex flex-col gap-6 md:flex-row md:items-start">
+								<div className="grid w-fit shrink-0 grid-cols-[auto_auto] items-start gap-x-3 gap-y-1 pt-1">
+									<div className="row-span-2 text-5xl leading-none tracking-tight tabular-nums">
+										{currentDayOfMonth}
+									</div>
+									<div className="flex items-center gap-2 pt-1 text-base leading-none">
+										<span>{currentMonthLabel}</span>
+										<span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+									</div>
+									<p className="text-base leading-none text-muted-foreground">
+										{currentWeekdayLabel}
+									</p>
+								</div>
+								<div className="ml-auto flex min-h-[176px] w-full items-center justify-center">
+									<Empty className="min-h-[176px] rounded-xl border border-solid border-border px-4 py-5">
 										<EmptyHeader>
-											<EmptyTitle>Take your first note</EmptyTitle>
+											<EmptyMedia variant="icon">
+												<CalendarClock className="size-4" />
+											</EmptyMedia>
+											<EmptyTitle>No upcoming events</EmptyTitle>
 											<EmptyDescription>
-												Your meeting notes will appear here
+												Check your visible calendars
 											</EmptyDescription>
 										</EmptyHeader>
 										<EmptyContent>
-											<Button onClick={handleCreateQuickNote}>Note</Button>
+											<Button variant="outline">Calendar settings</Button>
 										</EmptyContent>
 									</Empty>
-								)}
-							</section>
-						</div>
-					</div>
-				) : currentView === "shared" ? (
-					<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
-						<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
-							<section className="mx-auto w-full max-w-xl space-y-6">
-								<h1 className="text-lg md:text-xl">Shared with others</h1>
-							</section>
-							<section className="flex justify-center py-8">
-								{sharedNotes === undefined ? (
-									<SharedQuickNotesSkeleton />
-								) : sharedNotes.length > 0 ? (
-									<SharedQuickNotesList
-										notes={sharedNotes}
-										activeNoteId={currentQuickNoteId}
-										activeNoteTitle={currentQuickNoteTitle}
-										currentUserName={user.name}
-										onOpenNote={openQuickNote}
-										onQuickNoteTrashed={handleQuickNoteTrashed}
-									/>
-								) : (
-									<Empty className="max-w-xl">
-										<EmptyHeader>
-											<EmptyTitle>No shared notes yet</EmptyTitle>
-											<EmptyDescription>
-												When you share a note with someone else, it will show up
-												here
-											</EmptyDescription>
-										</EmptyHeader>
-									</Empty>
-								)}
-							</section>
-						</div>
-					</div>
-				) : currentView === "quick-note" ? (
-					<QuickNotePage
-						noteId={currentQuickNoteId}
-						onTitleChange={setCurrentQuickNoteTitle}
-						onEditorActionsChange={setCurrentQuickNoteEditorActions}
-					/>
-				) : (
-					<ChatPage
-						key={chatComposerId}
-						chatId={chatComposerId}
-						initialMessages={initialChatMessages}
-						onChatPersisted={handleChatPersisted}
-						chats={chats ?? []}
-						isChatsLoading={chats === undefined}
-						activeChatId={currentChatId}
-						onOpenChat={handleOpenChat}
-						onChatRemoved={handleChatRemoved}
-					/>
-				)}
-			</SidebarInset>
-		</SidebarProvider>
+								</div>
+							</div>
+						</CardContent>
+					</Card>
+				</section>
+
+				<section className="flex justify-center py-8">
+					{notes === undefined ? (
+						<HomeNotesSkeleton />
+					) : notes.length > 0 ? (
+						<HomeNotesList
+							notes={notes}
+							activeNoteId={currentQuickNoteId}
+							activeNoteTitle={currentQuickNoteTitle}
+							currentUserName={currentUserName}
+							onOpenQuickNote={onOpenQuickNote}
+							onQuickNoteTrashed={onQuickNoteTrashed}
+						/>
+					) : (
+						<Empty className="max-w-xl">
+							<EmptyHeader>
+								<EmptyTitle>Take your first quick note</EmptyTitle>
+								<EmptyDescription>
+									Your meeting notes will appear here
+								</EmptyDescription>
+							</EmptyHeader>
+							<EmptyContent>
+								<Button onClick={onCreateQuickNote}>Quick note</Button>
+							</EmptyContent>
+						</Empty>
+					)}
+				</section>
+			</div>
+		</div>
+	);
+}
+
+function SharedView({
+	sharedNotes,
+	currentQuickNoteId,
+	currentQuickNoteTitle,
+	currentUserName,
+	onOpenQuickNote,
+	onQuickNoteTrashed,
+}: {
+	sharedNotes: Array<Doc<"notes">> | undefined;
+	currentQuickNoteId: Id<"notes"> | null;
+	currentQuickNoteTitle: string;
+	currentUserName: string;
+	onOpenQuickNote: (noteId: Id<"notes">) => void;
+	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
+}) {
+	return (
+		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
+			<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
+				<section className="mx-auto w-full max-w-xl space-y-6">
+					<h1 className="text-lg md:text-xl">Shared with others</h1>
+				</section>
+				<section className="flex justify-center py-8">
+					{sharedNotes === undefined ? (
+						<SharedNotesSkeleton />
+					) : sharedNotes.length > 0 ? (
+						<SharedNotesList
+							notes={sharedNotes}
+							activeNoteId={currentQuickNoteId}
+							activeNoteTitle={currentQuickNoteTitle}
+							currentUserName={currentUserName}
+							onOpenQuickNote={onOpenQuickNote}
+							onQuickNoteTrashed={onQuickNoteTrashed}
+						/>
+					) : (
+						<Empty className="max-w-xl">
+							<EmptyHeader>
+								<EmptyTitle>No shared notes yet</EmptyTitle>
+								<EmptyDescription>
+									When you share a note with someone else, it will show up here
+								</EmptyDescription>
+							</EmptyHeader>
+						</Empty>
+					)}
+				</section>
+			</div>
+		</div>
 	);
 }
 
@@ -1747,7 +2093,7 @@ function WorkspaceOnboardingScreen({
 	);
 }
 
-function HomeQuickNotesSkeleton() {
+function HomeNotesSkeleton() {
 	return (
 		<div className="w-full max-w-xl space-y-3">
 			<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
@@ -1768,7 +2114,7 @@ function HomeQuickNotesSkeleton() {
 	);
 }
 
-function SharedQuickNotesSkeleton() {
+function SharedNotesSkeleton() {
 	return (
 		<div className="w-full max-w-xl space-y-3">
 			<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
@@ -1789,19 +2135,19 @@ function SharedQuickNotesSkeleton() {
 	);
 }
 
-function SharedQuickNotesList({
+function SharedNotesList({
 	notes,
 	activeNoteId,
 	activeNoteTitle,
 	currentUserName,
-	onOpenNote,
+	onOpenQuickNote,
 	onQuickNoteTrashed,
 }: {
 	notes: Array<Doc<"notes">>;
 	activeNoteId: Id<"notes"> | null;
 	activeNoteTitle: string;
 	currentUserName: string;
-	onOpenNote: (noteId: Id<"notes">) => void;
+	onOpenQuickNote: (noteId: Id<"notes">) => void;
 	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
 	const groupedNotes = groupItemsByDate(notes);
@@ -1851,7 +2197,7 @@ function SharedQuickNotesList({
 									>
 										<button
 											type="button"
-											onClick={() => onOpenNote(note._id)}
+											onClick={() => onOpenQuickNote(note._id)}
 											className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
 										>
 											<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
@@ -1892,19 +2238,19 @@ function SharedQuickNotesList({
 	);
 }
 
-function HomeQuickNotesList({
+function HomeNotesList({
 	notes,
 	activeNoteId,
 	activeNoteTitle,
 	currentUserName,
-	onOpenNote,
+	onOpenQuickNote,
 	onQuickNoteTrashed,
 }: {
 	notes: Array<Doc<"notes">>;
 	activeNoteId: Id<"notes"> | null;
 	activeNoteTitle: string;
 	currentUserName: string;
-	onOpenNote: (noteId: Id<"notes">) => void;
+	onOpenQuickNote: (noteId: Id<"notes">) => void;
 	onQuickNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
 	const groupedNotes = groupItemsByDate(notes);
@@ -1954,7 +2300,7 @@ function HomeQuickNotesList({
 									>
 										<button
 											type="button"
-											onClick={() => onOpenNote(note._id)}
+											onClick={() => onOpenQuickNote(note._id)}
 											className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
 										>
 											<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
