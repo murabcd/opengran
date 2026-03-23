@@ -71,6 +71,7 @@ import {
 	ChevronsUpDown,
 	FileText,
 	Home,
+	LayoutTemplate,
 	LoaderCircle,
 	LogOut,
 	type LucideIcon,
@@ -93,6 +94,7 @@ import {
 	SettingsDialog,
 	type SettingsPage,
 } from "@/components/settings/settings-dialog";
+import { TemplatesDialog } from "@/components/templates/templates-dialog";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { getAvatarSrc } from "@/lib/avatar";
 import { getChatId } from "@/lib/chat";
@@ -196,6 +198,7 @@ export function AppSidebar({
 }) {
 	const [searchOpen, setSearchOpen] = React.useState(false);
 	const [trashOpen, setTrashOpen] = React.useState(false);
+	const [templatesOpen, setTemplatesOpen] = React.useState(false);
 	const [draftUser, setDraftUser] = React.useState(user);
 
 	React.useEffect(() => {
@@ -260,6 +263,7 @@ export function AppSidebar({
 					<NavTrash open={trashOpen} onOpenChange={setTrashOpen} />
 					<NavUser
 						user={draftUser}
+						onTemplatesOpen={() => setTemplatesOpen(true)}
 						onSettingsOpen={() => onSettingsOpenChange(true, "Profile")}
 						onSignOut={onSignOut}
 						signingOut={signingOut}
@@ -282,6 +286,7 @@ export function AppSidebar({
 				initialPage={settingsPage}
 				onPageChange={(page) => onSettingsOpenChange(true, page)}
 			/>
+			<TemplatesDialog open={templatesOpen} onOpenChange={setTemplatesOpen} />
 		</>
 	);
 }
@@ -656,6 +661,7 @@ function WorkspaceSwitcher({
 
 function NavUser({
 	user,
+	onTemplatesOpen,
 	onSettingsOpen,
 	onSignOut,
 	signingOut,
@@ -665,6 +671,7 @@ function NavUser({
 		email: string;
 		avatar: string;
 	};
+	onTemplatesOpen: () => void;
 	onSettingsOpen: () => void;
 	onSignOut: () => void;
 	signingOut: boolean;
@@ -722,6 +729,13 @@ function NavUser({
 								{themeLabel}
 							</DropdownMenuItem>
 						</DropdownMenuGroup>
+						<DropdownMenuItem
+							className="h-8 gap-2 px-2"
+							onClick={onTemplatesOpen}
+						>
+							<LayoutTemplate />
+							Manage templates
+						</DropdownMenuItem>
 						<DropdownMenuItem
 							className="h-8 gap-2 px-2"
 							onClick={onSettingsOpen}

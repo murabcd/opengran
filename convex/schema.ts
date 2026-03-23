@@ -16,6 +16,29 @@ export default defineSchema({
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	}).index("by_ownerTokenIdentifier", ["ownerTokenIdentifier"]),
+	templates: defineTable({
+		ownerTokenIdentifier: v.string(),
+		slug: v.string(),
+		name: v.string(),
+		meetingContext: v.string(),
+		sections: v.array(
+			v.object({
+				id: v.string(),
+				title: v.string(),
+				prompt: v.string(),
+			}),
+		),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_ownerTokenIdentifier_and_createdAt", [
+			"ownerTokenIdentifier",
+			"createdAt",
+		])
+		.index("by_ownerTokenIdentifier_and_slug", [
+			"ownerTokenIdentifier",
+			"slug",
+		]),
 	workspaces: defineTable({
 		ownerTokenIdentifier: v.string(),
 		name: v.string(),
