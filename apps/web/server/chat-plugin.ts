@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Connect, Plugin } from "vite";
+import { handleApplyTemplateRequest } from "./apply-template-handler";
 import { handleChatRequest } from "./chat-handler";
 import { handleEnhanceNoteRequest } from "./enhance-note-handler";
 import { handleRealtimeTranscriptionSessionRequest } from "./realtime-transcription-session-handler";
@@ -8,6 +9,8 @@ const isChatRoute = (url: string | undefined) =>
 	Boolean(url && url.split("?")[0] === "/api/chat");
 const isEnhanceNoteRoute = (url: string | undefined) =>
 	Boolean(url && url.split("?")[0] === "/api/enhance-note");
+const isApplyTemplateRoute = (url: string | undefined) =>
+	Boolean(url && url.split("?")[0] === "/api/apply-template");
 const isRealtimeTranscriptionSessionRoute = (url: string | undefined) =>
 	Boolean(url && url.split("?")[0] === "/api/realtime-transcription-session");
 
@@ -16,6 +19,7 @@ const createChatMiddleware = (): Connect.NextHandleFunction => {
 		if (
 			!isChatRoute(request.url) &&
 			!isEnhanceNoteRoute(request.url) &&
+			!isApplyTemplateRoute(request.url) &&
 			!isRealtimeTranscriptionSessionRoute(request.url)
 		) {
 			next();
@@ -33,7 +37,9 @@ const createChatMiddleware = (): Connect.NextHandleFunction => {
 			? handleChatRequest
 			: isEnhanceNoteRoute(request.url)
 				? handleEnhanceNoteRequest
-				: handleRealtimeTranscriptionSessionRequest;
+				: isApplyTemplateRoute(request.url)
+					? handleApplyTemplateRequest
+					: handleRealtimeTranscriptionSessionRequest;
 
 		void handler(request as IncomingMessage, response as ServerResponse).catch(
 			(error: unknown) => {

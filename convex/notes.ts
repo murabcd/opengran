@@ -15,6 +15,7 @@ const noteFields = {
 	ownerTokenIdentifier: v.string(),
 	authorName: v.optional(v.string()),
 	title: v.string(),
+	templateSlug: v.optional(v.string()),
 	content: v.string(),
 	searchableText: v.string(),
 	visibility: noteVisibilityValidator,
@@ -290,6 +291,7 @@ export const create = mutation({
 			ownerTokenIdentifier,
 			authorName: getAuthorName(identity),
 			title: "New note",
+			templateSlug: undefined,
 			content: JSON.stringify({
 				type: "doc",
 				content: [{ type: "paragraph" }],
@@ -329,6 +331,7 @@ export const save = mutation({
 				content: args.content,
 				searchableText: args.searchableText,
 				visibility: existing.visibility ?? "private",
+				templateSlug: existing.templateSlug,
 				shareId: existing.shareId,
 				sharedAt: existing.sharedAt,
 				isArchived: false,
@@ -343,6 +346,7 @@ export const save = mutation({
 			ownerTokenIdentifier,
 			authorName,
 			title: args.title,
+			templateSlug: undefined,
 			content: args.content,
 			searchableText: args.searchableText,
 			visibility: "private",
@@ -353,6 +357,34 @@ export const save = mutation({
 			createdAt: now,
 			updatedAt: now,
 		});
+	},
+});
+
+export const setTemplate = mutation({
+	args: {
+		id: v.id("notes"),
+		templateSlug: v.union(v.string(), v.null()),
+	},
+	returns: v.object({
+		templateSlug: v.union(v.string(), v.null()),
+	}),
+	handler: async (ctx, args) => {
+		const note = await requireOwnedNote(ctx, args.id);
+
+		if (note.isArchived) {
+			throw new ConvexError({
+				code: "NOTE_NOT_FOUND",
+				message: "Note not found.",
+			});
+		}
+
+		await ctx.db.patch(args.id, {
+			templateSlug: args.templateSlug ?? undefined,
+		});
+
+		return {
+			templateSlug: args.templateSlug,
+		};
 	},
 });
 

@@ -70,6 +70,7 @@ import { NoteActionsMenu } from "@/components/note/note-actions-menu";
 import { type NoteEditorActions, NotePage } from "@/components/note/note-page";
 import { SharedNotePage } from "@/components/note/shared-note-page";
 import type { SettingsPage } from "@/components/settings/settings-dialog";
+import { NoteTemplateSelect } from "@/components/templates/note-template-select";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
@@ -1809,7 +1810,7 @@ function AppShell({
 	);
 
 	return (
-		<SidebarProvider>
+		<SidebarProvider className="h-svh overflow-hidden">
 			<AppSidebar
 				workspaces={workspaces}
 				activeWorkspaceId={activeWorkspaceId}
@@ -1830,7 +1831,7 @@ function AppShell({
 				onNoteSelect={openNote}
 				onNoteTrashed={handleNoteTrashed}
 			/>
-			<SidebarInset>
+			<SidebarInset className="h-svh min-h-0 overflow-hidden">
 				<AppShellHeader
 					isDesktopMac={isDesktopMac}
 					breadcrumbSectionLabel={breadcrumbSectionLabel}
@@ -1839,6 +1840,7 @@ function AppShell({
 					currentView={currentView}
 					currentNoteId={currentNoteId}
 					currentNoteTitle={currentNoteTitle}
+					currentNoteTemplateSlug={selectedNote?.templateSlug ?? null}
 					currentNoteEditorActions={currentNoteEditorActions}
 					onCreateNote={handleCreateNote}
 					onNoteTrashed={handleNoteTrashed}
@@ -1885,6 +1887,7 @@ function AppShellHeader({
 	currentView,
 	currentNoteId,
 	currentNoteTitle,
+	currentNoteTemplateSlug,
 	currentNoteEditorActions,
 	onCreateNote,
 	onNoteTrashed,
@@ -1897,6 +1900,7 @@ function AppShellHeader({
 	currentView: AppView;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle: string;
+	currentNoteTemplateSlug: string | null;
 	currentNoteEditorActions: NoteEditorActions | null;
 	onCreateNote: () => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
@@ -1969,75 +1973,85 @@ function AppShellHeader({
 						Quick note
 					</Button>
 				) : currentView === "note" && currentNoteId ? (
-					<NoteActionsMenu
-						noteId={currentNoteId}
-						onMoveToTrash={onNoteTrashed}
-						align="end"
-						itemsBeforeDefaults={
-							currentNoteEditorActions ? (
-								<DropdownMenuItem
-									className="cursor-pointer"
-									disabled={!currentNoteEditorActions.canCopyText}
-									onSelect={(event) => {
-										event.preventDefault();
-										currentNoteEditorActions.copyText();
-									}}
-								>
-									<Copy />
-									Copy text
-								</DropdownMenuItem>
-							) : null
-						}
-						itemsAfterDefaults={
-							currentNoteEditorActions ? (
-								<>
-									<DropdownMenuItem
-										className="cursor-pointer"
-										disabled={!currentNoteEditorActions.canUndo}
-										onSelect={(event) => {
-											event.preventDefault();
-											currentNoteEditorActions.undo();
-										}}
-									>
-										<Undo2 />
-										Undo
-									</DropdownMenuItem>
-									<DropdownMenuItem
-										className="cursor-pointer"
-										disabled={!currentNoteEditorActions.canRedo}
-										onSelect={(event) => {
-											event.preventDefault();
-											currentNoteEditorActions.redo();
-										}}
-									>
-										<Redo2 />
-										Redo
-									</DropdownMenuItem>
+					<div className="flex items-center gap-2">
+						<NoteTemplateSelect
+							disabled={!currentNoteEditorActions}
+							selectedSlug={currentNoteTemplateSlug}
+							onTemplateSelect={async (template) =>
+								(await currentNoteEditorActions?.applyTemplate(template)) ??
+								false
+							}
+						/>
+						<NoteActionsMenu
+							noteId={currentNoteId}
+							onMoveToTrash={onNoteTrashed}
+							align="end"
+							itemsBeforeDefaults={
+								currentNoteEditorActions ? (
 									<DropdownMenuItem
 										className="cursor-pointer"
 										disabled={!currentNoteEditorActions.canCopyText}
 										onSelect={(event) => {
 											event.preventDefault();
-											currentNoteEditorActions.exportNote();
+											currentNoteEditorActions.copyText();
 										}}
 									>
-										<ArrowDown />
-										Export
+										<Copy />
+										Copy text
 									</DropdownMenuItem>
-								</>
-							) : null
-						}
-					>
-						<Button
-							type="button"
-							variant="ghost"
-							size="icon"
-							className="text-muted-foreground hover:text-foreground"
-							aria-label={`Open actions for ${currentNoteTitle || "quick note"}`}
+								) : null
+							}
+							itemsAfterDefaults={
+								currentNoteEditorActions ? (
+									<>
+										<DropdownMenuItem
+											className="cursor-pointer"
+											disabled={!currentNoteEditorActions.canUndo}
+											onSelect={(event) => {
+												event.preventDefault();
+												currentNoteEditorActions.undo();
+											}}
+										>
+											<Undo2 />
+											Undo
+										</DropdownMenuItem>
+										<DropdownMenuItem
+											className="cursor-pointer"
+											disabled={!currentNoteEditorActions.canRedo}
+											onSelect={(event) => {
+												event.preventDefault();
+												currentNoteEditorActions.redo();
+											}}
+										>
+											<Redo2 />
+											Redo
+										</DropdownMenuItem>
+										<DropdownMenuItem
+											className="cursor-pointer"
+											disabled={!currentNoteEditorActions.canCopyText}
+											onSelect={(event) => {
+												event.preventDefault();
+												currentNoteEditorActions.exportNote();
+											}}
+										>
+											<ArrowDown />
+											Export
+										</DropdownMenuItem>
+									</>
+								) : null
+							}
 						>
-							<MoreHorizontal className="size-4" />
-						</Button>
-					</NoteActionsMenu>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								className="text-muted-foreground hover:text-foreground"
+								aria-label={`Open actions for ${currentNoteTitle || "quick note"}`}
+							>
+								<MoreHorizontal className="size-4" />
+							</Button>
+						</NoteActionsMenu>
+					</div>
 				) : currentView === "chat" ? (
 					<Button variant="outline" onClick={onNewChat}>
 						<Plus />
@@ -2106,46 +2120,52 @@ function AppShellContent({
 }) {
 	if (currentView === "home") {
 		return (
-			<HomeView
-				currentDate={currentDate}
-				currentDayOfMonth={currentDayOfMonth}
-				currentMonthLabel={currentMonthLabel}
-				currentWeekdayLabel={currentWeekdayLabel}
-				upcomingCalendarEvents={upcomingCalendarEvents}
-				upcomingCalendarStatus={upcomingCalendarStatus}
-				isLoadingUpcomingCalendarEvents={isLoadingUpcomingCalendarEvents}
-				notes={notes}
-				currentNoteId={currentNoteId}
-				currentNoteTitle={currentNoteTitle}
-				currentUserName={userName}
-				onOpenNote={onOpenNote}
-				onNoteTrashed={onNoteTrashed}
-				onCreateNote={onCreateNote}
-				onOpenCalendarSettings={onOpenCalendarSettings}
-			/>
+			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+				<HomeView
+					currentDate={currentDate}
+					currentDayOfMonth={currentDayOfMonth}
+					currentMonthLabel={currentMonthLabel}
+					currentWeekdayLabel={currentWeekdayLabel}
+					upcomingCalendarEvents={upcomingCalendarEvents}
+					upcomingCalendarStatus={upcomingCalendarStatus}
+					isLoadingUpcomingCalendarEvents={isLoadingUpcomingCalendarEvents}
+					notes={notes}
+					currentNoteId={currentNoteId}
+					currentNoteTitle={currentNoteTitle}
+					currentUserName={userName}
+					onOpenNote={onOpenNote}
+					onNoteTrashed={onNoteTrashed}
+					onCreateNote={onCreateNote}
+					onOpenCalendarSettings={onOpenCalendarSettings}
+				/>
+			</div>
 		);
 	}
 
 	if (currentView === "shared") {
 		return (
-			<SharedView
-				sharedNotes={sharedNotes}
-				currentNoteId={currentNoteId}
-				currentNoteTitle={currentNoteTitle}
-				currentUserName={userName}
-				onOpenNote={onOpenNote}
-				onNoteTrashed={onNoteTrashed}
-			/>
+			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+				<SharedView
+					sharedNotes={sharedNotes}
+					currentNoteId={currentNoteId}
+					currentNoteTitle={currentNoteTitle}
+					currentUserName={userName}
+					onOpenNote={onOpenNote}
+					onNoteTrashed={onNoteTrashed}
+				/>
+			</div>
 		);
 	}
 
 	if (currentView === "note") {
 		return (
-			<NotePage
-				noteId={currentNoteId}
-				onTitleChange={onNoteTitleChange}
-				onEditorActionsChange={onNoteEditorActionsChange}
-			/>
+			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+				<NotePage
+					noteId={currentNoteId}
+					onTitleChange={onNoteTitleChange}
+					onEditorActionsChange={onNoteEditorActionsChange}
+				/>
+			</div>
 		);
 	}
 

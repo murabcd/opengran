@@ -5,10 +5,12 @@ import StarterKit from "@tiptap/starter-kit";
 import { Input } from "@workspace/ui/components/input";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
+import { LoaderCircle, Sparkles } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
-import type { Id } from "../../../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
+import type { NoteTemplate } from "../templates/note-template-select";
 import { NoteComposer } from "./note-composer";
 import { writeTextToClipboard } from "./share-note";
 
@@ -24,10 +26,13 @@ type StructuredNoteSection = {
 	items: string[];
 };
 
-type StructuredNote = {
-	title: string;
+type StructuredNoteBody = {
 	overview: string[];
 	sections: StructuredNoteSection[];
+};
+
+type StructuredNote = StructuredNoteBody & {
+	title: string;
 };
 
 const getPlainTextContent = ({
@@ -81,7 +86,7 @@ const createBulletListNode = (items: string[]): JSONContent => ({
 const structuredNoteToDocument = ({
 	overview,
 	sections,
-}: StructuredNote): JSONContent => ({
+}: StructuredNoteBody): JSONContent => ({
 	type: "doc",
 	content: [
 		...overview
@@ -107,7 +112,7 @@ const structuredNoteToDocument = ({
 const structuredNoteToSearchableText = ({
 	overview,
 	sections,
-}: StructuredNote) =>
+}: StructuredNoteBody) =>
 	[
 		...overview.map((item) => item.trim()).filter(Boolean),
 		...sections.flatMap((section) => [
@@ -159,6 +164,7 @@ export type NoteEditorActions = {
 	undo: () => void;
 	redo: () => void;
 	exportNote: () => Promise<void>;
+	applyTemplate: (template: NoteTemplate) => Promise<boolean>;
 };
 
 export function NotePage({
@@ -173,10 +179,36 @@ export function NotePage({
 	const [title, setTitle] = React.useState("");
 	const [content, setContent] = React.useState(EMPTY_DOCUMENT_STRING);
 	const [searchableText, setSearchableText] = React.useState("");
+	const [templateApplyState, setTemplateApplyState] = React.useState<{
+		isRunning: boolean;
+		templateName: string | null;
+	}>(() => ({
+		isRunning: false,
+		templateName: null,
+	}));
+	const nextNoteIdRef = React.useRef<Id<"notes"> | null>(null);
+	const latestEditorStateRef = React.useRef<{
+		title: string;
+		searchableText: string;
+		templateSlug: string | null;
+		isApplyingTemplate: boolean;
+	}>({
+		title: "",
+		searchableText: "",
+		templateSlug: null,
+		isApplyingTemplate: false,
+	});
 	const hasHydratedRef = React.useRef(false);
 	const hydratedNoteIdRef = React.useRef<Id<"notes"> | null>(null);
 	const saveInFlightRef = React.useRef(false);
 	const lastSavedSnapshotRef = React.useRef<string | null>(null);
+	const publishedEditorActionsRef = React.useRef<{
+		noteId: Id<"notes">;
+		canCopyText: boolean;
+		canUndo: boolean;
+		canRedo: boolean;
+	} | null>(null);
+	const publishEditorActionsRef = React.useRef<(() => void) | null>(null);
 	const queuedSaveRef = React.useRef<{
 		snapshot: string;
 		payload: {
@@ -194,6 +226,45 @@ export function NotePage({
 			: "skip",
 	);
 	const saveNote = useMutation(api.notes.save);
+	const setNoteTemplate = useMutation(
+		api.notes.setTemplate,
+	).withOptimisticUpdate((localStore, args) => {
+		const nextTemplateSlug = args.templateSlug ?? undefined;
+		const patchNote = <T extends Doc<"notes">>(currentNote: T): T => ({
+			...currentNote,
+			templateSlug: nextTemplateSlug,
+		});
+		const currentNote = localStore.getQuery(api.notes.get, { id: args.id });
+		if (currentNote !== undefined) {
+			localStore.setQuery(
+				api.notes.get,
+				{ id: args.id },
+				currentNote ? patchNote(currentNote) : currentNote,
+			);
+		}
+
+		const latestNote = localStore.getQuery(api.notes.getLatest, {});
+		if (latestNote?._id === args.id) {
+			localStore.setQuery(api.notes.getLatest, {}, patchNote(latestNote));
+		}
+
+		const noteLists = [
+			api.notes.list,
+			api.notes.listShared,
+			api.notes.listArchived,
+		] as const;
+
+		for (const noteQuery of noteLists) {
+			const notes = localStore.getQuery(noteQuery, {});
+			if (notes !== undefined) {
+				localStore.setQuery(
+					noteQuery,
+					{},
+					notes.map((item) => (item._id === args.id ? patchNote(item) : item)),
+				);
+			}
+		}
+	});
 
 	const flushSave = React.useCallback(
 		async (
@@ -262,6 +333,20 @@ export function NotePage({
 			setSearchableText(editor.getText());
 		},
 	});
+
+	React.useEffect(() => {
+		nextNoteIdRef.current = noteId;
+	}, [noteId]);
+
+	React.useEffect(() => {
+		latestEditorStateRef.current = {
+			title,
+			searchableText,
+			templateSlug: note?.templateSlug ?? null,
+			isApplyingTemplate: templateApplyState.isRunning,
+		};
+		publishEditorActionsRef.current?.();
+	}, [note?.templateSlug, searchableText, templateApplyState.isRunning, title]);
 
 	React.useEffect(() => {
 		if (hydratedNoteIdRef.current !== noteId) {
@@ -341,87 +426,245 @@ export function NotePage({
 		onTitleChange?.(title || "New quick note");
 	}, [onTitleChange, title]);
 
-	React.useEffect(() => {
-		if (!noteId || !editor) {
-			onEditorActionsChange?.(null);
+	const copyText = React.useCallback(async () => {
+		if (!editor) {
 			return;
 		}
 
-		const publishEditorActions = () => {
+		const { title, searchableText } = latestEditorStateRef.current;
+		const serializedText = getPlainTextContent({
+			editor,
+			title,
+			searchableText,
+		});
+
+		if (!serializedText) {
+			toast("Nothing to copy yet");
+			return;
+		}
+
+		try {
+			await writeTextToClipboard(serializedText);
+			toast.success("Text copied");
+		} catch (error) {
+			showActionError("Failed to copy text", error);
+		}
+	}, [editor]);
+
+	const undo = React.useCallback(() => {
+		if (!editor) {
+			return;
+		}
+
+		if (!editor.can().undo()) {
+			toast("Nothing to undo");
+			return;
+		}
+
+		editor.chain().focus().undo().run();
+		toast.success("Undid last change");
+	}, [editor]);
+
+	const redo = React.useCallback(() => {
+		if (!editor) {
+			return;
+		}
+
+		if (!editor.can().redo()) {
+			toast("Nothing to redo");
+			return;
+		}
+
+		editor.chain().focus().redo().run();
+		toast.success("Redid last change");
+	}, [editor]);
+
+	const exportNote = React.useCallback(async () => {
+		if (!editor) {
+			return;
+		}
+
+		const { title, searchableText } = latestEditorStateRef.current;
+		const serializedText = getPlainTextContent({
+			editor,
+			title,
+			searchableText,
+		});
+
+		if (!serializedText) {
+			toast("Nothing to export yet");
+			return;
+		}
+
+		try {
+			const result = await exportTextFile({
+				fileName: getExportFileName(title),
+				content: serializedText,
+			});
+
+			if (result.canceled) {
+				toast("Export canceled");
+				return;
+			}
+
+			toast.success("Quick note exported");
+		} catch (error) {
+			showActionError("Failed to export note", error);
+		}
+	}, [editor]);
+
+	const applyTemplate = React.useCallback(
+		async (template: NoteTemplate) => {
+			if (!editor || !noteId) {
+				return false;
+			}
+
+			const {
+				title,
+				searchableText,
+				templateSlug: previousTemplateSlug,
+				isApplyingTemplate,
+			} = latestEditorStateRef.current;
 			const serializedText = getPlainTextContent({
 				editor,
 				title,
 				searchableText,
 			});
-			const hasText = Boolean(serializedText);
 
-			onEditorActionsChange?.({
-				canCopyText: hasText,
+			if (isApplyingTemplate) {
+				return false;
+			}
+
+			if (!serializedText.trim()) {
+				toast("Nothing to rewrite yet");
+				return false;
+			}
+
+			setTemplateApplyState({
+				isRunning: true,
+				templateName: template.name,
+			});
+
+			try {
+				await setNoteTemplate({
+					id: nextNoteIdRef.current ?? noteId,
+					templateSlug: template.slug,
+				});
+
+				const response = await fetch("/api/apply-template", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						title,
+						noteText: serializedText,
+						template,
+					}),
+				});
+
+				const payload = (await response.json().catch(() => ({}))) as {
+					error?: string;
+					note?: StructuredNoteBody;
+				};
+
+				if (!response.ok || !payload.note) {
+					throw new Error(payload.error || "Failed to apply template.");
+				}
+
+				const nextDocument = structuredNoteToDocument(payload.note);
+				const nextContent = JSON.stringify(nextDocument);
+				const nextSearchableText = structuredNoteToSearchableText(payload.note);
+
+				editor.commands.setContent(nextDocument, false);
+				setContent(nextContent);
+				setSearchableText(nextSearchableText);
+				toast.success(`Rewrote note with ${template.name}`);
+
+				return true;
+			} catch (error) {
+				try {
+					await setNoteTemplate({
+						id: nextNoteIdRef.current ?? noteId,
+						templateSlug: previousTemplateSlug,
+					});
+				} catch (revertError) {
+					console.error("Failed to revert note template", revertError);
+				}
+				showActionError("Failed to rewrite note with template", error);
+				return false;
+			} finally {
+				setTemplateApplyState({
+					isRunning: false,
+					templateName: null,
+				});
+			}
+		},
+		[editor, noteId, setNoteTemplate],
+	);
+
+	React.useEffect(() => {
+		if (!noteId || !editor) {
+			publishedEditorActionsRef.current = null;
+			publishEditorActionsRef.current = null;
+			onEditorActionsChange?.(null);
+			return;
+		}
+
+		const publishEditorActions = () => {
+			const { title, searchableText } = latestEditorStateRef.current;
+			const serializedText = getPlainTextContent({
+				editor,
+				title,
+				searchableText,
+			});
+			const nextActions = {
+				noteId,
+				canCopyText: Boolean(serializedText),
 				canUndo: editor.can().undo(),
 				canRedo: editor.can().redo(),
-				copyText: async () => {
-					if (!hasText) {
-						toast("Nothing to copy yet");
-						return;
-					}
+			};
+			const previousActions = publishedEditorActionsRef.current;
 
-					try {
-						await writeTextToClipboard(serializedText);
-						toast.success("Text copied");
-					} catch (error) {
-						showActionError("Failed to copy text", error);
-					}
-				},
-				undo: () => {
-					if (!editor.can().undo()) {
-						toast("Nothing to undo");
-						return;
-					}
+			if (
+				previousActions &&
+				previousActions.noteId === nextActions.noteId &&
+				previousActions.canCopyText === nextActions.canCopyText &&
+				previousActions.canUndo === nextActions.canUndo &&
+				previousActions.canRedo === nextActions.canRedo
+			) {
+				return;
+			}
 
-					editor.chain().focus().undo().run();
-					toast.success("Undid last change");
-				},
-				redo: () => {
-					if (!editor.can().redo()) {
-						toast("Nothing to redo");
-						return;
-					}
-
-					editor.chain().focus().redo().run();
-					toast.success("Redid last change");
-				},
-				exportNote: async () => {
-					if (!hasText) {
-						toast("Nothing to export yet");
-						return;
-					}
-
-					try {
-						const result = await exportTextFile({
-							fileName: getExportFileName(title),
-							content: serializedText,
-						});
-
-						if (result.canceled) {
-							toast("Export canceled");
-							return;
-						}
-
-						toast.success("Quick note exported");
-					} catch (error) {
-						showActionError("Failed to export note", error);
-					}
-				},
+			publishedEditorActionsRef.current = nextActions;
+			onEditorActionsChange?.({
+				...nextActions,
+				copyText,
+				undo,
+				redo,
+				exportNote,
+				applyTemplate,
 			});
 		};
 
+		publishEditorActionsRef.current = publishEditorActions;
 		publishEditorActions();
 		editor.on("transaction", publishEditorActions);
 
 		return () => {
+			publishEditorActionsRef.current = null;
 			editor.off("transaction", publishEditorActions);
 		};
-	}, [editor, noteId, onEditorActionsChange, searchableText, title]);
+	}, [
+		applyTemplate,
+		copyText,
+		editor,
+		exportNote,
+		noteId,
+		onEditorActionsChange,
+		redo,
+		undo,
+	]);
 
 	const handleEnhanceTranscript = React.useCallback(
 		async (transcript: string) => {
@@ -469,10 +712,10 @@ export function NotePage({
 	);
 
 	return (
-		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
-			<div className="flex w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
-				<div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-between gap-6">
-					<div className="flex-1 pt-4 md:pt-8">
+		<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
+			<div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
+				<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
+					<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
 						<div className="flex flex-col gap-5">
 							<Input
 								value={title}
@@ -494,10 +737,38 @@ export function NotePage({
 									"[&_.ProseMirror_blockquote]:my-4 [&_.ProseMirror_blockquote]:border-l [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-4 [&_.ProseMirror_blockquote]:text-muted-foreground",
 								)}
 							/>
+
+							{templateApplyState.isRunning ? (
+								<div className="mt-5 rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 shadow-[0_0_0_1px_rgba(255,255,255,0.02)_inset]">
+									<div className="flex items-center gap-3">
+										<div className="flex size-7 items-center justify-center rounded-full bg-[#c7d93b]/12 text-[#c7d93b]">
+											<LoaderCircle className="size-4 animate-spin" />
+										</div>
+										<div className="min-w-0">
+											<p className="text-sm font-medium text-[#d4e157]">
+												Rewriting notes
+											</p>
+											<p className="truncate text-sm text-muted-foreground">
+												Applying {templateApplyState.templateName} template
+											</p>
+										</div>
+										<div className="ml-auto hidden items-center gap-1 rounded-full border border-border/60 bg-background/40 px-2.5 py-1 text-[11px] text-muted-foreground sm:inline-flex">
+											<Sparkles className="size-3.5" />
+											AI
+										</div>
+									</div>
+								</div>
+							) : null}
 						</div>
 					</div>
 
-					<NoteComposer onEnhanceTranscript={handleEnhanceTranscript} />
+					<div className="sticky bottom-0 z-10 mt-auto h-0">
+						<div className="pointer-events-none absolute inset-x-0 bottom-0 -mx-4 bg-background pb-6 md:-mx-6">
+							<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
+								<NoteComposer onEnhanceTranscript={handleEnhanceTranscript} />
+							</div>
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>

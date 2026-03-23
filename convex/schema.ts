@@ -59,6 +59,7 @@ export default defineSchema({
 		ownerTokenIdentifier: v.string(),
 		authorName: v.optional(v.string()),
 		title: v.string(),
+		templateSlug: v.optional(v.string()),
 		content: v.string(),
 		searchableText: v.string(),
 		visibility: v.union(v.literal("private"), v.literal("public")),

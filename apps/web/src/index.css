@@ -13,6 +13,11 @@
 @source "./**/*.{ts,tsx}";
 @source "../../../packages/*/src/**/*.{js,jsx,ts,tsx}";
 
+html,
+body {
+	overscroll-behavior-y: none;
+}
+
 .note-tiptap {
 	caret-color: #f2ebde;
 }
