@@ -100,7 +100,7 @@ app.whenReady().then(async () => {
 		await renderIcon({
 			svgMarkup: dockSvgMarkup,
 			canvasSize: 256,
-			iconSize: 128,
+			iconSize: 224,
 			outputPath: resolve(assetsDir, "OpenGranDock.png"),
 		});
 		app.exit(0);
