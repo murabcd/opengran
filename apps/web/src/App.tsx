@@ -85,6 +85,7 @@ type AppUser = {
 };
 
 type AppView = "home" | "chat" | "shared" | "note";
+type SocialAuthProvider = "github" | "google";
 
 const SETTINGS_PAGE_BY_SLUG = {
 	profile: "Profile",
@@ -392,7 +393,8 @@ function App() {
 		authClient.useSession();
 	const { isAuthenticated: isConvexAuthenticated } = useConvexAuth();
 	const [authError, setAuthError] = React.useState<string | null>(null);
-	const [isAuthenticating, startAuthentication] = React.useTransition();
+	const [authenticatingProvider, setAuthenticatingProvider] =
+		React.useState<SocialAuthProvider | null>(null);
 	const [isCreatingWorkspace, startWorkspaceCreation] = React.useTransition();
 	const [isDesktopMac, setIsDesktopMac] = React.useState(false);
 	const [desktopPlatform, setDesktopPlatform] =
@@ -508,59 +510,67 @@ function App() {
 		return status;
 	}, []);
 
+	const isAuthenticating = authenticatingProvider !== null;
+
 	const handleSocialSignIn = React.useCallback(
-		(provider: "github" | "google") => {
-			startAuthentication(async () => {
-				try {
-					setAuthError(null);
-					const scopes =
-						provider === "google" ? [...GOOGLE_CALENDAR_SCOPES] : undefined;
-					if (window.openGranDesktop) {
-						const { url: callbackURL } =
-							await window.openGranDesktop.getAuthCallbackUrl();
-						const result = await authClient.signIn.social({
-							provider,
-							callbackURL,
-							errorCallbackURL: callbackURL,
-							disableRedirect: true,
-							scopes,
-						});
+		async (provider: SocialAuthProvider) => {
+			if (authenticatingProvider) {
+				return;
+			}
 
-						if (result.error) {
-							const message =
-								result.error.message ||
-								result.error.statusText ||
-								"GitHub sign-in failed.";
-							throw new Error(message);
-						}
+			setAuthenticatingProvider(provider);
 
-						const url = result.data?.url;
-
-						if (!url) {
-							throw new Error(
-								`${provider === "google" ? "Google" : "GitHub"} sign-in URL was not returned.`,
-							);
-						}
-
-						await window.openGranDesktop.openExternalUrl(url);
-						return;
-					}
-
-					await authClient.signIn.social({
+			try {
+				setAuthError(null);
+				const scopes =
+					provider === "google" ? [...GOOGLE_CALENDAR_SCOPES] : undefined;
+				if (window.openGranDesktop) {
+					const { url: callbackURL } =
+						await window.openGranDesktop.getAuthCallbackUrl();
+					const result = await authClient.signIn.social({
 						provider,
-						callbackURL: window.location.href,
+						callbackURL,
+						errorCallbackURL: callbackURL,
+						disableRedirect: true,
 						scopes,
 					});
-				} catch (error) {
-					setAuthError(
-						error instanceof Error
-							? error.message
-							: `${provider === "google" ? "Google" : "GitHub"} sign-in failed. Check your Better Auth setup.`,
-					);
+
+					if (result.error) {
+						const message =
+							result.error.message ||
+							result.error.statusText ||
+							"GitHub sign-in failed.";
+						throw new Error(message);
+					}
+
+					const url = result.data?.url;
+
+					if (!url) {
+						throw new Error(
+							`${provider === "google" ? "Google" : "GitHub"} sign-in URL was not returned.`,
+						);
+					}
+
+					await window.openGranDesktop.openExternalUrl(url);
+					return;
 				}
-			});
+
+				await authClient.signIn.social({
+					provider,
+					callbackURL: window.location.href,
+					scopes,
+				});
+			} catch (error) {
+				setAuthError(
+					error instanceof Error
+						? error.message
+						: `${provider === "google" ? "Google" : "GitHub"} sign-in failed. Check your Better Auth setup.`,
+				);
+			} finally {
+				setAuthenticatingProvider(null);
+			}
 		},
-		[],
+		[authenticatingProvider],
 	);
 
 	const handleGitHubSignIn = React.useCallback(() => {
@@ -782,6 +792,7 @@ function App() {
 			<AuthScreen
 				error={authError}
 				isAuthenticating={isAuthenticating}
+				authenticatingProvider={authenticatingProvider}
 				isDesktopMac={isDesktopMac}
 				onGitHubSignIn={handleGitHubSignIn}
 				onGoogleSignIn={handleGoogleSignIn}
@@ -2738,12 +2749,14 @@ function HomeNotesList({
 function AuthScreen({
 	error,
 	isAuthenticating,
+	authenticatingProvider,
 	isDesktopMac,
 	onGitHubSignIn,
 	onGoogleSignIn,
 }: {
 	error: string | null;
 	isAuthenticating: boolean;
+	authenticatingProvider: SocialAuthProvider | null;
 	isDesktopMac: boolean;
 	onGitHubSignIn: () => void;
 	onGoogleSignIn: () => void;
@@ -2759,6 +2772,7 @@ function AuthScreen({
 			<LoginForm
 				error={error}
 				isAuthenticating={isAuthenticating}
+				authenticatingProvider={authenticatingProvider}
 				isDesktopMac={isDesktopMac}
 				onGitHubSignIn={onGitHubSignIn}
 				onGoogleSignIn={onGoogleSignIn}
@@ -2771,6 +2785,7 @@ function LoginForm({
 	className,
 	error,
 	isAuthenticating,
+	authenticatingProvider,
 	isDesktopMac,
 	onGitHubSignIn,
 	onGoogleSignIn,
@@ -2778,6 +2793,7 @@ function LoginForm({
 }: React.ComponentProps<"div"> & {
 	error: string | null;
 	isAuthenticating: boolean;
+	authenticatingProvider: SocialAuthProvider | null;
 	isDesktopMac: boolean;
 	onGitHubSignIn: () => void;
 	onGoogleSignIn: () => void;
@@ -2814,7 +2830,7 @@ function LoginForm({
 									onClick={onGoogleSignIn}
 									disabled={isAuthenticating || !hasAcceptedTerms}
 								>
-									{isAuthenticating ? (
+									{authenticatingProvider === "google" ? (
 										<LoaderCircle className="animate-spin" />
 									) : (
 										<Icons.googleLogo className="size-4" />
@@ -2830,7 +2846,7 @@ function LoginForm({
 									onClick={onGitHubSignIn}
 									disabled={isAuthenticating || !hasAcceptedTerms}
 								>
-									{isAuthenticating ? (
+									{authenticatingProvider === "github" ? (
 										<LoaderCircle className="animate-spin" />
 									) : (
 										<Icons.githubLogo />
