@@ -18,7 +18,8 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.41",
     "ai": "^6.0.116",
-    "electron": "^36.3.2"
+    "electron": "^36.3.2",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "web": "workspace:*"

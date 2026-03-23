@@ -1,13 +1,23 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Connect, Plugin } from "vite";
 import { handleChatRequest } from "./chat-handler";
+import { handleEnhanceNoteRequest } from "./enhance-note-handler";
+import { handleRealtimeTranscriptionSessionRequest } from "./realtime-transcription-session-handler";
 
 const isChatRoute = (url: string | undefined) =>
 	Boolean(url && url.split("?")[0] === "/api/chat");
+const isEnhanceNoteRoute = (url: string | undefined) =>
+	Boolean(url && url.split("?")[0] === "/api/enhance-note");
+const isRealtimeTranscriptionSessionRoute = (url: string | undefined) =>
+	Boolean(url && url.split("?")[0] === "/api/realtime-transcription-session");
 
 const createChatMiddleware = (): Connect.NextHandleFunction => {
 	return (request, response, next) => {
-		if (!isChatRoute(request.url)) {
+		if (
+			!isChatRoute(request.url) &&
+			!isEnhanceNoteRoute(request.url) &&
+			!isRealtimeTranscriptionSessionRoute(request.url)
+		) {
 			next();
 			return;
 		}
@@ -19,16 +29,21 @@ const createChatMiddleware = (): Connect.NextHandleFunction => {
 			return;
 		}
 
-		void handleChatRequest(
-			request as IncomingMessage,
-			response as ServerResponse,
-		).catch((error: unknown) => {
-			const message =
-				error instanceof Error ? error.message : "Unexpected server error.";
-			response.statusCode = 500;
-			response.setHeader("Content-Type", "application/json");
-			response.end(JSON.stringify({ error: message }));
-		});
+		const handler = isChatRoute(request.url)
+			? handleChatRequest
+			: isEnhanceNoteRoute(request.url)
+				? handleEnhanceNoteRequest
+				: handleRealtimeTranscriptionSessionRequest;
+
+		void handler(request as IncomingMessage, response as ServerResponse).catch(
+			(error: unknown) => {
+				const message =
+					error instanceof Error ? error.message : "Unexpected server error.";
+				response.statusCode = 500;
+				response.setHeader("Content-Type", "application/json");
+				response.end(JSON.stringify({ error: message }));
+			},
+		);
 	};
 };
 

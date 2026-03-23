@@ -8,10 +8,13 @@ import {
 	consumeStream,
 	convertToModelMessages,
 	createIdGenerator,
+	generateText,
+	Output,
 	streamText,
 	validateUIMessages,
 } from "ai";
 import { ConvexHttpClient } from "convex/browser";
+import { z } from "zod";
 import { api } from "../../../convex/_generated/api.js";
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
@@ -46,6 +49,18 @@ const MAX_CHAT_TITLE_LENGTH = 80;
 const generateMessageId = createIdGenerator({
 	prefix: "msg",
 	size: 16,
+});
+const structuredNoteSchema = z.object({
+	title: z.string().min(1),
+	overview: z.array(z.string()),
+	sections: z
+		.array(
+			z.object({
+				title: z.string().min(1),
+				items: z.array(z.string()).min(1),
+			}),
+		)
+		.min(1),
 });
 
 const getConvexUrl = () => {
@@ -296,6 +311,130 @@ const handleChatRequest = async (request, response) => {
 	});
 };
 
+const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
+	if (!process.env.OPENAI_API_KEY) {
+		sendJson(response, 500, {
+			error: "OPENAI_API_KEY is not configured.",
+		});
+		return;
+	}
+
+	const { lang } = await readJsonBody(request);
+	const language = lang?.trim();
+
+	const sessionResponse = await fetch(
+		"https://api.openai.com/v1/realtime/client_secrets",
+		{
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				expires_after: {
+					anchor: "created_at",
+					seconds: 600,
+				},
+				session: {
+					type: "transcription",
+					audio: {
+						input: {
+							noise_reduction: {
+								type: "near_field",
+							},
+							turn_detection: {
+								type: "server_vad",
+								threshold: 0.5,
+								prefix_padding_ms: 300,
+								silence_duration_ms: 200,
+							},
+							transcription: {
+								model: "gpt-4o-mini-transcribe",
+								...(language ? { language } : {}),
+							},
+						},
+					},
+				},
+			}),
+		},
+	);
+
+	const payload = await sessionResponse.json().catch(() => ({}));
+
+	if (!sessionResponse.ok) {
+		sendJson(response, sessionResponse.status, {
+			error:
+				payload?.error?.message ||
+				"Failed to create realtime transcription session.",
+		});
+		return;
+	}
+
+	const clientSecret = payload?.value ?? payload?.client_secret?.value;
+	const expiresAt =
+		payload?.expires_at ?? payload?.client_secret?.expires_at ?? null;
+
+	if (!clientSecret) {
+		sendJson(response, 500, {
+			error: "OpenAI did not return a client secret.",
+		});
+		return;
+	}
+
+	sendJson(response, 200, {
+		clientSecret,
+		expiresAt,
+	});
+};
+
+const handleEnhanceNoteRequest = async (request, response) => {
+	if (!process.env.OPENAI_API_KEY) {
+		sendJson(response, 500, {
+			error: "OPENAI_API_KEY is not configured.",
+		});
+		return;
+	}
+
+	const {
+		title = "",
+		rawNotes = "",
+		transcript = "",
+	} = await readJsonBody(request);
+
+	if (!transcript.trim()) {
+		sendJson(response, 400, {
+			error: "Transcript is required.",
+		});
+		return;
+	}
+
+	const { output } = await generateText({
+		model: openai("gpt-5.4-mini"),
+		system: [
+			"You turn raw meeting transcripts into clean structured notes.",
+			"Stay grounded in the transcript and the user's raw notes.",
+			"Do not invent facts, decisions, owners, or dates that are not supported.",
+			"Return a concise, specific note title that matches the transcript content.",
+			"Prefer concise bullets over long prose.",
+			"Create practical sections such as Summary, Decisions, Risks, Next steps, or Open questions when relevant.",
+		].join(" "),
+		output: Output.object({
+			schema: structuredNoteSchema,
+		}),
+		prompt: [
+			title.trim() ? `Note title: ${title.trim()}` : "",
+			rawNotes.trim() ? `User notes:\n${rawNotes.trim()}` : "",
+			`Raw transcript:\n${transcript.trim()}`,
+		]
+			.filter(Boolean)
+			.join("\n\n"),
+	});
+
+	sendJson(response, 200, {
+		note: output,
+	});
+};
+
 const resolveAssetPath = (requestPath) => {
 	const normalizedPath =
 		requestPath === "/"
@@ -394,6 +533,40 @@ export const startLocalServer = async ({ onAuthCallback } = {}) => {
 			}
 
 			void handleChatRequest(request, response).catch((error) => {
+				const message =
+					error instanceof Error ? error.message : "Unexpected server error.";
+				sendJson(response, 500, { error: message });
+			});
+			return;
+		}
+
+		if (request.url?.split("?")[0] === "/api/realtime-transcription-session") {
+			if (request.method !== "POST") {
+				response.statusCode = 405;
+				response.setHeader("Content-Type", "application/json");
+				response.end(JSON.stringify({ error: "Method not allowed." }));
+				return;
+			}
+
+			void handleRealtimeTranscriptionSessionRequest(request, response).catch(
+				(error) => {
+					const message =
+						error instanceof Error ? error.message : "Unexpected server error.";
+					sendJson(response, 500, { error: message });
+				},
+			);
+			return;
+		}
+
+		if (request.url?.split("?")[0] === "/api/enhance-note") {
+			if (request.method !== "POST") {
+				response.statusCode = 405;
+				response.setHeader("Content-Type", "application/json");
+				response.end(JSON.stringify({ error: "Method not allowed." }));
+				return;
+			}
+
+			void handleEnhanceNoteRequest(request, response).catch((error) => {
 				const message =
 					error instanceof Error ? error.message : "Unexpected server error.";
 				sendJson(response, 500, { error: message });

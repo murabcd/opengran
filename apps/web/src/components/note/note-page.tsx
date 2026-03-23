@@ -19,6 +19,17 @@ const EMPTY_DOCUMENT: JSONContent = {
 
 const EMPTY_DOCUMENT_STRING = JSON.stringify(EMPTY_DOCUMENT);
 
+type StructuredNoteSection = {
+	title: string;
+	items: string[];
+};
+
+type StructuredNote = {
+	title: string;
+	overview: string[];
+	sections: StructuredNoteSection[];
+};
+
 const getPlainTextContent = ({
 	editor,
 	title,
@@ -42,6 +53,70 @@ const getExportFileName = (title: string) =>
 			.replace(/[^a-z0-9]+/g, "-")
 			.replace(/^-+|-+$/g, "") || "note"
 	}.txt`;
+
+const createTextNode = (text: string, bold = false): JSONContent => ({
+	type: "text",
+	text,
+	...(bold ? { marks: [{ type: "bold" }] } : {}),
+});
+
+const createParagraphNode = (text: string, bold = false): JSONContent => ({
+	type: "paragraph",
+	content: [createTextNode(text, bold)],
+});
+
+const createBulletListNode = (items: string[]): JSONContent => ({
+	type: "bulletList",
+	content: items.map((item) => ({
+		type: "listItem",
+		content: [
+			{
+				type: "paragraph",
+				content: [createTextNode(item)],
+			},
+		],
+	})),
+});
+
+const structuredNoteToDocument = ({
+	overview,
+	sections,
+}: StructuredNote): JSONContent => ({
+	type: "doc",
+	content: [
+		...overview
+			.map((item) => item.trim())
+			.filter(Boolean)
+			.map((item) => createParagraphNode(item)),
+		...sections.flatMap((section) => {
+			const title = section.title.trim();
+			const items = section.items.map((item) => item.trim()).filter(Boolean);
+
+			if (!title && items.length === 0) {
+				return [];
+			}
+
+			return [
+				...(title ? [createParagraphNode(title, true)] : []),
+				...(items.length > 0 ? [createBulletListNode(items)] : []),
+			];
+		}),
+	],
+});
+
+const structuredNoteToSearchableText = ({
+	overview,
+	sections,
+}: StructuredNote) =>
+	[
+		...overview.map((item) => item.trim()).filter(Boolean),
+		...sections.flatMap((section) => [
+			section.title.trim(),
+			...section.items.map((item) => item.trim()),
+		]),
+	]
+		.filter(Boolean)
+		.join("\n");
 
 const exportTextFile = async ({
 	fileName,
@@ -348,6 +423,51 @@ export function NotePage({
 		};
 	}, [editor, noteId, onEditorActionsChange, searchableText, title]);
 
+	const handleEnhanceTranscript = React.useCallback(
+		async (transcript: string) => {
+			if (!editor || !transcript.trim()) {
+				return;
+			}
+
+			try {
+				const response = await fetch("/api/enhance-note", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						title,
+						rawNotes: searchableText,
+						transcript,
+					}),
+				});
+
+				const payload = (await response.json().catch(() => ({}))) as {
+					error?: string;
+					note?: StructuredNote;
+				};
+
+				if (!response.ok || !payload.note) {
+					throw new Error(payload.error || "Failed to enhance note.");
+				}
+
+				const nextDocument = structuredNoteToDocument(payload.note);
+				const nextContent = JSON.stringify(nextDocument);
+				const nextSearchableText = structuredNoteToSearchableText(payload.note);
+				const nextTitle = payload.note.title.trim() || title;
+
+				editor.commands.setContent(nextDocument, false);
+				setTitle(nextTitle);
+				setContent(nextContent);
+				setSearchableText(nextSearchableText);
+				toast.success("Structured notes ready");
+			} catch (error) {
+				showActionError("Failed to enhance transcript", error);
+			}
+		},
+		[editor, searchableText, title],
+	);
+
 	return (
 		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
 			<div className="flex w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
@@ -377,7 +497,7 @@ export function NotePage({
 						</div>
 					</div>
 
-					<NoteComposer />
+					<NoteComposer onEnhanceTranscript={handleEnhanceTranscript} />
 				</div>
 			</div>
 		</div>
