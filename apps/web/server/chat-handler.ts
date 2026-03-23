@@ -10,6 +10,7 @@ import {
 } from "ai";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 import { fallbackChatModel, resolveChatModel } from "../src/lib/ai/models";
 
 const BASE_SYSTEM_PROMPT = [
@@ -27,10 +28,16 @@ type ChatRequestBody = {
 	mentions?: string[];
 	selectedSourceIds?: string[];
 	convexToken?: string | null;
+	noteContext?: {
+		noteId?: string | null;
+		title?: string;
+		text?: string;
+	};
 };
 
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
+const MAX_NOTE_CONTEXT_LENGTH = 16000;
 const generateMessageId = createIdGenerator({
 	prefix: "msg",
 	size: 16,
@@ -95,6 +102,9 @@ const truncate = (value: string, maxLength: number) =>
 	value.length > maxLength
 		? `${value.slice(0, maxLength - 1).trimEnd()}…`
 		: value;
+
+const clampNoteContext = (value: string) =>
+	value.replace(/\r/g, "").trim().slice(0, MAX_NOTE_CONTEXT_LENGTH);
 
 const getMessageText = (message: UIMessage) =>
 	clampWhitespace(
@@ -175,6 +185,56 @@ const sendJson = (
 	response.end(JSON.stringify(payload));
 };
 
+const getInlineNoteContext = ({
+	title,
+	text,
+}: {
+	title?: string;
+	text?: string;
+}) => {
+	const noteTitle = title?.trim() ?? "";
+	const noteText = clampNoteContext(text ?? "");
+
+	if (!noteTitle && !noteText) {
+		return "";
+	}
+
+	return [
+		"The current note is attached below. Use it as the primary context for this chat.",
+		noteTitle ? `Current note title: ${noteTitle}` : "",
+		noteText
+			? `Current note content:\n${noteText}`
+			: "Current note content: (empty note)",
+	]
+		.filter(Boolean)
+		.join("\n\n");
+};
+
+const getStoredNoteContext = async ({
+	client,
+	noteId,
+}: {
+	client: ConvexHttpClient;
+	noteId: Id<"notes">;
+}) => {
+	const notes = await client.query(api.notes.getChatContext, {
+		ids: [noteId],
+	});
+	const note = notes[0];
+
+	if (!note) {
+		return "";
+	}
+
+	return [
+		"The current note is attached below. Use it as the primary context for this chat.",
+		`Current note title: ${note.title}`,
+		note.searchableText
+			? `Current note content:\n${clampNoteContext(note.searchableText)}`
+			: "Current note content: (empty note)",
+	].join("\n\n");
+};
+
 export const handleChatRequest = async (
 	request: IncomingMessage,
 	response: ServerResponse,
@@ -195,6 +255,7 @@ export const handleChatRequest = async (
 		mentions,
 		selectedSourceIds,
 		convexToken,
+		noteContext,
 	} = await readJsonBody(request);
 
 	if (!Array.isArray(messages)) {
@@ -204,11 +265,21 @@ export const handleChatRequest = async (
 		return;
 	}
 
-	const selectedModel = resolveChatModel(model);
 	const convexClient =
 		convexToken && id
 			? new ConvexHttpClient(getConvexUrl(), { auth: convexToken })
 			: null;
+	const storedChat =
+		convexClient && id
+			? await convexClient
+					.query(api.chats.getSession, { chatId: id })
+					.catch(() => null)
+			: null;
+	const resolvedModel = resolveChatModel(model ?? storedChat?.model);
+	const resolvedNoteId =
+		(noteContext?.noteId as Id<"notes"> | null | undefined) ??
+		storedChat?.noteId ??
+		null;
 	const chatMessages = await validateUIMessages({
 		messages:
 			message && convexClient && id
@@ -232,9 +303,10 @@ export const handleChatRequest = async (
 		try {
 			await convexClient.mutation(api.chats.saveMessage, {
 				chatId: id,
+				noteId: resolvedNoteId ?? undefined,
 				title: getChatTitleFromMessage(lastUserMessage),
 				preview: getChatPreviewFromMessage(lastUserMessage),
-				model: selectedModel?.model ?? fallbackChatModel.model,
+				model: resolvedModel?.model ?? fallbackChatModel.model,
 				message: toStoredMessage(lastUserMessage),
 			});
 		} catch (error) {
@@ -247,18 +319,36 @@ export const handleChatRequest = async (
 		mentions,
 		selectedSourceIds,
 	});
+	const attachedNoteContext =
+		convexClient && resolvedNoteId
+			? await getStoredNoteContext({
+					client: convexClient,
+					noteId: resolvedNoteId,
+				}).catch(() =>
+					getInlineNoteContext({
+						title: noteContext?.title,
+						text: noteContext?.text,
+					}),
+				)
+			: getInlineNoteContext({
+					title: noteContext?.title,
+					text: noteContext?.text,
+				});
 	const systemPrompt = webSearchEnabled
 		? [
 				BASE_SYSTEM_PROMPT,
 				notesContext,
+				attachedNoteContext,
 				"Web search is enabled.",
 				"Use web search when the answer would benefit from up-to-date or verifiable information.",
 				"When you use web search, rely on the tool results instead of making up citations.",
 			].join(" ")
-		: [BASE_SYSTEM_PROMPT, notesContext].filter(Boolean).join(" ");
+		: [BASE_SYSTEM_PROMPT, notesContext, attachedNoteContext]
+				.filter(Boolean)
+				.join(" ");
 
 	const result = streamText({
-		model: openai(selectedModel?.model ?? fallbackChatModel.model),
+		model: openai(resolvedModel?.model ?? fallbackChatModel.model),
 		system: systemPrompt,
 		messages: await convertToModelMessages(chatMessages),
 		tools: webSearchEnabled
@@ -286,8 +376,9 @@ export const handleChatRequest = async (
 			try {
 				await convexClient.mutation(api.chats.saveMessage, {
 					chatId: id,
+					noteId: resolvedNoteId ?? undefined,
 					preview: getChatPreviewFromMessage(responseMessage),
-					model: selectedModel?.model ?? fallbackChatModel.model,
+					model: resolvedModel?.model ?? fallbackChatModel.model,
 					message: toStoredMessage(responseMessage),
 				});
 			} catch (error) {

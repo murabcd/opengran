@@ -220,7 +220,7 @@ export function AppSidebar({
 				title:
 					note._id === currentNoteId && currentNoteTitle?.trim()
 						? currentNoteTitle
-						: note.title || "New quick note",
+						: note.title || "New note",
 				icon: FileText,
 			})),
 		[notes, currentNoteId, currentNoteTitle],
@@ -406,11 +406,11 @@ function NavProjects({
 
 	return (
 		<SidebarGroup className="group-data-[collapsible=icon]:hidden">
-			<SidebarGroupLabel>Quick notes</SidebarGroupLabel>
+			<SidebarGroupLabel>Notes</SidebarGroupLabel>
 			{isNotesPending ? <NavProjectsSkeleton /> : null}
 			{notes && notes.length === 0 ? (
 				<div className="px-2 text-xs text-muted-foreground/50">
-					No quick notes yet
+					No notes yet
 				</div>
 			) : null}
 			<SidebarGroupContent className={isNotesPending ? "hidden" : undefined}>
@@ -420,7 +420,7 @@ function NavProjects({
 						const title =
 							isActive && currentNoteTitle?.trim()
 								? currentNoteTitle
-								: note.title || "New quick note";
+								: note.title || "New note";
 
 						return (
 							<SidebarMenuItem key={note._id}>
@@ -922,7 +922,7 @@ function TrashPopoverContent() {
 		(noteId: Id<"notes">) => {
 			void restore({ id: noteId })
 				.then(() => {
-					toast.success("Quick note restored");
+					toast.success("Note restored");
 				})
 				.catch((error) => {
 					console.error("Failed to restore note", error);
@@ -953,7 +953,7 @@ function TrashPopoverContent() {
 		void remove({ id: deleteNoteId })
 			.then(() => {
 				setDeleteNoteId(null);
-				toast.success("Quick note deleted permanently");
+				toast.success("Note deleted permanently");
 			})
 			.catch((error) => {
 				console.error("Failed to delete note", error);
@@ -1075,7 +1075,7 @@ function TrashResults({
 					{notes.map((note) => (
 						<TrashItemRow
 							key={note._id}
-							title={note.title || "New quick note"}
+							title={note.title || "New note"}
 							icon={FileText}
 							onRestore={() => onRestoreNote(note._id)}
 							onDelete={() => onDeleteNote(note._id)}

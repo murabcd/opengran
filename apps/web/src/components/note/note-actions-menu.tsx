@@ -120,7 +120,7 @@ export function NoteActionsMenu({
 						id: noteId,
 						visibility: "private",
 					});
-					toast.success("Quick note is now private");
+					toast.success("Note is now private");
 					return;
 				}
 
@@ -142,7 +142,7 @@ export function NoteActionsMenu({
 				toast.success(
 					note.visibility === "public"
 						? "Share link copied"
-						: "Quick note shared and link copied",
+						: "Note shared and link copied",
 				);
 			} catch (error) {
 				console.error("Failed to update note visibility", error);
@@ -165,7 +165,7 @@ export function NoteActionsMenu({
 			.then(() => {
 				onMoveToTrash?.(noteId);
 				setConfirmOpen(false);
-				toast.success("Quick note moved to trash");
+				toast.success("Note moved to trash");
 			})
 			.catch((error) => {
 				console.error("Failed to move note to trash", error);

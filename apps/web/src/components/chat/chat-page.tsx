@@ -15,7 +15,7 @@ import { useMutation, useQuery } from "convex/react";
 import { FileText } from "lucide-react";
 import * as React from "react";
 import { ChatMessages } from "@/components/chat/messages";
-import { fallbackChatModel } from "@/lib/ai/models";
+import { fallbackChatModel, resolveChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
 import { api } from "../../../../../convex/_generated/api";
@@ -136,6 +136,14 @@ export function ChatPage({
 		status === "submitted" || status === "streaming" || isPreparingRequest;
 	const hasMessages = messages.length > 0;
 	const isNotesLoading = notes === undefined;
+	const currentChat = React.useMemo(
+		() => chats.find((chat) => getChatId(chat) === chatId) ?? null,
+		[chats, chatId],
+	);
+
+	React.useEffect(() => {
+		setSelectedModel(resolveChatModel(currentChat?.model));
+	}, [currentChat?.model]);
 
 	const contextPages = React.useMemo(
 		() =>

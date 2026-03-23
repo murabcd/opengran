@@ -90,6 +90,7 @@ export default defineSchema({
 		ownerTokenIdentifier: v.string(),
 		authorName: v.optional(v.string()),
 		chatId: v.string(),
+		noteId: v.optional(v.id("notes")),
 		title: v.string(),
 		preview: v.string(),
 		model: v.optional(v.string()),
@@ -108,8 +109,19 @@ export default defineSchema({
 			"isArchived",
 			"updatedAt",
 		])
+		.index("by_ownerTokenIdentifier_and_noteId_and_isArchived_and_updatedAt", [
+			"ownerTokenIdentifier",
+			"noteId",
+			"isArchived",
+			"updatedAt",
+		])
 		.index("by_ownerTokenIdentifier_and_chatId", [
 			"ownerTokenIdentifier",
+			"chatId",
+		])
+		.index("by_ownerTokenIdentifier_and_noteId_and_chatId", [
+			"ownerTokenIdentifier",
+			"noteId",
 			"chatId",
 		]),
 	chatMessages: defineTable({

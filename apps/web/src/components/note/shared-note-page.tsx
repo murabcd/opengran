@@ -115,8 +115,8 @@ export function SharedNotePage({
 							<Input
 								value={note.title}
 								readOnly
-								placeholder="New quick note"
-								aria-label="Quick note title"
+								placeholder="New note"
+								aria-label="Note title"
 								className="h-auto border-0 !bg-transparent px-0 py-0 text-3xl font-normal shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
 							/>
 

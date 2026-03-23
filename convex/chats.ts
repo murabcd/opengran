@@ -1,6 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
 
@@ -16,6 +16,7 @@ const chatFields = {
 	ownerTokenIdentifier: v.string(),
 	authorName: v.optional(v.string()),
 	chatId: v.string(),
+	noteId: v.optional(v.id("notes")),
 	title: v.string(),
 	preview: v.string(),
 	model: v.optional(v.string()),
@@ -109,6 +110,23 @@ const getOwnedChatById = async (
 		)
 		.unique();
 
+const requireOwnedNoteId = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+	noteId: Id<"notes">,
+) => {
+	const note = await ctx.db.get(noteId);
+
+	if (!note || note.ownerTokenIdentifier !== ownerTokenIdentifier) {
+		throw new ConvexError({
+			code: "NOTE_NOT_FOUND",
+			message: "Note not found.",
+		});
+	}
+
+	return note;
+};
+
 const shouldReplaceChatTitle = (
 	chat: Doc<"chats"> | null,
 	nextTitle: string,
@@ -174,6 +192,51 @@ export const listArchived = query({
 			)
 			.order("desc")
 			.take(MAX_RETURNED_CHATS);
+	},
+});
+
+export const listForNote = query({
+	args: {
+		noteId: v.id("notes"),
+	},
+	returns: v.array(chatValidator),
+	handler: async (ctx, args) => {
+		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		await requireOwnedNoteId(ctx, ownerTokenIdentifier, args.noteId);
+
+		return await ctx.db
+			.query("chats")
+			.withIndex(
+				"by_ownerTokenIdentifier_and_noteId_and_isArchived_and_updatedAt",
+				(q) =>
+					q
+						.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+						.eq("noteId", args.noteId)
+						.eq("isArchived", false),
+			)
+			.order("desc")
+			.take(MAX_RETURNED_CHATS);
+	},
+});
+
+export const getSession = query({
+	args: {
+		chatId: v.string(),
+	},
+	returns: v.union(chatValidator, v.null()),
+	handler: async (ctx, args) => {
+		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		const chat = await getOwnedChatById(
+			ctx,
+			ownerTokenIdentifier,
+			clampWhitespace(args.chatId),
+		);
+
+		if (!chat || chat.isArchived) {
+			return null;
+		}
+
+		return chat;
 	},
 });
 
@@ -243,6 +306,7 @@ export const removeMessagesAndDeleteChat = internalMutation({
 export const saveMessage = mutation({
 	args: {
 		chatId: v.string(),
+		noteId: v.optional(v.id("notes")),
 		title: v.optional(v.string()),
 		preview: v.optional(v.string()),
 		model: v.optional(v.string()),
@@ -270,9 +334,15 @@ export const saveMessage = mutation({
 		);
 		const messageCreatedAt = args.message.createdAt || now;
 		const storedChatId = clampWhitespace(args.chatId);
+		const storedNoteId = args.noteId ?? undefined;
 		const storedMessageId =
 			clampWhitespace(args.message.id) ||
 			`msg-${now}-${Math.random().toString(36).slice(2, 10)}`;
+
+		if (storedNoteId) {
+			await requireOwnedNoteId(ctx, ownerTokenIdentifier, storedNoteId);
+		}
+
 		const existingChat = await getOwnedChatById(
 			ctx,
 			ownerTokenIdentifier,
@@ -285,6 +355,7 @@ export const saveMessage = mutation({
 				ownerTokenIdentifier,
 				authorName,
 				chatId: storedChatId,
+				noteId: storedNoteId,
 				title: normalizedTitle,
 				preview: normalizedPreview,
 				model: args.model,
@@ -302,6 +373,7 @@ export const saveMessage = mutation({
 
 			await ctx.db.patch(existingChat._id, {
 				chatId: storedChatId,
+				noteId: existingChat.noteId ?? storedNoteId,
 				authorName: existingChat.authorName ?? authorName,
 				title: nextTitle,
 				preview: normalizedPreview,
@@ -359,6 +431,33 @@ export const saveMessage = mutation({
 			chat,
 			message,
 		};
+	},
+});
+
+export const setModel = mutation({
+	args: {
+		chatId: v.string(),
+		model: v.string(),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		const chat = await getOwnedChatById(
+			ctx,
+			ownerTokenIdentifier,
+			clampWhitespace(args.chatId),
+		);
+
+		if (!chat) {
+			return null;
+		}
+
+		await ctx.db.patch(chat._id, {
+			model: clampWhitespace(args.model) || chat.model,
+			updatedAt: Date.now(),
+		});
+
+		return null;
 	},
 });
 

@@ -33,7 +33,6 @@ import {
 import { Icons } from "@workspace/ui/components/icons";
 import { Separator } from "@workspace/ui/components/separator";
 import {
-	SidebarInset,
 	SidebarProvider,
 	SidebarTrigger,
 } from "@workspace/ui/components/sidebar";
@@ -66,6 +65,7 @@ import {
 import * as React from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ChatPage } from "@/components/chat/chat-page";
+import { AppShellInset } from "@/components/layout/app-shell-inset";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
 import { type NoteEditorActions, NotePage } from "@/components/note/note-page";
 import { SharedNotePage } from "@/components/note/shared-note-page";
@@ -860,6 +860,7 @@ function App() {
 			isConvexAuthenticated={isConvexAuthenticated}
 			authError={authError}
 			isAuthenticating={isAuthenticating}
+			authenticatingProvider={authenticatingProvider}
 			isDesktopMac={isDesktopMac}
 			onGitHubSignIn={handleGitHubSignIn}
 			onGoogleSignIn={handleGoogleSignIn}
@@ -895,6 +896,7 @@ function AppGate({
 	isConvexAuthenticated,
 	authError,
 	isAuthenticating,
+	authenticatingProvider,
 	isDesktopMac,
 	onGitHubSignIn,
 	onGoogleSignIn,
@@ -926,6 +928,7 @@ function AppGate({
 	isConvexAuthenticated: boolean;
 	authError: string | null;
 	isAuthenticating: boolean;
+	authenticatingProvider: SocialAuthProvider | null;
 	isDesktopMac: boolean;
 	onGitHubSignIn: () => void;
 	onGoogleSignIn: () => void;
@@ -971,6 +974,7 @@ function AppGate({
 			<AuthScreen
 				error={authError}
 				isAuthenticating={isAuthenticating}
+				authenticatingProvider={authenticatingProvider}
 				isDesktopMac={isDesktopMac}
 				onGitHubSignIn={onGitHubSignIn}
 				onGoogleSignIn={onGoogleSignIn}
@@ -1425,8 +1429,7 @@ function AppShell({
 			);
 		},
 	);
-	const [currentNoteTitle, setCurrentNoteTitle] =
-		React.useState("New quick note");
+	const [currentNoteTitle, setCurrentNoteTitle] = React.useState("New note");
 	const [currentNoteEditorActions, setCurrentNoteEditorActions] =
 		React.useState<NoteEditorActions | null>(null);
 	const creatingNoteRef = React.useRef(false);
@@ -1613,7 +1616,7 @@ function AppShell({
 		}
 
 		if (currentView === "note") {
-			setCurrentNoteTitle("New quick note");
+			setCurrentNoteTitle("New note");
 		}
 	}, [currentView, selectedNote?.title]);
 
@@ -1678,7 +1681,7 @@ function AppShell({
 
 		void createNote()
 			.then((noteId) => {
-				setCurrentNoteTitle("New quick note");
+				setCurrentNoteTitle("New note");
 				openNote(noteId);
 			})
 			.catch((error) => {
@@ -1737,7 +1740,7 @@ function AppShell({
 			}
 
 			setCurrentNoteId(null);
-			setCurrentNoteTitle("New quick note");
+			setCurrentNoteTitle("New note");
 			setCurrentNoteEditorActions(null);
 			handleViewChange("home");
 		},
@@ -1842,7 +1845,7 @@ function AppShell({
 				onNoteSelect={openNote}
 				onNoteTrashed={handleNoteTrashed}
 			/>
-			<SidebarInset className="h-svh min-h-0 overflow-hidden">
+			<AppShellInset reserveRightSidebar={currentView === "note"}>
 				<AppShellHeader
 					isDesktopMac={isDesktopMac}
 					breadcrumbSectionLabel={breadcrumbSectionLabel}
@@ -1885,7 +1888,7 @@ function AppShell({
 					onNoteTitleChange={setCurrentNoteTitle}
 					onNoteEditorActionsChange={setCurrentNoteEditorActions}
 				/>
-			</SidebarInset>
+			</AppShellInset>
 		</SidebarProvider>
 	);
 }
@@ -1927,7 +1930,7 @@ function AppShellHeader({
 		>
 			<div
 				data-app-region={isDesktopMac ? "no-drag" : undefined}
-				className="flex items-center gap-2"
+				className="flex min-w-0 flex-1 items-center gap-2 pr-4"
 			>
 				<Tooltip>
 					<TooltipTrigger asChild>
@@ -1946,29 +1949,33 @@ function AppShellHeader({
 					orientation="vertical"
 					className="mr-2 data-[orientation=vertical]:h-4"
 				/>
-				<Breadcrumb>
-					<BreadcrumbList>
+				<Breadcrumb className="min-w-0 flex-1">
+					<BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
 						{breadcrumbDetailLabel ? (
 							<>
-								<BreadcrumbItem className="hidden md:block">
+								<BreadcrumbItem className="hidden shrink-0 md:inline-flex">
 									<BreadcrumbLink asChild>
 										<button
 											type="button"
-											className="cursor-pointer"
+											className="cursor-pointer truncate"
 											onClick={onBreadcrumbSectionClick}
 										>
 											{breadcrumbSectionLabel}
 										</button>
 									</BreadcrumbLink>
 								</BreadcrumbItem>
-								<BreadcrumbSeparator className="hidden md:block" />
-								<BreadcrumbItem>
-									<BreadcrumbPage>{breadcrumbDetailLabel}</BreadcrumbPage>
+								<BreadcrumbSeparator className="hidden shrink-0 md:block" />
+								<BreadcrumbItem className="min-w-0 flex-1 overflow-hidden">
+									<BreadcrumbPage className="block truncate">
+										{breadcrumbDetailLabel}
+									</BreadcrumbPage>
 								</BreadcrumbItem>
 							</>
 						) : (
-							<BreadcrumbItem>
-								<BreadcrumbPage>{breadcrumbSectionLabel}</BreadcrumbPage>
+							<BreadcrumbItem className="min-w-0 flex-1 overflow-hidden">
+								<BreadcrumbPage className="block truncate">
+									{breadcrumbSectionLabel}
+								</BreadcrumbPage>
 							</BreadcrumbItem>
 						)}
 					</BreadcrumbList>
@@ -1976,7 +1983,7 @@ function AppShellHeader({
 			</div>
 			<div
 				data-app-region={isDesktopMac ? "no-drag" : undefined}
-				className="ml-auto"
+				className="ml-auto shrink-0"
 			>
 				{currentView === "home" ? (
 					<Button variant="outline" onClick={onCreateNote}>
@@ -2057,7 +2064,7 @@ function AppShellHeader({
 								variant="ghost"
 								size="icon"
 								className="text-muted-foreground hover:text-foreground"
-								aria-label={`Open actions for ${currentNoteTitle || "quick note"}`}
+								aria-label={`Open actions for ${currentNoteTitle || "note"}`}
 							>
 								<MoreHorizontal className="size-4" />
 							</Button>
@@ -2388,7 +2395,7 @@ function HomeView({
 					) : (
 						<Empty className="max-w-xl">
 							<EmptyHeader>
-								<EmptyTitle>Take your first quick note</EmptyTitle>
+								<EmptyTitle>Take your first note</EmptyTitle>
 								<EmptyDescription>
 									Your meeting notes will appear here
 								</EmptyDescription>

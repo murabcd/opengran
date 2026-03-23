@@ -25,9 +25,13 @@ import { Slot } from "radix-ui";
 import * as React from "react";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
+const SIDEBAR_RIGHT_COOKIE_NAME = "sidebar_right_state";
+const SIDEBAR_RIGHT_MODE_COOKIE_NAME = "sidebar_right_mode";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
+const SIDEBAR_RIGHT_WIDTH = "16rem";
+const SIDEBAR_RIGHT_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
@@ -40,6 +44,31 @@ const persistSidebarState = (openState: boolean) => {
 	});
 };
 
+const getCookie = (name: string): string | null => {
+	if (typeof document === "undefined") {
+		return null;
+	}
+
+	const value = `; ${document.cookie}`;
+	const parts = value.split(`; ${name}=`);
+	if (parts.length === 2) {
+		return parts.pop()?.split(";").shift() ?? null;
+	}
+
+	return null;
+};
+
+const getCookieBoolean = (name: string, defaultValue: boolean) => {
+	const value = getCookie(name);
+	if (value === null) {
+		return defaultValue;
+	}
+
+	return value === "true";
+};
+
+export type RightSidebarMode = "sidebar" | "floating";
+
 type SidebarContextProps = {
 	state: "expanded" | "collapsed";
 	open: boolean;
@@ -48,6 +77,13 @@ type SidebarContextProps = {
 	setOpenMobile: (open: boolean) => void;
 	isMobile: boolean;
 	toggleSidebar: () => void;
+	rightOpen: boolean;
+	setRightOpen: (open: boolean) => void;
+	rightOpenMobile: boolean;
+	setRightOpenMobile: (open: boolean) => void;
+	toggleRightSidebar: () => void;
+	rightMode: RightSidebarMode;
+	setRightMode: (mode: RightSidebarMode) => void;
 };
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
@@ -76,9 +112,11 @@ function SidebarProvider({
 }) {
 	const isMobile = useIsMobile();
 	const [openMobile, setOpenMobile] = React.useState(false);
+	const [rightOpen, setRightOpen] = React.useState(false);
+	const [rightOpenMobile, setRightOpenMobile] = React.useState(false);
+	const [rightMode, setRightModeState] =
+		React.useState<RightSidebarMode>("sidebar");
 
-	// This is the internal state of the sidebar.
-	// We use openProp and setOpenProp for control from outside the component.
 	const [_open, _setOpen] = React.useState(defaultOpen);
 	const open = openProp ?? _open;
 	const setOpen = React.useCallback(
@@ -89,25 +127,75 @@ function SidebarProvider({
 			} else {
 				_setOpen(openState);
 			}
-
-			// This sets the cookie to keep the sidebar state.
 			persistSidebarState(openState);
 		},
 		[setOpenProp, open],
 	);
 
-	// Helper to toggle the sidebar.
+	const initRef = React.useRef({ defaultOpen, openProp, initialized: false });
+	React.useEffect(() => {
+		if (initRef.current.initialized) {
+			return;
+		}
+
+		initRef.current.initialized = true;
+
+		const savedLeftState = getCookieBoolean(
+			SIDEBAR_COOKIE_NAME,
+			initRef.current.defaultOpen,
+		);
+		if (!initRef.current.openProp) {
+			_setOpen(savedLeftState);
+		}
+
+		setRightOpen(getCookieBoolean(SIDEBAR_RIGHT_COOKIE_NAME, false));
+
+		const savedRightMode = getCookie(SIDEBAR_RIGHT_MODE_COOKIE_NAME);
+		if (savedRightMode === "floating" || savedRightMode === "sidebar") {
+			setRightModeState(savedRightMode);
+		}
+	}, []);
+
+	const setRightOpenWithCookie = React.useCallback(
+		(value: boolean | ((value: boolean) => boolean)) => {
+			const nextOpen = typeof value === "function" ? value(rightOpen) : value;
+			setRightOpen(nextOpen);
+			document.cookie = `${SIDEBAR_RIGHT_COOKIE_NAME}=${nextOpen}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+		},
+		[rightOpen],
+	);
+
+	const setRightMode = React.useCallback((mode: RightSidebarMode) => {
+		setRightModeState(mode);
+		document.cookie = `${SIDEBAR_RIGHT_MODE_COOKIE_NAME}=${mode}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+	}, []);
+
 	const toggleSidebar = React.useCallback(() => {
 		return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
 	}, [isMobile, setOpen]);
 
-	// Adds a keyboard shortcut to toggle the sidebar.
+	const toggleRightSidebar = React.useCallback(() => {
+		return isMobile
+			? setRightOpenMobile((open) => !open)
+			: setRightOpenWithCookie((open) => !open);
+	}, [isMobile, setRightOpenWithCookie]);
+
 	React.useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if (
-				event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-				(event.metaKey || event.ctrlKey)
+				!(event.metaKey || event.ctrlKey) ||
+				event.key !== SIDEBAR_KEYBOARD_SHORTCUT
 			) {
+				return;
+			}
+
+			if (event.altKey) {
+				event.preventDefault();
+				toggleRightSidebar();
+				return;
+			}
+
+			if (!event.shiftKey) {
 				event.preventDefault();
 				toggleSidebar();
 			}
@@ -115,10 +203,8 @@ function SidebarProvider({
 
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [toggleSidebar]);
+	}, [toggleRightSidebar, toggleSidebar]);
 
-	// We add a state so that we can do data-state="expanded" or "collapsed".
-	// This makes it easier to style the sidebar with Tailwind classes.
 	const state = open ? "expanded" : "collapsed";
 
 	const contextValue = React.useMemo<SidebarContextProps>(
@@ -130,8 +216,28 @@ function SidebarProvider({
 			openMobile,
 			setOpenMobile,
 			toggleSidebar,
+			rightOpen,
+			setRightOpen: setRightOpenWithCookie,
+			rightOpenMobile,
+			setRightOpenMobile,
+			toggleRightSidebar,
+			rightMode,
+			setRightMode,
 		}),
-		[state, open, setOpen, isMobile, openMobile, toggleSidebar],
+		[
+			state,
+			open,
+			setOpen,
+			isMobile,
+			openMobile,
+			toggleSidebar,
+			rightOpen,
+			setRightOpenWithCookie,
+			rightOpenMobile,
+			toggleRightSidebar,
+			rightMode,
+			setRightMode,
+		],
 	);
 
 	return (
@@ -172,7 +278,19 @@ function Sidebar({
 	variant?: "sidebar" | "floating" | "inset";
 	collapsible?: "offcanvas" | "icon" | "none";
 }) {
-	const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+	const {
+		isMobile,
+		state,
+		openMobile,
+		setOpenMobile,
+		rightOpen,
+		rightOpenMobile,
+		setRightOpenMobile,
+	} = useSidebar();
+	const isRightSide = side === "right";
+	const currentOpen = isRightSide ? rightOpen : state === "expanded";
+	const currentOpenMobile = isRightSide ? rightOpenMobile : openMobile;
+	const setCurrentOpenMobile = isRightSide ? setRightOpenMobile : setOpenMobile;
 
 	if (collapsible === "none") {
 		return (
@@ -191,7 +309,11 @@ function Sidebar({
 
 	if (isMobile) {
 		return (
-			<Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
+			<Sheet
+				open={currentOpenMobile}
+				onOpenChange={setCurrentOpenMobile}
+				{...props}
+			>
 				<SheetContent
 					dir={dir}
 					data-sidebar="sidebar"
@@ -200,7 +322,9 @@ function Sidebar({
 					className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
 					style={
 						{
-							"--sidebar-width": SIDEBAR_WIDTH_MOBILE,
+							"--sidebar-width": isRightSide
+								? SIDEBAR_RIGHT_WIDTH_MOBILE
+								: SIDEBAR_WIDTH_MOBILE,
 						} as React.CSSProperties
 					}
 					side={side}
@@ -215,11 +339,25 @@ function Sidebar({
 		);
 	}
 
+	const currentState = isRightSide
+		? currentOpen
+			? "expanded"
+			: "collapsed"
+		: state;
+	const currentCollapsible = isRightSide
+		? currentOpen
+			? ""
+			: collapsible
+		: state === "collapsed"
+			? collapsible
+			: "";
+	const desktopWidth = isRightSide ? SIDEBAR_RIGHT_WIDTH : SIDEBAR_WIDTH;
+
 	return (
 		<div
 			className="group peer hidden text-sidebar-foreground md:block"
-			data-state={state}
-			data-collapsible={state === "collapsed" ? collapsible : ""}
+			data-state={currentState}
+			data-collapsible={currentCollapsible}
 			data-variant={variant}
 			data-side={side}
 			data-slot="sidebar"
@@ -230,23 +368,35 @@ function Sidebar({
 				className={cn(
 					"relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
 					"group-data-[collapsible=offcanvas]:w-0",
+					"group-data-[side=right]:group-data-[state=expanded]:w-0",
 					"group-data-[side=right]:rotate-180",
 					variant === "floating" || variant === "inset"
 						? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
 						: "group-data-[collapsible=icon]:w-(--sidebar-width-icon)",
 				)}
+				style={
+					{
+						"--sidebar-width": desktopWidth,
+					} as React.CSSProperties
+				}
 			/>
 			<div
 				data-slot="sidebar-container"
-				data-side={side}
 				className={cn(
-					"fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
-					// Adjust the padding for floating and inset variants.
+					"fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
+					side === "left"
+						? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
+						: "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
 					variant === "floating" || variant === "inset"
 						? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
 						: "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
 					className,
 				)}
+				style={
+					{
+						"--sidebar-width": desktopWidth,
+					} as React.CSSProperties
+				}
 				{...props}
 			>
 				<div
@@ -288,15 +438,29 @@ function SidebarTrigger({
 }
 
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
-	const { toggleSidebar } = useSidebar();
+	const { toggleSidebar, toggleRightSidebar } = useSidebar();
+	const buttonRef = React.useRef<HTMLButtonElement>(null);
+
+	const handleClick = () => {
+		const sidebarElement = buttonRef.current?.closest("[data-side]");
+		const side = sidebarElement?.getAttribute("data-side");
+
+		if (side === "right") {
+			toggleRightSidebar();
+			return;
+		}
+
+		toggleSidebar();
+	};
 
 	return (
 		<button
+			ref={buttonRef}
 			data-sidebar="rail"
 			data-slot="sidebar-rail"
 			aria-label="Toggle Sidebar"
 			tabIndex={-1}
-			onClick={toggleSidebar}
+			onClick={handleClick}
 			title="Toggle Sidebar"
 			className={cn(
 				"absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2",
@@ -312,14 +476,31 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
 	);
 }
 
-function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
+function SidebarInset({
+	className,
+	reserveRightSidebar = true,
+	style,
+	...props
+}: React.ComponentProps<"main"> & { reserveRightSidebar?: boolean }) {
+	const { rightOpen, rightMode, isMobile } = useSidebar();
+
 	return (
 		<main
 			data-slot="sidebar-inset"
 			className={cn(
-				"relative flex w-full flex-1 flex-col bg-background md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
+				"relative flex w-full flex-1 flex-col bg-background transition-[padding] duration-200 ease-linear md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
 				className,
 			)}
+			style={{
+				...style,
+				paddingRight:
+					reserveRightSidebar &&
+					rightOpen &&
+					!isMobile &&
+					rightMode === "sidebar"
+						? SIDEBAR_RIGHT_WIDTH
+						: style?.paddingRight,
+			}}
 			{...props}
 		/>
 	);

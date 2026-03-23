@@ -166,7 +166,9 @@ export const validateTemplateStream = ({
 	);
 	const hasOrderMismatch =
 		parsed.headingOrder.length !== expectedHeadingOrder.length ||
-		parsed.headingOrder.some((title, index) => title !== expectedHeadingOrder[index]);
+		parsed.headingOrder.some(
+			(title, index) => title !== expectedHeadingOrder[index],
+		);
 
 	if (hasOrderMismatch) {
 		return "Template rewrite returned sections out of order.";

@@ -2,14 +2,13 @@ import type { JSONContent } from "@tiptap/core";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { Input } from "@workspace/ui/components/input";
+import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import * as React from "react";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
-import type { StructuredNoteBody } from "@/lib/note-template-stream";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import type { NoteTemplate } from "../templates/note-template-select";
@@ -115,6 +114,16 @@ const structuredNoteToDocument = ({
 	};
 };
 
+const plainTextToDocumentNodes = (text: string): JSONContent[] =>
+	text
+		.split(/\n{2,}/)
+		.map((chunk) => chunk.trim())
+		.filter(Boolean)
+		.map((chunk) => ({
+			type: "paragraph",
+			content: [createTextNode(chunk)],
+		}));
+
 const structuredNoteToSearchableText = ({
 	overview,
 	sections,
@@ -195,6 +204,7 @@ export function NotePage({
 		streamedMarkdown: "",
 	}));
 	const nextNoteIdRef = React.useRef<Id<"notes"> | null>(null);
+	const titleTextareaRef = React.useRef<HTMLTextAreaElement>(null);
 	const latestEditorStateRef = React.useRef<{
 		title: string;
 		searchableText: string;
@@ -393,14 +403,14 @@ export function NotePage({
 				content: note.content,
 				searchableText: note.searchableText,
 			});
-			editor.commands.setContent(nextContent, false);
+			editor.commands.setContent(nextContent, { emitUpdate: false });
 		} else {
 			lastSavedSnapshotRef.current = JSON.stringify({
 				title: "",
 				content: EMPTY_DOCUMENT_STRING,
 				searchableText: "",
 			});
-			editor.commands.setContent(EMPTY_DOCUMENT, false);
+			editor.commands.setContent(EMPTY_DOCUMENT, { emitUpdate: false });
 		}
 
 		hasHydratedRef.current = true;
@@ -450,8 +460,18 @@ export function NotePage({
 	]);
 
 	React.useEffect(() => {
-		onTitleChange?.(title || "New quick note");
+		onTitleChange?.(title || "New note");
 	}, [onTitleChange, title]);
+
+	React.useEffect(() => {
+		const element = titleTextareaRef.current;
+		if (!element) {
+			return;
+		}
+
+		element.style.height = "auto";
+		element.style.height = `${element.scrollHeight}px`;
+	}, []);
 
 	const copyText = React.useCallback(async () => {
 		if (!editor) {
@@ -534,11 +554,33 @@ export function NotePage({
 				return;
 			}
 
-			toast.success("Quick note exported");
+			toast.success("Note exported");
 		} catch (error) {
 			showActionError("Failed to export note", error);
 		}
 	}, [editor]);
+
+	const appendChatResponseToNote = React.useCallback(
+		async (text: string) => {
+			if (!editor) {
+				return;
+			}
+
+			const nextText = text.trim();
+
+			if (!nextText) {
+				return;
+			}
+
+			editor
+				.chain()
+				.focus()
+				.insertContent(plainTextToDocumentNodes(nextText))
+				.run();
+			toast.success("Added to note");
+		},
+		[editor],
+	);
 
 	const applyTemplate = React.useCallback(
 		async (template: NoteTemplate) => {
@@ -582,7 +624,7 @@ export function NotePage({
 					templateSlug: template.slug,
 				});
 
-				editor.commands.setContent(EMPTY_DOCUMENT, false);
+				editor.commands.setContent(EMPTY_DOCUMENT, { emitUpdate: false });
 				setContent(EMPTY_DOCUMENT_STRING);
 				setSearchableText("");
 
@@ -692,7 +734,7 @@ export function NotePage({
 				const nextContent = JSON.stringify(nextDocument);
 				const nextSearchableText = structuredNoteToSearchableText(finalNote);
 
-				editor.commands.setContent(nextDocument, false);
+				editor.commands.setContent(nextDocument, { emitUpdate: false });
 				setContent(nextContent);
 				setSearchableText(nextSearchableText);
 				toast.success(`Rewrote note with ${template.name}`);
@@ -707,7 +749,7 @@ export function NotePage({
 				} catch (revertError) {
 					console.error("Failed to revert note template", revertError);
 				}
-				editor.commands.setContent(previousDocument, false);
+				editor.commands.setContent(previousDocument, { emitUpdate: false });
 				setContent(previousContent);
 				setSearchableText(previousSearchableText);
 				showActionError("Failed to rewrite note with template", error);
@@ -819,7 +861,7 @@ export function NotePage({
 				const nextSearchableText = structuredNoteToSearchableText(payload.note);
 				const nextTitle = payload.note.title.trim() || title;
 
-				editor.commands.setContent(nextDocument, false);
+				editor.commands.setContent(nextDocument, { emitUpdate: false });
 				setTitle(nextTitle);
 				setContent(nextContent);
 				setSearchableText(nextSearchableText);
@@ -837,12 +879,14 @@ export function NotePage({
 				<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
 					<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
 						<div className="flex flex-col gap-5">
-							<Input
+							<Textarea
+								ref={titleTextareaRef}
 								value={title}
 								onChange={(event) => setTitle(event.target.value)}
-								placeholder="New quick note"
-								aria-label="Quick note title"
-								className="h-auto border-0 !bg-transparent px-0 py-0 text-3xl font-normal shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
+								placeholder="New note"
+								aria-label="Note title"
+								rows={1}
+								className="min-h-0 resize-none overflow-hidden border-0 !bg-transparent px-0 py-0 text-3xl font-semibold leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
 							/>
 
 							<EditorContent
@@ -881,7 +925,15 @@ export function NotePage({
 					<div className="sticky bottom-0 z-10 mt-auto h-0">
 						<div className="pointer-events-none absolute inset-x-0 bottom-0 -mx-4 bg-background pb-6 md:-mx-6">
 							<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
-								<NoteComposer onEnhanceTranscript={handleEnhanceTranscript} />
+								<NoteComposer
+									noteContext={{
+										noteId,
+										title,
+										text: searchableText,
+									}}
+									onAddMessageToNote={appendChatResponseToNote}
+									onEnhanceTranscript={handleEnhanceTranscript}
+								/>
 							</div>
 						</div>
 					</div>
