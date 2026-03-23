@@ -1,7 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { openai } from "@ai-sdk/openai";
-import { generateText, Output } from "ai";
-import { z } from "zod";
+import { smoothStream, streamText } from "ai";
+import {
+	parseTemplateStreamToStructuredNote,
+	validateTemplateStream,
+} from "../src/lib/note-template-stream";
 
 type ApplyTemplateRequestBody = {
 	title?: string;
@@ -17,18 +20,6 @@ type ApplyTemplateRequestBody = {
 		}>;
 	};
 };
-
-const structuredTemplateNoteSchema = z.object({
-	overview: z.array(z.string()),
-	sections: z
-		.array(
-			z.object({
-				title: z.string().min(1),
-				items: z.array(z.string()),
-			}),
-		)
-		.min(1),
-});
 
 const readJsonBody = async (request: IncomingMessage) => {
 	const chunks: Uint8Array[] = [];
@@ -97,21 +88,25 @@ export const handleApplyTemplateRequest = async (
 		return;
 	}
 
-	const { output } = await generateText({
+	response.statusCode = 200;
+	response.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+	response.setHeader("Cache-Control", "no-cache, no-transform");
+	response.flushHeaders?.();
+
+	const result = streamText({
 		model: openai("gpt-5.4-mini"),
 		system: [
 			"You rewrite existing notes into a selected note template.",
 			"Preserve the source language used in the notes.",
 			"Do not invent facts, decisions, owners, or dates.",
-			"Do not rename sections unless they are explicitly provided by the template.",
-			"Keep the note title unchanged; only rewrite the body.",
-			"Use concise bullets and map information into the provided template sections.",
-			"If a template section has no supported information, return that section with an empty items array.",
-			"Only place information into overview if it is broadly useful outside the template sections.",
+			"Keep the note title unchanged and do not output it.",
+			"Output only the rewritten note body as plain text.",
+			"Before the first section, you may include short bullet points only if they are broadly useful.",
+			"Then output every template section in the same order using the exact format `## Section title` on its own line.",
+			"Under each section heading, use concise bullet points prefixed with `- `.",
+			"If a section has no grounded information, keep the heading and leave it empty.",
+			"Do not add commentary, markdown code fences, or extra headings.",
 		].join(" "),
-		output: Output.object({
-			schema: structuredTemplateNoteSchema,
-		}),
 		prompt: [
 			title.trim() ? `Current note title: ${title.trim()}` : "",
 			template.name.trim() ? `Template name: ${template.name.trim()}` : "",
@@ -128,14 +123,75 @@ export const handleApplyTemplateRequest = async (
 			`Source note:\n${noteText.trim()}`,
 			[
 				"Return every template section in the same order.",
-				"Each section should contain concise bullets grounded in the source note.",
+				"Use exact section titles from the template.",
+				"Each section should contain concise bullets grounded only in the source note.",
+				"Output plain text only in this format:",
+				"- optional overview bullet",
+				"## First section title",
+				"- bullet",
+				"## Second section title",
+				"- bullet",
 			].join("\n"),
 		]
 			.filter(Boolean)
 			.join("\n\n"),
+		experimental_transform: smoothStream({
+			chunking: "line",
+		}),
 	});
 
-	sendJson(response, 200, {
-		note: output,
-	});
+	const writeEvent = (payload: Record<string, unknown>) => {
+		response.write(`${JSON.stringify(payload)}\n`);
+	};
+
+	try {
+		let streamedText = "";
+
+		for await (const delta of result.textStream) {
+			streamedText += delta;
+			writeEvent({
+				type: "text-delta",
+				delta,
+			});
+		}
+
+		const parsed = parseTemplateStreamToStructuredNote({
+			text: streamedText,
+			template: {
+				sections: templateSections,
+			},
+			isFinal: true,
+		});
+		const validationError = validateTemplateStream({
+			template: {
+				sections: templateSections,
+			},
+			parsed,
+		});
+
+		if (validationError) {
+			writeEvent({
+				type: "error",
+				error: validationError,
+			});
+			response.end();
+			return;
+		}
+
+		writeEvent({
+			type: "final-note",
+			note: parsed.note,
+		});
+		response.end();
+	} catch (error) {
+		const message =
+			error instanceof Error
+				? error.message
+				: "Failed to apply note template rewrite.";
+		writeEvent({
+			type: "error",
+			error: message,
+		});
+		response.end();
+	}
 };

@@ -148,7 +148,7 @@ export function ChatMessages({
 										>
 											{isStreamingAssistantMessage && isEmpty ? (
 												<div className="text-sm text-muted-foreground">
-													<ShimmerText>Thinking...</ShimmerText>
+													<ShimmerText>Thinking</ShimmerText>
 												</div>
 											) : (
 												<Streamdown
@@ -187,7 +187,7 @@ export function ChatMessages({
 							<div className="flex w-full flex-col space-y-4">
 								<div className="flex w-full flex-row items-start gap-2 pb-4">
 									<div className="flex flex-col gap-4 text-sm leading-6 text-muted-foreground">
-										<ShimmerText>Thinking...</ShimmerText>
+										<ShimmerText>Thinking</ShimmerText>
 									</div>
 								</div>
 							</div>

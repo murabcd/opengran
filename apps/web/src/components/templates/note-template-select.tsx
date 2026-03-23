@@ -3,7 +3,6 @@ import {
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
-	SelectValue,
 } from "@workspace/ui/components/select";
 import { useQuery } from "convex/react";
 import { CalendarDays, Goal, UsersRound } from "lucide-react";
@@ -83,23 +82,23 @@ export function NoteTemplateSelect({
 				className="h-9 w-auto min-w-0 cursor-pointer border-transparent !bg-transparent pr-2 pl-2 shadow-none dark:!bg-transparent hover:!bg-accent/50 dark:hover:!bg-accent/50 focus-visible:ring-0"
 				aria-label="Select note template"
 			>
-				<SelectValue placeholder={placeholder}>
-					{currentTemplate ? (
-						<span className="flex items-center gap-2 text-foreground">
-							{(() => {
-								const Icon =
-									templateIcons[
-										currentTemplate.slug as keyof typeof templateIcons
-									];
+				{currentTemplate ? (
+					<span className="flex items-center gap-2 text-foreground">
+						{(() => {
+							const Icon =
+								templateIcons[
+									currentTemplate.slug as keyof typeof templateIcons
+								];
 
-								return Icon ? (
-									<Icon className="size-4 text-muted-foreground" />
-								) : null;
-							})()}
-							<span>{currentTemplate.name}</span>
-						</span>
-					) : null}
-				</SelectValue>
+							return Icon ? (
+								<Icon className="size-4 text-muted-foreground" />
+							) : null;
+						})()}
+						<span>{currentTemplate.name}</span>
+					</span>
+				) : (
+					<span className="text-muted-foreground">{placeholder}</span>
+				)}
 			</SelectTrigger>
 			<SelectContent align="end">
 				{templates.map((template) => {

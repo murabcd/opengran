@@ -5,9 +5,11 @@ import StarterKit from "@tiptap/starter-kit";
 import { Input } from "@workspace/ui/components/input";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
-import { LoaderCircle, Sparkles } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import { Streamdown } from "streamdown";
+import { ShimmerText } from "@/components/ai-elements/shimmer";
+import type { StructuredNoteBody } from "@/lib/note-template-stream";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import type { NoteTemplate } from "../templates/note-template-select";
@@ -86,9 +88,8 @@ const createBulletListNode = (items: string[]): JSONContent => ({
 const structuredNoteToDocument = ({
 	overview,
 	sections,
-}: StructuredNoteBody): JSONContent => ({
-	type: "doc",
-	content: [
+}: StructuredNoteBody): JSONContent => {
+	const nextContent = [
 		...overview
 			.map((item) => item.trim())
 			.filter(Boolean)
@@ -106,8 +107,13 @@ const structuredNoteToDocument = ({
 				...(items.length > 0 ? [createBulletListNode(items)] : []),
 			];
 		}),
-	],
-});
+	];
+
+	return {
+		type: "doc",
+		content: nextContent.length > 0 ? nextContent : [{ type: "paragraph" }],
+	};
+};
 
 const structuredNoteToSearchableText = ({
 	overview,
@@ -182,9 +188,11 @@ export function NotePage({
 	const [templateApplyState, setTemplateApplyState] = React.useState<{
 		isRunning: boolean;
 		templateName: string | null;
+		streamedMarkdown: string;
 	}>(() => ({
 		isRunning: false,
 		templateName: null,
+		streamedMarkdown: "",
 	}));
 	const nextNoteIdRef = React.useRef<Id<"notes"> | null>(null);
 	const latestEditorStateRef = React.useRef<{
@@ -339,6 +347,14 @@ export function NotePage({
 	}, [noteId]);
 
 	React.useEffect(() => {
+		if (!editor) {
+			return;
+		}
+
+		editor.setEditable(!templateApplyState.isRunning);
+	}, [editor, templateApplyState.isRunning]);
+
+	React.useEffect(() => {
 		latestEditorStateRef.current = {
 			title,
 			searchableText,
@@ -395,6 +411,10 @@ export function NotePage({
 			return;
 		}
 
+		if (templateApplyState.isRunning) {
+			return;
+		}
+
 		if (!title.trim() && !searchableText.trim()) {
 			return;
 		}
@@ -420,7 +440,14 @@ export function NotePage({
 		return () => {
 			window.clearTimeout(timeout);
 		};
-	}, [content, flushSave, noteId, searchableText, title]);
+	}, [
+		content,
+		flushSave,
+		noteId,
+		searchableText,
+		templateApplyState.isRunning,
+		title,
+	]);
 
 	React.useEffect(() => {
 		onTitleChange?.(title || "New quick note");
@@ -530,6 +557,9 @@ export function NotePage({
 				title,
 				searchableText,
 			});
+			const previousContent = content;
+			const previousSearchableText = searchableText;
+			const previousDocument = editor.getJSON();
 
 			if (isApplyingTemplate) {
 				return false;
@@ -543,6 +573,7 @@ export function NotePage({
 			setTemplateApplyState({
 				isRunning: true,
 				templateName: template.name,
+				streamedMarkdown: "",
 			});
 
 			try {
@@ -551,10 +582,15 @@ export function NotePage({
 					templateSlug: template.slug,
 				});
 
+				editor.commands.setContent(EMPTY_DOCUMENT, false);
+				setContent(EMPTY_DOCUMENT_STRING);
+				setSearchableText("");
+
 				const response = await fetch("/api/apply-template", {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
+						Accept: "application/x-ndjson",
 					},
 					body: JSON.stringify({
 						title,
@@ -563,18 +599,98 @@ export function NotePage({
 					}),
 				});
 
-				const payload = (await response.json().catch(() => ({}))) as {
-					error?: string;
-					note?: StructuredNoteBody;
-				};
-
-				if (!response.ok || !payload.note) {
-					throw new Error(payload.error || "Failed to apply template.");
+				if (!response.ok) {
+					const errorText = await response.text().catch(() => "");
+					throw new Error(errorText || "Failed to apply template.");
 				}
 
-				const nextDocument = structuredNoteToDocument(payload.note);
+				const stream = response.body;
+				if (!stream) {
+					throw new Error("Template rewrite stream is not available.");
+				}
+
+				const reader = stream.getReader();
+				const decoder = new TextDecoder();
+				let finalNote: StructuredNoteBody | null = null;
+				let responseError: string | null = null;
+				let bufferedResponse = "";
+				let streamedText = "";
+
+				const handleEvent = (rawLine: string) => {
+					const line = rawLine.trim();
+					if (!line) {
+						return;
+					}
+
+					const payload = JSON.parse(line) as
+						| {
+								type: "text-delta";
+								delta?: string;
+						  }
+						| {
+								type: "final-note";
+								note?: StructuredNoteBody;
+						  }
+						| {
+								type: "error";
+								error?: string;
+						  };
+
+					if (payload.type === "text-delta") {
+						const delta = payload.delta ?? "";
+						streamedText += delta;
+						setTemplateApplyState({
+							isRunning: true,
+							templateName: template.name,
+							streamedMarkdown: streamedText,
+						});
+						return;
+					}
+
+					if (payload.type === "final-note") {
+						finalNote = payload.note ?? null;
+						return;
+					}
+
+					responseError = payload.error ?? "Failed to apply template.";
+				};
+
+				while (true) {
+					const { done, value } = await reader.read();
+					bufferedResponse += decoder.decode(value ?? new Uint8Array(), {
+						stream: !done,
+					});
+
+					let lineBreakIndex = bufferedResponse.indexOf("\n");
+					while (lineBreakIndex >= 0) {
+						const nextLine = bufferedResponse.slice(0, lineBreakIndex);
+						bufferedResponse = bufferedResponse.slice(lineBreakIndex + 1);
+						handleEvent(nextLine);
+						lineBreakIndex = bufferedResponse.indexOf("\n");
+					}
+
+					if (done) {
+						break;
+					}
+				}
+
+				if (bufferedResponse.trim()) {
+					handleEvent(bufferedResponse);
+				}
+
+				if (responseError) {
+					throw new Error(responseError);
+				}
+
+				if (!finalNote) {
+					throw new Error(
+						"Template rewrite finished without a validated structured note.",
+					);
+				}
+
+				const nextDocument = structuredNoteToDocument(finalNote);
 				const nextContent = JSON.stringify(nextDocument);
-				const nextSearchableText = structuredNoteToSearchableText(payload.note);
+				const nextSearchableText = structuredNoteToSearchableText(finalNote);
 
 				editor.commands.setContent(nextDocument, false);
 				setContent(nextContent);
@@ -591,16 +707,20 @@ export function NotePage({
 				} catch (revertError) {
 					console.error("Failed to revert note template", revertError);
 				}
+				editor.commands.setContent(previousDocument, false);
+				setContent(previousContent);
+				setSearchableText(previousSearchableText);
 				showActionError("Failed to rewrite note with template", error);
 				return false;
 			} finally {
 				setTemplateApplyState({
 					isRunning: false,
 					templateName: null,
+					streamedMarkdown: "",
 				});
 			}
 		},
-		[editor, noteId, setNoteTemplate],
+		[content, editor, noteId, setNoteTemplate],
 	);
 
 	React.useEffect(() => {
@@ -735,29 +855,25 @@ export function NotePage({
 									"[&_.ProseMirror_ol]:mb-3 [&_.ProseMirror_ol]:pl-6",
 									"[&_.ProseMirror_li]:mb-1",
 									"[&_.ProseMirror_blockquote]:my-4 [&_.ProseMirror_blockquote]:border-l [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-4 [&_.ProseMirror_blockquote]:text-muted-foreground",
+									templateApplyState.isRunning && "hidden",
 								)}
 							/>
 
 							{templateApplyState.isRunning ? (
-								<div className="mt-5 rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 shadow-[0_0_0_1px_rgba(255,255,255,0.02)_inset]">
-									<div className="flex items-center gap-3">
-										<div className="flex size-7 items-center justify-center rounded-full bg-[#c7d93b]/12 text-[#c7d93b]">
-											<LoaderCircle className="size-4 animate-spin" />
-										</div>
-										<div className="min-w-0">
-											<p className="text-sm font-medium text-[#d4e157]">
-												Rewriting notes
-											</p>
-											<p className="truncate text-sm text-muted-foreground">
-												Applying {templateApplyState.templateName} template
-											</p>
-										</div>
-										<div className="ml-auto hidden items-center gap-1 rounded-full border border-border/60 bg-background/40 px-2.5 py-1 text-[11px] text-muted-foreground sm:inline-flex">
-											<Sparkles className="size-3.5" />
-											AI
-										</div>
+								templateApplyState.streamedMarkdown.trim().length > 0 ? (
+									<Streamdown
+										className="note-streamdown min-h-[320px] text-base text-foreground"
+										controls={false}
+										caret="block"
+										isAnimating
+									>
+										{templateApplyState.streamedMarkdown}
+									</Streamdown>
+								) : (
+									<div className="min-h-[320px] text-base text-muted-foreground">
+										<ShimmerText>Thinking</ShimmerText>
 									</div>
-								</div>
+								)
 							) : null}
 						</div>
 					</div>
