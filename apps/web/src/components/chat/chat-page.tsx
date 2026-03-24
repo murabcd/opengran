@@ -273,9 +273,9 @@ export function ChatPage({
 
 	return (
 		<>
-			<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
+			<div className="flex min-h-0 flex-1 justify-center px-4 pb-6 md:px-6">
 				<div
-					className={`flex w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4 ${
+					className={`flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4 ${
 						hasMessages ? "min-h-0" : "gap-6"
 					}`}
 				>
@@ -335,13 +335,15 @@ export function ChatPage({
 					/>
 
 					{!hasMessages ? (
-						<ChatHistoryList
-							chats={chats}
-							isChatsLoading={isChatsLoading}
-							activeChatId={activeChatId}
-							onOpenChat={onOpenChat}
-							onMoveToTrash={setConfirmTrashChatId}
-						/>
+						<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+							<ChatHistoryList
+								chats={chats}
+								isChatsLoading={isChatsLoading}
+								activeChatId={activeChatId}
+								onOpenChat={onOpenChat}
+								onMoveToTrash={setConfirmTrashChatId}
+							/>
+						</div>
 					) : null}
 				</div>
 			</div>
