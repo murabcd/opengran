@@ -2352,6 +2352,10 @@ function HomeView({
 	const visibleUpcomingEvents = upcomingCalendarEvents
 		.filter((event) => isUpcomingEventToday(event, currentDate))
 		.slice(0, 5);
+	const shouldShowUpcomingCalendarSkeleton =
+		isLoadingUpcomingCalendarEvents &&
+		upcomingCalendarStatus === "idle" &&
+		visibleUpcomingEvents.length === 0;
 
 	const openMeetingLink = React.useCallback(async (url: string) => {
 		if (window.openGranDesktop) {
@@ -2385,7 +2389,7 @@ function HomeView({
 									</div>
 								</div>
 								<div className="flex min-h-[152px] w-full items-start justify-center p-3">
-									{isLoadingUpcomingCalendarEvents ? (
+									{shouldShowUpcomingCalendarSkeleton ? (
 										<div className="flex min-h-[120px] w-full flex-col justify-center gap-3 rounded-xl border border-solid border-border px-4 py-3">
 											<Skeleton className="h-5 w-40" />
 											<Skeleton className="h-14 w-full rounded-xl" />
