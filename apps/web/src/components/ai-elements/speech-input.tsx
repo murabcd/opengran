@@ -4,9 +4,15 @@ import { Button } from "@workspace/ui/components/button";
 import { cn } from "@workspace/ui/lib/utils";
 import { MicIcon, SquareIcon } from "lucide-react";
 import type { ComponentProps } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from "react";
 
-export type SpeechInputProps = ComponentProps<typeof Button> & {
+type SpeechInputProps = ComponentProps<typeof Button> & {
 	onTranscriptionChange?: (text: string) => void;
 	onTranscriptChange?: (text: string) => void;
 	onListeningChange?: (isListening: boolean) => void;
@@ -77,6 +83,22 @@ const appendText = (
 	onTranscriptionChange?.(trimmed);
 };
 
+const pulseAnimationDelays = ["0s", "0.3s", "0.6s"] as const;
+
+const subscribeToAvailability = () => () => {};
+
+const getRealtimeAvailability = () =>
+	typeof window !== "undefined" &&
+	typeof RTCPeerConnection !== "undefined" &&
+	Boolean(navigator.mediaDevices?.getUserMedia);
+
+const useRealtimeAvailability = () =>
+	useSyncExternalStore(
+		subscribeToAvailability,
+		getRealtimeAvailability,
+		() => false,
+	);
+
 export const SpeechInput = ({
 	className,
 	onTranscriptionChange,
@@ -87,7 +109,7 @@ export const SpeechInput = ({
 }: SpeechInputProps) => {
 	const [isListening, setIsListening] = useState(false);
 	const [isConnecting, setIsConnecting] = useState(false);
-	const [isAvailable, setIsAvailable] = useState(false);
+	const isAvailable = useRealtimeAvailability();
 	const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
 	const dataChannelRef = useRef<RTCDataChannel | null>(null);
 	const streamRef = useRef<MediaStream | null>(null);
@@ -128,14 +150,6 @@ export const SpeechInput = ({
 		setIsListening(false);
 		setIsConnecting(false);
 		onListeningChangeRef.current?.(false);
-	}, []);
-
-	useEffect(() => {
-		setIsAvailable(
-			typeof window !== "undefined" &&
-				typeof RTCPeerConnection !== "undefined" &&
-				Boolean(navigator.mediaDevices?.getUserMedia),
-		);
 	}, []);
 
 	useEffect(() => stopListening, [stopListening]);
@@ -279,12 +293,12 @@ export const SpeechInput = ({
 	return (
 		<div className="relative inline-flex items-center justify-center">
 			{isListening &&
-				[0, 1, 2].map((index) => (
+				pulseAnimationDelays.map((delay) => (
 					<div
 						className="absolute inset-0 animate-ping rounded-full border-2 border-red-400/30"
-						key={index}
+						key={delay}
 						style={{
-							animationDelay: `${index * 0.3}s`,
+							animationDelay: delay,
 							animationDuration: "2s",
 						}}
 					/>

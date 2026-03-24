@@ -34,16 +34,16 @@ type ChatPageProps = {
 	onChatRemoved: (chatId: string) => void;
 };
 
-export function ChatPage({
+const useChatPageController = ({
 	chatId,
 	initialMessages,
 	onChatPersisted,
 	chats,
-	isChatsLoading,
-	activeChatId,
-	onOpenChat,
 	onChatRemoved,
-}: ChatPageProps) {
+}: Pick<
+	ChatPageProps,
+	"chatId" | "initialMessages" | "onChatPersisted" | "chats" | "onChatRemoved"
+>) => {
 	const [draft, setDraft] = React.useState("");
 	const [confirmTrashChatId, setConfirmTrashChatId] = React.useState<
 		string | null
@@ -62,7 +62,6 @@ export function ChatPage({
 	const [selectedSourceIds, setSelectedSourceIds] = React.useState<string[]>(
 		[],
 	);
-
 	const notes = useQuery(api.notes.list, {});
 	const moveChatToTrash = useMutation(
 		api.chats.moveToTrash,
@@ -85,7 +84,6 @@ export function ChatPage({
 			localStore.setQuery(api.chats.getMessages, { chatId: args.chatId }, []);
 		}
 	});
-
 	const transport = React.useMemo(
 		() =>
 			new DefaultChatTransport({
@@ -115,7 +113,6 @@ export function ChatPage({
 			}),
 		[],
 	);
-
 	const { messages, setMessages, sendMessage, error, status } = useChat({
 		id: chatId,
 		messages: initialMessages,
@@ -155,7 +152,6 @@ export function ChatPage({
 			})),
 		[notes],
 	);
-
 	const workspaceSources = React.useMemo(
 		() =>
 			contextPages.map((page) => ({
@@ -178,7 +174,7 @@ export function ChatPage({
 		);
 	}, [contextPages, documentSearchTerm]);
 
-	const handleSubmit = async () => {
+	const handleSubmit = React.useCallback(async () => {
 		const value = draft.trim();
 
 		if (!value || isLoading) {
@@ -210,46 +206,34 @@ export function ChatPage({
 		} finally {
 			setIsPreparingRequest(false);
 		}
-	};
+	}, [
+		appsEnabled,
+		chatId,
+		draft,
+		isLoading,
+		mentions,
+		onChatPersisted,
+		selectedModel.model,
+		selectedSourceIds,
+		sendMessage,
+		webSearchEnabled,
+	]);
 
-	const handleDraftKeyDown = (
-		event: React.KeyboardEvent<HTMLTextAreaElement>,
-	) => {
-		if (
-			event.key !== "Enter" ||
-			event.shiftKey ||
-			event.nativeEvent.isComposing
-		) {
-			return;
-		}
+	const handleDraftKeyDown = React.useCallback(
+		(event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+			if (
+				event.key !== "Enter" ||
+				event.shiftKey ||
+				event.nativeEvent.isComposing
+			) {
+				return;
+			}
 
-		event.preventDefault();
-		void handleSubmit();
-	};
-
-	const handleAddMention = (pageId: string) => {
-		setMentions((current) =>
-			current.includes(pageId) ? current : [...current, pageId],
-		);
-		setDocumentSearchTerm("");
-		setMentionPopoverOpen(false);
-	};
-
-	const handleRemoveMention = (pageId: string) => {
-		setMentions((current) => current.filter((id) => id !== pageId));
-	};
-
-	const handleToggleSource = (sourceId: string) => {
-		setSelectedSourceIds((current) =>
-			current.includes(sourceId)
-				? current.filter((id) => id !== sourceId)
-				: [...current, sourceId],
-		);
-	};
-
-	const handleClearSelectedSources = () => {
-		setSelectedSourceIds([]);
-	};
+			event.preventDefault();
+			void handleSubmit();
+		},
+		[handleSubmit],
+	);
 
 	const handleMoveChatToTrash = React.useCallback(() => {
 		if (!confirmTrashChatId || isMovingChatToTrash) {
@@ -271,77 +255,155 @@ export function ChatPage({
 			});
 	}, [confirmTrashChatId, isMovingChatToTrash, moveChatToTrash, onChatRemoved]);
 
+	return {
+		appsEnabled,
+		confirmTrashChatId,
+		contextPages,
+		draft,
+		error,
+		handleClearSelectedSources: () => setSelectedSourceIds([]),
+		handleDraftKeyDown,
+		handleMoveChatToTrash,
+		handleSubmit,
+		hasMessages,
+		isLoading,
+		isMovingChatToTrash,
+		isNotesLoading,
+		mentionPopoverOpen,
+		mentionableDocuments,
+		messages,
+		modelPopoverOpen,
+		selectedModel,
+		selectedSourceIds,
+		setAppsEnabled,
+		setConfirmTrashChatId,
+		setDocumentSearchTerm,
+		setDraft,
+		setMentionPopoverOpen,
+		setMentions,
+		setModelPopoverOpen,
+		setSelectedModel,
+		setSourceSearchTerm,
+		setSourcesOpen,
+		setWebSearchEnabled,
+		shouldSearchDocuments,
+		sourceSearchTerm,
+		sourcesOpen,
+		webSearchEnabled,
+		workspaceSources,
+		documentSearchTerm,
+		mentions,
+		onAddMention: (pageId: string) => {
+			setMentions((current) =>
+				current.includes(pageId) ? current : [...current, pageId],
+			);
+			setDocumentSearchTerm("");
+			setMentionPopoverOpen(false);
+		},
+		onRemoveMention: (pageId: string) => {
+			setMentions((current) => current.filter((id) => id !== pageId));
+		},
+		onToggleSource: (sourceId: string) => {
+			setSelectedSourceIds((current) =>
+				current.includes(sourceId)
+					? current.filter((id) => id !== sourceId)
+					: [...current, sourceId],
+			);
+		},
+	};
+};
+
+export function ChatPage({
+	chatId,
+	initialMessages,
+	onChatPersisted,
+	chats,
+	isChatsLoading,
+	activeChatId,
+	onOpenChat,
+	onChatRemoved,
+}: ChatPageProps) {
+	const controller = useChatPageController({
+		chatId,
+		initialMessages,
+		onChatPersisted,
+		chats,
+		onChatRemoved,
+	});
+
 	return (
 		<>
 			<div className="flex min-h-0 flex-1 justify-center px-4 pb-6 md:px-6">
 				<div
 					className={`flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4 ${
-						hasMessages ? "min-h-0" : "gap-6"
+						controller.hasMessages ? "min-h-0" : "gap-6"
 					}`}
 				>
-					{!hasMessages ? (
+					{!controller.hasMessages ? (
 						<div className="mx-auto w-full max-w-xl">
 							<h1 className="text-lg md:text-xl">Ask anything</h1>
 						</div>
 					) : null}
 
-					{hasMessages ? (
+					{controller.hasMessages ? (
 						<div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col pb-4">
 							<ChatMessages
-								messages={messages}
-								error={error}
-								isLoading={isLoading}
+								messages={controller.messages}
+								error={controller.error}
+								isLoading={controller.isLoading}
 							/>
 						</div>
 					) : null}
 
 					<ChatComposer
-						hasMessages={hasMessages}
-						draft={draft}
-						onDraftChange={setDraft}
-						onDraftKeyDown={handleDraftKeyDown}
-						onSubmit={handleSubmit}
-						isLoading={isLoading}
-						selectedModel={selectedModel}
-						modelPopoverOpen={modelPopoverOpen}
-						onModelPopoverOpenChange={setModelPopoverOpen}
-						onSelectedModelChange={setSelectedModel}
-						mentionPopoverOpen={mentionPopoverOpen}
-						onMentionPopoverOpenChange={setMentionPopoverOpen}
-						documentSearchTerm={documentSearchTerm}
-						onDocumentSearchTermChange={setDocumentSearchTerm}
-						mentions={mentions}
-						contextPages={contextPages}
-						mentionableDocuments={mentionableDocuments}
-						isNotesLoading={isNotesLoading}
+						hasMessages={controller.hasMessages}
+						draft={controller.draft}
+						onDraftChange={controller.setDraft}
+						onDraftKeyDown={controller.handleDraftKeyDown}
+						onSubmit={controller.handleSubmit}
+						isLoading={controller.isLoading}
+						selectedModel={controller.selectedModel}
+						modelPopoverOpen={controller.modelPopoverOpen}
+						onModelPopoverOpenChange={controller.setModelPopoverOpen}
+						onSelectedModelChange={controller.setSelectedModel}
+						mentionPopoverOpen={controller.mentionPopoverOpen}
+						onMentionPopoverOpenChange={controller.setMentionPopoverOpen}
+						documentSearchTerm={controller.documentSearchTerm}
+						onDocumentSearchTermChange={controller.setDocumentSearchTerm}
+						mentions={controller.mentions}
+						contextPages={controller.contextPages}
+						mentionableDocuments={controller.mentionableDocuments}
+						isNotesLoading={controller.isNotesLoading}
 						emptyStateMessage={
-							shouldSearchDocuments ? "No notes found." : "No notes available."
+							controller.shouldSearchDocuments
+								? "No notes found."
+								: "No notes available."
 						}
-						shouldSearchDocuments={shouldSearchDocuments}
-						onAddMention={handleAddMention}
-						onRemoveMention={handleRemoveMention}
-						sourcesOpen={sourcesOpen}
-						onSourcesOpenChange={setSourcesOpen}
-						webSearchEnabled={webSearchEnabled}
-						onWebSearchEnabledChange={setWebSearchEnabled}
-						appsEnabled={appsEnabled}
-						onAppsEnabledChange={setAppsEnabled}
-						sourceSearchTerm={sourceSearchTerm}
-						onSourceSearchTermChange={setSourceSearchTerm}
-						selectedSourceIds={selectedSourceIds}
-						workspaceSources={workspaceSources}
-						onToggleSource={handleToggleSource}
-						onClearSelectedSources={handleClearSelectedSources}
+						shouldSearchDocuments={controller.shouldSearchDocuments}
+						onAddMention={controller.onAddMention}
+						onRemoveMention={controller.onRemoveMention}
+						sourcesOpen={controller.sourcesOpen}
+						onSourcesOpenChange={controller.setSourcesOpen}
+						webSearchEnabled={controller.webSearchEnabled}
+						onWebSearchEnabledChange={controller.setWebSearchEnabled}
+						appsEnabled={controller.appsEnabled}
+						onAppsEnabledChange={controller.setAppsEnabled}
+						sourceSearchTerm={controller.sourceSearchTerm}
+						onSourceSearchTermChange={controller.setSourceSearchTerm}
+						selectedSourceIds={controller.selectedSourceIds}
+						workspaceSources={controller.workspaceSources}
+						onToggleSource={controller.onToggleSource}
+						onClearSelectedSources={controller.handleClearSelectedSources}
 					/>
 
-					{!hasMessages ? (
+					{!controller.hasMessages ? (
 						<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
 							<ChatHistoryList
 								chats={chats}
 								isChatsLoading={isChatsLoading}
 								activeChatId={activeChatId}
 								onOpenChat={onOpenChat}
-								onMoveToTrash={setConfirmTrashChatId}
+								onMoveToTrash={controller.setConfirmTrashChatId}
 							/>
 						</div>
 					) : null}
@@ -349,10 +411,10 @@ export function ChatPage({
 			</div>
 
 			<AlertDialog
-				open={confirmTrashChatId !== null}
+				open={controller.confirmTrashChatId !== null}
 				onOpenChange={(open) => {
 					if (!open) {
-						setConfirmTrashChatId(null);
+						controller.setConfirmTrashChatId(null);
 					}
 				}}
 			>
@@ -365,15 +427,15 @@ export function ChatPage({
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isMovingChatToTrash}>
+						<AlertDialogCancel disabled={controller.isMovingChatToTrash}>
 							Cancel
 						</AlertDialogCancel>
 						<AlertDialogAction
 							className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
-							onClick={handleMoveChatToTrash}
-							disabled={isMovingChatToTrash}
+							onClick={controller.handleMoveChatToTrash}
+							disabled={controller.isMovingChatToTrash}
 						>
-							{isMovingChatToTrash ? "Moving..." : "Move to trash"}
+							{controller.isMovingChatToTrash ? "Moving..." : "Move to trash"}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>

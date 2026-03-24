@@ -1,17 +1,7 @@
-export type NoteTemplateShape = {
+type NoteTemplateShape = {
 	sections: Array<{
 		title?: string | null;
 	}>;
-};
-
-export type StructuredNoteSection = {
-	title: string;
-	items: string[];
-};
-
-export type StructuredNoteBody = {
-	overview: string[];
-	sections: StructuredNoteSection[];
 };
 
 type TemplateParseTarget =
@@ -26,15 +16,21 @@ type TemplateParseTarget =
 			type: "ignore";
 	  };
 
-export type ParsedTemplateStream = {
-	note: StructuredNoteBody;
+type ParsedTemplateStream = {
+	note: {
+		overview: string[];
+		sections: Array<{
+			title: string;
+			items: string[];
+		}>;
+	};
 	headingOrder: string[];
 	missingHeadings: string[];
 	unknownHeadings: string[];
 	duplicateHeadings: string[];
 };
 
-export const stripMarkdownDecoration = (text: string) =>
+const stripMarkdownDecoration = (text: string) =>
 	text
 		.trim()
 		.replace(/^#{1,6}\s+/, "")

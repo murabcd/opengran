@@ -123,11 +123,10 @@ const getChatText = (message: UIMessage) =>
 
 const createDraftChatId = () => crypto.randomUUID();
 
-export function NoteComposer({
+const useNoteComposerController = ({
 	noteContext,
-	onAddMessageToNote,
 	onEnhanceTranscript,
-}: NoteComposerProps) {
+}: NoteComposerProps) => {
 	const {
 		isMobile,
 		rightMode,
@@ -555,27 +554,74 @@ export function NoteComposer({
 		setPanelMode("chat");
 	}, [closeRightSidebar, isChatLoading, latestNoteChat, stop]);
 
-	const chatModeIcon =
-		presentationMode === "inline" ? (
-			<PanelTopBottomDashed className="size-4" />
-		) : presentationMode === "floating" ? (
-			<PanelRightDashed className="size-4" />
-		) : (
-			<PanelRight className="size-4" />
-		);
+	return {
+		chatError,
+		chatMessages,
+		chatTitle,
+		closeRightSidebar,
+		composerPlaceholder,
+		currentChatId,
+		fileInputRef,
+		fullTranscript,
+		groupedNoteChats,
+		handleComposerFocus,
+		handleHideChat,
+		handleKeyDown,
+		handleSelectChat,
+		handleSelectInlinePresentation,
+		handleSelectRightPresentation,
+		handleSubmit,
+		handleTextareaChange,
+		hasMessage,
+		inlinePanelRef,
+		isChatLoading,
+		isChatOpen,
+		isMobile,
+		isSidebarPresentation,
+		isSpeechListening,
+		isTranscriptOpen,
+		message,
+		noteChats,
+		onTranscriptAppend: (text: string) => {
+			setTranscriptChunks((currentValue) => [...currentValue, text]);
+			setLiveTranscript("");
+		},
+		onTranscriptChange: setLiveTranscript,
+		onTranscriptListeningChange: setIsSpeechListening,
+		openDraftChat,
+		panelMode,
+		presentationMode,
+		reactionsByMessageId,
+		rootRef,
+		setPanelMode,
+		setReactionsByMessageId,
+		shouldShowInlinePanel,
+		textareaRef,
+	};
+};
 
-	const speechControls = (
+function NoteSpeechControls({
+	isTranscriptOpen,
+	onToggleTranscript,
+	onTranscriptAppend,
+	onTranscriptChange,
+	onTranscriptListeningChange,
+}: {
+	isTranscriptOpen: boolean;
+	onToggleTranscript: () => void;
+	onTranscriptAppend: (text: string) => void;
+	onTranscriptChange: (text: string) => void;
+	onTranscriptListeningChange: (isListening: boolean) => void;
+}) {
+	return (
 		<div className="flex items-center gap-2">
 			<SpeechInput
 				variant="outline"
 				size="icon"
 				className="shrink-0 rounded-full"
-				onListeningChange={setIsSpeechListening}
-				onTranscriptChange={setLiveTranscript}
-				onTranscriptionChange={(text) => {
-					setTranscriptChunks((currentValue) => [...currentValue, text]);
-					setLiveTranscript("");
-				}}
+				onListeningChange={onTranscriptListeningChange}
+				onTranscriptChange={onTranscriptChange}
+				onTranscriptionChange={onTranscriptAppend}
 			/>
 
 			<Button
@@ -584,12 +630,7 @@ export function NoteComposer({
 				size="icon"
 				className="shrink-0 rounded-full border-0 bg-transparent shadow-none hover:bg-transparent"
 				aria-label="Expand speech controls"
-				onClick={() => {
-					closeRightSidebar();
-					setPanelMode((currentValue) =>
-						currentValue === "transcript" ? null : "transcript",
-					);
-				}}
+				onClick={onToggleTranscript}
 			>
 				<ChevronUp
 					className={cn(
@@ -600,13 +641,35 @@ export function NoteComposer({
 			</Button>
 		</div>
 	);
+}
 
-	const chatPanelMessages = (
+function NoteChatMessages({
+	chatError,
+	chatMessages,
+	chatViewportRef,
+	disableAddToNote,
+	disablePadding,
+	isChatLoading,
+	onAddMessageToNote,
+	onReactionChange,
+	reactionsByMessageId,
+}: {
+	chatError: Error | undefined;
+	chatMessages: UIMessage[];
+	chatViewportRef: React.RefObject<HTMLDivElement | null>;
+	disableAddToNote: boolean;
+	disablePadding: boolean;
+	isChatLoading: boolean;
+	onAddMessageToNote?: (text: string) => Promise<void> | void;
+	onReactionChange: (messageId: string, reaction: "like" | "dislike") => void;
+	reactionsByMessageId: Record<string, "like" | "dislike" | undefined>;
+}) {
+	return (
 		<div
 			ref={chatViewportRef}
 			className={cn(
 				"flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-2",
-				isSidebarPresentation && "px-2",
+				disablePadding && "px-2",
 			)}
 		>
 			{chatMessages.map((chatMessage) => {
@@ -683,7 +746,7 @@ export function NoteComposer({
 														variant="ghost"
 														size="icon-sm"
 														className="size-7 text-muted-foreground hover:text-foreground"
-														disabled={!onAddMessageToNote}
+														disabled={disableAddToNote}
 														aria-label="Add to note"
 														onClick={() => {
 															if (!onAddMessageToNote) {
@@ -715,13 +778,7 @@ export function NoteComposer({
 														)}
 														aria-label="Like response"
 														onClick={() =>
-															setReactionsByMessageId((currentValue) => ({
-																...currentValue,
-																[chatMessage.id]:
-																	currentValue[chatMessage.id] === "like"
-																		? undefined
-																		: "like",
-															}))
+															onReactionChange(chatMessage.id, "like")
 														}
 													>
 														<ThumbsUp className="size-3.5" />
@@ -744,13 +801,7 @@ export function NoteComposer({
 														)}
 														aria-label="Dislike response"
 														onClick={() =>
-															setReactionsByMessageId((currentValue) => ({
-																...currentValue,
-																[chatMessage.id]:
-																	currentValue[chatMessage.id] === "dislike"
-																		? undefined
-																		: "dislike",
-															}))
+															onReactionChange(chatMessage.id, "dislike")
 														}
 													>
 														<ThumbsDown className="size-3.5" />
@@ -772,12 +823,58 @@ export function NoteComposer({
 			) : null}
 		</div>
 	);
+}
 
-	const chatHeader = (
+function NoteChatHeader({
+	chatTitle,
+	currentChatId,
+	groupedNoteChats,
+	noteChats,
+	onHideChat,
+	onNewChat,
+	onSelectChat,
+	onSelectInlinePresentation,
+	onSelectRightPresentation,
+	presentationMode,
+	sidebarCompact,
+}: {
+	chatTitle: string;
+	currentChatId: string;
+	groupedNoteChats: ReturnType<typeof groupChatsForSelector>;
+	noteChats:
+		| Array<{
+				_id: Id<"chats">;
+				chatId: string;
+				title: string;
+				updatedAt: number;
+				createdAt: number;
+				_creationTime: number;
+		  }>
+		| undefined;
+	onHideChat: () => void;
+	onNewChat: () => void;
+	onSelectChat: (chatId: string) => void;
+	onSelectInlinePresentation: () => void;
+	onSelectRightPresentation: (
+		mode: Exclude<NoteChatPresentation, "inline">,
+	) => void;
+	presentationMode: NoteChatPresentation;
+	sidebarCompact: boolean;
+}) {
+	const chatModeIcon =
+		presentationMode === "inline" ? (
+			<PanelTopBottomDashed className="size-4" />
+		) : presentationMode === "floating" ? (
+			<PanelRightDashed className="size-4" />
+		) : (
+			<PanelRight className="size-4" />
+		);
+
+	return (
 		<CardHeader
 			className={cn(
 				"flex items-center justify-between gap-3",
-				isSidebarPresentation ? "px-2 py-2" : "px-4 py-4",
+				sidebarCompact ? "px-2 py-2" : "px-4 py-4",
 			)}
 		>
 			<div className="flex min-w-0 items-center gap-2">
@@ -809,7 +906,7 @@ export function NoteComposer({
 											<DropdownMenuItem
 												key={chat._id}
 												className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
-												onSelect={() => handleSelectChat(chat.chatId)}
+												onSelect={() => onSelectChat(chat.chatId)}
 											>
 												<span className="truncate">{chat.title}</span>
 												{chat.chatId === currentChatId ? (
@@ -828,7 +925,7 @@ export function NoteComposer({
 											<DropdownMenuItem
 												key={chat._id}
 												className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
-												onSelect={() => handleSelectChat(chat.chatId)}
+												onSelect={() => onSelectChat(chat.chatId)}
 											>
 												<span className="truncate">{chat.title}</span>
 												{chat.chatId === currentChatId ? (
@@ -851,7 +948,7 @@ export function NoteComposer({
 							type="button"
 							variant="ghost"
 							size="icon-sm"
-							onClick={openDraftChat}
+							onClick={onNewChat}
 							aria-label="New chat"
 						>
 							<Plus className="size-4" />
@@ -878,7 +975,7 @@ export function NoteComposer({
 					</Tooltip>
 					<DropdownMenuContent align="end">
 						<DropdownMenuItem
-							onSelect={handleSelectInlinePresentation}
+							onSelect={onSelectInlinePresentation}
 							className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
 						>
 							<PanelTopBottomDashed className="size-4 text-muted-foreground" />
@@ -888,7 +985,7 @@ export function NoteComposer({
 							) : null}
 						</DropdownMenuItem>
 						<DropdownMenuItem
-							onSelect={() => handleSelectRightPresentation("floating")}
+							onSelect={() => onSelectRightPresentation("floating")}
 							className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
 						>
 							<PanelRightDashed className="size-4 text-muted-foreground" />
@@ -898,7 +995,7 @@ export function NoteComposer({
 							) : null}
 						</DropdownMenuItem>
 						<DropdownMenuItem
-							onSelect={() => handleSelectRightPresentation("sidebar")}
+							onSelect={() => onSelectRightPresentation("sidebar")}
 							className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
 						>
 							<PanelRight className="size-4 text-muted-foreground" />
@@ -917,7 +1014,7 @@ export function NoteComposer({
 								type="button"
 								variant="ghost"
 								size="icon-sm"
-								onClick={handleHideChat}
+								onClick={onHideChat}
 								aria-label="Hide chat"
 							>
 								<Minus className="size-4" />
@@ -929,40 +1026,32 @@ export function NoteComposer({
 			</div>
 		</CardHeader>
 	);
+}
 
-	const attachmentMenu = (
-		<DropdownMenu>
-			<DropdownMenuTrigger asChild>
-				<Button
-					type="button"
-					variant="ghost"
-					size="icon-sm"
-					className="rounded-full text-muted-foreground outline-none ring-0"
-					aria-label="Add attachments"
-				>
-					<Plus className="size-4" />
-				</Button>
-			</DropdownMenuTrigger>
-
-			<DropdownMenuContent align="start" className="max-w-xs rounded-2xl p-1.5">
-				<DropdownMenuGroup className="space-y-1">
-					<DropdownMenuItem
-						className="rounded-md"
-						onClick={() => fileInputRef.current?.click()}
-					>
-						<Paperclip size={20} className="opacity-60" />
-						Add photos or files
-					</DropdownMenuItem>
-				</DropdownMenuGroup>
-			</DropdownMenuContent>
-		</DropdownMenu>
-	);
-
-	const renderComposerInputShell = ({
-		activateInlineOnFocus = false,
-	}: {
-		activateInlineOnFocus?: boolean;
-	} = {}) => (
+function ComposerInputShell({
+	activateInlineOnFocus = false,
+	composerPlaceholder,
+	fileInputRef,
+	handleComposerFocus,
+	handleKeyDown,
+	handleTextareaChange,
+	hasMessage,
+	isChatLoading,
+	message,
+	textareaRef,
+}: {
+	activateInlineOnFocus?: boolean;
+	composerPlaceholder: string;
+	fileInputRef: React.RefObject<HTMLInputElement | null>;
+	handleComposerFocus: () => void;
+	handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+	handleTextareaChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+	hasMessage: boolean;
+	isChatLoading: boolean;
+	message: string;
+	textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+}) {
+	return (
 		<div
 			className={cn(
 				"w-full overflow-clip rounded-xl border border-border bg-card bg-clip-padding p-2.5 shadow-sm [--radius:1rem] transition-colors outline-none has-disabled:bg-input/50 has-disabled:opacity-50 has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-3 has-[[data-slot=input-group-control]:focus-visible]:ring-ring/50 dark:bg-input/30 dark:has-disabled:bg-input/80",
@@ -970,7 +1059,33 @@ export function NoteComposer({
 			)}
 		>
 			<div className="flex items-center" style={{ gridArea: "leading" }}>
-				{attachmentMenu}
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-sm"
+							className="rounded-full text-muted-foreground outline-none ring-0"
+							aria-label="Add attachments"
+						>
+							<Plus className="size-4" />
+						</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent
+						align="start"
+						className="max-w-xs rounded-2xl p-1.5"
+					>
+						<DropdownMenuGroup className="space-y-1">
+							<DropdownMenuItem
+								className="rounded-md"
+								onClick={() => fileInputRef.current?.click()}
+							>
+								<Paperclip size={20} className="opacity-60" />
+								Add photos or files
+							</DropdownMenuItem>
+						</DropdownMenuGroup>
+					</DropdownMenuContent>
+				</DropdownMenu>
 			</div>
 
 			<div
@@ -1020,14 +1135,66 @@ export function NoteComposer({
 			</div>
 		</div>
 	);
+}
+
+export function NoteComposer(props: NoteComposerProps) {
+	const controller = useNoteComposerController(props);
+	const speechControls = (
+		<NoteSpeechControls
+			isTranscriptOpen={controller.isTranscriptOpen}
+			onToggleTranscript={() => {
+				controller.closeRightSidebar();
+				controller.setPanelMode((currentValue) =>
+					currentValue === "transcript" ? null : "transcript",
+				);
+			}}
+			onTranscriptAppend={controller.onTranscriptAppend}
+			onTranscriptChange={controller.onTranscriptChange}
+			onTranscriptListeningChange={controller.onTranscriptListeningChange}
+		/>
+	);
+	const chatHeader = (
+		<NoteChatHeader
+			chatTitle={controller.chatTitle}
+			currentChatId={controller.currentChatId}
+			groupedNoteChats={controller.groupedNoteChats}
+			noteChats={controller.noteChats}
+			onHideChat={controller.handleHideChat}
+			onNewChat={controller.openDraftChat}
+			onSelectChat={controller.handleSelectChat}
+			onSelectInlinePresentation={controller.handleSelectInlinePresentation}
+			onSelectRightPresentation={controller.handleSelectRightPresentation}
+			presentationMode={controller.presentationMode}
+			sidebarCompact={controller.isSidebarPresentation}
+		/>
+	);
+	const chatMessages = (
+		<NoteChatMessages
+			chatError={controller.chatError}
+			chatMessages={controller.chatMessages}
+			chatViewportRef={controller.chatViewportRef}
+			disableAddToNote={!props.onAddMessageToNote}
+			disablePadding={controller.isSidebarPresentation}
+			isChatLoading={controller.isChatLoading}
+			onAddMessageToNote={props.onAddMessageToNote}
+			onReactionChange={(messageId, reaction) => {
+				controller.setReactionsByMessageId((currentValue) => ({
+					...currentValue,
+					[messageId]:
+						currentValue[messageId] === reaction ? undefined : reaction,
+				}));
+			}}
+			reactionsByMessageId={controller.reactionsByMessageId}
+		/>
+	);
 
 	const panelContent = (
 		<>
-			{isTranscriptOpen ? (
+			{controller.isTranscriptOpen ? (
 				<CardHeader
 					className={cn(
 						"flex items-center justify-between",
-						isSidebarPresentation ? "px-2 py-2" : "px-4 py-4",
+						controller.isSidebarPresentation ? "px-2 py-2" : "px-4 py-4",
 					)}
 				>
 					<div className="text-sm font-medium text-foreground">
@@ -1039,11 +1206,11 @@ export function NoteComposer({
 							variant="ghost"
 							size="icon-sm"
 							onClick={async () => {
-								if (!fullTranscript) {
+								if (!controller.fullTranscript) {
 									return;
 								}
 
-								await navigator.clipboard.writeText(fullTranscript);
+								await navigator.clipboard.writeText(controller.fullTranscript);
 							}}
 						>
 							<Copy className="size-4" />
@@ -1057,110 +1224,145 @@ export function NoteComposer({
 			<CardContent
 				className={cn(
 					"flex flex-1 overflow-hidden",
-					isSidebarPresentation ? "px-2 pb-2" : "px-4 pb-6",
+					controller.isSidebarPresentation ? "px-2 pb-2" : "px-4 pb-6",
 				)}
 			>
-				{isTranscriptOpen ? (
-					fullTranscript ? (
+				{controller.isTranscriptOpen ? (
+					controller.fullTranscript ? (
 						<div className="w-full overflow-y-auto">
 							<p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
-								{fullTranscript}
+								{controller.fullTranscript}
 							</p>
 						</div>
 					) : (
 						<div className="flex flex-1 items-center justify-center">
 							<p className="text-center text-sm font-medium tracking-tight">
-								{isSpeechListening ? "Listening..." : "Transcript paused"}
+								{controller.isSpeechListening
+									? "Listening..."
+									: "Transcript paused"}
 							</p>
 						</div>
 					)
 				) : (
-					chatPanelMessages
+					chatMessages
 				)}
 			</CardContent>
 
-			{isTranscriptOpen ? (
-				<div className={cn(isSidebarPresentation ? "px-2 pb-2" : "px-4 pb-20")}>
+			{controller.isTranscriptOpen ? (
+				<div
+					className={cn(
+						controller.isSidebarPresentation ? "px-2 pb-2" : "px-4 pb-20",
+					)}
+				>
 					<div className="rounded-md bg-muted px-3 py-1.5 text-center text-xs text-muted-foreground">
 						Always get consent when transcribing others.
 					</div>
 				</div>
 			) : (
-				<div className={cn(isSidebarPresentation ? "px-2 pb-2" : "px-4 pb-4")}>
-					<form onSubmit={handleSubmit}>{renderComposerInputShell()}</form>
+				<div
+					className={cn(
+						controller.isSidebarPresentation ? "px-2 pb-2" : "px-4 pb-4",
+					)}
+				>
+					<form onSubmit={controller.handleSubmit}>
+						<ComposerInputShell
+							composerPlaceholder={controller.composerPlaceholder}
+							fileInputRef={controller.fileInputRef}
+							handleComposerFocus={controller.handleComposerFocus}
+							handleKeyDown={controller.handleKeyDown}
+							handleTextareaChange={controller.handleTextareaChange}
+							hasMessage={controller.hasMessage}
+							isChatLoading={controller.isChatLoading}
+							message={controller.message}
+							textareaRef={controller.textareaRef}
+						/>
+					</form>
 				</div>
 			)}
 		</>
 	);
 
-	const inlinePanel = (
-		<div
-			ref={inlinePanelRef}
-			className={cn(
-				"absolute inset-x-0 z-20",
-				isTranscriptOpen ? "bottom-0" : "-bottom-4",
-				isTranscriptOpen && "pointer-events-none",
-			)}
-		>
-			<div className="relative flex items-end gap-3">
-				<Card className="relative -mx-6 h-96 max-h-[calc(100dvh-6rem)] w-[calc(100%+3rem)] gap-0 py-0">
-					{panelContent}
-				</Card>
-
-				{isTranscriptOpen ? (
-					<div className="pointer-events-auto absolute bottom-[13px] left-0 z-10">
-						{speechControls}
-					</div>
-				) : null}
-			</div>
-		</div>
-	);
-
-	const sidebarPanel =
-		isChatOpen && presentationMode !== "inline" ? (
-			<Sidebar
-				side="right"
-				variant={presentationMode === "floating" ? "floating" : "sidebar"}
-				collapsible="offcanvas"
-				style={
-					presentationMode === "floating" && !isMobile
-						? ({
-								"--sidebar-width": NOTE_CHAT_FLOATING_WIDTH,
-							} as React.CSSProperties)
-						: undefined
-				}
-				className={cn(
-					"flex flex-col",
-					presentationMode === "floating"
-						? "md:right-2 md:top-auto md:bottom-2 md:h-[min(32rem,calc(100svh-2rem))]"
-						: "border-l",
-				)}
-			>
-				<div className="flex h-full flex-col">{panelContent}</div>
-			</Sidebar>
-		) : null;
-
 	return (
-		<div ref={rootRef} className="relative w-full">
+		<div ref={controller.rootRef} className="relative w-full">
 			<input
-				ref={fileInputRef}
+				ref={controller.fileInputRef}
 				type="file"
 				multiple
 				className="sr-only"
 				onChange={() => {}}
 			/>
-			{panelMode ? (
-				shouldShowInlinePanel ? (
-					inlinePanel
+			{controller.panelMode ? (
+				controller.shouldShowInlinePanel ? (
+					<div
+						ref={controller.inlinePanelRef}
+						className={cn(
+							"absolute inset-x-0 z-20",
+							controller.isTranscriptOpen ? "bottom-0" : "-bottom-4",
+							controller.isTranscriptOpen && "pointer-events-none",
+						)}
+					>
+						<div className="relative flex items-end gap-3">
+							<Card className="relative -mx-6 h-96 max-h-[calc(100dvh-6rem)] w-[calc(100%+3rem)] gap-0 py-0">
+								{panelContent}
+							</Card>
+
+							{controller.isTranscriptOpen ? (
+								<div className="pointer-events-auto absolute bottom-[13px] left-0 z-10">
+									{speechControls}
+								</div>
+							) : null}
+						</div>
+					</div>
 				) : (
-					sidebarPanel
+					controller.isChatOpen &&
+					controller.presentationMode !== "inline" && (
+						<Sidebar
+							side="right"
+							variant={
+								controller.presentationMode === "floating"
+									? "floating"
+									: "sidebar"
+							}
+							collapsible="offcanvas"
+							style={
+								controller.presentationMode === "floating" &&
+								!controller.isMobile
+									? ({
+											"--sidebar-width": NOTE_CHAT_FLOATING_WIDTH,
+										} as React.CSSProperties)
+									: undefined
+							}
+							className={cn(
+								"flex flex-col",
+								controller.presentationMode === "floating"
+									? "md:right-2 md:top-auto md:bottom-2 md:h-[min(32rem,calc(100svh-2rem))]"
+									: "border-l",
+							)}
+						>
+							<div className="flex h-full flex-col">{panelContent}</div>
+						</Sidebar>
+					)
 				)
 			) : (
 				<div className="flex items-center gap-3">
 					{speechControls}
 
-					<form onSubmit={handleSubmit} className="group/composer w-full">
-						{renderComposerInputShell({ activateInlineOnFocus: true })}
+					<form
+						onSubmit={controller.handleSubmit}
+						className="group/composer w-full"
+					>
+						<ComposerInputShell
+							activateInlineOnFocus
+							composerPlaceholder={controller.composerPlaceholder}
+							fileInputRef={controller.fileInputRef}
+							handleComposerFocus={controller.handleComposerFocus}
+							handleKeyDown={controller.handleKeyDown}
+							handleTextareaChange={controller.handleTextareaChange}
+							hasMessage={controller.hasMessage}
+							isChatLoading={controller.isChatLoading}
+							message={controller.message}
+							textareaRef={controller.textareaRef}
+						/>
 					</form>
 				</div>
 			)}

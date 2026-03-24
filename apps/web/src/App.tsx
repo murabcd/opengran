@@ -388,7 +388,7 @@ const useCurrentDate = () => {
 	return currentDate;
 };
 
-function App() {
+const useAppBootstrapState = () => {
 	const { data: session, isPending: isSessionPending } =
 		authClient.useSession();
 	const { isAuthenticated: isConvexAuthenticated } = useConvexAuth();
@@ -774,116 +774,166 @@ function App() {
 		desktopPermissionRows.length > 0 &&
 		desktopPermissionRows.every((permission) => permission.state === "granted");
 
-	if (sharedNoteShareId) {
+	return {
+		areDesktopPermissionsReady,
+		authError,
+		authenticatingProvider,
+		desktopPermissionRows,
+		desktopPermissionsError,
+		desktopPermissionsStatus,
+		handleCompleteDesktopPermissions,
+		handleContinueFromWelcomeCelebration,
+		handleCreateWorkspace,
+		handleGitHubSignIn,
+		handleGoogleSignIn,
+		handleOpenDesktopPermissionSettings,
+		handleOpenOwnedSharedNote,
+		handleRequestDesktopPermission,
+		isAuthenticating,
+		isCompletingDesktopPermissions,
+		isConvexAuthenticated,
+		isCreatingWorkspace,
+		isDesktopMac,
+		isRefreshingDesktopPermissions,
+		isSessionPending,
+		onboardingStatus,
+		session,
+		sharedNote,
+		sharedNoteShareId,
+		shouldLoadDesktopPermissions,
+		shouldShowDesktopPermissionsScreen,
+		workspaceError,
+		workspaceName,
+		workspaces,
+		setWorkspaceName,
+	};
+};
+
+function App() {
+	const controller = useAppBootstrapState();
+
+	if (controller.sharedNoteShareId) {
 		return (
 			<SharedNotePage
-				note={sharedNote}
-				onOpenNote={handleOpenOwnedSharedNote}
+				note={controller.sharedNote}
+				onOpenNote={controller.handleOpenOwnedSharedNote}
 			/>
 		);
 	}
 
-	if (isSessionPending || (session?.user && !isConvexAuthenticated)) {
-		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
+	if (
+		controller.isSessionPending ||
+		(controller.session?.user && !controller.isConvexAuthenticated)
+	) {
+		return <AuthBootstrapScreen isDesktopMac={controller.isDesktopMac} />;
 	}
 
-	if (!session?.user) {
+	if (!controller.session?.user) {
 		return (
 			<AuthScreen
-				error={authError}
-				isAuthenticating={isAuthenticating}
-				authenticatingProvider={authenticatingProvider}
-				isDesktopMac={isDesktopMac}
-				onGitHubSignIn={handleGitHubSignIn}
-				onGoogleSignIn={handleGoogleSignIn}
+				error={controller.authError}
+				isAuthenticating={controller.isAuthenticating}
+				authenticatingProvider={controller.authenticatingProvider}
+				isDesktopMac={controller.isDesktopMac}
+				onGitHubSignIn={controller.handleGitHubSignIn}
+				onGoogleSignIn={controller.handleGoogleSignIn}
 			/>
 		);
 	}
 
-	if (workspaces === undefined) {
-		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
+	if (controller.workspaces === undefined) {
+		return <AuthBootstrapScreen isDesktopMac={controller.isDesktopMac} />;
 	}
 
-	if (onboardingStatus === undefined) {
-		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
+	if (controller.onboardingStatus === undefined) {
+		return <AuthBootstrapScreen isDesktopMac={controller.isDesktopMac} />;
 	}
 
-	if (workspaces.length === 0) {
-		if (!onboardingStatus.hasSeenWelcomeCelebration) {
+	if (controller.workspaces.length === 0) {
+		if (!controller.onboardingStatus.hasSeenWelcomeCelebration) {
 			return (
 				<WelcomeCelebrationScreen
-					isDesktopMac={isDesktopMac}
-					isSubmitting={isCreatingWorkspace}
-					onContinue={handleContinueFromWelcomeCelebration}
+					isDesktopMac={controller.isDesktopMac}
+					isSubmitting={controller.isCreatingWorkspace}
+					onContinue={controller.handleContinueFromWelcomeCelebration}
 				/>
 			);
 		}
 
 		return (
 			<WorkspaceOnboardingScreen
-				error={workspaceError}
-				isDesktopMac={isDesktopMac}
-				isSubmitting={isCreatingWorkspace}
-				name={workspaceName}
-				onNameChange={setWorkspaceName}
-				onSubmit={handleCreateWorkspace}
+				error={controller.workspaceError}
+				isDesktopMac={controller.isDesktopMac}
+				isSubmitting={controller.isCreatingWorkspace}
+				name={controller.workspaceName}
+				onNameChange={controller.setWorkspaceName}
+				onSubmit={controller.handleCreateWorkspace}
 			/>
 		);
 	}
 
-	if (shouldLoadDesktopPermissions && desktopPermissionsStatus === null) {
-		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
+	if (
+		controller.shouldLoadDesktopPermissions &&
+		controller.desktopPermissionsStatus === null
+	) {
+		return <AuthBootstrapScreen isDesktopMac={controller.isDesktopMac} />;
 	}
 
-	if (shouldShowDesktopPermissionsScreen) {
+	if (controller.shouldShowDesktopPermissionsScreen) {
 		return (
 			<DesktopPermissionsOnboardingScreen
-				error={desktopPermissionsError}
-				isDesktopMac={isDesktopMac}
-				isRefreshing={isRefreshingDesktopPermissions}
-				isSubmitting={isCompletingDesktopPermissions}
-				permissions={desktopPermissionRows}
-				canContinue={areDesktopPermissionsReady}
-				onContinue={handleCompleteDesktopPermissions}
-				onOpenSettings={handleOpenDesktopPermissionSettings}
-				onRequestPermission={handleRequestDesktopPermission}
+				error={controller.desktopPermissionsError}
+				isDesktopMac={controller.isDesktopMac}
+				isRefreshing={controller.isRefreshingDesktopPermissions}
+				isSubmitting={controller.isCompletingDesktopPermissions}
+				permissions={controller.desktopPermissionRows}
+				canContinue={controller.areDesktopPermissionsReady}
+				onContinue={controller.handleCompleteDesktopPermissions}
+				onOpenSettings={controller.handleOpenDesktopPermissionSettings}
+				onRequestPermission={controller.handleRequestDesktopPermission}
 			/>
 		);
 	}
 
 	return (
 		<AppGate
-			sharedNoteShareId={sharedNoteShareId}
-			sharedNote={sharedNote}
-			isSessionPending={isSessionPending}
-			session={session}
-			isConvexAuthenticated={isConvexAuthenticated}
-			authError={authError}
-			isAuthenticating={isAuthenticating}
-			authenticatingProvider={authenticatingProvider}
-			isDesktopMac={isDesktopMac}
-			onGitHubSignIn={handleGitHubSignIn}
-			onGoogleSignIn={handleGoogleSignIn}
-			workspaces={workspaces}
-			onboardingStatus={onboardingStatus}
-			isCreatingWorkspace={isCreatingWorkspace}
-			onContinueFromWelcomeCelebration={handleContinueFromWelcomeCelebration}
-			workspaceError={workspaceError}
-			workspaceName={workspaceName}
-			onWorkspaceNameChange={setWorkspaceName}
-			onCreateWorkspace={handleCreateWorkspace}
-			shouldLoadDesktopPermissions={shouldLoadDesktopPermissions}
-			desktopPermissionsStatus={desktopPermissionsStatus}
-			shouldShowDesktopPermissionsScreen={shouldShowDesktopPermissionsScreen}
-			desktopPermissionsError={desktopPermissionsError}
-			isRefreshingDesktopPermissions={isRefreshingDesktopPermissions}
-			isCompletingDesktopPermissions={isCompletingDesktopPermissions}
-			desktopPermissionRows={desktopPermissionRows}
-			areDesktopPermissionsReady={areDesktopPermissionsReady}
-			onCompleteDesktopPermissions={handleCompleteDesktopPermissions}
-			onOpenDesktopPermissionSettings={handleOpenDesktopPermissionSettings}
-			onRequestDesktopPermission={handleRequestDesktopPermission}
-			onOpenOwnedSharedNote={handleOpenOwnedSharedNote}
+			sharedNoteShareId={controller.sharedNoteShareId}
+			sharedNote={controller.sharedNote}
+			isSessionPending={controller.isSessionPending}
+			session={controller.session}
+			isConvexAuthenticated={controller.isConvexAuthenticated}
+			authError={controller.authError}
+			isAuthenticating={controller.isAuthenticating}
+			authenticatingProvider={controller.authenticatingProvider}
+			isDesktopMac={controller.isDesktopMac}
+			onGitHubSignIn={controller.handleGitHubSignIn}
+			onGoogleSignIn={controller.handleGoogleSignIn}
+			workspaces={controller.workspaces}
+			onboardingStatus={controller.onboardingStatus}
+			isCreatingWorkspace={controller.isCreatingWorkspace}
+			onContinueFromWelcomeCelebration={
+				controller.handleContinueFromWelcomeCelebration
+			}
+			workspaceError={controller.workspaceError}
+			workspaceName={controller.workspaceName}
+			onWorkspaceNameChange={controller.setWorkspaceName}
+			onCreateWorkspace={controller.handleCreateWorkspace}
+			shouldLoadDesktopPermissions={controller.shouldLoadDesktopPermissions}
+			desktopPermissionsStatus={controller.desktopPermissionsStatus}
+			shouldShowDesktopPermissionsScreen={
+				controller.shouldShowDesktopPermissionsScreen
+			}
+			desktopPermissionsError={controller.desktopPermissionsError}
+			isRefreshingDesktopPermissions={controller.isRefreshingDesktopPermissions}
+			isCompletingDesktopPermissions={controller.isCompletingDesktopPermissions}
+			desktopPermissionRows={controller.desktopPermissionRows}
+			areDesktopPermissionsReady={controller.areDesktopPermissionsReady}
+			onCompleteDesktopPermissions={controller.handleCompleteDesktopPermissions}
+			onOpenDesktopPermissionSettings={
+				controller.handleOpenDesktopPermissionSettings
+			}
+			onRequestDesktopPermission={controller.handleRequestDesktopPermission}
+			onOpenOwnedSharedNote={controller.handleOpenOwnedSharedNote}
 		/>
 	);
 }
@@ -1374,7 +1424,7 @@ function DesktopPermissionsOnboardingScreen({
 	);
 }
 
-function AppShell({
+const useAppShellState = ({
 	session,
 	workspaces,
 	initialDesktopMac,
@@ -1382,7 +1432,7 @@ function AppShell({
 	session: AuthSession;
 	workspaces: Array<Doc<"workspaces">>;
 	initialDesktopMac: boolean;
-}) {
+}) => {
 	const { isAuthenticated: isConvexAuthenticated } = useConvexAuth();
 	const [currentView, setCurrentView] = React.useState<AppView>(() => {
 		if (typeof window === "undefined") {
@@ -1796,97 +1846,161 @@ function AppShell({
 		currentView === "note" &&
 		(selectedNote?.visibility === "public" ||
 			sharedNotes?.some((note) => note._id === currentNoteId) === true);
-	const breadcrumbSectionLabel =
-		currentView === "chat"
-			? "Chat"
-			: currentView === "shared" || isSharedNote
-				? "Shared"
-				: "Home";
-	const breadcrumbDetailLabel =
-		currentView === "note"
-			? currentNoteTitle
-			: currentView === "chat" && currentChatId
-				? currentChatTitle
-				: null;
-	const handleBreadcrumbSectionClick = () => {
-		if (currentView === "chat") {
-			openFreshChat();
-			return;
-		}
-
-		handleViewChange(
-			currentView === "shared" || isSharedNote ? "shared" : "home",
-		);
-	};
 	const initialChatMessages = React.useMemo(
 		() => toStoredChatMessages(selectedChatMessages ?? []),
 		[selectedChatMessages],
 	);
 
+	return {
+		activeWorkspaceId,
+		chats,
+		chatComposerId,
+		currentChatId,
+		currentChatTitle,
+		currentDate,
+		currentDayOfMonth,
+		currentMonthLabel,
+		currentNoteEditorActions,
+		currentNoteId,
+		currentNoteTitle,
+		currentView,
+		currentWeekdayLabel,
+		handleChatPersisted,
+		handleChatRemoved,
+		handleCreateNote,
+		handleNewChat,
+		handleNoteTrashed,
+		handleOpenCalendarSettings,
+		handleOpenChat,
+		handleSettingsOpenChange,
+		handleSignOut,
+		handleViewChange,
+		initialChatMessages,
+		isDesktopMac,
+		isLoadingUpcomingCalendarEvents,
+		isSharedNote,
+		isSigningOut,
+		notes,
+		openNote,
+		selectedNote,
+		settingsOpen,
+		settingsPage,
+		setActiveWorkspaceId,
+		setCurrentNoteEditorActions,
+		setCurrentNoteTitle,
+		sharedNotes,
+		upcomingCalendarEvents,
+		upcomingCalendarStatus,
+		user,
+		workspaces,
+		currentNoteTemplateSlug: selectedNote?.templateSlug ?? null,
+		breadcrumbDetailLabel:
+			currentView === "note"
+				? currentNoteTitle
+				: currentView === "chat" && currentChatId
+					? currentChatTitle
+					: null,
+		breadcrumbSectionLabel:
+			currentView === "chat"
+				? "Chat"
+				: currentView === "shared" || isSharedNote
+					? "Shared"
+					: "Home",
+		handleBreadcrumbSectionClick: () => {
+			if (currentView === "chat") {
+				openFreshChat();
+				return;
+			}
+
+			handleViewChange(
+				currentView === "shared" || isSharedNote ? "shared" : "home",
+			);
+		},
+		handleWorkspaceCreate,
+	};
+};
+
+function AppShell({
+	session,
+	workspaces,
+	initialDesktopMac,
+}: {
+	session: AuthSession;
+	workspaces: Array<Doc<"workspaces">>;
+	initialDesktopMac: boolean;
+}) {
+	const controller = useAppShellState({
+		session,
+		workspaces,
+		initialDesktopMac,
+	});
+
 	return (
 		<SidebarProvider className="h-svh overflow-hidden">
 			<AppSidebar
-				workspaces={workspaces}
-				activeWorkspaceId={activeWorkspaceId}
-				currentView={currentView}
-				user={user}
-				notes={notes}
-				onWorkspaceSelect={setActiveWorkspaceId}
-				onWorkspaceCreate={handleWorkspaceCreate}
-				onViewChange={handleViewChange}
-				settingsOpen={settingsOpen}
-				settingsPage={settingsPage}
-				onSettingsOpenChange={handleSettingsOpenChange}
-				onSignOut={handleSignOut}
-				signingOut={isSigningOut}
-				desktopSafeTop={isDesktopMac}
-				currentNoteId={currentNoteId}
-				currentNoteTitle={currentNoteTitle}
-				onNoteSelect={openNote}
-				onNoteTrashed={handleNoteTrashed}
+				workspaces={controller.workspaces}
+				activeWorkspaceId={controller.activeWorkspaceId}
+				currentView={controller.currentView}
+				user={controller.user}
+				notes={controller.notes}
+				onWorkspaceSelect={controller.setActiveWorkspaceId}
+				onWorkspaceCreate={controller.handleWorkspaceCreate}
+				onViewChange={controller.handleViewChange}
+				settingsOpen={controller.settingsOpen}
+				settingsPage={controller.settingsPage}
+				onSettingsOpenChange={controller.handleSettingsOpenChange}
+				onSignOut={controller.handleSignOut}
+				signingOut={controller.isSigningOut}
+				desktopSafeTop={controller.isDesktopMac}
+				currentNoteId={controller.currentNoteId}
+				currentNoteTitle={controller.currentNoteTitle}
+				onNoteSelect={controller.openNote}
+				onNoteTrashed={controller.handleNoteTrashed}
 			/>
-			<AppShellInset reserveRightSidebar={currentView === "note"}>
+			<AppShellInset reserveRightSidebar={controller.currentView === "note"}>
 				<AppShellHeader
-					isDesktopMac={isDesktopMac}
-					breadcrumbSectionLabel={breadcrumbSectionLabel}
-					breadcrumbDetailLabel={breadcrumbDetailLabel}
-					onBreadcrumbSectionClick={handleBreadcrumbSectionClick}
-					currentView={currentView}
-					currentNoteId={currentNoteId}
-					currentNoteTitle={currentNoteTitle}
-					currentNoteTemplateSlug={selectedNote?.templateSlug ?? null}
-					currentNoteEditorActions={currentNoteEditorActions}
-					onCreateNote={handleCreateNote}
-					onNoteTrashed={handleNoteTrashed}
-					onNewChat={handleNewChat}
+					isDesktopMac={controller.isDesktopMac}
+					breadcrumbSectionLabel={controller.breadcrumbSectionLabel}
+					breadcrumbDetailLabel={controller.breadcrumbDetailLabel}
+					onBreadcrumbSectionClick={controller.handleBreadcrumbSectionClick}
+					currentView={controller.currentView}
+					currentNoteId={controller.currentNoteId}
+					currentNoteTitle={controller.currentNoteTitle}
+					currentNoteTemplateSlug={controller.currentNoteTemplateSlug}
+					currentNoteEditorActions={controller.currentNoteEditorActions}
+					onCreateNote={controller.handleCreateNote}
+					onNoteTrashed={controller.handleNoteTrashed}
+					onNewChat={controller.handleNewChat}
 				/>
 				<AppShellContent
-					currentView={currentView}
-					currentDate={currentDate}
-					currentDayOfMonth={currentDayOfMonth}
-					currentMonthLabel={currentMonthLabel}
-					currentWeekdayLabel={currentWeekdayLabel}
-					upcomingCalendarEvents={upcomingCalendarEvents}
-					upcomingCalendarStatus={upcomingCalendarStatus}
-					isLoadingUpcomingCalendarEvents={isLoadingUpcomingCalendarEvents}
-					notes={notes}
-					sharedNotes={sharedNotes}
-					currentNoteId={currentNoteId}
-					currentNoteTitle={currentNoteTitle}
-					userName={user.name}
-					onOpenNote={openNote}
-					onNoteTrashed={handleNoteTrashed}
-					onCreateNote={handleCreateNote}
-					onOpenCalendarSettings={handleOpenCalendarSettings}
-					chatComposerId={chatComposerId}
-					initialChatMessages={initialChatMessages}
-					chats={chats}
-					currentChatId={currentChatId}
-					onChatPersisted={handleChatPersisted}
-					onOpenChat={handleOpenChat}
-					onChatRemoved={handleChatRemoved}
-					onNoteTitleChange={setCurrentNoteTitle}
-					onNoteEditorActionsChange={setCurrentNoteEditorActions}
+					currentView={controller.currentView}
+					currentDate={controller.currentDate}
+					currentDayOfMonth={controller.currentDayOfMonth}
+					currentMonthLabel={controller.currentMonthLabel}
+					currentWeekdayLabel={controller.currentWeekdayLabel}
+					upcomingCalendarEvents={controller.upcomingCalendarEvents}
+					upcomingCalendarStatus={controller.upcomingCalendarStatus}
+					isLoadingUpcomingCalendarEvents={
+						controller.isLoadingUpcomingCalendarEvents
+					}
+					notes={controller.notes}
+					sharedNotes={controller.sharedNotes}
+					currentNoteId={controller.currentNoteId}
+					currentNoteTitle={controller.currentNoteTitle}
+					userName={controller.user.name}
+					onOpenNote={controller.openNote}
+					onNoteTrashed={controller.handleNoteTrashed}
+					onCreateNote={controller.handleCreateNote}
+					onOpenCalendarSettings={controller.handleOpenCalendarSettings}
+					chatComposerId={controller.chatComposerId}
+					initialChatMessages={controller.initialChatMessages}
+					chats={controller.chats}
+					currentChatId={controller.currentChatId}
+					onChatPersisted={controller.handleChatPersisted}
+					onOpenChat={controller.handleOpenChat}
+					onChatRemoved={controller.handleChatRemoved}
+					onNoteTitleChange={controller.setCurrentNoteTitle}
+					onNoteEditorActionsChange={controller.setCurrentNoteEditorActions}
 				/>
 			</AppShellInset>
 		</SidebarProvider>

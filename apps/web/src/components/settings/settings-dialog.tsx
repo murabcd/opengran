@@ -107,28 +107,20 @@ export function SettingsDialog({
 	initialPage = "Profile",
 	onPageChange,
 }: SettingsDialogProps) {
-	const [activePage, setActivePage] = useState<SettingsPage>(initialPage);
+	const [selectedPage, setSelectedPage] = useState<SettingsPage | null>(null);
 	const { data: session } = authClient.useSession();
+	const activePage = selectedPage ?? initialPage;
 
 	const handlePageSelect = (page: SettingsPage) => {
-		setActivePage(page);
+		setSelectedPage(page);
 		onPageChange?.(page);
 	};
-
-	useEffect(() => {
-		if (open) {
-			setActivePage(initialPage);
-		}
-	}, [initialPage, open]);
 
 	return (
 		<Dialog
 			open={open}
 			onOpenChange={(nextOpen) => {
-				if (nextOpen) {
-					setActivePage(initialPage);
-				}
-
+				setSelectedPage(null);
 				onOpenChange(nextOpen);
 			}}
 		>

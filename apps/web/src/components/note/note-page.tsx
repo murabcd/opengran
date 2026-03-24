@@ -182,7 +182,7 @@ export type NoteEditorActions = {
 	applyTemplate: (template: NoteTemplate) => Promise<boolean>;
 };
 
-export function NotePage({
+const useNotePageController = ({
 	noteId,
 	onTitleChange,
 	onEditorActionsChange,
@@ -190,7 +190,7 @@ export function NotePage({
 	noteId: Id<"notes"> | null;
 	onTitleChange?: (title: string) => void;
 	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
-}) {
+}) => {
 	const [title, setTitle] = React.useState("");
 	const [content, setContent] = React.useState(EMPTY_DOCUMENT_STRING);
 	const [searchableText, setSearchableText] = React.useState("");
@@ -873,6 +873,34 @@ export function NotePage({
 		[editor, searchableText, title],
 	);
 
+	return {
+		appendChatResponseToNote,
+		editor,
+		handleEnhanceTranscript,
+		noteId,
+		searchableText,
+		setTitle,
+		templateApplyState,
+		title,
+		titleTextareaRef,
+	};
+};
+
+export function NotePage({
+	noteId,
+	onTitleChange,
+	onEditorActionsChange,
+}: {
+	noteId: Id<"notes"> | null;
+	onTitleChange?: (title: string) => void;
+	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
+}) {
+	const controller = useNotePageController({
+		noteId,
+		onTitleChange,
+		onEditorActionsChange,
+	});
+
 	return (
 		<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
 			<div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
@@ -880,9 +908,9 @@ export function NotePage({
 					<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
 						<div className="flex flex-col gap-5">
 							<Textarea
-								ref={titleTextareaRef}
-								value={title}
-								onChange={(event) => setTitle(event.target.value)}
+								ref={controller.titleTextareaRef}
+								value={controller.title}
+								onChange={(event) => controller.setTitle(event.target.value)}
 								placeholder="New note"
 								aria-label="Note title"
 								rows={1}
@@ -890,7 +918,7 @@ export function NotePage({
 							/>
 
 							<EditorContent
-								editor={editor}
+								editor={controller.editor}
 								className={cn(
 									"min-h-[320px] text-foreground",
 									"[&_.ProseMirror]:min-h-[320px]",
@@ -899,19 +927,20 @@ export function NotePage({
 									"[&_.ProseMirror_ol]:mb-3 [&_.ProseMirror_ol]:pl-6",
 									"[&_.ProseMirror_li]:mb-1",
 									"[&_.ProseMirror_blockquote]:my-4 [&_.ProseMirror_blockquote]:border-l [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-4 [&_.ProseMirror_blockquote]:text-muted-foreground",
-									templateApplyState.isRunning && "hidden",
+									controller.templateApplyState.isRunning && "hidden",
 								)}
 							/>
 
-							{templateApplyState.isRunning ? (
-								templateApplyState.streamedMarkdown.trim().length > 0 ? (
+							{controller.templateApplyState.isRunning ? (
+								controller.templateApplyState.streamedMarkdown.trim().length >
+								0 ? (
 									<Streamdown
 										className="note-streamdown min-h-[320px] text-base text-foreground"
 										controls={false}
 										caret="block"
 										isAnimating
 									>
-										{templateApplyState.streamedMarkdown}
+										{controller.templateApplyState.streamedMarkdown}
 									</Streamdown>
 								) : (
 									<div className="min-h-[320px] text-base text-muted-foreground">
@@ -927,12 +956,12 @@ export function NotePage({
 							<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
 								<NoteComposer
 									noteContext={{
-										noteId,
-										title,
-										text: searchableText,
+										noteId: controller.noteId,
+										title: controller.title,
+										text: controller.searchableText,
 									}}
-									onAddMessageToNote={appendChatResponseToNote}
-									onEnhanceTranscript={handleEnhanceTranscript}
+									onAddMessageToNote={controller.appendChatResponseToNote}
+									onEnhanceTranscript={controller.handleEnhanceTranscript}
 								/>
 							</div>
 						</div>
