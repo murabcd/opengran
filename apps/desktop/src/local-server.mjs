@@ -16,14 +16,14 @@ import {
 import { ConvexHttpClient } from "convex/browser";
 import { z } from "zod";
 import { api } from "../../../convex/_generated/api.js";
+import {
+	buildChatSystemPrompt,
+	buildStructuredNotePrompt,
+	STRUCTURED_NOTE_SYSTEM_PROMPT,
+} from "../../../packages/ai/src/prompts.mjs";
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
 const webDistDir = resolve(runtimeDir, "../../web/dist");
-const BASE_SYSTEM_PROMPT = [
-	"You are OpenGran AI, a concise assistant for meeting notes and chat.",
-	"Answer clearly and directly.",
-	"If the user asks about meetings or notes that are not available in context, say that you do not have that context yet.",
-].join(" ");
 
 const chatModels = [
 	{ id: "auto", model: "gpt-5.4" },
@@ -260,15 +260,10 @@ const handleChatRequest = async (request, response) => {
 		mentions,
 		selectedSourceIds,
 	});
-	const systemPrompt = webSearchEnabled
-		? [
-				BASE_SYSTEM_PROMPT,
-				notesContext,
-				"Web search is enabled.",
-				"Use web search when the answer would benefit from up-to-date or verifiable information.",
-				"When you use web search, rely on the tool results instead of making up citations.",
-			].join(" ")
-		: [BASE_SYSTEM_PROMPT, notesContext].filter(Boolean).join(" ");
+	const systemPrompt = buildChatSystemPrompt({
+		notesContext,
+		webSearchEnabled,
+	});
 
 	const result = streamText({
 		model: openai(selectedModel.model),
@@ -410,24 +405,15 @@ const handleEnhanceNoteRequest = async (request, response) => {
 
 	const { output } = await generateText({
 		model: openai("gpt-5.4-mini"),
-		system: [
-			"You turn raw meeting transcripts into clean structured notes.",
-			"Stay grounded in the transcript and the user's raw notes.",
-			"Do not invent facts, decisions, owners, or dates that are not supported.",
-			"Return a concise, specific note title that matches the transcript content.",
-			"Prefer concise bullets over long prose.",
-			"Create practical sections such as Summary, Decisions, Risks, Next steps, or Open questions when relevant.",
-		].join(" "),
+		system: STRUCTURED_NOTE_SYSTEM_PROMPT,
 		output: Output.object({
 			schema: structuredNoteSchema,
 		}),
-		prompt: [
-			title.trim() ? `Note title: ${title.trim()}` : "",
-			rawNotes.trim() ? `User notes:\n${rawNotes.trim()}` : "",
-			`Raw transcript:\n${transcript.trim()}`,
-		]
-			.filter(Boolean)
-			.join("\n\n"),
+		prompt: buildStructuredNotePrompt({
+			title,
+			rawNotes,
+			transcript,
+		}),
 	});
 
 	sendJson(response, 200, {
@@ -435,17 +421,25 @@ const handleEnhanceNoteRequest = async (request, response) => {
 	});
 };
 
-const resolveAssetPath = (requestPath) => {
+const resolveAssetPath = (requestPath, distDir, basePath = "/") => {
+	const normalizedBasePath =
+		basePath === "/" ? "/" : `/${basePath.replace(/^\/+|\/+$/g, "")}`;
+	const relativePath =
+		normalizedBasePath === "/"
+			? requestPath
+			: requestPath.startsWith(normalizedBasePath)
+				? requestPath.slice(normalizedBasePath.length) || "/"
+				: requestPath;
 	const normalizedPath =
-		requestPath === "/"
+		relativePath === "/"
 			? "index.html"
-			: normalize(requestPath)
+			: normalize(relativePath)
 					.replace(/^[/\\]+/, "")
 					.replace(/^(\.\.[/\\])+/, "");
-	const candidatePath = join(webDistDir, normalizedPath);
+	const candidatePath = join(distDir, normalizedPath);
 	const safePath = resolve(candidatePath);
 
-	if (!safePath.startsWith(webDistDir)) {
+	if (!safePath.startsWith(distDir)) {
 		return null;
 	}
 
@@ -461,17 +455,22 @@ const serveFile = (response, filePath) => {
 	createReadStream(filePath).pipe(response);
 };
 
-const serveStaticAsset = async (request, response) => {
-	if (!existsSync(webDistDir)) {
+const serveStaticAsset = async (request, response, options = {}) => {
+	const {
+		distDir = webDistDir,
+		basePath = "/",
+		missingBundleMessage = "Desktop renderer bundle is missing.",
+	} = options;
+
+	if (!existsSync(distDir)) {
 		sendJson(response, 500, {
-			error:
-				"Desktop renderer bundle is missing. Run `bun run build --filter=web` first.",
+			error: missingBundleMessage,
 		});
 		return;
 	}
 
 	const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
-	const assetPath = resolveAssetPath(requestUrl.pathname);
+	const assetPath = resolveAssetPath(requestUrl.pathname, distDir, basePath);
 
 	if (!assetPath) {
 		response.statusCode = 403;
@@ -487,7 +486,7 @@ const serveStaticAsset = async (request, response) => {
 		}
 	} catch {}
 
-	serveFile(response, join(webDistDir, "index.html"));
+	serveFile(response, join(distDir, "index.html"));
 };
 
 export const startLocalServer = async ({ onAuthCallback } = {}) => {

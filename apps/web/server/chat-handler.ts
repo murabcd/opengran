@@ -11,13 +11,8 @@ import {
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { buildChatSystemPrompt } from "../../../packages/ai/src/prompts.mjs";
 import { fallbackChatModel, resolveChatModel } from "../src/lib/ai/models";
-
-const BASE_SYSTEM_PROMPT = [
-	"You are OpenGran AI, a concise assistant for meeting notes and chat.",
-	"Answer clearly and directly.",
-	"If the user asks about meetings or notes that are not available in context, say that you do not have that context yet.",
-].join(" ");
 
 type ChatRequestBody = {
 	id?: string;
@@ -56,10 +51,13 @@ const getConvexUrl = () => {
 const getReferencedNoteIds = ({
 	mentions,
 	selectedSourceIds,
-}: Pick<ChatRequestBody, "mentions" | "selectedSourceIds">) =>
-	[...(mentions ?? []), ...(selectedSourceIds ?? [])].filter(
-		(value, index, values) => value && values.indexOf(value) === index,
-	);
+}: Pick<ChatRequestBody, "mentions" | "selectedSourceIds">): Id<"notes">[] =>
+	[...(mentions ?? []), ...(selectedSourceIds ?? [])]
+		.filter(
+			(value, index, values): value is string =>
+				Boolean(value) && values.indexOf(value) === index,
+		)
+		.map((value) => value as Id<"notes">);
 
 const getNotesContext = async ({
 	convexToken,
@@ -334,18 +332,11 @@ export const handleChatRequest = async (
 					title: noteContext?.title,
 					text: noteContext?.text,
 				});
-	const systemPrompt = webSearchEnabled
-		? [
-				BASE_SYSTEM_PROMPT,
-				notesContext,
-				attachedNoteContext,
-				"Web search is enabled.",
-				"Use web search when the answer would benefit from up-to-date or verifiable information.",
-				"When you use web search, rely on the tool results instead of making up citations.",
-			].join(" ")
-		: [BASE_SYSTEM_PROMPT, notesContext, attachedNoteContext]
-				.filter(Boolean)
-				.join(" ");
+	const systemPrompt = buildChatSystemPrompt({
+		notesContext,
+		attachedNoteContext,
+		webSearchEnabled,
+	});
 
 	const result = streamText({
 		model: openai(resolvedModel?.model ?? fallbackChatModel.model),

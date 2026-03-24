@@ -2,6 +2,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { openai } from "@ai-sdk/openai";
 import { generateText, Output } from "ai";
 import { z } from "zod";
+import {
+	buildStructuredNotePrompt,
+	STRUCTURED_NOTE_SYSTEM_PROMPT,
+} from "../../../packages/ai/src/prompts.mjs";
 
 type EnhanceNoteRequestBody = {
 	title?: string;
@@ -74,24 +78,15 @@ export const handleEnhanceNoteRequest = async (
 
 	const { output } = await generateText({
 		model: openai("gpt-5.4-mini"),
-		system: [
-			"You turn raw meeting transcripts into clean structured notes.",
-			"Stay grounded in the transcript and the user's raw notes.",
-			"Do not invent facts, decisions, owners, or dates that are not supported.",
-			"Return a concise, specific note title that matches the transcript content.",
-			"Prefer concise bullets over long prose.",
-			"Create practical sections such as Summary, Decisions, Risks, Next steps, or Open questions when relevant.",
-		].join(" "),
+		system: STRUCTURED_NOTE_SYSTEM_PROMPT,
 		output: Output.object({
 			schema: structuredNoteSchema,
 		}),
-		prompt: [
-			title.trim() ? `Note title: ${title.trim()}` : "",
-			rawNotes.trim() ? `User notes:\n${rawNotes.trim()}` : "",
-			`Raw transcript:\n${transcript.trim()}`,
-		]
-			.filter(Boolean)
-			.join("\n\n"),
+		prompt: buildStructuredNotePrompt({
+			title,
+			rawNotes,
+			transcript,
+		}),
 	});
 
 	sendJson(response, 200, {

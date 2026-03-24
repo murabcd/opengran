@@ -2,6 +2,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { openai } from "@ai-sdk/openai";
 import { smoothStream, streamText } from "ai";
 import {
+	APPLY_TEMPLATE_SYSTEM_PROMPT,
+	buildApplyTemplatePrompt,
+} from "../../../packages/ai/src/prompts.mjs";
+import {
 	parseTemplateStreamToStructuredNote,
 	validateTemplateStream,
 } from "../src/lib/note-template-stream";
@@ -95,46 +99,14 @@ export const handleApplyTemplateRequest = async (
 
 	const result = streamText({
 		model: openai("gpt-5.4-mini"),
-		system: [
-			"You rewrite existing notes into a selected note template.",
-			"Preserve the source language used in the notes.",
-			"Do not invent facts, decisions, owners, or dates.",
-			"Keep the note title unchanged and do not output it.",
-			"Output only the rewritten note body as plain text.",
-			"Before the first section, you may include short bullet points only if they are broadly useful.",
-			"Then output every template section in the same order using the exact format `## Section title` on its own line.",
-			"Under each section heading, use concise bullet points prefixed with `- `.",
-			"If a section has no grounded information, keep the heading and leave it empty.",
-			"Do not add commentary, markdown code fences, or extra headings.",
-		].join(" "),
-		prompt: [
-			title.trim() ? `Current note title: ${title.trim()}` : "",
-			template.name.trim() ? `Template name: ${template.name.trim()}` : "",
-			template.meetingContext?.trim()
-				? `Template context:\n${template.meetingContext.trim()}`
-				: "",
-			[
-				"Template sections:",
-				...templateSections.map(
-					(section, index) =>
-						`${index + 1}. ${section.title}${section.prompt ? `\nPrompt: ${section.prompt}` : ""}`,
-				),
-			].join("\n"),
-			`Source note:\n${noteText.trim()}`,
-			[
-				"Return every template section in the same order.",
-				"Use exact section titles from the template.",
-				"Each section should contain concise bullets grounded only in the source note.",
-				"Output plain text only in this format:",
-				"- optional overview bullet",
-				"## First section title",
-				"- bullet",
-				"## Second section title",
-				"- bullet",
-			].join("\n"),
-		]
-			.filter(Boolean)
-			.join("\n\n"),
+		system: APPLY_TEMPLATE_SYSTEM_PROMPT,
+		prompt: buildApplyTemplatePrompt({
+			title,
+			templateName: template.name,
+			meetingContext: template.meetingContext,
+			templateSections,
+			noteText,
+		}),
 		experimental_transform: smoothStream({
 			chunking: "line",
 		}),
