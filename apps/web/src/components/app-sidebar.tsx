@@ -454,11 +454,13 @@ function NavProjects({
 					<SidebarMenu>
 						<SidebarMenuItem>
 							<SidebarMenuButton
-								className="text-sidebar-foreground/70"
+								className="text-sidebar-foreground/70 hover:bg-transparent hover:text-inherit"
 								onClick={() => setShowAllNotes((prev) => !prev)}
 							>
 								<MoreHorizontal />
-								<span>{showAllNotes ? "Show less" : "Show more"}</span>
+								<span className="text-xs">
+									{showAllNotes ? "Show less" : "Show more"}
+								</span>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 					</SidebarMenu>
