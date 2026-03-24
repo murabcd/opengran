@@ -84,6 +84,8 @@ type SidebarContextProps = {
 	toggleRightSidebar: () => void;
 	rightMode: RightSidebarMode;
 	setRightMode: (mode: RightSidebarMode) => void;
+	hasRightSidebar: boolean;
+	setHasRightSidebar: (hasRightSidebar: boolean) => void;
 };
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
@@ -116,6 +118,7 @@ function SidebarProvider({
 	const [rightOpenMobile, setRightOpenMobile] = React.useState(false);
 	const [rightMode, setRightModeState] =
 		React.useState<RightSidebarMode>("sidebar");
+	const [hasRightSidebar, setHasRightSidebar] = React.useState(false);
 
 	const [_open, _setOpen] = React.useState(defaultOpen);
 	const open = openProp ?? _open;
@@ -223,6 +226,8 @@ function SidebarProvider({
 			toggleRightSidebar,
 			rightMode,
 			setRightMode,
+			hasRightSidebar,
+			setHasRightSidebar,
 		}),
 		[
 			state,
@@ -237,6 +242,7 @@ function SidebarProvider({
 			toggleRightSidebar,
 			rightMode,
 			setRightMode,
+			hasRightSidebar,
 		],
 	);
 
@@ -482,7 +488,7 @@ function SidebarInset({
 	style,
 	...props
 }: React.ComponentProps<"main"> & { reserveRightSidebar?: boolean }) {
-	const { rightOpen, rightMode, isMobile } = useSidebar();
+	const { rightOpen, rightMode, isMobile, hasRightSidebar } = useSidebar();
 
 	return (
 		<main
@@ -495,6 +501,7 @@ function SidebarInset({
 				...style,
 				paddingRight:
 					reserveRightSidebar &&
+					hasRightSidebar &&
 					rightOpen &&
 					!isMobile &&
 					rightMode === "sidebar"

@@ -132,6 +132,7 @@ const useNoteComposerController = ({
 		rightMode,
 		rightOpen,
 		rightOpenMobile,
+		setHasRightSidebar,
 		setRightMode,
 		setRightOpen,
 		setRightOpenMobile,
@@ -160,9 +161,9 @@ const useNoteComposerController = ({
 	const chatViewportRef = React.useRef<HTMLDivElement>(null);
 	const previousSpeechListeningRef = React.useRef(false);
 	const lastEnhancedTranscriptRef = React.useRef("");
-	const previousChatIdRef = React.useRef(currentChatId);
-
 	const noteId = (noteContext.noteId as Id<"notes"> | null) ?? null;
+	const previousChatIdRef = React.useRef(currentChatId);
+	const previousNoteIdRef = React.useRef(noteId);
 	const noteChats = useQuery(
 		api.chats.listForNote,
 		noteId
@@ -311,6 +312,49 @@ const useNoteComposerController = ({
 	const closeRightSidebar = React.useCallback(() => {
 		setRightSidebarOpen(false);
 	}, [setRightSidebarOpen]);
+
+	React.useEffect(() => {
+		if (previousNoteIdRef.current === noteId) {
+			return;
+		}
+
+		previousNoteIdRef.current = noteId;
+
+		if (isChatLoading) {
+			stop();
+		}
+
+		setCurrentChatId(createDraftChatId());
+		setMessages([]);
+		setMessage("");
+		setIsExpanded(false);
+		setPanelMode(null);
+		setReactionsByMessageId({});
+		setTranscriptChunks([]);
+		setLiveTranscript("");
+		previousSpeechListeningRef.current = false;
+		lastEnhancedTranscriptRef.current = "";
+		resetTextareaHeight();
+		closeRightSidebar();
+	}, [
+		closeRightSidebar,
+		isChatLoading,
+		noteId,
+		resetTextareaHeight,
+		setMessages,
+		stop,
+	]);
+
+	React.useEffect(() => {
+		setHasRightSidebar(panelMode === "chat" && presentationMode !== "inline");
+	}, [panelMode, presentationMode, setHasRightSidebar]);
+
+	React.useEffect(
+		() => () => {
+			setHasRightSidebar(false);
+		},
+		[setHasRightSidebar],
+	);
 
 	React.useEffect(() => {
 		if (isSpeechListening && !previousSpeechListeningRef.current) {
