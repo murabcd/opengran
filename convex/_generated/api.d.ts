@@ -15,6 +15,7 @@ import type * as http from "../http.js";
 import type * as notes from "../notes.js";
 import type * as onboarding from "../onboarding.js";
 import type * as templates from "../templates.js";
+import type * as transcriptSessions from "../transcriptSessions.js";
 import type * as workspaces from "../workspaces.js";
 
 import type {
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   notes: typeof notes;
   onboarding: typeof onboarding;
   templates: typeof templates;
+  transcriptSessions: typeof transcriptSessions;
   workspaces: typeof workspaces;
 }>;
 

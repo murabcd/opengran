@@ -40,7 +40,7 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 	}
 
 	const { lang } = await readJsonBody(request);
-	const language = lang?.trim();
+	const language = lang?.trim().toLowerCase();
 
 	const sessionResponse = await fetch(
 		"https://api.openai.com/v1/realtime/client_secrets",

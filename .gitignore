@@ -19,6 +19,7 @@
 /dist
 /.turbo
 /apps/*/dist
+/apps/*/.generated
 /apps/*/.turbo
 /packages/*/dist
 /packages/*/.turbo

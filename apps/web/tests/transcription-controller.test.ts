@@ -1,0 +1,386 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+	RealtimeTranscriptionTransport,
+	RealtimeTranscriptionTransportEvent,
+} from "../src/lib/capture/realtime-transcription-transport";
+import {
+	TranscriptionController,
+	type TranscriptionControllerState,
+} from "../src/lib/transcription-controller";
+import type { TranscriptionPolicy } from "../src/lib/transcription-policy";
+
+type Deferred<T> = {
+	promise: Promise<T>;
+	resolve: (value: T) => void;
+	reject: (error?: unknown) => void;
+};
+
+const createDeferred = <T>() => {
+	let resolve!: (value: T) => void;
+	let reject!: (error?: unknown) => void;
+	const promise = new Promise<T>((innerResolve, innerReject) => {
+		resolve = innerResolve;
+		reject = innerReject;
+	});
+
+	return {
+		promise,
+		reject,
+		resolve,
+	} satisfies Deferred<T>;
+};
+
+const flushPromises = async () => {
+	await Promise.resolve();
+	await Promise.resolve();
+};
+
+const waitForAssertion = async (assertion: () => void, attempts = 10) => {
+	let lastError: unknown;
+
+	for (let index = 0; index < attempts; index += 1) {
+		try {
+			assertion();
+			return;
+		} catch (error) {
+			lastError = error;
+			await flushPromises();
+		}
+	}
+
+	throw lastError;
+};
+
+const createMockTrack = () => ({
+	addEventListener: vi.fn(),
+	stop: vi.fn(),
+});
+
+const createMockStream = () => {
+	const track = createMockTrack();
+
+	return {
+		stream: {
+			getAudioTracks: () => [track],
+			getTracks: () => [track],
+		} as unknown as MediaStream,
+		track,
+	};
+};
+
+const createPolicy = (
+	overrides: Partial<TranscriptionPolicy> = {},
+): TranscriptionPolicy => ({
+	platform: "browser",
+	systemAudioCapability: {
+		isSupported: true,
+		shouldAutoBootstrap: false,
+		sourceMode: "display-media",
+	},
+	...overrides,
+});
+
+const createController = ({
+	connectTransport = vi.fn(),
+	createBrowserSystemAudioStream = vi.fn(async () => null),
+	createDesktopSystemAudioStream = vi.fn(),
+	createMicrophoneInputStream = vi.fn(),
+	resolvePolicy = vi.fn(async () => createPolicy()),
+}: {
+	connectTransport?: ReturnType<typeof vi.fn>;
+	createBrowserSystemAudioStream?: ReturnType<typeof vi.fn>;
+	createDesktopSystemAudioStream?: ReturnType<typeof vi.fn>;
+	createMicrophoneInputStream?: ReturnType<typeof vi.fn>;
+	resolvePolicy?: ReturnType<typeof vi.fn>;
+} = {}) =>
+	new TranscriptionController({
+		clearScheduledTimeout: clearTimeout,
+		connectTransport: connectTransport as never,
+		createBrowserSystemAudioStream: createBrowserSystemAudioStream as never,
+		createDesktopSystemAudioStream: createDesktopSystemAudioStream as never,
+		createMicrophoneInputStream: createMicrophoneInputStream as never,
+		ensureMicrophonePermission: vi.fn(async () => {}) as never,
+		getRealtimeAvailability: vi.fn(() => true),
+		resolvePolicy: resolvePolicy as never,
+		scheduleTimeout: setTimeout,
+	});
+
+describe("TranscriptionController", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("quick note auto-start starts the microphone without auto-opening browser system audio", async () => {
+		const { stream } = createMockStream();
+		const transport = {
+			close: vi.fn(async () => {}),
+		} satisfies RealtimeTranscriptionTransport;
+		const createMicrophoneInputStream = vi.fn(async () => stream);
+		const createBrowserSystemAudioStream = vi.fn(async () => stream);
+		const connectTransport = vi.fn(async () => transport);
+		const controller = createController({
+			connectTransport,
+			createBrowserSystemAudioStream,
+			createMicrophoneInputStream,
+			resolvePolicy: vi.fn(async () =>
+				createPolicy({
+					platform: "browser",
+					systemAudioCapability: {
+						isSupported: true,
+						shouldAutoBootstrap: false,
+						sourceMode: "display-media",
+					},
+				}),
+			),
+		});
+
+		controller.configure({
+			autoStartKey: "note-1:capture",
+			scopeKey: "note:1",
+		});
+
+		await waitForAssertion(() => {
+			expect(controller.getSnapshot().isListening).toBe(true);
+		});
+		expect(createMicrophoneInputStream).toHaveBeenCalledTimes(1);
+		expect(createBrowserSystemAudioStream).not.toHaveBeenCalled();
+		expect(connectTransport).toHaveBeenCalledTimes(1);
+	});
+
+	it("serializes duplicate starts so the first startup still reaches listening", async () => {
+		const { stream } = createMockStream();
+		const transportDeferred = createDeferred<RealtimeTranscriptionTransport>();
+		const createMicrophoneInputStream = vi.fn(async () => stream);
+		const connectTransport = vi.fn(async () => await transportDeferred.promise);
+		const controller = createController({
+			connectTransport,
+			createMicrophoneInputStream,
+			resolvePolicy: vi.fn(async () => createPolicy()),
+		});
+
+		const firstStartPromise = controller.start();
+		const secondStartPromise = controller.start();
+		await waitForAssertion(() => {
+			expect(connectTransport).toHaveBeenCalledTimes(1);
+		});
+
+		transportDeferred.resolve({
+			close: vi.fn(async () => {}),
+		});
+
+		await expect(firstStartPromise).resolves.toBe(true);
+		await expect(secondStartPromise).resolves.toBe(true);
+		expect(controller.getSnapshot().phase).toBe("listening");
+		expect(controller.getSnapshot().isListening).toBe(true);
+	});
+
+	it("keeps microphone transcription active when desktop system audio bootstrap fails", async () => {
+		const { stream } = createMockStream();
+		const transport = {
+			close: vi.fn(async () => {}),
+		} satisfies RealtimeTranscriptionTransport;
+		const createMicrophoneInputStream = vi.fn(async () => stream);
+		const createDesktopSystemAudioStream = vi.fn(async () => {
+			throw new Error("System audio unavailable");
+		});
+		const connectTransport = vi.fn(async () => transport);
+		const controller = createController({
+			connectTransport,
+			createDesktopSystemAudioStream,
+			createMicrophoneInputStream,
+			resolvePolicy: vi.fn(async () =>
+				createPolicy({
+					platform: "desktop",
+					systemAudioCapability: {
+						isSupported: true,
+						shouldAutoBootstrap: true,
+						sourceMode: "desktop-native",
+					},
+				}),
+			),
+		});
+
+		await expect(controller.start()).resolves.toBe(true);
+		await waitForAssertion(() => {
+			expect(createDesktopSystemAudioStream).toHaveBeenCalledTimes(1);
+		});
+
+		expect(controller.getSnapshot().phase).toBe("listening");
+		expect(controller.getSnapshot().systemAudioStatus.state).toBe("ready");
+		expect(connectTransport).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps microphone transcription active when connected system audio later interrupts", async () => {
+		const microphone = createMockStream();
+		const systemAudio = createMockStream();
+		const transports = [
+			{
+				close: vi.fn(async () => {}),
+			},
+			{
+				close: vi.fn(async () => {}),
+			},
+		] satisfies RealtimeTranscriptionTransport[];
+		const interruptions: Array<(message: string) => void> = [];
+		const createMicrophoneInputStream = vi.fn(async () => microphone.stream);
+		const createBrowserSystemAudioStream = vi.fn(
+			async () => systemAudio.stream,
+		);
+		const connectTransport = vi.fn(
+			async (args: { onInterrupted: (message: string) => void }) => {
+				interruptions.push(args.onInterrupted);
+				return transports.at(interruptions.length - 1) ?? transports[0];
+			},
+		);
+		const controller = createController({
+			connectTransport,
+			createBrowserSystemAudioStream,
+			createMicrophoneInputStream,
+		});
+
+		await expect(controller.start()).resolves.toBe(true);
+		await expect(controller.requestSystemAudio()).resolves.toBe(true);
+
+		expect(controller.getSnapshot().systemAudioStatus.state).toBe("connected");
+
+		await interruptions[1]?.("System audio stream interrupted.");
+		await flushPromises();
+
+		expect(controller.getSnapshot().isListening).toBe(true);
+		expect(controller.getSnapshot().phase).toBe("listening");
+		expect(controller.getSnapshot().systemAudioStatus.state).toBe("ready");
+		expect(transports[0].close).not.toHaveBeenCalled();
+		expect(transports[1].close).toHaveBeenCalledTimes(1);
+	});
+
+	it("stopping a session clears live transcript and closes the transport", async () => {
+		const { stream } = createMockStream();
+		const transport = {
+			close: vi.fn(async () => {}),
+		} satisfies RealtimeTranscriptionTransport;
+		const transportEvents: Array<
+			(event: RealtimeTranscriptionTransportEvent) => void
+		> = [];
+		const createMicrophoneInputStream = vi.fn(async () => stream);
+		const connectTransport = vi.fn(
+			async (args: {
+				onEvent: (event: RealtimeTranscriptionTransportEvent) => void;
+			}) => {
+				transportEvents.push(args.onEvent);
+				return transport;
+			},
+		);
+		const controller = createController({
+			connectTransport,
+			createMicrophoneInputStream,
+		});
+
+		await controller.start();
+		transportEvents[0]?.({
+			itemId: "turn-1",
+			speaker: "you",
+			textDelta: "hello there",
+			type: "partial",
+		});
+
+		expect(controller.getSnapshot().liveTranscript.you.text).toBe(
+			"hello there",
+		);
+
+		await controller.stop();
+
+		expect(controller.getSnapshot().liveTranscript.you.text).toBe("");
+		expect(transport.close).toHaveBeenCalledTimes(1);
+	});
+
+	it("stops stale startup work when the note scope changes mid-start", async () => {
+		const transportDeferred = createDeferred<RealtimeTranscriptionTransport>();
+		const { track, stream } = createMockStream();
+		const transport = {
+			close: vi.fn(async () => {}),
+		} satisfies RealtimeTranscriptionTransport;
+		const createMicrophoneInputStream = vi.fn(async () => stream);
+		const connectTransport = vi.fn(async () => await transportDeferred.promise);
+		const controller = createController({
+			connectTransport,
+			createMicrophoneInputStream,
+		});
+
+		controller.configure({
+			scopeKey: "note:1",
+		});
+
+		const startPromise = controller.start();
+		await waitForAssertion(() => {
+			expect(connectTransport).toHaveBeenCalledTimes(1);
+		});
+		controller.configure({
+			scopeKey: "note:2",
+		});
+
+		transportDeferred.resolve(transport);
+		await expect(startPromise).resolves.toBe(false);
+
+		expect(track.stop).toHaveBeenCalledTimes(1);
+		expect(transport.close).toHaveBeenCalledTimes(1);
+		expect(connectTransport).toHaveBeenCalledTimes(1);
+		expect(controller.getSnapshot().scopeKey).toBe("note:2");
+		expect(controller.getSnapshot().isListening).toBe(false);
+	});
+
+	it("publishes utterance events in order once a turn is committed", async () => {
+		const { stream } = createMockStream();
+		const transportEvents: Array<
+			(event: RealtimeTranscriptionTransportEvent) => void
+		> = [];
+		const createMicrophoneInputStream = vi.fn(async () => stream);
+		const connectTransport = vi.fn(
+			async (args: {
+				onEvent: (event: RealtimeTranscriptionTransportEvent) => void;
+			}) => {
+				transportEvents.push(args.onEvent);
+				return {
+					close: vi.fn(async () => {}),
+				} satisfies RealtimeTranscriptionTransport;
+			},
+		);
+		const controller = createController({
+			connectTransport,
+			createMicrophoneInputStream,
+		});
+		const utterances: TranscriptionControllerState["utterances"] = [];
+		controller.subscribeToEvents((event) => {
+			if (event.type === "session.utterance_committed") {
+				utterances.push(event.utterance);
+			}
+		});
+
+		await controller.start();
+		transportEvents[0]?.({
+			itemId: "turn-1",
+			speaker: "you",
+			textDelta: "hello",
+			type: "partial",
+		});
+		transportEvents[0]?.({
+			itemId: "turn-1",
+			speaker: "you",
+			text: "hello world",
+			type: "final",
+		});
+		transportEvents[0]?.({
+			itemId: "turn-1",
+			previousItemId: null,
+			speaker: "you",
+			type: "committed",
+		});
+
+		expect(utterances).toHaveLength(1);
+		expect(utterances[0]?.text).toBe("hello world");
+		expect(controller.getSnapshot().liveTranscript.you.text).toBe("");
+	});
+});

@@ -41,8 +41,17 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
+import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
+import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { resolveChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
+import type {
+	LiveTranscriptState,
+	SystemAudioCaptureSourceMode,
+	SystemAudioCaptureStatus,
+	TranscriptRecoveryStatus,
+	TranscriptUtterance,
+} from "@/lib/transcript";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { SpeechInput } from "../ai-elements/speech-input";
@@ -50,6 +59,7 @@ import { SpeechInput } from "../ai-elements/speech-input";
 type NoteChatPresentation = "inline" | "floating" | "sidebar";
 const NOTE_CHAT_MODEL = resolveChatModel("gpt-5.4-mini");
 const NOTE_CHAT_FLOATING_WIDTH = "min(28rem, calc(100vw - 2rem))";
+
 type NoteChatSummary = Pick<
 	Doc<"chats">,
 	"_id" | "_creationTime" | "chatId" | "createdAt" | "title" | "updatedAt"
@@ -147,22 +157,15 @@ const useNoteComposerController = ({
 	} = useSidebar();
 	const [message, setMessage] = React.useState("");
 	const [, setIsExpanded] = React.useState(false);
-	const [isSpeechListening, setIsSpeechListening] = React.useState(false);
 	const [panelMode, setPanelMode] = React.useState<
 		"chat" | "transcript" | null
 	>(null);
 	const [presentationMode, setPresentationMode] =
 		React.useState<NoteChatPresentation>("inline");
-	const [transcriptChunks, setTranscriptChunks] = React.useState<string[]>([]);
-	const [liveTranscript, setLiveTranscript] = React.useState("");
-	const [pendingGenerateTranscript, setPendingGenerateTranscript] =
-		React.useState("");
 	const [currentChatId, setCurrentChatId] = React.useState<string>(() =>
 		createDraftChatId(),
 	);
 	const [isPreparingRequest, setIsPreparingRequest] = React.useState(false);
-	const [isGeneratingNotes, startGenerateNotesTransition] =
-		React.useTransition();
 	const [reactionsByMessageId, setReactionsByMessageId] = React.useState<
 		Record<string, "like" | "dislike" | undefined>
 	>({});
@@ -170,9 +173,8 @@ const useNoteComposerController = ({
 	const inlinePanelRef = React.useRef<HTMLDivElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
-	const chatViewportRef = React.useRef<HTMLDivElement>(null);
+	const { containerRef: chatViewportRef } = useStickyScrollToBottom();
 	const previousSpeechListeningRef = React.useRef(false);
-	const hasHandledAutoStartRef = React.useRef(false);
 	const noteId = (noteContext.noteId as Id<"notes"> | null) ?? null;
 	const previousChatIdRef = React.useRef(currentChatId);
 	const previousNoteIdRef = React.useRef(noteId);
@@ -189,6 +191,12 @@ const useNoteComposerController = ({
 	});
 	const currentChatSession = useQuery(api.chats.getSession, {
 		chatId: currentChatId,
+	});
+	const transcriptSession = useNoteTranscriptSession({
+		autoStartTranscription,
+		noteId,
+		onAutoStartTranscriptionHandled,
+		onEnhanceTranscript,
 	});
 
 	const transport = React.useMemo(
@@ -286,15 +294,11 @@ const useNoteComposerController = ({
 		chatStatus === "streaming" ||
 		isPreparingRequest;
 	const hasMessage = message.trim().length > 0;
-	const fullTranscript = [...transcriptChunks, liveTranscript]
-		.map((chunk) => chunk.trim())
-		.filter(Boolean)
-		.join(" ")
-		.trim();
 	const canGenerateNotes =
-		Boolean(pendingGenerateTranscript.trim()) &&
-		!isSpeechListening &&
-		!isTranscriptOpen;
+		transcriptSession.hasPendingGenerateTranscript &&
+		!transcriptSession.isSpeechListening &&
+		!isTranscriptOpen &&
+		!transcriptSession.isRefiningTranscript;
 	const chatTitle = currentChatSession?.title?.trim() || "New chat";
 	const groupedNoteChats = React.useMemo(
 		() => groupChatsForSelector(noteChats ?? []),
@@ -335,6 +339,7 @@ const useNoteComposerController = ({
 		}
 
 		previousNoteIdRef.current = noteId;
+		previousSpeechListeningRef.current = false;
 
 		if (isChatLoading) {
 			stop();
@@ -346,10 +351,6 @@ const useNoteComposerController = ({
 		setIsExpanded(false);
 		setPanelMode(null);
 		setReactionsByMessageId({});
-		setTranscriptChunks([]);
-		setLiveTranscript("");
-		setPendingGenerateTranscript("");
-		previousSpeechListeningRef.current = false;
 		resetTextareaHeight();
 		closeRightSidebar();
 	}, [
@@ -373,55 +374,23 @@ const useNoteComposerController = ({
 	);
 
 	React.useEffect(() => {
-		if (isSpeechListening && !previousSpeechListeningRef.current) {
+		if (
+			transcriptSession.isSpeechListening &&
+			!previousSpeechListeningRef.current
+		) {
 			closeRightSidebar();
-			setLiveTranscript("");
-			setPendingGenerateTranscript("");
 		}
 
 		if (
-			!isSpeechListening &&
-			previousSpeechListeningRef.current &&
-			fullTranscript
+			!transcriptSession.isSpeechListening &&
+			previousSpeechListeningRef.current
 		) {
-			setPendingGenerateTranscript(fullTranscript);
 			closeRightSidebar();
 			setPanelMode(null);
 		}
 
-		previousSpeechListeningRef.current = isSpeechListening;
-	}, [closeRightSidebar, fullTranscript, isSpeechListening]);
-
-	React.useEffect(() => {
-		if (!autoStartTranscription) {
-			hasHandledAutoStartRef.current = false;
-			return;
-		}
-
-		if (!isSpeechListening || hasHandledAutoStartRef.current) {
-			return;
-		}
-
-		hasHandledAutoStartRef.current = true;
-		onAutoStartTranscriptionHandled?.();
-	}, [
-		autoStartTranscription,
-		isSpeechListening,
-		onAutoStartTranscriptionHandled,
-	]);
-
-	React.useEffect(() => {
-		if (!isChatOpen) {
-			return;
-		}
-
-		const viewport = chatViewportRef.current;
-		if (!viewport) {
-			return;
-		}
-
-		viewport.scrollTop = viewport.scrollHeight;
-	}, [isChatOpen]);
+		previousSpeechListeningRef.current = transcriptSession.isSpeechListening;
+	}, [closeRightSidebar, transcriptSession.isSpeechListening]);
 
 	React.useEffect(() => {
 		if (presentationMode === "inline") {
@@ -623,27 +592,9 @@ const useNoteComposerController = ({
 		setPanelMode("chat");
 	}, [closeRightSidebar, isChatLoading, latestNoteChat, stop]);
 
-	const handleGenerateNotes = React.useCallback(() => {
-		const transcript = pendingGenerateTranscript.trim();
-
-		if (!transcript || isGeneratingNotes || !onEnhanceTranscript) {
-			return;
-		}
-
-		startGenerateNotesTransition(() => {
-			void onEnhanceTranscript(transcript).then(() => {
-				setPendingGenerateTranscript("");
-				setTranscriptChunks([]);
-				setLiveTranscript("");
-			});
-		});
-	}, [isGeneratingNotes, onEnhanceTranscript, pendingGenerateTranscript]);
-
 	return {
-		autoStartKey:
-			autoStartTranscription && noteContext.noteId
-				? `${noteContext.noteId}:capture`
-				: null,
+		autoStartKey: transcriptSession.autoStartKey,
+		captureScopeKey: transcriptSession.captureScopeKey,
 		canGenerateNotes,
 		chatError,
 		chatMessages,
@@ -653,10 +604,10 @@ const useNoteComposerController = ({
 		composerPlaceholder,
 		currentChatId,
 		fileInputRef,
-		fullTranscript,
+		fullTranscript: transcriptSession.fullTranscript,
 		groupedNoteChats,
 		handleComposerFocus,
-		handleGenerateNotes,
+		handleGenerateNotes: transcriptSession.handleGenerateNotes,
 		handleHideChat,
 		handleKeyDown,
 		handleSelectChat,
@@ -665,48 +616,68 @@ const useNoteComposerController = ({
 		handleSubmit,
 		handleTextareaChange,
 		hasMessage,
+		systemAudioStatus: transcriptSession.systemAudioStatus,
+		recoveryStatus: transcriptSession.recoveryStatus,
 		inlinePanelRef,
 		isChatLoading,
 		isChatOpen,
-		isGeneratingNotes,
+		isGeneratingNotes: transcriptSession.isGeneratingNotes,
+		isRefiningTranscript: transcriptSession.isRefiningTranscript,
 		isMobile,
 		isSidebarPresentation,
-		isSpeechListening,
+		isSpeechListening: transcriptSession.isSpeechListening,
 		isTranscriptOpen,
+		liveTranscriptEntries: transcriptSession.liveTranscriptEntries,
 		message,
 		noteChats,
-		onTranscriptAppend: (text: string) => {
-			setTranscriptChunks((currentValue) => [...currentValue, text]);
-			setLiveTranscript("");
-		},
-		onTranscriptChange: setLiveTranscript,
-		onTranscriptListeningChange: setIsSpeechListening,
+		onLiveTranscriptChange: transcriptSession.onLiveTranscriptChange,
+		onSystemAudioStatusChange: transcriptSession.onSystemAudioStatusChange,
+		onRecoveryStatusChange: transcriptSession.onRecoveryStatusChange,
+		onTranscriptListeningChange: transcriptSession.onTranscriptListeningChange,
+		orderedTranscriptUtterances: transcriptSession.orderedTranscriptUtterances,
 		openDraftChat,
 		panelMode,
 		presentationMode,
+		transcriptViewportRef: transcriptSession.transcriptViewportRef,
+		transcriptRefinementError: transcriptSession.transcriptRefinementError,
 		reactionsByMessageId,
 		rootRef,
 		setPanelMode,
 		setReactionsByMessageId,
 		shouldShowInlinePanel,
 		textareaRef,
+		onSystemAudioRecordingReady: transcriptSession.onSystemAudioRecordingReady,
+		onTranscriptUtterance: transcriptSession.onTranscriptUtterance,
 	};
 };
 
 function NoteSpeechControls({
 	autoStartKey,
+	captureScopeKey,
 	isTranscriptOpen,
 	onToggleTranscript,
-	onTranscriptAppend,
-	onTranscriptChange,
+	onLiveTranscriptChange,
+	onSystemAudioRecordingReady,
+	onSystemAudioStatusChange,
+	onRecoveryStatusChange,
 	onTranscriptListeningChange,
+	onTranscriptUtterance,
 }: {
 	autoStartKey?: string | number | null;
+	captureScopeKey: string;
 	isTranscriptOpen: boolean;
 	onToggleTranscript: () => void;
-	onTranscriptAppend: (text: string) => void;
-	onTranscriptChange: (text: string) => void;
+	onLiveTranscriptChange: (state: LiveTranscriptState) => void;
+	onSystemAudioRecordingReady: (payload: {
+		blob: Blob;
+		endedAt: number;
+		sourceMode: SystemAudioCaptureSourceMode;
+		startedAt: number;
+	}) => void;
+	onSystemAudioStatusChange: (status: SystemAudioCaptureStatus) => void;
+	onRecoveryStatusChange: (status: TranscriptRecoveryStatus) => void;
 	onTranscriptListeningChange: (isListening: boolean) => void;
+	onTranscriptUtterance: (utterance: TranscriptUtterance) => void;
 }) {
 	return (
 		<div className="flex items-center gap-2">
@@ -714,10 +685,14 @@ function NoteSpeechControls({
 				variant="outline"
 				size="icon"
 				autoStartKey={autoStartKey}
+				scopeKey={captureScopeKey}
 				className="shrink-0 rounded-full"
 				onListeningChange={onTranscriptListeningChange}
-				onTranscriptChange={onTranscriptChange}
-				onTranscriptionChange={onTranscriptAppend}
+				onLiveTranscriptChange={onLiveTranscriptChange}
+				onSystemAudioRecordingReady={onSystemAudioRecordingReady}
+				onSystemAudioStatusChange={onSystemAudioStatusChange}
+				onRecoveryStatusChange={onRecoveryStatusChange}
+				onUtterance={onTranscriptUtterance}
 			/>
 
 			<Button
@@ -1229,6 +1204,7 @@ export function NoteComposer(props: NoteComposerProps) {
 	const speechControls = (
 		<NoteSpeechControls
 			autoStartKey={controller.autoStartKey}
+			captureScopeKey={controller.captureScopeKey}
 			isTranscriptOpen={controller.isTranscriptOpen}
 			onToggleTranscript={() => {
 				controller.closeRightSidebar();
@@ -1236,9 +1212,12 @@ export function NoteComposer(props: NoteComposerProps) {
 					currentValue === "transcript" ? null : "transcript",
 				);
 			}}
-			onTranscriptAppend={controller.onTranscriptAppend}
-			onTranscriptChange={controller.onTranscriptChange}
+			onLiveTranscriptChange={controller.onLiveTranscriptChange}
+			onSystemAudioRecordingReady={controller.onSystemAudioRecordingReady}
+			onSystemAudioStatusChange={controller.onSystemAudioStatusChange}
+			onRecoveryStatusChange={controller.onRecoveryStatusChange}
 			onTranscriptListeningChange={controller.onTranscriptListeningChange}
+			onTranscriptUtterance={controller.onTranscriptUtterance}
 		/>
 	);
 	const chatHeader = (
@@ -1293,12 +1272,23 @@ export function NoteComposer(props: NoteComposerProps) {
 							type="button"
 							variant="ghost"
 							size="icon-sm"
+							className={cn(
+								controller.isSidebarPresentation ? "-mr-1" : "-mr-1.5",
+							)}
 							onClick={async () => {
 								if (!controller.fullTranscript) {
 									return;
 								}
 
-								await navigator.clipboard.writeText(controller.fullTranscript);
+								try {
+									await navigator.clipboard.writeText(
+										controller.fullTranscript,
+									);
+									toast.success("Transcript copied");
+								} catch (error) {
+									console.error("Failed to copy transcript", error);
+									toast.error("Failed to copy transcript");
+								}
 							}}
 						>
 							<Copy className="size-4" />
@@ -1317,10 +1307,54 @@ export function NoteComposer(props: NoteComposerProps) {
 			>
 				{controller.isTranscriptOpen ? (
 					controller.fullTranscript ? (
-						<div className="w-full overflow-y-auto">
-							<p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
-								{controller.fullTranscript}
-							</p>
+						<div
+							ref={controller.transcriptViewportRef}
+							className="w-full overflow-y-auto"
+						>
+							<div className="flex flex-col gap-4 pr-4">
+								{controller.orderedTranscriptUtterances.map((utterance) => (
+									<div
+										key={utterance.id}
+										className={cn(
+											"flex w-full",
+											utterance.speaker === "you"
+												? "justify-end"
+												: "justify-start",
+										)}
+									>
+										<div
+											className={cn(
+												"max-w-[85%] text-sm leading-6",
+												utterance.speaker === "you"
+													? "rounded-2xl bg-secondary px-4 py-3 text-right text-secondary-foreground"
+													: "text-foreground",
+											)}
+										>
+											<p className="whitespace-pre-wrap">{utterance.text}</p>
+										</div>
+									</div>
+								))}
+								{controller.liveTranscriptEntries.map((entry) => (
+									<div
+										key={`live:${entry.speaker}`}
+										className={cn(
+											"flex w-full opacity-75",
+											entry.speaker === "you" ? "justify-end" : "justify-start",
+										)}
+									>
+										<div
+											className={cn(
+												"max-w-[85%] text-sm leading-6",
+												entry.speaker === "you"
+													? "rounded-2xl bg-secondary px-4 py-3 text-right text-secondary-foreground"
+													: "text-foreground",
+											)}
+										>
+											<p className="whitespace-pre-wrap">{entry.text}</p>
+										</div>
+									</div>
+								))}
+							</div>
 						</div>
 					) : (
 						<div className="flex flex-1 items-center justify-center">
@@ -1342,6 +1376,25 @@ export function NoteComposer(props: NoteComposerProps) {
 						controller.isSidebarPresentation ? "px-2 pb-2" : "px-4 pb-20",
 					)}
 				>
+					{controller.recoveryStatus.state !== "idle" ? (
+						<div className="mb-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+							{controller.recoveryStatus.state === "reconnecting"
+								? `Live transcription was interrupted. Reconnecting (${controller.recoveryStatus.attempt}/${controller.recoveryStatus.maxAttempts})...`
+								: "Live transcription stopped after repeated interruptions. Your transcript was preserved. Tap record to continue."}
+						</div>
+					) : null}
+					{controller.isRefiningTranscript ? (
+						<div className="mb-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+							Refining remote speakers from the recorded system-audio track.
+							Generate notes will unlock when this pass finishes.
+						</div>
+					) : null}
+					{controller.transcriptRefinementError ? (
+						<div className="mb-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+							System-audio refinement failed. The live transcript was preserved.{" "}
+							{controller.transcriptRefinementError}
+						</div>
+					) : null}
 					<div className="rounded-md bg-muted px-3 py-1.5 text-center text-xs text-muted-foreground">
 						Always get consent when transcribing others.
 					</div>
@@ -1386,10 +1439,16 @@ export function NoteComposer(props: NoteComposerProps) {
 						size="sm"
 						className="pointer-events-auto px-4 shadow-lg"
 						onClick={controller.handleGenerateNotes}
-						disabled={controller.isGeneratingNotes}
+						disabled={
+							controller.isGeneratingNotes || controller.isRefiningTranscript
+						}
 					>
 						<Sparkles className="size-4" />
-						{controller.isGeneratingNotes ? "Generating..." : "Generate notes"}
+						{controller.isGeneratingNotes
+							? "Generating..."
+							: controller.isRefiningTranscript
+								? "Refining transcript..."
+								: "Generate notes"}
 					</Button>
 				</div>
 			) : null}
@@ -1400,11 +1459,10 @@ export function NoteComposer(props: NoteComposerProps) {
 						className={cn(
 							"absolute inset-x-0 z-20",
 							controller.isTranscriptOpen ? "bottom-0" : "-bottom-4",
-							controller.isTranscriptOpen && "pointer-events-none",
 						)}
 					>
 						<div className="relative flex items-end gap-3">
-							<Card className="relative -mx-6 h-96 max-h-[calc(100dvh-6rem)] w-[calc(100%+3rem)] gap-0 py-0">
+							<Card className="pointer-events-auto relative -mx-6 h-96 max-h-[calc(100dvh-6rem)] w-[calc(100%+3rem)] gap-0 py-0">
 								{panelContent}
 							</Card>
 						</div>

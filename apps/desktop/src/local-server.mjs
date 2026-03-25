@@ -2,6 +2,7 @@ import { createReadStream, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, extname, join, normalize, resolve } from "node:path";
+import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { openai } from "@ai-sdk/openai";
 import {
@@ -50,6 +51,8 @@ const generateMessageId = createIdGenerator({
 	prefix: "msg",
 	size: 16,
 });
+const MAX_AUDIO_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+/** @typedef {{ end?: number, speaker?: string, start?: number, text?: string }} DiarizedTranscriptSegment */
 const structuredNoteSchema = z.object({
 	title: z.string().min(1),
 	overview: z.array(z.string()),
@@ -191,6 +194,27 @@ const sendJson = (response, statusCode, payload) => {
 	response.end(JSON.stringify(payload));
 };
 
+const createFormDataRequest = (request) =>
+	new Request("http://127.0.0.1/api/refine-transcript-audio", {
+		method: request.method,
+		headers: new Headers(
+			Object.entries(request.headers).flatMap(([key, value]) => {
+				if (value == null) {
+					return [];
+				}
+
+				return Array.isArray(value)
+					? value.map((entry) => [key, entry])
+					: [[key, value]];
+			}),
+		),
+		body:
+			request.method === "GET" || request.method === "HEAD"
+				? undefined
+				: Readable.toWeb(request),
+		duplex: "half",
+	});
+
 const handleChatRequest = async (request, response) => {
 	if (!process.env.OPENAI_API_KEY) {
 		sendJson(response, 500, {
@@ -315,7 +339,7 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 	}
 
 	const { lang } = await readJsonBody(request);
-	const language = lang?.trim();
+	const language = lang?.trim().toLowerCase();
 
 	const sessionResponse = await fetch(
 		"https://api.openai.com/v1/realtime/client_secrets",
@@ -418,6 +442,97 @@ const handleEnhanceNoteRequest = async (request, response) => {
 
 	sendJson(response, 200, {
 		note: output,
+	});
+};
+
+const handleRefineTranscriptAudioRequest = async (request, response) => {
+	if (!process.env.OPENAI_API_KEY) {
+		sendJson(response, 500, {
+			error: "OPENAI_API_KEY is not configured.",
+		});
+		return;
+	}
+
+	const formData = await createFormDataRequest(request).formData();
+	const audioValue = formData.get("audio");
+
+	if (!(audioValue instanceof File)) {
+		sendJson(response, 400, {
+			error: "Audio file is required.",
+		});
+		return;
+	}
+
+	if (audioValue.size === 0) {
+		sendJson(response, 400, {
+			error: "Audio file is empty.",
+		});
+		return;
+	}
+
+	if (audioValue.size > MAX_AUDIO_FILE_SIZE_BYTES) {
+		sendJson(response, 413, {
+			error: "Audio file exceeds the 25 MB transcription limit.",
+		});
+		return;
+	}
+
+	const openAiFormData = new FormData();
+	openAiFormData.append(
+		"file",
+		audioValue,
+		audioValue.name || "system-audio.webm",
+	);
+	openAiFormData.append("model", "gpt-4o-transcribe-diarize");
+	openAiFormData.append("response_format", "diarized_json");
+	openAiFormData.append("chunking_strategy", "auto");
+
+	const transcriptionResponse = await fetch(
+		"https://api.openai.com/v1/audio/transcriptions",
+		{
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+			},
+			body: openAiFormData,
+		},
+	);
+	const payload =
+		/** @type {{ error?: { message?: string }, segments?: DiarizedTranscriptSegment[], text?: string }} */ (
+			await transcriptionResponse.json().catch(() => ({}))
+		);
+
+	if (!transcriptionResponse.ok || !payload?.text?.trim()) {
+		sendJson(
+			response,
+			transcriptionResponse.ok ? 502 : transcriptionResponse.status,
+			{
+				error:
+					payload?.error?.message ||
+					"Failed to refine the system audio transcript.",
+			},
+		);
+		return;
+	}
+
+	sendJson(response, 200, {
+		segments: Array.isArray(payload?.segments)
+			? payload.segments
+					.filter(
+						(segment) =>
+							typeof segment.speaker === "string" &&
+							typeof segment.text === "string" &&
+							typeof segment.start === "number" &&
+							typeof segment.end === "number",
+					)
+					.map((segment) => ({
+						speaker: segment.speaker,
+						text: segment.text.trim(),
+						start: segment.start,
+						end: segment.end,
+					}))
+			: [],
+		text: payload.text.trim(),
 	});
 };
 
@@ -570,6 +685,24 @@ export const startLocalServer = async ({ onAuthCallback } = {}) => {
 					error instanceof Error ? error.message : "Unexpected server error.";
 				sendJson(response, 500, { error: message });
 			});
+			return;
+		}
+
+		if (request.url?.split("?")[0] === "/api/refine-transcript-audio") {
+			if (request.method !== "POST") {
+				response.statusCode = 405;
+				response.setHeader("Content-Type", "application/json");
+				response.end(JSON.stringify({ error: "Method not allowed." }));
+				return;
+			}
+
+			void handleRefineTranscriptAudioRequest(request, response).catch(
+				(error) => {
+					const message =
+						error instanceof Error ? error.message : "Unexpected server error.";
+					sendJson(response, 500, { error: message });
+				},
+			);
 			return;
 		}
 

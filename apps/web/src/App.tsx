@@ -101,6 +101,7 @@ const SETTINGS_SLUG_BY_PAGE: Record<SettingsPage, string> = {
 
 type DesktopPermissionRow = {
 	id: DesktopPermissionId;
+	description: string;
 	label: string;
 	state: DesktopPermissionState;
 	required: boolean;
@@ -128,6 +129,7 @@ const WELCOME_FIREWORK_COLORS = [
 ] as const;
 const DESKTOP_PERMISSION_LABELS: Record<DesktopPermissionId, string> = {
 	microphone: "Microphone",
+	systemAudio: "System audio",
 };
 
 type GroupedItems<T> = {
@@ -261,7 +263,9 @@ const getAppViewFromUrl = (url: URL): AppView =>
 				: "home";
 
 const shouldAutoStartNoteCaptureFromUrl = (url: URL) =>
-	getAppViewFromUrl(url) === "note" && url.searchParams.get("capture") === "1";
+	getAppViewFromUrl(url) === "note" &&
+	url.searchParams.get("capture") === "1" &&
+	!url.searchParams.get("noteId");
 
 const getInitialNonSettingsLocation = () => {
 	if (typeof window === "undefined") {
@@ -662,7 +666,17 @@ const useAppBootstrapState = () => {
 					permissions: [
 						{
 							id: "microphone",
+							description: "Capture your voice as You.",
 							required: true,
+							state: "unknown",
+							canRequest: false,
+							canOpenSystemSettings: false,
+						},
+						{
+							id: "systemAudio",
+							description:
+								"Update the desktop app to restore system-audio capture support details.",
+							required: false,
 							state: "unknown",
 							canRequest: false,
 							canOpenSystemSettings: false,
@@ -765,17 +779,20 @@ const useAppBootstrapState = () => {
 
 	const desktopPermissionRows: DesktopPermissionRow[] = (
 		desktopPermissionsStatus?.permissions ?? []
-	)
-		.filter((permission) => permission.required)
-		.map((permission) => ({
-			...permission,
-			label: DESKTOP_PERMISSION_LABELS[permission.id],
-		}));
+	).map((permission) => ({
+		...permission,
+		label: DESKTOP_PERMISSION_LABELS[permission.id],
+	}));
 	const shouldShowDesktopPermissionsScreen =
 		shouldLoadDesktopPermissions && desktopPermissionRows.length > 0;
+	const requiredDesktopPermissionRows = desktopPermissionRows.filter(
+		(permission) => permission.required,
+	);
 	const areDesktopPermissionsReady =
-		desktopPermissionRows.length > 0 &&
-		desktopPermissionRows.every((permission) => permission.state === "granted");
+		requiredDesktopPermissionRows.length > 0 &&
+		requiredDesktopPermissionRows.every(
+			(permission) => permission.state === "granted",
+		);
 
 	return {
 		areDesktopPermissionsReady,
@@ -1309,6 +1326,34 @@ const getDesktopPermissionTone = (state: DesktopPermissionState) => {
 	return "border-border bg-muted/40 text-muted-foreground";
 };
 
+const getDesktopPermissionIcon = (permissionId: DesktopPermissionId) =>
+	permissionId === "microphone" ? Mic : Volume2;
+
+const getDesktopPermissionActionLabel = (permissionId: DesktopPermissionId) =>
+	permissionId === "microphone" ? "Enable microphone" : "Enable system audio";
+
+const getDesktopPermissionStateLabel = (permission: DesktopPermissionRow) => {
+	if (permission.state === "granted") {
+		return permission.id === "systemAudio" && !permission.canRequest
+			? "Ready"
+			: "Enabled";
+	}
+
+	if (permission.state === "unsupported") {
+		return "Unavailable";
+	}
+
+	if (permission.state === "blocked") {
+		return "Blocked";
+	}
+
+	if (permission.state === "prompt") {
+		return "Needs access";
+	}
+
+	return "Unknown";
+};
+
 function DesktopPermissionsOnboardingScreen({
 	error,
 	isDesktopMac,
@@ -1330,11 +1375,7 @@ function DesktopPermissionsOnboardingScreen({
 	onOpenSettings: (permissionId: DesktopPermissionId) => void;
 	onRequestPermission: (permissionId: DesktopPermissionId) => void;
 }) {
-	const microphonePermission = permissions.find(
-		(permission) => permission.id === "microphone",
-	);
-
-	if (!microphonePermission) {
+	if (permissions.length === 0) {
 		return null;
 	}
 
@@ -1342,75 +1383,78 @@ function DesktopPermissionsOnboardingScreen({
 		<OnboardingStepLayout isDesktopMac={isDesktopMac}>
 			<OnboardingStepCard
 				title="Enable permissions"
-				description="OpenGran transcribes meetings using your computer&apos;s audio."
+				description="OpenGran captures your voice as You and, when available, meeting audio as Them."
 				contentClassName="flex flex-col gap-5"
 			>
 				<div className="overflow-hidden rounded-xl border">
-					<div className="flex items-center gap-3 p-4">
-						<div className="min-w-0 flex-1">
-							<p className="font-medium">Transcribe my voice</p>
-						</div>
-						{microphonePermission.state === "granted" ? (
-							<div
-								className={cn(
-									"flex size-8 shrink-0 items-center justify-center rounded-full border",
-									getDesktopPermissionTone(microphonePermission.state),
-								)}
-							>
-								<Check className="size-4" />
-							</div>
-						) : microphonePermission.canRequest ? (
-							<Button
-								type="button"
-								size="sm"
-								className="shrink-0 rounded-full px-4"
-								onClick={() => onRequestPermission(microphonePermission.id)}
-								disabled={isRefreshing || isSubmitting}
-							>
-								{isRefreshing ? (
-									<LoaderCircle className="size-4 animate-spin" />
-								) : (
-									<Mic className="size-4" />
-								)}
-								Enable microphone
-							</Button>
-						) : microphonePermission.canOpenSystemSettings ? (
-							<Button
-								type="button"
-								size="sm"
-								variant="outline"
-								className="shrink-0 rounded-full px-4"
-								onClick={() => onOpenSettings(microphonePermission.id)}
-								disabled={isRefreshing || isSubmitting}
-							>
-								<ExternalLink className="size-4" />
-								Open settings
-							</Button>
-						) : (
-							<div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-								<TriangleAlert className="size-4" />
-								Unavailable
-							</div>
-						)}
-					</div>
-					<Separator />
-					<div className="flex items-center gap-3 p-4">
-						<div className="min-w-0 flex-1">
-							<p className="font-medium">
-								Transcribe other people&apos;s voices
-							</p>
-						</div>
-						<Button
-							type="button"
-							size="sm"
-							variant="secondary"
-							className="shrink-0 rounded-full px-4"
-							disabled
-						>
-							<Volume2 className="size-4" />
-							Enable
-						</Button>
-					</div>
+					{permissions.map((permission, index) => {
+						const Icon = getDesktopPermissionIcon(permission.id);
+
+						return (
+							<React.Fragment key={permission.id}>
+								{index > 0 ? <Separator /> : null}
+								<div className="flex items-start gap-3 p-4">
+									<div
+										className={cn(
+											"mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full border",
+											getDesktopPermissionTone(permission.state),
+										)}
+									>
+										<Icon className="size-4" />
+									</div>
+									<div className="min-w-0 flex-1">
+										<div className="flex items-center gap-2">
+											<p className="font-medium">{permission.label}</p>
+											<span className="rounded-full bg-muted px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+												{permission.required ? "Required" : "Optional"}
+											</span>
+										</div>
+										<p className="mt-1 text-sm text-muted-foreground">
+											{permission.description}
+										</p>
+									</div>
+									{permission.state === "granted" ? (
+										<div className="inline-flex items-center gap-2 rounded-full border border-border/70 px-3 py-1.5 text-sm">
+											<Check className="size-4" />
+											{getDesktopPermissionStateLabel(permission)}
+										</div>
+									) : permission.canRequest ? (
+										<Button
+											type="button"
+											size="sm"
+											className="shrink-0 rounded-full px-4"
+											onClick={() => onRequestPermission(permission.id)}
+											disabled={isRefreshing || isSubmitting}
+										>
+											{isRefreshing ? (
+												<LoaderCircle className="size-4 animate-spin" />
+											) : (
+												<Icon className="size-4" />
+											)}
+											{getDesktopPermissionActionLabel(permission.id)}
+										</Button>
+									) : permission.canOpenSystemSettings ? (
+										<Button
+											type="button"
+											size="sm"
+											variant="outline"
+											className="shrink-0 rounded-full px-4"
+											onClick={() => onOpenSettings(permission.id)}
+											disabled={isRefreshing || isSubmitting}
+										>
+											<ExternalLink className="size-4" />
+											Open settings
+										</Button>
+									) : (
+										<div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+											<TriangleAlert className="size-4" />
+											{getDesktopPermissionStateLabel(permission)}
+										</div>
+									)}
+								</div>
+							</React.Fragment>
+						);
+					})}
 				</div>
 				{error ? (
 					<div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -2468,11 +2512,16 @@ function HomeView({
 								</div>
 								<div className="flex min-h-[152px] w-full items-start justify-center p-3">
 									{shouldShowUpcomingCalendarSkeleton ? (
-										<div className="flex min-h-[120px] w-full flex-col justify-center gap-3 rounded-xl border border-solid border-border px-4 py-3">
-											<Skeleton className="h-5 w-40" />
-											<Skeleton className="h-14 w-full rounded-xl" />
-											<Skeleton className="h-14 w-full rounded-xl" />
-										</div>
+										<Empty className="h-full rounded-none border-0 px-4 py-4">
+											<EmptyHeader>
+												<Skeleton className="mb-2 size-8 rounded-lg" />
+												<Skeleton className="h-5 w-40 max-w-full" />
+												<Skeleton className="h-4 w-56 max-w-full" />
+											</EmptyHeader>
+											<EmptyContent>
+												<Skeleton className="h-9 w-36 rounded-md" />
+											</EmptyContent>
+										</Empty>
 									) : visibleUpcomingEvents.length > 0 ? (
 										<div className="w-full px-1 py-1">
 											<div className="space-y-1.5">
@@ -2540,7 +2589,7 @@ function HomeView({
 											</div>
 										</div>
 									) : (
-										<Empty className="min-h-[152px] rounded-xl border border-solid border-border px-4 py-4">
+										<Empty className="h-full rounded-none border-0 px-4 py-4">
 											<EmptyHeader>
 												<EmptyMedia variant="icon">
 													<CalendarClock className="size-4" />

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import "./build-system-audio-helper.mjs";
 
 const require = createRequire(import.meta.url);
 const electronBinary = require("electron");

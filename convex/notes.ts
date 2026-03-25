@@ -498,7 +498,11 @@ export const remove = mutation({
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
-		await requireOwnedNote(ctx, args.id);
+		const note = await requireOwnedNote(ctx, args.id);
+		await ctx.scheduler.runAfter(0, internal.transcriptSessions.removeForNote, {
+			noteId: args.id,
+			ownerTokenIdentifier: note.ownerTokenIdentifier,
+		});
 		await ctx.db.delete(args.id);
 
 		return null;
@@ -517,6 +521,10 @@ export const removeAllForOwner = internalMutation({
 			await ctx.scheduler.runAfter(0, internal.notes.removeAllForOwner, {
 				ownerTokenIdentifier: args.ownerTokenIdentifier,
 			});
+		} else {
+			await ctx.scheduler.runAfter(0, internal.transcriptSessions.removeAllForOwner, {
+				ownerTokenIdentifier: args.ownerTokenIdentifier,
+			});
 		}
 
 		return null;
@@ -532,6 +540,10 @@ export const removeAll = mutation({
 
 		if (result.hasMore) {
 			await ctx.scheduler.runAfter(0, internal.notes.removeAllForOwner, {
+				ownerTokenIdentifier,
+			});
+		} else {
+			await ctx.scheduler.runAfter(0, internal.transcriptSessions.removeAllForOwner, {
 				ownerTokenIdentifier,
 			});
 		}

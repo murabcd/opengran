@@ -8,6 +8,7 @@ import {
 	SourcesContent,
 	SourcesTrigger,
 } from "@/components/ai-elements/sources";
+import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 
 const extractTextParts = (message: UIMessage) =>
 	message.parts.filter(
@@ -107,13 +108,14 @@ export function ChatMessages({
 	error?: Error;
 	isLoading?: boolean;
 }) {
+	const { containerRef } = useStickyScrollToBottom();
 	const lastMessage = messages[messages.length - 1];
 	const showLoadingIndicator =
 		isLoading &&
 		(lastMessage === undefined || lastMessage.role !== "assistant");
 
 	return (
-		<div className="flex-1 h-full overflow-y-auto py-8">
+		<div ref={containerRef} className="flex-1 h-full overflow-y-auto py-8">
 			<div className="mx-auto w-full max-w-xl space-y-4 pt-8">
 				{messages.map((message) => {
 					const textParts = extractTextParts(message);

@@ -1,5 +1,5 @@
 declare global {
-	type DesktopPermissionId = "microphone";
+	type DesktopPermissionId = "microphone" | "systemAudio";
 	type DesktopPermissionState =
 		| "granted"
 		| "prompt"
@@ -21,6 +21,7 @@ declare global {
 
 	interface DesktopPermissionStatus {
 		id: DesktopPermissionId;
+		description: string;
 		required: boolean;
 		state: DesktopPermissionState;
 		canRequest: boolean;
@@ -56,7 +57,72 @@ declare global {
 			openPermissionSettings: (permissionId: DesktopPermissionId) => Promise<{
 				ok: boolean;
 			}>;
+			startSystemAudioCapture: () => Promise<{
+				channels: number;
+				sampleRate: number;
+			}>;
+			stopSystemAudioCapture: () => Promise<{
+				ok: boolean;
+			}>;
+			onSystemAudioCaptureEvent: (
+				listener: (payload: {
+					type: "chunk" | "error" | "stopped";
+					pcm16?: string;
+					message?: string;
+					code?: number | null;
+					signal?: string | number | null;
+				}) => void,
+			) => () => void;
 			writeClipboardText: (value: string) => Promise<{
+				ok: boolean;
+			}>;
+			loadTranscriptDraft: (noteKey: string) => Promise<{
+				draft: {
+					version: number;
+					noteKey: string;
+					updatedAt: number;
+					utterances: Array<{
+						id: string;
+						speaker: "you" | "them";
+						text: string;
+						startedAt: number;
+						endedAt: number;
+					}>;
+					liveTranscript: Record<
+						"you" | "them",
+						{
+							speaker: "you" | "them";
+							startedAt: number | null;
+							text: string;
+						}
+					>;
+					pendingGenerateTranscript: string;
+				} | null;
+			}>;
+			saveTranscriptDraft: (
+				noteKey: string,
+				draft: {
+					utterances: Array<{
+						id: string;
+						speaker: "you" | "them";
+						text: string;
+						startedAt: number;
+						endedAt: number;
+					}>;
+					liveTranscript: Record<
+						"you" | "them",
+						{
+							speaker: "you" | "them";
+							startedAt: number | null;
+							text: string;
+						}
+					>;
+					pendingGenerateTranscript: string;
+				},
+			) => Promise<{
+				ok: boolean;
+			}>;
+			clearTranscriptDraft: (noteKey: string) => Promise<{
 				ok: boolean;
 			}>;
 			saveTextFile: (

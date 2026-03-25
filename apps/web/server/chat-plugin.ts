@@ -4,6 +4,7 @@ import { handleApplyTemplateRequest } from "./apply-template-handler";
 import { handleChatRequest } from "./chat-handler";
 import { handleEnhanceNoteRequest } from "./enhance-note-handler";
 import { handleRealtimeTranscriptionSessionRequest } from "./realtime-transcription-session-handler";
+import { handleRefineTranscriptAudioRequest } from "./refine-transcript-audio-handler";
 
 const isChatRoute = (url: string | undefined) =>
 	Boolean(url && url.split("?")[0] === "/api/chat");
@@ -13,6 +14,8 @@ const isApplyTemplateRoute = (url: string | undefined) =>
 	Boolean(url && url.split("?")[0] === "/api/apply-template");
 const isRealtimeTranscriptionSessionRoute = (url: string | undefined) =>
 	Boolean(url && url.split("?")[0] === "/api/realtime-transcription-session");
+const isRefineTranscriptAudioRoute = (url: string | undefined) =>
+	Boolean(url && url.split("?")[0] === "/api/refine-transcript-audio");
 
 const createChatMiddleware = (): Connect.NextHandleFunction => {
 	return (request, response, next) => {
@@ -20,7 +23,8 @@ const createChatMiddleware = (): Connect.NextHandleFunction => {
 			!isChatRoute(request.url) &&
 			!isEnhanceNoteRoute(request.url) &&
 			!isApplyTemplateRoute(request.url) &&
-			!isRealtimeTranscriptionSessionRoute(request.url)
+			!isRealtimeTranscriptionSessionRoute(request.url) &&
+			!isRefineTranscriptAudioRoute(request.url)
 		) {
 			next();
 			return;
@@ -39,7 +43,9 @@ const createChatMiddleware = (): Connect.NextHandleFunction => {
 				? handleEnhanceNoteRequest
 				: isApplyTemplateRoute(request.url)
 					? handleApplyTemplateRequest
-					: handleRealtimeTranscriptionSessionRequest;
+					: isRealtimeTranscriptionSessionRoute(request.url)
+						? handleRealtimeTranscriptionSessionRequest
+						: handleRefineTranscriptAudioRequest;
 
 		void handler(request as IncomingMessage, response as ServerResponse).catch(
 			(error: unknown) => {

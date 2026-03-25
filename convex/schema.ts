@@ -8,6 +8,19 @@ const workspaceRoleValidator = v.union(
 	v.literal("customer-facing"),
 );
 
+const transcriptSessionStatusValidator = v.union(
+	v.literal("capturing"),
+	v.literal("completed"),
+	v.literal("failed"),
+);
+
+const transcriptRefinementStatusValidator = v.union(
+	v.literal("idle"),
+	v.literal("running"),
+	v.literal("completed"),
+	v.literal("failed"),
+);
+
 export default defineSchema({
 	onboardingStates: defineTable({
 		ownerTokenIdentifier: v.string(),
@@ -140,4 +153,53 @@ export default defineSchema({
 	})
 		.index("by_chatId_and_createdAt", ["chatId", "createdAt"])
 		.index("by_chatId_and_messageId", ["chatId", "messageId"]),
+	transcriptSessions: defineTable({
+		ownerTokenIdentifier: v.string(),
+		noteId: v.id("notes"),
+		status: transcriptSessionStatusValidator,
+		refinementStatus: transcriptRefinementStatusValidator,
+		refinementError: v.optional(v.string()),
+		systemAudioSourceMode: v.optional(
+			v.union(
+				v.literal("desktop-native"),
+				v.literal("display-media"),
+				v.literal("unsupported"),
+			),
+		),
+		startedAt: v.number(),
+		endedAt: v.optional(v.number()),
+		finalTranscript: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		lastRefinedAt: v.optional(v.number()),
+	})
+		.index("by_ownerTokenIdentifier_and_noteId_and_updatedAt", [
+			"ownerTokenIdentifier",
+			"noteId",
+			"updatedAt",
+		])
+		.index("by_ownerTokenIdentifier_and_updatedAt", [
+			"ownerTokenIdentifier",
+			"updatedAt",
+		]),
+	transcriptUtterances: defineTable({
+		sessionId: v.id("transcriptSessions"),
+		ownerTokenIdentifier: v.string(),
+		noteId: v.id("notes"),
+		utteranceId: v.string(),
+		speaker: v.string(),
+		source: v.union(v.literal("live"), v.literal("refined")),
+		text: v.string(),
+		startedAt: v.number(),
+		endedAt: v.number(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_sessionId_and_startedAt", ["sessionId", "startedAt"])
+		.index("by_sessionId_and_utteranceId", ["sessionId", "utteranceId"])
+		.index("by_ownerTokenIdentifier_and_noteId_and_startedAt", [
+			"ownerTokenIdentifier",
+			"noteId",
+			"startedAt",
+		]),
 });
