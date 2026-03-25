@@ -403,7 +403,7 @@ const useNoteComposerController = ({
 	}, [isRightSidebarOpen, panelMode, presentationMode]);
 
 	React.useEffect(() => {
-		if (presentationMode !== "inline" || panelMode !== "chat") {
+		if (!panelMode || !shouldShowInlinePanel) {
 			return;
 		}
 
@@ -445,7 +445,7 @@ const useNoteComposerController = ({
 		return () => {
 			document.removeEventListener("pointerdown", handlePointerDown);
 		};
-	}, [panelMode, presentationMode]);
+	}, [panelMode, shouldShowInlinePanel]);
 
 	const openDraftChat = React.useCallback(() => {
 		if (isChatLoading) {
