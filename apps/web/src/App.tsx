@@ -260,6 +260,9 @@ const getAppViewFromUrl = (url: URL): AppView =>
 				? "shared"
 				: "home";
 
+const shouldAutoStartNoteCaptureFromUrl = (url: URL) =>
+	getAppViewFromUrl(url) === "note" && url.searchParams.get("capture") === "1";
+
 const getInitialNonSettingsLocation = () => {
 	if (typeof window === "undefined") {
 		return "/home";
@@ -809,7 +812,7 @@ const useAppBootstrapState = () => {
 	};
 };
 
-function App() {
+function MainApp() {
 	const controller = useAppBootstrapState();
 
 	if (controller.sharedNoteShareId) {
@@ -936,6 +939,10 @@ function App() {
 			onOpenOwnedSharedNote={controller.handleOpenOwnedSharedNote}
 		/>
 	);
+}
+
+function App() {
+	return <MainApp />;
 }
 
 function AppGate({
@@ -1479,6 +1486,14 @@ const useAppShellState = ({
 			);
 		},
 	);
+	const [shouldAutoStartNoteCapture, setShouldAutoStartNoteCapture] =
+		React.useState(() => {
+			if (typeof window === "undefined") {
+				return false;
+			}
+
+			return shouldAutoStartNoteCaptureFromUrl(new URL(window.location.href));
+		});
 	const [currentNoteTitle, setCurrentNoteTitle] = React.useState("New note");
 	const [currentNoteEditorActions, setCurrentNoteEditorActions] =
 		React.useState<NoteEditorActions | null>(null);
@@ -1614,11 +1629,14 @@ const useAppShellState = ({
 			const nextView = getAppViewFromUrl(contentUrl);
 			const nextNoteId =
 				(contentUrl.searchParams.get("noteId") as Id<"notes"> | null) ?? null;
+			const nextShouldAutoStartNoteCapture =
+				shouldAutoStartNoteCaptureFromUrl(contentUrl);
 
 			setCurrentView(nextView);
 			setCurrentChatId(nextChatId);
 			setChatComposerId(nextChatId ?? crypto.randomUUID());
 			setCurrentNoteId(nextNoteId);
+			setShouldAutoStartNoteCapture(nextShouldAutoStartNoteCapture);
 			setCurrentNoteEditorActions(null);
 			setSettingsPage(nextSettingsPage ?? "Profile");
 
@@ -1634,10 +1652,12 @@ const useAppShellState = ({
 			const nextSearch = nextSettingsOpen
 				? ""
 				: nextView === "note" && nextNoteId
-					? `?noteId=${nextNoteId}`
-					: nextView === "chat" && nextChatId
-						? `?chatId=${encodeURIComponent(nextChatId)}`
-						: "";
+					? `?noteId=${nextNoteId}${nextShouldAutoStartNoteCapture ? "&capture=1" : ""}`
+					: nextView === "note" && nextShouldAutoStartNoteCapture
+						? "?capture=1"
+						: nextView === "chat" && nextChatId
+							? `?chatId=${encodeURIComponent(nextChatId)}`
+							: "";
 			const nextHash = "";
 			const nextLocation = `${nextPath}${nextSearch}${nextHash}`;
 			if (
@@ -1714,39 +1734,84 @@ const useAppShellState = ({
 		[currentNoteId, openFreshChat],
 	);
 
-	const openNote = React.useCallback((noteId: Id<"notes">) => {
+	const openNote = React.useCallback(
+		(
+			noteId: Id<"notes">,
+			options?: {
+				autoStartCapture?: boolean;
+			},
+		) => {
+			setCurrentView("note");
+			setSettingsOpen(false);
+			setCurrentNoteId(noteId);
+			setShouldAutoStartNoteCapture(options?.autoStartCapture === true);
+			setCurrentNoteEditorActions(null);
+			window.history.pushState(
+				null,
+				"",
+				`/note?noteId=${noteId}${options?.autoStartCapture ? "&capture=1" : ""}`,
+			);
+		},
+		[],
+	);
+
+	const handleCreateNote = React.useCallback(
+		(options?: { autoStartCapture?: boolean }) => {
+			if (creatingNoteRef.current) {
+				return;
+			}
+
+			creatingNoteRef.current = true;
+			const shouldStartCapture = options?.autoStartCapture === true;
+
+			void createNote()
+				.then((noteId) => {
+					setCurrentNoteTitle("New note");
+					openNote(noteId, {
+						autoStartCapture: shouldStartCapture,
+					});
+				})
+				.catch((error) => {
+					console.error("Failed to create note", error);
+				})
+				.finally(() => {
+					creatingNoteRef.current = false;
+				});
+		},
+		[createNote, openNote],
+	);
+
+	const handleQuickNote = React.useCallback(() => {
 		setCurrentView("note");
 		setSettingsOpen(false);
-		setCurrentNoteId(noteId);
+		setCurrentNoteId(null);
+		setShouldAutoStartNoteCapture(true);
 		setCurrentNoteEditorActions(null);
-		window.history.pushState(null, "", `/note?noteId=${noteId}`);
+		window.history.pushState(null, "", "/note?capture=1");
 	}, []);
 
-	const handleCreateNote = React.useCallback(() => {
-		if (creatingNoteRef.current) {
+	const handleAutoStartNoteCaptureHandled = React.useCallback(() => {
+		setShouldAutoStartNoteCapture(false);
+
+		if (currentView !== "note" || !currentNoteId) {
 			return;
 		}
 
-		creatingNoteRef.current = true;
-
-		void createNote()
-			.then((noteId) => {
-				setCurrentNoteTitle("New note");
-				openNote(noteId);
-			})
-			.catch((error) => {
-				console.error("Failed to create note", error);
-			})
-			.finally(() => {
-				creatingNoteRef.current = false;
-			});
-	}, [createNote, openNote]);
+		window.history.replaceState(null, "", `/note?noteId=${currentNoteId}`);
+	}, [currentNoteId, currentView]);
 
 	React.useEffect(() => {
 		if (currentView === "note" && !currentNoteId) {
-			handleCreateNote();
+			handleCreateNote({
+				autoStartCapture: shouldAutoStartNoteCapture,
+			});
 		}
-	}, [currentNoteId, currentView, handleCreateNote]);
+	}, [
+		currentNoteId,
+		currentView,
+		handleCreateNote,
+		shouldAutoStartNoteCapture,
+	]);
 
 	const handleSettingsOpenChange = React.useCallback(
 		(open: boolean, page: SettingsPage = "Profile") => {
@@ -1865,9 +1930,11 @@ const useAppShellState = ({
 		currentNoteTitle,
 		currentView,
 		currentWeekdayLabel,
+		handleAutoStartNoteCaptureHandled,
 		handleChatPersisted,
 		handleChatRemoved,
 		handleCreateNote,
+		handleQuickNote,
 		handleNewChat,
 		handleNoteTrashed,
 		handleOpenCalendarSettings,
@@ -1888,6 +1955,7 @@ const useAppShellState = ({
 		setActiveWorkspaceId,
 		setCurrentNoteEditorActions,
 		setCurrentNoteTitle,
+		shouldAutoStartNoteCapture,
 		sharedNotes,
 		upcomingCalendarEvents,
 		upcomingCalendarStatus,
@@ -1968,7 +2036,7 @@ function AppShell({
 					currentNoteTitle={controller.currentNoteTitle}
 					currentNoteTemplateSlug={controller.currentNoteTemplateSlug}
 					currentNoteEditorActions={controller.currentNoteEditorActions}
-					onCreateNote={controller.handleCreateNote}
+					onCreateNote={controller.handleQuickNote}
 					onNoteTrashed={controller.handleNoteTrashed}
 					onNewChat={controller.handleNewChat}
 				/>
@@ -1990,7 +2058,7 @@ function AppShell({
 					userName={controller.user.name}
 					onOpenNote={controller.openNote}
 					onNoteTrashed={controller.handleNoteTrashed}
-					onCreateNote={controller.handleCreateNote}
+					onCreateNote={controller.handleQuickNote}
 					onOpenCalendarSettings={controller.handleOpenCalendarSettings}
 					chatComposerId={controller.chatComposerId}
 					initialChatMessages={controller.initialChatMessages}
@@ -2001,6 +2069,10 @@ function AppShell({
 					onChatRemoved={controller.handleChatRemoved}
 					onNoteTitleChange={controller.setCurrentNoteTitle}
 					onNoteEditorActionsChange={controller.setCurrentNoteEditorActions}
+					onAutoStartNoteCaptureHandled={
+						controller.handleAutoStartNoteCaptureHandled
+					}
+					shouldAutoStartNoteCapture={controller.shouldAutoStartNoteCapture}
 				/>
 			</AppShellInset>
 		</SidebarProvider>
@@ -2222,6 +2294,8 @@ function AppShellContent({
 	onChatRemoved,
 	onNoteTitleChange,
 	onNoteEditorActionsChange,
+	onAutoStartNoteCaptureHandled,
+	shouldAutoStartNoteCapture,
 }: {
 	currentView: AppView;
 	currentDate: Date;
@@ -2249,6 +2323,8 @@ function AppShellContent({
 	onChatRemoved: (chatId: string) => void;
 	onNoteTitleChange: (title: string) => void;
 	onNoteEditorActionsChange: (actions: NoteEditorActions | null) => void;
+	onAutoStartNoteCaptureHandled: () => void;
+	shouldAutoStartNoteCapture: boolean;
 }) {
 	if (currentView === "home") {
 		return (
@@ -2293,7 +2369,9 @@ function AppShellContent({
 		return (
 			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
 				<NotePage
+					autoStartTranscription={shouldAutoStartNoteCapture}
 					noteId={currentNoteId}
+					onAutoStartTranscriptionHandled={onAutoStartNoteCaptureHandled}
 					onTitleChange={onNoteTitleChange}
 					onEditorActionsChange={onNoteEditorActionsChange}
 				/>

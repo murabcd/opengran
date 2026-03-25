@@ -33,6 +33,7 @@ import {
 	PanelTopBottomDashed,
 	Paperclip,
 	Plus,
+	Sparkles,
 	ThumbsDown,
 	ThumbsUp,
 } from "lucide-react";
@@ -43,12 +44,16 @@ import { ShimmerText } from "@/components/ai-elements/shimmer";
 import { resolveChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import { api } from "../../../../../convex/_generated/api";
-import type { Id } from "../../../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { SpeechInput } from "../ai-elements/speech-input";
 
 type NoteChatPresentation = "inline" | "floating" | "sidebar";
 const NOTE_CHAT_MODEL = resolveChatModel("gpt-5.4-mini");
 const NOTE_CHAT_FLOATING_WIDTH = "min(28rem, calc(100vw - 2rem))";
+type NoteChatSummary = Pick<
+	Doc<"chats">,
+	"_id" | "_creationTime" | "chatId" | "createdAt" | "title" | "updatedAt"
+>;
 
 type NoteComposerProps = {
 	noteContext: {
@@ -56,8 +61,10 @@ type NoteComposerProps = {
 		title: string;
 		text: string;
 	};
+	autoStartTranscription?: boolean;
+	onAutoStartTranscriptionHandled?: () => void;
 	onAddMessageToNote?: (text: string) => Promise<void> | void;
-	onEnhanceTranscript?: (transcript: string) => Promise<void> | void;
+	onEnhanceTranscript?: (transcript: string) => Promise<void>;
 };
 
 const extractTextParts = (message: UIMessage) =>
@@ -90,14 +97,13 @@ const isSameCalendarDay = (left: Date, right: Date) =>
 	left.getMonth() === right.getMonth() &&
 	left.getDate() === right.getDate();
 
-const groupChatsForSelector = <
-	T extends { updatedAt: number; createdAt: number; _creationTime: number },
->(
-	chats: T[],
-) => {
+const groupChatsForSelector = (chats: NoteChatSummary[]) => {
 	const now = new Date();
 
-	return chats.reduce<{ today: T[]; previous: T[] }>(
+	return chats.reduce<{
+		today: NoteChatSummary[];
+		previous: NoteChatSummary[];
+	}>(
 		(groups, chat) => {
 			const chatDate = new Date(
 				chat.updatedAt || chat.createdAt || chat._creationTime,
@@ -121,10 +127,12 @@ const getChatText = (message: UIMessage) =>
 		.join("\n\n")
 		.trim();
 
-const createDraftChatId = () => crypto.randomUUID();
+const createDraftChatId = (): string => crypto.randomUUID();
 
 const useNoteComposerController = ({
 	noteContext,
+	autoStartTranscription,
+	onAutoStartTranscriptionHandled,
 	onEnhanceTranscript,
 }: NoteComposerProps) => {
 	const {
@@ -147,10 +155,14 @@ const useNoteComposerController = ({
 		React.useState<NoteChatPresentation>("inline");
 	const [transcriptChunks, setTranscriptChunks] = React.useState<string[]>([]);
 	const [liveTranscript, setLiveTranscript] = React.useState("");
-	const [currentChatId, setCurrentChatId] = React.useState(() =>
+	const [pendingGenerateTranscript, setPendingGenerateTranscript] =
+		React.useState("");
+	const [currentChatId, setCurrentChatId] = React.useState<string>(() =>
 		createDraftChatId(),
 	);
 	const [isPreparingRequest, setIsPreparingRequest] = React.useState(false);
+	const [isGeneratingNotes, startGenerateNotesTransition] =
+		React.useTransition();
 	const [reactionsByMessageId, setReactionsByMessageId] = React.useState<
 		Record<string, "like" | "dislike" | undefined>
 	>({});
@@ -160,7 +172,7 @@ const useNoteComposerController = ({
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
 	const chatViewportRef = React.useRef<HTMLDivElement>(null);
 	const previousSpeechListeningRef = React.useRef(false);
-	const lastEnhancedTranscriptRef = React.useRef("");
+	const hasHandledAutoStartRef = React.useRef(false);
 	const noteId = (noteContext.noteId as Id<"notes"> | null) ?? null;
 	const previousChatIdRef = React.useRef(currentChatId);
 	const previousNoteIdRef = React.useRef(noteId);
@@ -279,6 +291,10 @@ const useNoteComposerController = ({
 		.filter(Boolean)
 		.join(" ")
 		.trim();
+	const canGenerateNotes =
+		Boolean(pendingGenerateTranscript.trim()) &&
+		!isSpeechListening &&
+		!isTranscriptOpen;
 	const chatTitle = currentChatSession?.title?.trim() || "New chat";
 	const groupedNoteChats = React.useMemo(
 		() => groupChatsForSelector(noteChats ?? []),
@@ -332,8 +348,8 @@ const useNoteComposerController = ({
 		setReactionsByMessageId({});
 		setTranscriptChunks([]);
 		setLiveTranscript("");
+		setPendingGenerateTranscript("");
 		previousSpeechListeningRef.current = false;
-		lastEnhancedTranscriptRef.current = "";
 		resetTextareaHeight();
 		closeRightSidebar();
 	}, [
@@ -359,30 +375,39 @@ const useNoteComposerController = ({
 	React.useEffect(() => {
 		if (isSpeechListening && !previousSpeechListeningRef.current) {
 			closeRightSidebar();
-			setPanelMode((currentValue) =>
-				currentValue === "chat" ? currentValue : "transcript",
-			);
-			setTranscriptChunks([]);
 			setLiveTranscript("");
-			lastEnhancedTranscriptRef.current = "";
+			setPendingGenerateTranscript("");
 		}
 
 		if (
 			!isSpeechListening &&
 			previousSpeechListeningRef.current &&
-			fullTranscript &&
-			fullTranscript !== lastEnhancedTranscriptRef.current
+			fullTranscript
 		) {
-			lastEnhancedTranscriptRef.current = fullTranscript;
-			void onEnhanceTranscript?.(fullTranscript);
+			setPendingGenerateTranscript(fullTranscript);
+			closeRightSidebar();
+			setPanelMode(null);
 		}
 
 		previousSpeechListeningRef.current = isSpeechListening;
+	}, [closeRightSidebar, fullTranscript, isSpeechListening]);
+
+	React.useEffect(() => {
+		if (!autoStartTranscription) {
+			hasHandledAutoStartRef.current = false;
+			return;
+		}
+
+		if (!isSpeechListening || hasHandledAutoStartRef.current) {
+			return;
+		}
+
+		hasHandledAutoStartRef.current = true;
+		onAutoStartTranscriptionHandled?.();
 	}, [
-		closeRightSidebar,
-		fullTranscript,
+		autoStartTranscription,
 		isSpeechListening,
-		onEnhanceTranscript,
+		onAutoStartTranscriptionHandled,
 	]);
 
 	React.useEffect(() => {
@@ -598,10 +623,32 @@ const useNoteComposerController = ({
 		setPanelMode("chat");
 	}, [closeRightSidebar, isChatLoading, latestNoteChat, stop]);
 
+	const handleGenerateNotes = React.useCallback(() => {
+		const transcript = pendingGenerateTranscript.trim();
+
+		if (!transcript || isGeneratingNotes || !onEnhanceTranscript) {
+			return;
+		}
+
+		startGenerateNotesTransition(() => {
+			void onEnhanceTranscript(transcript).then(() => {
+				setPendingGenerateTranscript("");
+				setTranscriptChunks([]);
+				setLiveTranscript("");
+			});
+		});
+	}, [isGeneratingNotes, onEnhanceTranscript, pendingGenerateTranscript]);
+
 	return {
+		autoStartKey:
+			autoStartTranscription && noteContext.noteId
+				? `${noteContext.noteId}:capture`
+				: null,
+		canGenerateNotes,
 		chatError,
 		chatMessages,
 		chatTitle,
+		chatViewportRef,
 		closeRightSidebar,
 		composerPlaceholder,
 		currentChatId,
@@ -609,6 +656,7 @@ const useNoteComposerController = ({
 		fullTranscript,
 		groupedNoteChats,
 		handleComposerFocus,
+		handleGenerateNotes,
 		handleHideChat,
 		handleKeyDown,
 		handleSelectChat,
@@ -620,6 +668,7 @@ const useNoteComposerController = ({
 		inlinePanelRef,
 		isChatLoading,
 		isChatOpen,
+		isGeneratingNotes,
 		isMobile,
 		isSidebarPresentation,
 		isSpeechListening,
@@ -645,12 +694,14 @@ const useNoteComposerController = ({
 };
 
 function NoteSpeechControls({
+	autoStartKey,
 	isTranscriptOpen,
 	onToggleTranscript,
 	onTranscriptAppend,
 	onTranscriptChange,
 	onTranscriptListeningChange,
 }: {
+	autoStartKey?: string | number | null;
 	isTranscriptOpen: boolean;
 	onToggleTranscript: () => void;
 	onTranscriptAppend: (text: string) => void;
@@ -662,6 +713,7 @@ function NoteSpeechControls({
 			<SpeechInput
 				variant="outline"
 				size="icon"
+				autoStartKey={autoStartKey}
 				className="shrink-0 rounded-full"
 				onListeningChange={onTranscriptListeningChange}
 				onTranscriptChange={onTranscriptChange}
@@ -885,16 +937,7 @@ function NoteChatHeader({
 	chatTitle: string;
 	currentChatId: string;
 	groupedNoteChats: ReturnType<typeof groupChatsForSelector>;
-	noteChats:
-		| Array<{
-				_id: Id<"chats">;
-				chatId: string;
-				title: string;
-				updatedAt: number;
-				createdAt: number;
-				_creationTime: number;
-		  }>
-		| undefined;
+	noteChats: NoteChatSummary[] | undefined;
 	onHideChat: () => void;
 	onNewChat: () => void;
 	onSelectChat: (chatId: string) => void;
@@ -1185,6 +1228,7 @@ export function NoteComposer(props: NoteComposerProps) {
 	const controller = useNoteComposerController(props);
 	const speechControls = (
 		<NoteSpeechControls
+			autoStartKey={controller.autoStartKey}
 			isTranscriptOpen={controller.isTranscriptOpen}
 			onToggleTranscript={() => {
 				controller.closeRightSidebar();
@@ -1335,6 +1379,20 @@ export function NoteComposer(props: NoteComposerProps) {
 				className="sr-only"
 				onChange={() => {}}
 			/>
+			{controller.canGenerateNotes ? (
+				<div className="pointer-events-none absolute inset-x-0 bottom-full z-30 mb-3 flex justify-center">
+					<Button
+						type="button"
+						size="sm"
+						className="pointer-events-auto px-4 shadow-lg"
+						onClick={controller.handleGenerateNotes}
+						disabled={controller.isGeneratingNotes}
+					>
+						<Sparkles className="size-4" />
+						{controller.isGeneratingNotes ? "Generating..." : "Generate notes"}
+					</Button>
+				</div>
+			) : null}
 			{controller.panelMode ? (
 				controller.shouldShowInlinePanel ? (
 					<div
@@ -1349,12 +1407,6 @@ export function NoteComposer(props: NoteComposerProps) {
 							<Card className="relative -mx-6 h-96 max-h-[calc(100dvh-6rem)] w-[calc(100%+3rem)] gap-0 py-0">
 								{panelContent}
 							</Card>
-
-							{controller.isTranscriptOpen ? (
-								<div className="pointer-events-auto absolute bottom-[13px] left-0 z-10">
-									{speechControls}
-								</div>
-							) : null}
 						</div>
 					</div>
 				) : (
@@ -1387,10 +1439,23 @@ export function NoteComposer(props: NoteComposerProps) {
 						</Sidebar>
 					)
 				)
-			) : (
-				<div className="flex items-center gap-3">
+			) : null}
+			<div
+				className={cn("flex items-center gap-3", controller.panelMode && "h-0")}
+			>
+				<div
+					className={cn(
+						!controller.panelMode
+							? "relative shrink-0"
+							: controller.shouldShowInlinePanel && controller.isTranscriptOpen
+								? "pointer-events-auto absolute bottom-[13px] left-0 z-30"
+								: "hidden",
+					)}
+				>
 					{speechControls}
+				</div>
 
+				{controller.panelMode ? null : (
 					<form
 						onSubmit={controller.handleSubmit}
 						className="group/composer w-full"
@@ -1408,8 +1473,8 @@ export function NoteComposer(props: NoteComposerProps) {
 							textareaRef={controller.textareaRef}
 						/>
 					</form>
-				</div>
-			)}
+				)}
+			</div>
 		</div>
 	);
 }

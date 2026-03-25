@@ -16,6 +16,7 @@ type SpeechInputProps = ComponentProps<typeof Button> & {
 	onTranscriptionChange?: (text: string) => void;
 	onTranscriptChange?: (text: string) => void;
 	onListeningChange?: (isListening: boolean) => void;
+	autoStartKey?: string | number | null;
 	lang?: string;
 };
 
@@ -104,6 +105,7 @@ export const SpeechInput = ({
 	onTranscriptionChange,
 	onTranscriptChange,
 	onListeningChange,
+	autoStartKey,
 	lang,
 	...props
 }: SpeechInputProps) => {
@@ -122,6 +124,7 @@ export const SpeechInput = ({
 	const onListeningChangeRef =
 		useRef<SpeechInputProps["onListeningChange"]>(onListeningChange);
 	const partialTranscriptRef = useRef("");
+	const lastAutoStartKeyRef = useRef<string | number | null>(null);
 
 	onTranscriptionChangeRef.current = onTranscriptionChange;
 	onTranscriptChangeRef.current = onTranscriptChange;
@@ -287,6 +290,24 @@ export const SpeechInput = ({
 
 		void startListening();
 	}, [isConnecting, isListening, startListening, stopListening]);
+
+	useEffect(() => {
+		if (autoStartKey == null || !isAvailable) {
+			return;
+		}
+
+		if (lastAutoStartKeyRef.current === autoStartKey) {
+			return;
+		}
+
+		lastAutoStartKeyRef.current = autoStartKey;
+
+		if (isListening || isConnecting) {
+			return;
+		}
+
+		void startListening();
+	}, [autoStartKey, isAvailable, isConnecting, isListening, startListening]);
 
 	const isUnavailable = !isAvailable;
 

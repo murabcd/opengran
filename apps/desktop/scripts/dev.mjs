@@ -14,10 +14,10 @@ const sleep = (ms) =>
 		setTimeout(resolvePromise, ms);
 	});
 
-const waitForRenderer = async () => {
+const waitForUrl = async (targetUrl) => {
 	for (let attempt = 0; attempt < 120; attempt += 1) {
 		try {
-			const response = await fetch(rendererUrl);
+			const response = await fetch(targetUrl);
 			if (response.ok) {
 				return;
 			}
@@ -26,10 +26,10 @@ const waitForRenderer = async () => {
 		await sleep(500);
 	}
 
-	throw new Error(`Renderer did not become available at ${rendererUrl}.`);
+	throw new Error(`Renderer did not become available at ${targetUrl}.`);
 };
 
-await waitForRenderer();
+await waitForUrl(rendererUrl);
 
 const child = spawn(electronBinary, ["."], {
 	cwd: packageRoot,

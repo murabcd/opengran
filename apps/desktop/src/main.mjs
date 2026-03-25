@@ -123,9 +123,14 @@ const saveTraySettings = async () => {
 	}
 };
 
-const getNavigationUrl = async ({ pathname = "/home", hash = "" } = {}) => {
+const getNavigationUrl = async ({
+	pathname = "/home",
+	search = "",
+	hash = "",
+} = {}) => {
 	const targetUrl = new URL(await resolveRendererUrl());
 	targetUrl.pathname = pathname;
+	targetUrl.search = search;
 	targetUrl.hash = hash;
 
 	return targetUrl.toString();
@@ -462,9 +467,12 @@ const buildTrayMenu = () =>
 			},
 		},
 		{
-			label: "Note",
+			label: "Quick note",
 			click: () => {
-				void showMainWindow({ pathname: "/note" });
+				void showMainWindow({
+					pathname: "/note",
+					search: "?capture=1",
+				});
 			},
 		},
 		{

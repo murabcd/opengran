@@ -868,6 +868,7 @@ const useNotePageController = ({
 				toast.success("Structured notes ready");
 			} catch (error) {
 				showActionError("Failed to enhance transcript", error);
+				throw error;
 			}
 		},
 		[editor, searchableText, title],
@@ -887,11 +888,15 @@ const useNotePageController = ({
 };
 
 export function NotePage({
+	autoStartTranscription = false,
 	noteId,
+	onAutoStartTranscriptionHandled,
 	onTitleChange,
 	onEditorActionsChange,
 }: {
+	autoStartTranscription?: boolean;
 	noteId: Id<"notes"> | null;
+	onAutoStartTranscriptionHandled?: () => void;
 	onTitleChange?: (title: string) => void;
 	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
 }) {
@@ -955,11 +960,15 @@ export function NotePage({
 						<div className="pointer-events-none absolute inset-x-0 bottom-0 -mx-4 bg-background pb-6 md:-mx-6">
 							<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
 								<NoteComposer
+									autoStartTranscription={autoStartTranscription}
 									noteContext={{
 										noteId: controller.noteId,
 										title: controller.title,
 										text: controller.searchableText,
 									}}
+									onAutoStartTranscriptionHandled={
+										onAutoStartTranscriptionHandled
+									}
 									onAddMessageToNote={controller.appendChatResponseToNote}
 									onEnhanceTranscript={controller.handleEnhanceTranscript}
 								/>

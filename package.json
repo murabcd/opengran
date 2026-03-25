@@ -3,19 +3,19 @@
   "version": "0.0.1",
   "private": true,
   "packageManager": "bun@1.3.10",
-  "scripts": {
-    "build": "turbo run build",
-    "dev": "concurrently --kill-others-on-fail -n desktop,convex -c cyan,magenta \"bun run dev:desktop\" \"bunx convex dev\"",
-    "dev:web": "turbo run dev --filter=web",
-    "dev:desktop": "turbo run dev --filter=web --filter=desktop",
+	"scripts": {
+		"build": "turbo run build",
+		"dev": "concurrently --kill-others-on-fail -n desktop,convex -c cyan,magenta \"bun run dev:desktop\" \"bunx convex dev\"",
+		"dev:web": "turbo run dev --filter=web",
+		"dev:desktop": "turbo run dev --filter=web --filter=desktop",
     "lint": "turbo run lint",
     "check": "turbo run check",
     "format": "turbo run format",
     "prepare": "husky",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "preview": "turbo run preview --filter=web"
-  },
+		"preview": "turbo run preview --filter=web"
+	},
   "devDependencies": {
     "@biomejs/biome": "2.4.8",
     "@types/node": "^24.12.0",
