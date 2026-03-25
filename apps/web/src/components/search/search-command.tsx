@@ -40,12 +40,12 @@ export function SearchCommand({
 			className="top-1/2 max-w-[calc(100%-2rem)] -translate-y-1/2 rounded-lg sm:max-w-lg"
 		>
 			<Command className="**:[[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 **:[[cmdk-input-wrapper]_svg]:size-5 **:[[cmdk-input]]:h-12 **:[[cmdk-item]]:px-2 **:[[cmdk-item]]:py-2 **:[[cmdk-item]_svg]:size-5">
-				<div className="flex items-center gap-2 pr-2">
-					<CommandInput placeholder="Search notes..." />
+				<div className="relative min-w-0">
+					<CommandInput placeholder="Search notes..." className="pr-14" />
 					<button
 						type="button"
 						onClick={() => onOpenChange(false)}
-						className="flex shrink-0 items-center"
+						className="absolute top-5 right-4 z-10 flex -translate-y-1/2 items-center"
 						aria-label="Close search"
 					>
 						<Kbd className="font-mono text-[10px]">Esc</Kbd>
