@@ -368,7 +368,7 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 								silence_duration_ms: 200,
 							},
 							transcription: {
-								model: "gpt-4o-mini-transcribe",
+								model: "gpt-4o-transcribe",
 								...(language ? { language } : {}),
 							},
 						},
