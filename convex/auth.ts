@@ -54,20 +54,17 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 						return;
 					}
 
-					const runCtx = requireRunMutationCtx(ctx);
-					await runCtx.runMutation(internal.notes.removeAllForOwner, {
-						ownerTokenIdentifier: identity.tokenIdentifier,
-					});
-					await runCtx.runMutation(internal.chats.removeAllForOwner, {
-						ownerTokenIdentifier: identity.tokenIdentifier,
-					});
-					await runCtx.runMutation(internal.transcriptSessions.removeAllForOwner, {
-						ownerTokenIdentifier: identity.tokenIdentifier,
-					});
-					await runCtx.runMutation(internal.onboarding.removeAllForOwner, {
-						ownerTokenIdentifier: identity.tokenIdentifier,
-					});
-					await runCtx.runMutation(internal.workspaces.removeAllForOwner, {
+						const runCtx = requireRunMutationCtx(ctx);
+						await runCtx.runMutation(internal.notes.removeAllForOwner, {
+							ownerTokenIdentifier: identity.tokenIdentifier,
+						});
+						await runCtx.runMutation(internal.chats.removeAllForOwner, {
+							ownerTokenIdentifier: identity.tokenIdentifier,
+						});
+						await runCtx.runMutation(internal.onboarding.removeAllForOwner, {
+							ownerTokenIdentifier: identity.tokenIdentifier,
+						});
+						await runCtx.runMutation(internal.workspaces.removeAllForOwner, {
 						ownerTokenIdentifier: identity.tokenIdentifier,
 					});
 					await runCtx.runMutation(internal.templates.removeAllForOwner, {
