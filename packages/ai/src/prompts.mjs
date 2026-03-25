@@ -26,24 +26,36 @@ export const buildChatSystemPrompt = ({
 				attachedNoteContext,
 			]);
 
-export const STRUCTURED_NOTE_SYSTEM_PROMPT = joinPromptSections([
-	"You turn raw meeting transcripts into clean structured notes.",
-	"Stay grounded in the transcript and the user's raw notes.",
-	"Do not invent facts, decisions, owners, or dates that are not supported.",
-	"Return a concise, specific note title that matches the transcript content.",
-	"Prefer concise bullets over long prose.",
-	"Create practical sections such as Summary, Decisions, Risks, Next steps, or Open questions when relevant.",
+export const ENHANCED_NOTE_SYSTEM_PROMPT = joinPromptSections([
+	"You turn raw transcripts and notes into polished structured notes.",
+	"Preserve the source language used in the input.",
+	"Do not invent facts, decisions, owners, dates, or action items.",
+	"Return a concise, specific note title that matches the content.",
+	"Prefer a short overview only when it adds signal.",
+	"Organize the body into 3 to 6 topic-based sections with descriptive titles grounded in the actual discussion.",
+	"Group related bullets together under the most relevant topic instead of scattering them across generic headings.",
+	"Use generic sections such as Decisions, Risks, Next steps, or Open questions only when the source clearly supports them.",
+	"Keep bullets concise, factual, and easy to scan.",
 ]);
 
-export const buildStructuredNotePrompt = ({
+export const buildEnhancedNotePrompt = ({
 	title = "",
 	rawNotes = "",
 	transcript = "",
+	noteText = "",
 } = {}) =>
 	[
-		title.trim() ? `Note title: ${title.trim()}` : "",
+		title.trim() ? `Current note title: ${title.trim()}` : "",
 		rawNotes.trim() ? `User notes:\n${rawNotes.trim()}` : "",
-		`Raw transcript:\n${transcript.trim()}`,
+		transcript.trim() ? `Raw transcript:\n${transcript.trim()}` : "",
+		noteText.trim() ? `Source note text:\n${noteText.trim()}` : "",
+		[
+			"Rewrite this into a polished note with:",
+			"- a concise title",
+			"- a short overview only if it helps",
+			"- topic-based sections with descriptive titles",
+			"- concise bullets grounded only in the source text",
+		].join("\n"),
 	]
 		.filter(Boolean)
 		.join("\n\n");

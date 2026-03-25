@@ -46,6 +46,7 @@ const removeAllNotesResultValidator = v.object({
 });
 
 const REMOVE_ALL_NOTES_BATCH_SIZE = 100;
+const DEFAULT_NOTE_TEMPLATE_SLUG = "enhanced";
 
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
@@ -65,6 +66,7 @@ const getAuthorName = (identity: Awaited<ReturnType<typeof requireIdentity>>) =>
 
 const normalizeNote = (note: Doc<"notes">) => ({
 	...note,
+	templateSlug: note.templateSlug ?? DEFAULT_NOTE_TEMPLATE_SLUG,
 	visibility: note.visibility ?? "private",
 });
 
@@ -291,7 +293,7 @@ export const create = mutation({
 			ownerTokenIdentifier,
 			authorName: getAuthorName(identity),
 			title: "New note",
-			templateSlug: undefined,
+			templateSlug: DEFAULT_NOTE_TEMPLATE_SLUG,
 			content: JSON.stringify({
 				type: "doc",
 				content: [{ type: "paragraph" }],
@@ -346,7 +348,7 @@ export const save = mutation({
 			ownerTokenIdentifier,
 			authorName,
 			title: args.title,
-			templateSlug: undefined,
+			templateSlug: DEFAULT_NOTE_TEMPLATE_SLUG,
 			content: args.content,
 			searchableText: args.searchableText,
 			visibility: "private",

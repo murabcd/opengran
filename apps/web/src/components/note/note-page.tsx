@@ -9,9 +9,12 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
+import {
+	isEnhancedNoteTemplate,
+	type NoteTemplate,
+} from "@/lib/note-templates";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
-import type { NoteTemplate } from "../templates/note-template-select";
 import { NoteComposer } from "./note-composer";
 import { writeTextToClipboard } from "./share-note";
 
@@ -582,6 +585,35 @@ const useNotePageController = ({
 		[editor],
 	);
 
+	const requestStructuredNote = React.useCallback(
+		async (body: {
+			title: string;
+			rawNotes?: string;
+			transcript?: string;
+			noteText?: string;
+		}) => {
+			const response = await fetch("/api/enhance-note", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(body),
+			});
+
+			const payload = (await response.json().catch(() => ({}))) as {
+				error?: string;
+				note?: StructuredNote;
+			};
+
+			if (!response.ok || !payload.note) {
+				throw new Error(payload.error || "Failed to enhance note.");
+			}
+
+			return payload.note;
+		},
+		[],
+	);
+
 	const applyTemplate = React.useCallback(
 		async (template: NoteTemplate) => {
 			if (!editor || !noteId) {
@@ -601,6 +633,7 @@ const useNotePageController = ({
 			});
 			const previousContent = content;
 			const previousSearchableText = searchableText;
+			const previousTitle = title;
 			const previousDocument = editor.getJSON();
 
 			if (isApplyingTemplate) {
@@ -623,6 +656,26 @@ const useNotePageController = ({
 					id: nextNoteIdRef.current ?? noteId,
 					templateSlug: template.slug,
 				});
+
+				if (isEnhancedNoteTemplate(template)) {
+					const enhancedNote = await requestStructuredNote({
+						title,
+						noteText: serializedText,
+					});
+					const nextDocument = structuredNoteToDocument(enhancedNote);
+					const nextContent = JSON.stringify(nextDocument);
+					const nextSearchableText =
+						structuredNoteToSearchableText(enhancedNote);
+					const nextTitle = enhancedNote.title.trim() || title;
+
+					editor.commands.setContent(nextDocument, { emitUpdate: false });
+					setTitle(nextTitle);
+					setContent(nextContent);
+					setSearchableText(nextSearchableText);
+					toast.success(`Rewrote note with ${template.name}`);
+
+					return true;
+				}
 
 				editor.commands.setContent(EMPTY_DOCUMENT, { emitUpdate: false });
 				setContent(EMPTY_DOCUMENT_STRING);
@@ -750,6 +803,7 @@ const useNotePageController = ({
 					console.error("Failed to revert note template", revertError);
 				}
 				editor.commands.setContent(previousDocument, { emitUpdate: false });
+				setTitle(previousTitle);
 				setContent(previousContent);
 				setSearchableText(previousSearchableText);
 				showActionError("Failed to rewrite note with template", error);
@@ -762,7 +816,7 @@ const useNotePageController = ({
 				});
 			}
 		},
-		[content, editor, noteId, setNoteTemplate],
+		[content, editor, noteId, requestStructuredNote, setNoteTemplate],
 	);
 
 	React.useEffect(() => {
@@ -835,31 +889,15 @@ const useNotePageController = ({
 			}
 
 			try {
-				const response = await fetch("/api/enhance-note", {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({
-						title,
-						rawNotes: searchableText,
-						transcript,
-					}),
+				const enhancedNote = await requestStructuredNote({
+					title,
+					rawNotes: searchableText,
+					transcript,
 				});
-
-				const payload = (await response.json().catch(() => ({}))) as {
-					error?: string;
-					note?: StructuredNote;
-				};
-
-				if (!response.ok || !payload.note) {
-					throw new Error(payload.error || "Failed to enhance note.");
-				}
-
-				const nextDocument = structuredNoteToDocument(payload.note);
+				const nextDocument = structuredNoteToDocument(enhancedNote);
 				const nextContent = JSON.stringify(nextDocument);
-				const nextSearchableText = structuredNoteToSearchableText(payload.note);
-				const nextTitle = payload.note.title.trim() || title;
+				const nextSearchableText = structuredNoteToSearchableText(enhancedNote);
+				const nextTitle = enhancedNote.title.trim() || title;
 
 				editor.commands.setContent(nextDocument, { emitUpdate: false });
 				setTitle(nextTitle);
@@ -871,7 +909,7 @@ const useNotePageController = ({
 				throw error;
 			}
 		},
-		[editor, searchableText, title],
+		[editor, requestStructuredNote, searchableText, title],
 	);
 
 	return {

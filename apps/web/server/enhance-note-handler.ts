@@ -3,14 +3,15 @@ import { openai } from "@ai-sdk/openai";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import {
-	buildStructuredNotePrompt,
-	STRUCTURED_NOTE_SYSTEM_PROMPT,
+	buildEnhancedNotePrompt,
+	ENHANCED_NOTE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
 
 type EnhanceNoteRequestBody = {
 	title?: string;
 	rawNotes?: string;
 	transcript?: string;
+	noteText?: string;
 };
 
 const structuredNoteSchema = z.object({
@@ -67,25 +68,30 @@ export const handleEnhanceNoteRequest = async (
 		title = "",
 		rawNotes = "",
 		transcript = "",
+		noteText = "",
 	} = await readJsonBody(request);
 
-	if (!transcript.trim()) {
+	const trimmedTranscript = transcript.trim();
+	const trimmedNoteText = noteText.trim();
+
+	if (!trimmedTranscript && !trimmedNoteText) {
 		sendJson(response, 400, {
-			error: "Transcript is required.",
+			error: "Transcript or note text is required.",
 		});
 		return;
 	}
 
 	const { output } = await generateText({
 		model: openai("gpt-5.4-mini"),
-		system: STRUCTURED_NOTE_SYSTEM_PROMPT,
+		system: ENHANCED_NOTE_SYSTEM_PROMPT,
 		output: Output.object({
 			schema: structuredNoteSchema,
 		}),
-		prompt: buildStructuredNotePrompt({
+		prompt: buildEnhancedNotePrompt({
 			title,
 			rawNotes,
-			transcript,
+			transcript: trimmedTranscript,
+			noteText: trimmedNoteText,
 		}),
 	});
 

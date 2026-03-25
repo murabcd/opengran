@@ -1,5 +1,5 @@
 export declare const BASE_CHAT_SYSTEM_PROMPT: string;
-export declare const STRUCTURED_NOTE_SYSTEM_PROMPT: string;
+export declare const ENHANCED_NOTE_SYSTEM_PROMPT: string;
 export declare const APPLY_TEMPLATE_SYSTEM_PROMPT: string;
 
 export declare function buildChatSystemPrompt(options?: {
@@ -8,10 +8,11 @@ export declare function buildChatSystemPrompt(options?: {
 	webSearchEnabled?: boolean;
 }): string;
 
-export declare function buildStructuredNotePrompt(options?: {
+export declare function buildEnhancedNotePrompt(options?: {
 	title?: string;
 	rawNotes?: string;
 	transcript?: string;
+	noteText?: string;
 }): string;
 
 export declare function buildApplyTemplatePrompt(options?: {

@@ -5,26 +5,14 @@ import {
 	SelectTrigger,
 } from "@workspace/ui/components/select";
 import { useQuery } from "convex/react";
-import { CalendarDays, Goal, UsersRound } from "lucide-react";
 import * as React from "react";
+import {
+	ENHANCED_NOTE_TEMPLATE_SLUG,
+	getSelectableNoteTemplates,
+	NOTE_TEMPLATE_ICONS,
+	type NoteTemplate,
+} from "@/lib/note-templates";
 import { api } from "../../../../../convex/_generated/api";
-
-export type NoteTemplate = {
-	slug: string;
-	name: string;
-	meetingContext: string;
-	sections: Array<{
-		id: string;
-		title: string;
-		prompt: string;
-	}>;
-};
-
-const templateIcons = {
-	"one-to-one": UsersRound,
-	"stand-up": Goal,
-	"weekly-team-meeting": CalendarDays,
-} as const;
 
 export function NoteTemplateSelect({
 	disabled = false,
@@ -37,23 +25,20 @@ export function NoteTemplateSelect({
 }) {
 	const templateData = useQuery(api.templates.list);
 	const [isApplyingTemplate, setIsApplyingTemplate] = React.useState(false);
-	const templates = React.useMemo(() => templateData ?? [], [templateData]);
-	const currentSlug = selectedSlug ?? "";
+	const templates = React.useMemo(
+		() => getSelectableNoteTemplates(templateData),
+		[templateData],
+	);
+	const currentSlug = selectedSlug ?? ENHANCED_NOTE_TEMPLATE_SLUG;
 	const currentTemplate = templates.find(
 		(template) => template.slug === currentSlug,
 	);
-	const isDisabled =
-		disabled ||
-		isApplyingTemplate ||
-		templateData === undefined ||
-		templates.length === 0;
+	const isDisabled = disabled || isApplyingTemplate || templates.length === 0;
 	const placeholder = isApplyingTemplate
 		? "Applying..."
-		: templateData === undefined
-			? "Loading templates..."
-			: templates.length === 0
-				? "No templates"
-				: (currentTemplate?.name ?? "Templates");
+		: templates.length === 0
+			? "No templates"
+			: (currentTemplate?.name ?? "Templates");
 
 	return (
 		<Select
@@ -86,8 +71,8 @@ export function NoteTemplateSelect({
 					<span className="flex items-center gap-2 text-foreground">
 						{(() => {
 							const Icon =
-								templateIcons[
-									currentTemplate.slug as keyof typeof templateIcons
+								NOTE_TEMPLATE_ICONS[
+									currentTemplate.slug as keyof typeof NOTE_TEMPLATE_ICONS
 								];
 
 							return Icon ? (
@@ -103,8 +88,10 @@ export function NoteTemplateSelect({
 			<SelectContent align="end">
 				{templates.map((template) => {
 					const Icon =
-						template.slug in templateIcons
-							? templateIcons[template.slug as keyof typeof templateIcons]
+						template.slug in NOTE_TEMPLATE_ICONS
+							? NOTE_TEMPLATE_ICONS[
+									template.slug as keyof typeof NOTE_TEMPLATE_ICONS
+								]
 							: null;
 
 					return (
