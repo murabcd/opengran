@@ -4,6 +4,7 @@ import {
 	consumeStream,
 	convertToModelMessages,
 	createIdGenerator,
+	generateText,
 	streamText,
 	type UIMessage,
 	validateUIMessages,
@@ -11,7 +12,10 @@ import {
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { buildChatSystemPrompt } from "../../../packages/ai/src/prompts.mjs";
+import {
+	buildChatSystemPrompt,
+	CHAT_TITLE_SYSTEM_PROMPT,
+} from "../../../packages/ai/src/prompts.mjs";
 import { fallbackChatModel, resolveChatModel } from "../src/lib/ai/models";
 
 type ChatRequestBody = {
@@ -33,6 +37,7 @@ type ChatRequestBody = {
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
 const MAX_NOTE_CONTEXT_LENGTH = 16000;
+const CHAT_TITLE_MODEL = resolveChatModel("gpt-5.4-nano").model;
 const generateMessageId = createIdGenerator({
 	prefix: "msg",
 	size: 16,
@@ -123,6 +128,39 @@ const getChatTitleFromMessage = (message: UIMessage) => {
 	const text = getMessageText(message);
 
 	return text ? truncate(text, MAX_CHAT_TITLE_LENGTH) : "New chat";
+};
+
+const sanitizeGeneratedChatTitle = (value: string) => {
+	const firstLine = value.split("\n")[0] ?? "";
+	const normalized = clampWhitespace(
+		firstLine
+			.replace(/^[#*`"'\s]+/, "")
+			.replace(/^(title|chat title)\s*:\s*/i, "")
+			.replace(/["'`]+$/g, ""),
+	);
+
+	return normalized ? truncate(normalized, MAX_CHAT_TITLE_LENGTH) : "New chat";
+};
+
+const generateChatTitle = async (message: UIMessage) => {
+	const messageText = getMessageText(message);
+
+	if (!messageText) {
+		return "New chat";
+	}
+
+	try {
+		const { text } = await generateText({
+			model: openai(CHAT_TITLE_MODEL),
+			system: CHAT_TITLE_SYSTEM_PROMPT,
+			prompt: messageText,
+		});
+
+		return sanitizeGeneratedChatTitle(text);
+	} catch (error) {
+		console.error("Failed to generate chat title", error);
+		return getChatTitleFromMessage(message);
+	}
 };
 
 const getChatPreviewFromMessage = (message: UIMessage) =>
@@ -296,13 +334,19 @@ export const handleChatRequest = async (
 		: [...chatMessages]
 				.reverse()
 				.find((currentMessage) => currentMessage.role === "user");
+	const shouldGenerateChatTitle = Boolean(
+		convexClient && id && lastUserMessage && !storedChat,
+	);
+	const titlePromise = shouldGenerateChatTitle
+		? generateChatTitle(lastUserMessage)
+		: null;
 
 	if (convexClient && id && lastUserMessage) {
 		try {
 			await convexClient.mutation(api.chats.saveMessage, {
 				chatId: id,
 				noteId: resolvedNoteId ?? undefined,
-				title: getChatTitleFromMessage(lastUserMessage),
+				title: storedChat ? undefined : "New chat",
 				preview: getChatPreviewFromMessage(lastUserMessage),
 				model: resolvedModel?.model ?? fallbackChatModel.model,
 				message: toStoredMessage(lastUserMessage),
@@ -310,6 +354,19 @@ export const handleChatRequest = async (
 		} catch (error) {
 			console.error("Failed to persist user chat message", error);
 		}
+	}
+
+	if (convexClient && id && titlePromise) {
+		void titlePromise
+			.then(async (title) => {
+				await convexClient.mutation(api.chats.updateTitle, {
+					chatId: id,
+					title,
+				});
+			})
+			.catch((error) => {
+				console.error("Failed to persist generated chat title", error);
+			});
 	}
 
 	const notesContext = await getNotesContext({

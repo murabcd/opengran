@@ -1,4 +1,5 @@
 export declare const BASE_CHAT_SYSTEM_PROMPT: string;
+export declare const CHAT_TITLE_SYSTEM_PROMPT: string;
 export declare const ENHANCED_NOTE_SYSTEM_PROMPT: string;
 export declare const APPLY_TEMPLATE_SYSTEM_PROMPT: string;
 

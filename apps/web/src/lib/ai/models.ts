@@ -13,12 +13,12 @@ export const chatModels: Array<ChatModel> = [
 	{
 		id: "gpt-5.4-mini",
 		name: "GPT-5.4 mini",
-		model: "gpt-5-mini",
+		model: "gpt-5.4-mini",
 	},
 	{
 		id: "gpt-5.4-nano",
 		name: "GPT-5.4 nano",
-		model: "gpt-5-nano",
+		model: "gpt-5.4-nano",
 	},
 ];
 

@@ -6,6 +6,15 @@ export const BASE_CHAT_SYSTEM_PROMPT = joinPromptSections([
 	"If the user asks about meetings or notes that are not available in context, say that you do not have that context yet.",
 ]);
 
+export const CHAT_TITLE_SYSTEM_PROMPT = joinPromptSections([
+	"Generate a short chat title that summarizes the user's message.",
+	"Use 2 to 5 words when possible.",
+	"Use the same primary language as the user's message.",
+	"If the message is too short, generic, or only a greeting, return exactly `New chat`.",
+	"Output only the title text.",
+	"Do not use quotes, prefixes, markdown, punctuation wrappers, or extra explanation.",
+]);
+
 export const buildChatSystemPrompt = ({
 	notesContext = "",
 	attachedNoteContext = "",

@@ -434,6 +434,47 @@ export const saveMessage = mutation({
 	},
 });
 
+export const updateTitle = mutation({
+	args: {
+		chatId: v.string(),
+		title: v.string(),
+	},
+	returns: v.object({
+		title: v.string(),
+	}),
+	handler: async (ctx, args) => {
+		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		const chat = await getOwnedChatById(
+			ctx,
+			ownerTokenIdentifier,
+			clampWhitespace(args.chatId),
+		);
+
+		if (!chat || chat.isArchived) {
+			throw new ConvexError({
+				code: "CHAT_NOT_FOUND",
+				message: "Chat not found.",
+			});
+		}
+
+		const normalizedTitle = normalizeChatTitle(args.title);
+		const nextTitle = shouldReplaceChatTitle(chat, normalizedTitle)
+			? normalizedTitle
+			: chat.title;
+
+		if (nextTitle !== chat.title) {
+			await ctx.db.patch(chat._id, {
+				title: nextTitle,
+				updatedAt: Date.now(),
+			});
+		}
+
+		return {
+			title: nextTitle,
+		};
+	},
+});
+
 export const setModel = mutation({
 	args: {
 		chatId: v.string(),
