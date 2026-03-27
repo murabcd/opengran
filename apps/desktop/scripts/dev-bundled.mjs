@@ -168,7 +168,6 @@ await runCommand("bun", ["run", "build:desktop"], {
 	cwd: webPackageRoot,
 });
 await runCommand("bun", ["run", "build"], { cwd: packageRoot });
-await runCommand("bun", ["run", "generate:app-icon"], { cwd: packageRoot });
 await runCommand("bunx", ["electron-builder", "--mac", "dir"], {
 	cwd: packageRoot,
 });

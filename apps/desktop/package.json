@@ -10,9 +10,9 @@
   "scripts": {
     "dev": "node ./scripts/dev-bundled.mjs",
     "build": "node ./scripts/build.mjs",
-    "package:mac:dir": "node ./scripts/generate-app-icon.mjs && electron-builder --mac dir",
-    "package:mac": "node ./scripts/generate-app-icon.mjs && electron-builder --mac dmg",
-    "package:mac:release": "node ./scripts/generate-app-icon.mjs && electron-builder --mac --publish always",
+    "package:mac:dir": "electron-builder --mac dir",
+    "package:mac": "electron-builder --mac dmg",
+    "package:mac:release": "electron-builder --mac --publish always",
     "generate:app-icon": "node ./scripts/generate-app-icon.mjs",
     "generate:tray-icons": "electron ./scripts/generate-tray-icons.mjs",
     "lint": "biome lint --write src scripts package.json",
