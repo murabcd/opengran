@@ -442,43 +442,56 @@ function TemplatesSidebarNav({
 	selectTemplate: (slug: TemplateSlug) => void;
 	templates: TemplateDraft[];
 }) {
+	return (
+		<Sidebar collapsible="none" className="hidden md:flex">
+			<SidebarContent>
+				<SidebarGroup>
+					<SidebarGroupContent>
+						<SidebarMenu>
+							{templates.map((item) => {
+								const Icon = templateIcons[item.slug];
+
+								return (
+									<SidebarMenuItem key={item.slug}>
+										<SidebarMenuButton
+											asChild
+											isActive={activeTemplate === item.slug}
+										>
+											<button
+												type="button"
+												onClick={() => selectTemplate(item.slug)}
+											>
+												<Icon />
+												<span>{item.name}</span>
+											</button>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+								);
+							})}
+						</SidebarMenu>
+					</SidebarGroupContent>
+				</SidebarGroup>
+			</SidebarContent>
+		</Sidebar>
+	);
+}
+
+function TemplatesHeader({
+	activeTemplate,
+	selectTemplate,
+	templates,
+}: {
+	activeTemplate: TemplateSlug | null;
+	selectTemplate: (slug: TemplateSlug) => void;
+	templates: TemplateDraft[];
+}) {
 	const activeTemplateName =
 		templates.find((template) => template.slug === activeTemplate)?.name ??
 		"Templates";
 
 	return (
-		<>
-			<Sidebar collapsible="none" className="hidden md:flex">
-				<SidebarContent>
-					<SidebarGroup>
-						<SidebarGroupContent>
-							<SidebarMenu>
-								{templates.map((item) => {
-									const Icon = templateIcons[item.slug];
-
-									return (
-										<SidebarMenuItem key={item.slug}>
-											<SidebarMenuButton
-												asChild
-												isActive={activeTemplate === item.slug}
-											>
-												<button
-													type="button"
-													onClick={() => selectTemplate(item.slug)}
-												>
-													<Icon />
-													<span>{item.name}</span>
-												</button>
-											</SidebarMenuButton>
-										</SidebarMenuItem>
-									);
-								})}
-							</SidebarMenu>
-						</SidebarGroupContent>
-					</SidebarGroup>
-				</SidebarContent>
-			</Sidebar>
-			<header className="flex h-16 shrink-0 items-center gap-2 px-4">
+		<header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+			<div className="flex items-center gap-2 px-4">
 				<Breadcrumb className="hidden md:block">
 					<BreadcrumbList>
 						<BreadcrumbItem className="hidden md:block">
@@ -508,8 +521,8 @@ function TemplatesSidebarNav({
 						);
 					})}
 				</div>
-			</header>
-		</>
+			</div>
+		</header>
 	);
 }
 
@@ -656,6 +669,11 @@ export function TemplatesDialog({ open, onOpenChange }: TemplatesDialogProps) {
 						templates={templates}
 					/>
 					<main className="flex h-[480px] flex-1 flex-col overflow-hidden">
+						<TemplatesHeader
+							activeTemplate={activeTemplate}
+							selectTemplate={selectTemplate}
+							templates={templates}
+						/>
 						<TemplatesEditor
 							isSaving={editor.isSaving}
 							onAddSection={editor.addSection}
