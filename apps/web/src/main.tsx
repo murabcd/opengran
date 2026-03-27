@@ -6,8 +6,9 @@ import "./index.css";
 import { Toaster } from "@workspace/ui/components/sonner";
 import { ThemeProvider } from "@workspace/ui/components/theme-provider";
 import App from "./App.tsx";
-import { authClient } from "./lib/auth-client";
-import { convex } from "./lib/convex";
+import { initializeAuthClient } from "./lib/auth-client";
+import { initializeConvexClient } from "./lib/convex";
+import { loadRuntimeConfig } from "./lib/runtime-config";
 
 const rootElement = document.getElementById("root");
 
@@ -15,13 +16,27 @@ if (!rootElement) {
 	throw new Error("Root element #root was not found");
 }
 
-createRoot(rootElement).render(
-	<StrictMode>
-		<ConvexBetterAuthProvider client={convex} authClient={authClient}>
-			<ThemeProvider>
-				<App />
-				<Toaster />
-			</ThemeProvider>
-		</ConvexBetterAuthProvider>
-	</StrictMode>,
-);
+const root = createRoot(rootElement);
+
+async function bootstrap() {
+	const runtimeConfig = await loadRuntimeConfig();
+
+	const convex = initializeConvexClient(runtimeConfig.convexUrl);
+	const authClient = initializeAuthClient(
+		runtimeConfig.convexSiteUrl,
+		runtimeConfig.isDesktop,
+	);
+
+	root.render(
+		<StrictMode>
+			<ConvexBetterAuthProvider client={convex} authClient={authClient}>
+				<ThemeProvider>
+					<App />
+					<Toaster />
+				</ThemeProvider>
+			</ConvexBetterAuthProvider>
+		</StrictMode>,
+	);
+}
+
+void bootstrap();

@@ -3,6 +3,8 @@ const systemAudioCaptureEventChannel = "app:system-audio-capture-event";
 
 contextBridge.exposeInMainWorld("openGranDesktop", {
 	getMeta: () => ipcRenderer.invoke("app:get-meta"),
+	getRuntimeConfig: () => ipcRenderer.invoke("app:get-runtime-config"),
+	authFetch: (request) => ipcRenderer.invoke("app:auth-fetch", request),
 	getPermissionsStatus: () => ipcRenderer.invoke("app:get-permissions-status"),
 	getAuthCallbackUrl: () => ipcRenderer.invoke("app:get-auth-callback-url"),
 	getShareBaseUrl: () => ipcRenderer.invoke("app:get-share-base-url"),
@@ -36,4 +38,6 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 		ipcRenderer.invoke("app:clear-transcript-draft", noteKey),
 	saveTextFile: (defaultFileName, content) =>
 		ipcRenderer.invoke("app:save-text-file", defaultFileName, content),
+	saveRuntimeConfig: (config) =>
+		ipcRenderer.invoke("app:save-runtime-config", config),
 });

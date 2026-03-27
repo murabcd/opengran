@@ -91,12 +91,14 @@ const SETTINGS_PAGE_BY_SLUG = {
 	profile: "Profile",
 	calendar: "Calendar",
 	"data-controls": "Data controls",
+	desktop: "Desktop",
 } as const satisfies Record<string, SettingsPage>;
 
 const SETTINGS_SLUG_BY_PAGE: Record<SettingsPage, string> = {
 	Profile: "profile",
 	Calendar: "calendar",
 	"Data controls": "data-controls",
+	Desktop: "desktop",
 };
 
 type DesktopPermissionRow = {
@@ -128,8 +130,8 @@ const WELCOME_FIREWORK_COLORS = [
 	"#a3e635",
 ] as const;
 const DESKTOP_PERMISSION_LABELS: Record<DesktopPermissionId, string> = {
-	microphone: "Microphone",
-	systemAudio: "System audio",
+	microphone: "Transcribe me",
+	systemAudio: "Transcribe others",
 };
 
 type GroupedItems<T> = {
@@ -531,40 +533,15 @@ const useAppBootstrapState = () => {
 				setAuthError(null);
 				const scopes =
 					provider === "google" ? [...GOOGLE_CALENDAR_SCOPES] : undefined;
-				if (window.openGranDesktop) {
-					const { url: callbackURL } =
-						await window.openGranDesktop.getAuthCallbackUrl();
-					const result = await authClient.signIn.social({
-						provider,
-						callbackURL,
-						errorCallbackURL: callbackURL,
-						disableRedirect: true,
-						scopes,
-					});
-
-					if (result.error) {
-						const message =
-							result.error.message ||
-							result.error.statusText ||
-							"GitHub sign-in failed.";
-						throw new Error(message);
-					}
-
-					const url = result.data?.url;
-
-					if (!url) {
-						throw new Error(
-							`${provider === "google" ? "Google" : "GitHub"} sign-in URL was not returned.`,
-						);
-					}
-
-					await window.openGranDesktop.openExternalUrl(url);
-					return;
-				}
+				const callbackURL = window.openGranDesktop
+					? (await window.openGranDesktop.getAuthCallbackUrl()).url
+					: window.location.href;
 
 				await authClient.signIn.social({
 					provider,
-					callbackURL: window.location.href,
+					callbackURL,
+					errorCallbackURL: callbackURL,
+					disableRedirect: Boolean(window.openGranDesktop),
 					scopes,
 				});
 			} catch (error) {
@@ -666,7 +643,8 @@ const useAppBootstrapState = () => {
 					permissions: [
 						{
 							id: "microphone",
-							description: "Capture your voice as You.",
+							description:
+								"During your meetings, OpenGran transcribes your microphone.",
 							required: true,
 							state: "unknown",
 							canRequest: false,
@@ -675,7 +653,7 @@ const useAppBootstrapState = () => {
 						{
 							id: "systemAudio",
 							description:
-								"Update the desktop app to restore system-audio capture support details.",
+								"During your meetings, OpenGran transcribes your system audio output.",
 							required: false,
 							state: "unknown",
 							canRequest: false,
@@ -788,11 +766,18 @@ const useAppBootstrapState = () => {
 	const requiredDesktopPermissionRows = desktopPermissionRows.filter(
 		(permission) => permission.required,
 	);
+	const systemAudioPermissionRow = desktopPermissionRows.find(
+		(permission) => permission.id === "systemAudio",
+	);
 	const areDesktopPermissionsReady =
 		requiredDesktopPermissionRows.length > 0 &&
 		requiredDesktopPermissionRows.every(
 			(permission) => permission.state === "granted",
-		);
+		) &&
+		(!isDesktopMac ||
+			!systemAudioPermissionRow ||
+			systemAudioPermissionRow.state === "granted" ||
+			systemAudioPermissionRow.state === "unsupported");
 
 	return {
 		areDesktopPermissionsReady,
@@ -1330,7 +1315,7 @@ const getDesktopPermissionIcon = (permissionId: DesktopPermissionId) =>
 	permissionId === "microphone" ? Mic : Volume2;
 
 const getDesktopPermissionActionLabel = (permissionId: DesktopPermissionId) =>
-	permissionId === "microphone" ? "Enable microphone" : "Enable system audio";
+	permissionId === "microphone" ? "Enable Microphone" : "Enable System Audio";
 
 const getDesktopPermissionStateLabel = (permission: DesktopPermissionRow) => {
 	if (permission.state === "granted") {
@@ -1379,44 +1364,42 @@ function DesktopPermissionsOnboardingScreen({
 		return null;
 	}
 
+	const isMicrophoneGranted = permissions.some(
+		(permission) =>
+			permission.id === "microphone" && permission.state === "granted",
+	);
+
 	return (
 		<OnboardingStepLayout isDesktopMac={isDesktopMac}>
 			<OnboardingStepCard
-				title="Enable permissions"
-				description="OpenGran captures your voice as You and, when available, meeting audio as Them."
+				title="Transcription permissions"
+				description="When you turn it on, OpenGran transcribes meetings using your computer's audio."
 				contentClassName="flex flex-col gap-5"
 			>
 				<div className="overflow-hidden rounded-xl border">
 					{permissions.map((permission, index) => {
 						const Icon = getDesktopPermissionIcon(permission.id);
+						const isRequestBlockedByDependency =
+							permission.id === "systemAudio" && !isMicrophoneGranted;
 
 						return (
 							<React.Fragment key={permission.id}>
 								{index > 0 ? <Separator /> : null}
-								<div className="flex items-start gap-3 p-4">
+								<div className="flex items-center gap-3 p-4">
 									<div
 										className={cn(
-											"mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full border",
+											"flex size-10 shrink-0 items-center justify-center rounded-full border",
 											getDesktopPermissionTone(permission.state),
 										)}
 									>
 										<Icon className="size-4" />
 									</div>
 									<div className="min-w-0 flex-1">
-										<div className="flex items-center gap-2">
-											<p className="font-medium">{permission.label}</p>
-											<span className="rounded-full bg-muted px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-												{permission.required ? "Required" : "Optional"}
-											</span>
-										</div>
-										<p className="mt-1 text-sm text-muted-foreground">
-											{permission.description}
-										</p>
+										<p className="font-medium">{permission.label}</p>
 									</div>
 									{permission.state === "granted" ? (
-										<div className="inline-flex items-center gap-2 rounded-full border border-border/70 px-3 py-1.5 text-sm">
+										<div className="inline-flex size-9 items-center justify-center rounded-full border border-border/70">
 											<Check className="size-4" />
-											{getDesktopPermissionStateLabel(permission)}
 										</div>
 									) : permission.canRequest ? (
 										<Button
@@ -1424,7 +1407,11 @@ function DesktopPermissionsOnboardingScreen({
 											size="sm"
 											className="shrink-0 rounded-full px-4"
 											onClick={() => onRequestPermission(permission.id)}
-											disabled={isRefreshing || isSubmitting}
+											disabled={
+												isRefreshing ||
+												isSubmitting ||
+												isRequestBlockedByDependency
+											}
 										>
 											{isRefreshing ? (
 												<LoaderCircle className="size-4 animate-spin" />

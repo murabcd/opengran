@@ -62,3 +62,32 @@ bun convex dev
 ```
 
 Your app should now be running on [localhost:3000](http://localhost:3000/).
+
+On macOS, `bun dev` now launches an unpacked `OpenGran.app` wired to the local renderer so native permissions and bundle behavior match production more closely.
+
+## Versioning and releases
+
+This repo uses Changesets for granular version bumps.
+
+Typical flow:
+
+```bash
+bun changeset
+```
+
+Choose a `patch` release for small desktop updates and a `minor` release for larger feature milestones. Merged changesets on `main` will open or update a version PR automatically.
+
+macOS releases are built from version tags that match `v*`. After the version PR is merged, create and push a tag that matches the desktop version, for example:
+
+```bash
+git tag v0.0.2
+git push origin v0.0.2
+```
+
+The GitHub Actions release workflow will build and publish the macOS release assets. For smooth macOS installs and auto-updates, add these GitHub Actions secrets before shipping broadly:
+
+- `CSC_LINK`
+- `CSC_KEY_PASSWORD`
+- `APPLE_API_KEY`
+- `APPLE_API_KEY_ID`
+- `APPLE_API_ISSUER`

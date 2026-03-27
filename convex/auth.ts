@@ -9,6 +9,7 @@ import authConfig from "./auth.config";
 
 const LOCAL_SITE_URLS = ["http://127.0.0.1:3000", "http://localhost:3000"];
 const DESKTOP_CALLBACK_ORIGINS = ["http://127.0.0.1:*", "http://localhost:*"];
+const DESKTOP_PROTOCOL_ORIGIN = "opengran:/";
 
 function requireEnv(name: string) {
 	const value = process.env[name];
@@ -36,7 +37,12 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 	return betterAuth({
 		appName: "OpenGran",
 		baseURL: requireEnv("CONVEX_SITE_URL"),
-		trustedOrigins: [siteUrl, ...LOCAL_SITE_URLS, ...DESKTOP_CALLBACK_ORIGINS],
+		trustedOrigins: [
+			siteUrl,
+			...LOCAL_SITE_URLS,
+			...DESKTOP_CALLBACK_ORIGINS,
+			DESKTOP_PROTOCOL_ORIGIN,
+		],
 		database: authComponent.adapter(ctx),
 		account: {
 			accountLinking: {
@@ -91,7 +97,10 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 				prompt: "consent",
 			},
 		},
-		plugins: [convex({ authConfig }), crossDomain({ siteUrl })],
+		plugins: [
+			convex({ authConfig }),
+			crossDomain({ siteUrl }),
+		],
 	});
 };
 

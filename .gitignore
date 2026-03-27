@@ -19,7 +19,11 @@
 /dist
 /.turbo
 /apps/*/dist
+/apps/*/.bundle-root
 /apps/*/.generated
+/apps/*/release
+/apps/desktop/build/icon.icns
+/apps/desktop/build/icon.iconset
 /apps/*/.turbo
 /packages/*/dist
 /packages/*/.turbo

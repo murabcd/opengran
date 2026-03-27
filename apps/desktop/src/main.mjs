@@ -24,19 +24,31 @@ import {
 	systemPreferences,
 	Tray,
 } from "electron";
+import electronUpdater from "electron-updater";
+import { getDesktopAuthClient } from "./auth-client.mjs";
 import { loadRootEnv } from "./env.mjs";
 import { startLocalServer } from "./local-server.mjs";
+import {
+	getRuntimeConfig,
+	hydrateRuntimeConfig,
+	saveRuntimeConfig,
+} from "./runtime-config.mjs";
+
+const { autoUpdater } = electronUpdater;
 
 loadRootEnv();
+await hydrateRuntimeConfig();
 
 app.setName("OpenGran");
-
-const desktopProtocol = "opengran";
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
 const trayIconPath = join(runtimeDir, "assets", "OpenGranTemplate.png");
 const dockIconPath = join(runtimeDir, "assets", "OpenGranDock.png");
 const traySettingsPath = join(app.getPath("userData"), "tray-settings.json");
+const desktopPermissionsPath = join(
+	app.getPath("userData"),
+	"desktop-permissions.json",
+);
 const transcriptDraftsDirPath = join(
 	app.getPath("userData"),
 	"transcript-drafts",
@@ -55,21 +67,58 @@ const defaultWindowSize = {
 const defaultTraySettings = {
 	keepOpenInMenuBar: true,
 };
+const defaultDesktopPermissionsState = {
+	systemAudioValidated: false,
+	systemAudioBlocked: false,
+};
 
 let mainWindow = null;
 let localServer = null;
 let tray = null;
 let isQuitting = false;
 let traySettings = defaultTraySettings;
-let trayStatusLabel = "Update checks are not configured yet";
+let desktopPermissionsState = defaultDesktopPermissionsState;
+let trayStatusLabel = "Updates are unavailable in development builds";
 let hasConfiguredDisplayMediaHandler = false;
 let systemAudioCaptureSession = null;
 let systemAudioCaptureStartRequestId = 0;
+let hasPendingUpdateDownload = false;
+let isCheckingForUpdates = false;
+let shouldShowUpdateResultDialogs = false;
+let pendingUpdateVersion = null;
+
+const isUpdaterAvailable = () =>
+	process.platform === "darwin" &&
+	app.isPackaged === true &&
+	process.env.OPENGRAN_DISABLE_UPDATER !== "1";
+
+const setTrayStatusLabel = (value) => {
+	trayStatusLabel = value;
+	refreshTrayMenu();
+};
+
+const normalizeDesktopPermissionsState = (value) => ({
+	systemAudioValidated: value?.systemAudioValidated === true,
+	systemAudioBlocked: value?.systemAudioBlocked === true,
+});
 
 const resolveSystemAudioHelperPath = () => {
 	const envPath = process.env.OPENGRAN_SYSTEM_AUDIO_HELPER_PATH?.trim();
+	const unpackedHelperPath = app.isPackaged
+		? resolve(
+				process.resourcesPath,
+				"app.asar.unpacked",
+				".bundle-root",
+				"apps",
+				"desktop",
+				"dist",
+				"bin",
+				"opengran-system-audio-helper",
+			)
+		: null;
 	const candidates = [
 		envPath,
+		unpackedHelperPath,
 		resolve(runtimeDir, "bin", "opengran-system-audio-helper"),
 		resolve(
 			runtimeDir,
@@ -83,6 +132,63 @@ const resolveSystemAudioHelperPath = () => {
 	return candidates.find((candidatePath) => existsSync(candidatePath)) ?? null;
 };
 
+const hydrateDesktopPermissionsState = async () => {
+	try {
+		const raw = await readFile(desktopPermissionsPath, "utf8");
+		desktopPermissionsState = normalizeDesktopPermissionsState(JSON.parse(raw));
+	} catch (error) {
+		if (
+			error &&
+			typeof error === "object" &&
+			"code" in error &&
+			error.code === "ENOENT"
+		) {
+			desktopPermissionsState = defaultDesktopPermissionsState;
+			return;
+		}
+
+		console.warn("Failed to read desktop permissions state.", error);
+		desktopPermissionsState = defaultDesktopPermissionsState;
+	}
+};
+
+const persistDesktopPermissionsState = async () => {
+	await mkdir(app.getPath("userData"), { recursive: true });
+	await writeFile(
+		desktopPermissionsPath,
+		JSON.stringify(desktopPermissionsState, null, 2),
+		"utf8",
+	);
+};
+
+const setSystemAudioValidated = async (isValidated) => {
+	desktopPermissionsState = normalizeDesktopPermissionsState({
+		...desktopPermissionsState,
+		systemAudioValidated: isValidated,
+	});
+	await persistDesktopPermissionsState();
+};
+
+const setSystemAudioBlocked = async (isBlocked) => {
+	desktopPermissionsState = normalizeDesktopPermissionsState({
+		...desktopPermissionsState,
+		systemAudioBlocked: isBlocked,
+	});
+	await persistDesktopPermissionsState();
+};
+
+const isLikelySystemAudioPermissionError = (error) => {
+	const message = error instanceof Error ? error.message : String(error);
+
+	return (
+		message.includes("system-audio tap") ||
+		message.includes("System audio capture exited before it became ready") ||
+		message.includes("Timed out while starting macOS system audio capture")
+	);
+};
+
+await hydrateDesktopPermissionsState();
+
 const emitSystemAudioCaptureEvent = (event) => {
 	if (!mainWindow || mainWindow.isDestroyed()) {
 		return;
@@ -91,15 +197,45 @@ const emitSystemAudioCaptureEvent = (event) => {
 	mainWindow.webContents.send(systemAudioCaptureEventChannel, event);
 };
 
-const registerDesktopProtocol = () => {
-	if (process.defaultApp && process.argv.length >= 2) {
-		app.setAsDefaultProtocolClient(desktopProtocol, process.execPath, [
-			process.argv[1],
-		]);
-		return;
+const wait = (durationMs) =>
+	new Promise((resolvePromise) => {
+		setTimeout(resolvePromise, durationMs);
+	});
+
+const verifyDesktopOneTimeToken = async (oneTimeToken) => {
+	const retryDelayMs = [0, 250, 750, 1500];
+	let lastError = null;
+
+	for (const delayMs of retryDelayMs) {
+		if (delayMs > 0) {
+			await wait(delayMs);
+		}
+
+		try {
+			const desktopAuthClient = getDesktopAuthClient();
+			await desktopAuthClient.$fetch("/cross-domain/one-time-token/verify", {
+				method: "POST",
+				body: JSON.stringify({
+					token: oneTimeToken,
+				}),
+				headers: {
+					"content-type": "application/json",
+				},
+				throw: true,
+			});
+			return;
+		} catch (error) {
+			lastError = error;
+			console.warn(
+				"Desktop auth callback verification failed.",
+				error instanceof Error ? error.message : error,
+			);
+		}
 	}
 
-	app.setAsDefaultProtocolClient(desktopProtocol);
+	throw lastError instanceof Error
+		? lastError
+		: new Error("Failed to verify desktop auth callback.");
 };
 
 const closeLocalServer = async () => {
@@ -517,7 +653,6 @@ const getNavigationUrl = async ({
 const buildAuthCallbackUrl = async (callbackUrl) => {
 	const rendererUrl = new URL(await resolveRendererUrl());
 	const incomingUrl = new URL(callbackUrl);
-	const ott = incomingUrl.searchParams.get("ott");
 	const authError = incomingUrl.searchParams.get("error");
 	const authErrorDescription =
 		incomingUrl.searchParams.get("error_description");
@@ -525,10 +660,6 @@ const buildAuthCallbackUrl = async (callbackUrl) => {
 	rendererUrl.pathname = "/home";
 	rendererUrl.hash = "";
 	rendererUrl.search = "";
-
-	if (ott) {
-		rendererUrl.searchParams.set("ott", ott);
-	}
 
 	if (authError) {
 		rendererUrl.searchParams.set("authError", authError);
@@ -563,28 +694,14 @@ const showMainWindow = async (options = {}) => {
 	mainWindow.focus();
 };
 
-const handleDesktopProtocolUrl = async (callbackUrl) => {
-	if (!callbackUrl?.startsWith(`${desktopProtocol}://`)) {
-		return;
-	}
-
-	const targetUrl = await buildAuthCallbackUrl(callbackUrl);
-
-	if (!mainWindow) {
-		await createMainWindow(targetUrl);
-	} else {
-		await mainWindow.loadURL(targetUrl);
-	}
-
-	if (mainWindow.isMinimized()) {
-		mainWindow.restore();
-	}
-
-	mainWindow.show();
-	mainWindow.focus();
-};
-
 const handleDesktopAuthCallback = async (callbackUrl) => {
+	const incomingUrl = new URL(callbackUrl);
+	const oneTimeToken = incomingUrl.searchParams.get("ott");
+
+	if (oneTimeToken) {
+		await verifyDesktopOneTimeToken(oneTimeToken);
+	}
+
 	const targetUrl = await buildAuthCallbackUrl(callbackUrl);
 
 	if (!mainWindow) {
@@ -681,7 +798,8 @@ const getMicrophonePermission = () => {
 	if (process.platform !== "darwin" && process.platform !== "win32") {
 		return {
 			id: "microphone",
-			description: "Capture your voice as You.",
+			description:
+				"During your meetings, OpenGran transcribes your microphone.",
 			required: false,
 			state: "unsupported",
 			canRequest: false,
@@ -695,7 +813,7 @@ const getMicrophonePermission = () => {
 
 	return {
 		id: "microphone",
-		description: "Capture your voice as You.",
+		description: "During your meetings, OpenGran transcribes your microphone.",
 		required: true,
 		state:
 			rawStatus === "granted"
@@ -717,7 +835,7 @@ const getSystemAudioPermission = () => {
 		return {
 			id: "systemAudio",
 			description:
-				"Capture meeting audio as Them when you share a screen or app with audio.",
+				"During your meetings, OpenGran transcribes your system audio output.",
 			required: false,
 			state: "granted",
 			canRequest: false,
@@ -727,16 +845,28 @@ const getSystemAudioPermission = () => {
 
 	if (process.platform === "darwin") {
 		const helperPath = resolveSystemAudioHelperPath();
+		const hasSystemAudioGrant = desktopPermissionsState.systemAudioValidated;
+		const isSystemAudioBlocked =
+			desktopPermissionsState.systemAudioBlocked && !hasSystemAudioGrant;
 
 		return {
 			id: "systemAudio",
 			description: helperPath
-				? "Capture meeting audio as Them with the native macOS audio pipeline."
+				? hasSystemAudioGrant
+					? "During your meetings, OpenGran transcribes your system audio output."
+					: "During your meetings, OpenGran transcribes your system audio output."
 				: "The macOS system-audio helper is missing from this build.",
 			required: false,
-			state: helperPath ? "granted" : "unsupported",
-			canRequest: false,
-			canOpenSystemSettings: false,
+			state: helperPath
+				? hasSystemAudioGrant
+					? "granted"
+					: isSystemAudioBlocked
+						? "blocked"
+						: "prompt"
+				: "unsupported",
+			canRequest:
+				Boolean(helperPath) && !hasSystemAudioGrant && !isSystemAudioBlocked,
+			canOpenSystemSettings: isSystemAudioBlocked,
 		};
 	}
 
@@ -758,6 +888,36 @@ const getPermissionsStatus = () => ({
 });
 
 const requestPermission = async (permissionId) => {
+	if (permissionId === "systemAudio") {
+		if (process.platform !== "darwin") {
+			throw new Error("Unsupported desktop permission.");
+		}
+
+		if (getMicrophonePermission().state !== "granted") {
+			throw new Error("Enable microphone before system audio.");
+		}
+
+		try {
+			await startSystemAudioCapture();
+			await stopSystemAudioCapture();
+			await setSystemAudioBlocked(false);
+			await setSystemAudioValidated(true);
+		} catch (error) {
+			await stopSystemAudioCapture().catch(() => {});
+
+			if (isLikelySystemAudioPermissionError(error)) {
+				await setSystemAudioBlocked(true);
+				throw new Error(
+					"System audio access is blocked. Enable it in System Settings > Privacy & Security > Screen & System Audio Recording, then try again.",
+				);
+			}
+
+			throw error;
+		}
+
+		return getPermissionsStatus();
+	}
+
 	if (permissionId !== "microphone") {
 		throw new Error("Unsupported desktop permission.");
 	}
@@ -773,8 +933,34 @@ const requestPermission = async (permissionId) => {
 };
 
 const openPermissionSettings = async (permissionId) => {
+	if (permissionId === "systemAudio") {
+		if (process.platform !== "darwin") {
+			throw new Error("Unsupported desktop permission.");
+		}
+
+		await setSystemAudioBlocked(false);
+		await shell.openExternal(
+			"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+		);
+
+		return { ok: true };
+	}
+
 	if (permissionId !== "microphone") {
 		throw new Error("Unsupported desktop permission.");
+	}
+
+	if (process.platform === "darwin") {
+		const currentStatus = systemPreferences.getMediaAccessStatus("microphone");
+
+		// macOS only lists an app in Privacy > Microphone after it has asked once.
+		if (currentStatus === "not-determined") {
+			await systemPreferences.askForMediaAccess("microphone");
+		}
+
+		if (systemPreferences.getMediaAccessStatus("microphone") === "granted") {
+			return { ok: true };
+		}
 	}
 
 	const settingsUrl =
@@ -798,6 +984,67 @@ ipcMain.handle("app:get-meta", () => ({
 	version: app.getVersion(),
 	platform: process.platform,
 }));
+
+ipcMain.handle("app:get-runtime-config", async () => {
+	return await getRuntimeConfig();
+});
+
+ipcMain.handle("app:auth-fetch", async (_event, request) => {
+	if (!request || typeof request !== "object") {
+		throw new Error("Auth request payload must be an object.");
+	}
+
+	const method =
+		typeof request.method === "string" && request.method.trim()
+			? request.method.toUpperCase()
+			: "GET";
+	const path =
+		typeof request.path === "string" && request.path.startsWith("/")
+			? request.path
+			: null;
+
+	if (!path) {
+		throw new Error("Auth request path must start with '/'.");
+	}
+
+	const headers =
+		request.headers && typeof request.headers === "object"
+			? Object.fromEntries(
+					Object.entries(request.headers).filter(
+						([key, value]) =>
+							typeof key === "string" && typeof value === "string",
+					),
+				)
+			: {};
+
+	const desktopAuthClient = getDesktopAuthClient();
+	const cookie = desktopAuthClient.getCookie();
+
+	if (cookie) {
+		headers.cookie = cookie;
+	}
+
+	if (method !== "GET" && method !== "HEAD" && !headers["content-type"]) {
+		headers["content-type"] = "application/json";
+	}
+
+	const body =
+		method === "GET" || method === "HEAD"
+			? undefined
+			: headers["content-type"]?.includes("application/json") &&
+					request.body !== undefined &&
+					request.body !== null &&
+					typeof request.body !== "string"
+				? JSON.stringify(request.body)
+				: request.body;
+
+	return await desktopAuthClient.$fetch(path, {
+		method,
+		body,
+		headers,
+		throw: Boolean(request.throw),
+	});
+});
 
 ipcMain.handle("app:get-permissions-status", () => getPermissionsStatus());
 
@@ -857,6 +1104,14 @@ ipcMain.handle("app:write-clipboard-text", async (_event, value) => {
 
 	clipboard.writeText(value);
 	return { ok: true };
+});
+
+ipcMain.handle("app:save-runtime-config", async (_event, value) => {
+	if (!value || typeof value !== "object") {
+		throw new Error("Runtime config payload must be an object.");
+	}
+
+	return await saveRuntimeConfig(value);
 });
 
 ipcMain.handle("app:load-transcript-draft", async (_event, noteKey) => {
@@ -925,16 +1180,122 @@ const quitCompletely = () => {
 	app.quit();
 };
 
-const handleCheckForUpdates = async () => {
-	trayStatusLabel = "Update checks are not configured yet";
-
-	await dialog.showMessageBox({
+const promptToInstallDownloadedUpdate = async (version) => {
+	const { response } = await dialog.showMessageBox({
 		type: "info",
-		title: "Check for updates",
-		message: "Update checks are not configured yet.",
-		detail:
-			"Add an Electron updater integration before wiring this action to a real release feed.",
+		title: "Update ready",
+		message: `OpenGran ${version} is ready to install.`,
+		detail: "Install the update now or wait until you quit the app.",
+		buttons: ["Install and restart", "Later"],
+		defaultId: 0,
+		cancelId: 1,
 	});
+
+	if (response === 0) {
+		isQuitting = true;
+		autoUpdater.quitAndInstall();
+	}
+};
+
+const configureAutoUpdater = () => {
+	if (!isUpdaterAvailable()) {
+		return;
+	}
+
+	autoUpdater.autoDownload = true;
+	autoUpdater.autoInstallOnAppQuit = true;
+
+	autoUpdater.on("checking-for-update", () => {
+		isCheckingForUpdates = true;
+		setTrayStatusLabel("Checking for updates...");
+	});
+
+	autoUpdater.on("update-available", (info) => {
+		hasPendingUpdateDownload = false;
+		pendingUpdateVersion = info.version;
+		setTrayStatusLabel(`Downloading OpenGran ${info.version}...`);
+	});
+
+	autoUpdater.on("download-progress", (progress) => {
+		setTrayStatusLabel(
+			`Downloading update... ${Math.round(progress.percent)}%`,
+		);
+	});
+
+	autoUpdater.on("update-not-available", async () => {
+		isCheckingForUpdates = false;
+		hasPendingUpdateDownload = false;
+		pendingUpdateVersion = null;
+		setTrayStatusLabel("OpenGran is up to date");
+
+		if (!shouldShowUpdateResultDialogs) {
+			return;
+		}
+
+		shouldShowUpdateResultDialogs = false;
+		await dialog.showMessageBox({
+			type: "info",
+			title: "Check for updates",
+			message: "OpenGran is up to date.",
+		});
+	});
+
+	autoUpdater.on("update-downloaded", async (info) => {
+		isCheckingForUpdates = false;
+		hasPendingUpdateDownload = true;
+		pendingUpdateVersion = info.version;
+		shouldShowUpdateResultDialogs = false;
+		setTrayStatusLabel(`OpenGran ${info.version} is ready to install`);
+		await promptToInstallDownloadedUpdate(info.version);
+	});
+
+	autoUpdater.on("error", async (error) => {
+		isCheckingForUpdates = false;
+		setTrayStatusLabel("Update check failed");
+		console.error("Auto updater failed", error);
+
+		if (!shouldShowUpdateResultDialogs) {
+			return;
+		}
+
+		shouldShowUpdateResultDialogs = false;
+		await dialog.showMessageBox({
+			type: "error",
+			title: "Check for updates",
+			message: "OpenGran couldn't check for updates.",
+			detail: error instanceof Error ? error.message : String(error),
+		});
+	});
+};
+
+const handleCheckForUpdates = async () => {
+	if (!isUpdaterAvailable()) {
+		await dialog.showMessageBox({
+			type: "info",
+			title: "Check for updates",
+			message: "Updates are only available in packaged release builds.",
+		});
+		return;
+	}
+
+	if (isCheckingForUpdates) {
+		await dialog.showMessageBox({
+			type: "info",
+			title: "Check for updates",
+			message: "OpenGran is already checking for updates.",
+		});
+		return;
+	}
+
+	if (hasPendingUpdateDownload) {
+		await promptToInstallDownloadedUpdate(
+			pendingUpdateVersion ?? app.getVersion(),
+		);
+		return;
+	}
+
+	shouldShowUpdateResultDialogs = true;
+	await autoUpdater.checkForUpdates();
 };
 
 const handleTrayQuit = async () => {
@@ -1056,22 +1417,7 @@ const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
 	app.quit();
 } else {
-	registerDesktopProtocol();
-
-	app.on("open-url", (event, url) => {
-		event.preventDefault();
-		void handleDesktopProtocolUrl(url);
-	});
-
-	app.on("second-instance", (_event, argv) => {
-		const deepLinkUrl = argv.find((value) =>
-			value.startsWith(`${desktopProtocol}://`),
-		);
-		if (deepLinkUrl) {
-			void handleDesktopProtocolUrl(deepLinkUrl);
-			return;
-		}
-
+	app.on("second-instance", (_event, _argv) => {
 		void showMainWindow();
 	});
 
@@ -1083,12 +1429,13 @@ if (!singleInstanceLock) {
 		await loadTraySettings();
 		await createMainWindow();
 		createTray();
+		configureAutoUpdater();
 
-		const initialDeepLink = process.argv.find((value) =>
-			value.startsWith(`${desktopProtocol}://`),
-		);
-		if (initialDeepLink) {
-			await handleDesktopProtocolUrl(initialDeepLink);
+		if (isUpdaterAvailable()) {
+			setTrayStatusLabel("Checking for updates...");
+			void autoUpdater.checkForUpdates().catch((error) => {
+				console.error("Initial update check failed", error);
+			});
 		}
 
 		app.on("activate", async () => {

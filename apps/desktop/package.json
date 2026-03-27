@@ -2,12 +2,18 @@
   "name": "desktop",
   "productName": "OpenGran",
   "version": "0.0.1",
+  "description": "OpenGran desktop app",
+  "author": "OpenGran",
   "private": true,
   "type": "module",
   "main": "./src/main.mjs",
   "scripts": {
-    "dev": "node ./scripts/dev.mjs",
+    "dev": "node ./scripts/dev-bundled.mjs",
     "build": "node ./scripts/build.mjs",
+    "package:mac:dir": "node ./scripts/generate-app-icon.mjs && electron-builder --mac dir",
+    "package:mac": "node ./scripts/generate-app-icon.mjs && electron-builder --mac dmg",
+    "package:mac:release": "node ./scripts/generate-app-icon.mjs && electron-builder --mac --publish always",
+    "generate:app-icon": "node ./scripts/generate-app-icon.mjs",
     "generate:tray-icons": "electron ./scripts/generate-tray-icons.mjs",
     "lint": "biome lint --write src scripts package.json",
     "check": "biome check --write src scripts package.json",
@@ -18,10 +24,54 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.41",
     "ai": "^6.0.116",
-    "electron": "^36.3.2",
+    "conf": "^15.0.2",
+    "convex": "^1.34.0",
+    "electron-updater": "^6.6.2",
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "electron": "^36.3.2",
+    "electron-builder": "^26.0.12",
     "web": "workspace:*"
+  },
+  "build": {
+    "appId": "dev.opengran.desktop",
+    "productName": "OpenGran",
+    "directories": {
+      "output": "release"
+    },
+    "extraMetadata": {
+      "main": ".bundle-root/apps/desktop/dist/main.mjs"
+    },
+    "files": [
+      ".bundle-root/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      ".bundle-root/apps/desktop/dist/bin/**"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "During your meetings, OpenGran transcribes your microphone.",
+        "NSAudioCaptureUsageDescription": "During your meetings, OpenGran transcribes your system audio output."
+      },
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "murabcd",
+        "repo": "opengran"
+      }
+    ]
   }
 }

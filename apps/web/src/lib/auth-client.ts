@@ -3,24 +3,23 @@ import {
 	crossDomainClient,
 } from "@convex-dev/better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
+import { desktopAuthClient } from "./desktop-auth-client";
 
-function getEnv(...names: Array<keyof ImportMetaEnv>) {
-	for (const name of names) {
-		const value = import.meta.env[name];
+const createConfiguredAuthClient = (baseURL: string) =>
+	createAuthClient({
+		baseURL,
+		plugins: [convexClient(), crossDomainClient()],
+	});
 
-		if (value) {
-			return value;
-		}
-	}
+export type AuthClient = ReturnType<typeof createConfiguredAuthClient>;
 
-	throw new Error(
-		`Missing required client environment variable: ${names.join(" or ")}`,
-	);
+export let authClient!: AuthClient;
+
+export function initializeAuthClient(baseURL: string, isDesktop = false) {
+	authClient = isDesktop
+		? (desktopAuthClient as AuthClient)
+		: createConfiguredAuthClient(baseURL);
+	return authClient;
 }
 
-export const authClient = createAuthClient({
-	baseURL: getEnv("VITE_CONVEX_SITE_URL", "CONVEX_SITE_URL"),
-	plugins: [convexClient(), crossDomainClient()],
-});
-
-export type AuthSession = typeof authClient.$Infer.Session;
+export type AuthSession = AuthClient["$Infer"]["Session"];

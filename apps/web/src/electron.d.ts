@@ -41,6 +41,19 @@ declare global {
 				version: string;
 				platform: DesktopPlatform;
 			}>;
+			getRuntimeConfig: () => Promise<{
+				convexUrl: string;
+				convexSiteUrl: string;
+				hasOpenAIApiKey: boolean;
+				isConfigured: boolean;
+			}>;
+			authFetch: (request: {
+				path: string;
+				method?: string;
+				body?: unknown;
+				headers?: Record<string, string>;
+				throw?: boolean;
+			}) => Promise<unknown>;
 			getPermissionsStatus: () => Promise<DesktopPermissionsStatus>;
 			getAuthCallbackUrl: () => Promise<{
 				url: string;
@@ -132,6 +145,16 @@ declare global {
 				ok: boolean;
 				canceled: boolean;
 				filePath?: string;
+			}>;
+			saveRuntimeConfig: (config: {
+				convexUrl?: string;
+				convexSiteUrl?: string;
+				openAIApiKey?: string;
+			}) => Promise<{
+				convexUrl: string;
+				convexSiteUrl: string;
+				hasOpenAIApiKey: boolean;
+				isConfigured: boolean;
 			}>;
 		};
 	}
