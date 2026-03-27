@@ -129,6 +129,10 @@ let hasPendingUpdateDownload = false;
 let isCheckingForUpdates = false;
 let shouldShowUpdateResultDialogs = false;
 let pendingUpdateVersion = null;
+let updateWindow = null;
+let updateWindowReady = false;
+let pendingUpdateWindowState = null;
+let resolveUpdateWindowActionPromise = null;
 let latestTranscriptionSessionState = createInitialTranscriptionSessionState();
 const desktopRealtimeTransportSessions = new Map();
 const captureEventListeners = {
@@ -162,6 +166,429 @@ const isUpdaterAvailable = () =>
 const setTrayStatusLabel = (value) => {
 	trayStatusLabel = value;
 	refreshTrayMenu();
+};
+
+const getUpdateWindowIconDataUrl = () => {
+	const icon = nativeImage.createFromPath(dockIconPath);
+	return icon.isEmpty() ? "" : icon.toDataURL();
+};
+
+const createUpdateWindowHtml = () => {
+	const iconDataUrl = getUpdateWindowIconDataUrl();
+
+	return `<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover"
+		/>
+		<title>software update</title>
+		<style>
+			:root {
+				color-scheme: dark;
+				font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				min-height: 100vh;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				background:
+					radial-gradient(circle at top, rgba(255, 255, 255, 0.09), transparent 46%),
+					linear-gradient(180deg, #23262d 0%, #181a1f 100%);
+				color: rgba(255, 255, 255, 0.98);
+			}
+
+			.shell {
+				width: 100%;
+				min-height: 100vh;
+				padding: 26px 24px 22px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+			}
+
+			.card {
+				width: min(100%, 440px);
+				padding: 26px 24px 22px;
+				border-radius: 24px;
+				border: 1px solid rgba(255, 255, 255, 0.08);
+				background:
+					linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02)),
+					rgba(18, 19, 23, 0.92);
+				box-shadow:
+					0 30px 80px rgba(0, 0, 0, 0.45),
+					inset 0 1px 0 rgba(255, 255, 255, 0.04);
+				text-align: center;
+			}
+
+			.badge {
+				width: 86px;
+				height: 86px;
+				margin: 0 auto 18px;
+				border-radius: 24px;
+				display: grid;
+				place-items: center;
+				background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
+				box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+			}
+
+			.badge img {
+				width: 64px;
+				height: 64px;
+				object-fit: contain;
+			}
+
+			h1 {
+				margin: 0;
+				font-size: 18px;
+				font-weight: 700;
+				letter-spacing: -0.02em;
+			}
+
+			p {
+				margin: 14px 0 0;
+				color: rgba(255, 255, 255, 0.74);
+				font-size: 13px;
+				line-height: 1.45;
+			}
+
+			.version {
+				margin-top: 8px;
+				color: rgba(255, 255, 255, 0.48);
+				font-size: 12px;
+				letter-spacing: 0.01em;
+			}
+
+			.progress-shell {
+				margin-top: 18px;
+				height: 8px;
+				border-radius: 999px;
+				overflow: hidden;
+				background: rgba(255, 255, 255, 0.09);
+			}
+
+			.progress-fill {
+				height: 100%;
+				width: 0%;
+				border-radius: inherit;
+				background: linear-gradient(90deg, #6ea8ff 0%, #3f7cff 100%);
+				transition: width 140ms ease;
+			}
+
+			.progress-fill.indeterminate {
+				width: 38%;
+				animation: indeterminate 1.2s ease-in-out infinite;
+			}
+
+			.progress-label {
+				margin-top: 9px;
+				font-size: 12px;
+				color: rgba(255, 255, 255, 0.62);
+			}
+
+			.actions {
+				display: flex;
+				gap: 10px;
+				margin-top: 22px;
+			}
+
+			.actions:empty {
+				display: none;
+			}
+
+			button {
+				appearance: none;
+				border: none;
+				border-radius: 13px;
+				min-height: 42px;
+				padding: 0 16px;
+				font: inherit;
+				font-size: 13px;
+				font-weight: 600;
+				cursor: pointer;
+				flex: 1 1 0;
+				transition:
+					transform 120ms ease,
+					opacity 120ms ease,
+					background-color 120ms ease;
+			}
+
+			button:hover {
+				transform: translateY(-1px);
+			}
+
+			button.primary {
+				background: #f4f5f7;
+				color: #0f1116;
+			}
+
+			button.secondary {
+				background: rgba(255, 255, 255, 0.1);
+				color: rgba(255, 255, 255, 0.9);
+			}
+
+			@keyframes indeterminate {
+				0% {
+					transform: translateX(-140%);
+				}
+
+				100% {
+					transform: translateX(320%);
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="shell">
+			<div class="card">
+				<div class="badge">
+					<img src="${iconDataUrl}" alt="OpenGran" />
+				</div>
+				<h1 id="title"></h1>
+				<p id="message"></p>
+				<div id="detail" class="version"></div>
+				<div id="progress-shell" class="progress-shell" hidden>
+					<div id="progress-fill" class="progress-fill"></div>
+				</div>
+				<div id="progress-label" class="progress-label" hidden></div>
+				<div id="actions" class="actions"></div>
+			</div>
+		</div>
+		<script>
+			const titleEl = document.getElementById("title");
+			const messageEl = document.getElementById("message");
+			const detailEl = document.getElementById("detail");
+			const progressShellEl = document.getElementById("progress-shell");
+			const progressFillEl = document.getElementById("progress-fill");
+			const progressLabelEl = document.getElementById("progress-label");
+			const actionsEl = document.getElementById("actions");
+
+			const escapeHtml = (value) =>
+				String(value ?? "")
+					.replaceAll("&", "&amp;")
+					.replaceAll("<", "&lt;")
+					.replaceAll(">", "&gt;")
+					.replaceAll('"', "&quot;");
+
+			const setActions = (actions) => {
+				actionsEl.innerHTML = "";
+
+				for (const action of actions ?? []) {
+					const button = document.createElement("button");
+					button.type = "button";
+					button.dataset.action = action.action;
+					button.className = action.kind === "secondary" ? "secondary" : "primary";
+					button.textContent = action.label;
+					actionsEl.appendChild(button);
+				}
+			};
+
+			window.renderUpdateWindowState = (state) => {
+				document.title = state.windowTitle ?? "software update";
+				titleEl.innerHTML = escapeHtml(state.title ?? "");
+				messageEl.innerHTML = escapeHtml(state.message ?? "");
+				detailEl.innerHTML = escapeHtml(state.detail ?? "");
+				detailEl.hidden = !state.detail;
+
+				if (state.progress && typeof state.progress === "object") {
+					progressShellEl.hidden = false;
+					progressLabelEl.hidden = false;
+
+					if (state.progress.mode === "indeterminate") {
+						progressFillEl.classList.add("indeterminate");
+						progressFillEl.style.width = "38%";
+						progressLabelEl.textContent = state.progress.label ?? "";
+					} else {
+						const percent = Math.max(0, Math.min(100, Number(state.progress.percent ?? 0)));
+						progressFillEl.classList.remove("indeterminate");
+						progressFillEl.style.width = percent + "%";
+						progressLabelEl.textContent = state.progress.label ?? (Math.round(percent) + "%");
+					}
+				} else {
+					progressShellEl.hidden = true;
+					progressLabelEl.hidden = true;
+					progressFillEl.classList.remove("indeterminate");
+					progressFillEl.style.width = "0%";
+					progressLabelEl.textContent = "";
+				}
+
+				setActions(state.actions);
+			};
+
+			document.addEventListener("click", (event) => {
+				const button = event.target.closest("button[data-action]");
+				if (!button) {
+					return;
+				}
+
+				window.location.href = "opengran-update://" + button.dataset.action;
+			});
+		</script>
+	</body>
+</html>`;
+};
+
+const resolveUpdateWindowAction = (action) => {
+	if (!resolveUpdateWindowActionPromise) {
+		return;
+	}
+
+	const resolvePromise = resolveUpdateWindowActionPromise;
+	resolveUpdateWindowActionPromise = null;
+	resolvePromise(action);
+};
+
+const applyUpdateWindowState = async (state) => {
+	if (!updateWindow || updateWindow.isDestroyed()) {
+		return;
+	}
+
+	if (!updateWindowReady) {
+		pendingUpdateWindowState = state;
+		return;
+	}
+
+	await updateWindow.webContents.executeJavaScript(
+		`window.renderUpdateWindowState(${JSON.stringify(state)});`,
+		true,
+	);
+};
+
+const closeUpdateWindow = () => {
+	if (!updateWindow || updateWindow.isDestroyed()) {
+		updateWindow = null;
+		updateWindowReady = false;
+		pendingUpdateWindowState = null;
+		resolveUpdateWindowAction("close");
+		return;
+	}
+
+	updateWindow.close();
+};
+
+const ensureUpdateWindow = async () => {
+	if (updateWindow && !updateWindow.isDestroyed()) {
+		return updateWindow;
+	}
+
+	updateWindowReady = false;
+	pendingUpdateWindowState = null;
+
+	updateWindow = new BrowserWindow({
+		width: 432,
+		height: 334,
+		resizable: false,
+		fullscreenable: false,
+		minimizable: false,
+		maximizable: false,
+		show: false,
+		title: "software update",
+		titleBarStyle: "hiddenInset",
+		backgroundColor: "#181a1f",
+		trafficLightPosition: { x: 16, y: 18 },
+		parent:
+			mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
+				? mainWindow
+				: undefined,
+		modal: Boolean(
+			mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible(),
+		),
+		webPreferences: {
+			contextIsolation: true,
+			nodeIntegration: false,
+			sandbox: true,
+		},
+	});
+
+	updateWindow.on("closed", () => {
+		updateWindow = null;
+		updateWindowReady = false;
+		pendingUpdateWindowState = null;
+		resolveUpdateWindowAction("close");
+	});
+
+	updateWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+
+	updateWindow.webContents.on("will-navigate", (event, url) => {
+		if (!url.startsWith("opengran-update://")) {
+			return;
+		}
+
+		event.preventDefault();
+		const action = url.slice("opengran-update://".length).replaceAll("/", "");
+
+		if (!action) {
+			return;
+		}
+
+		if (action === "close" || action === "later" || action === "hide") {
+			if (action === "hide" && updateWindow && !updateWindow.isDestroyed()) {
+				updateWindow.hide();
+			} else {
+				closeUpdateWindow();
+			}
+			resolveUpdateWindowAction(action);
+			return;
+		}
+
+		if (action === "install") {
+			resolveUpdateWindowAction(action);
+			isQuitting = true;
+			autoUpdater.quitAndInstall();
+		}
+	});
+
+	await updateWindow.loadURL(
+		`data:text/html;charset=utf-8,${encodeURIComponent(createUpdateWindowHtml())}`,
+	);
+
+	updateWindowReady = true;
+
+	if (pendingUpdateWindowState) {
+		await applyUpdateWindowState(pendingUpdateWindowState);
+	}
+
+	return updateWindow;
+};
+
+const showUpdateWindow = async (state, options = {}) => {
+	const windowTitle =
+		typeof options.windowTitle === "string" && options.windowTitle.trim()
+			? options.windowTitle.trim()
+			: "software update";
+	const nextState = {
+		windowTitle,
+		...state,
+	};
+	const nextWindow = await ensureUpdateWindow();
+	await applyUpdateWindowState(nextState);
+
+	if (!nextWindow.isVisible()) {
+		nextWindow.show();
+	}
+
+	if (options.focus !== false) {
+		nextWindow.focus();
+	}
+};
+
+const promptWithUpdateWindow = async (state, options = {}) => {
+	resolveUpdateWindowAction("replaced");
+
+	await showUpdateWindow(state, options);
+
+	return await new Promise((resolvePromise) => {
+		resolveUpdateWindowActionPromise = resolvePromise;
+	});
 };
 
 const normalizeDesktopPermissionsState = (value) => ({
@@ -2976,19 +3403,26 @@ const quitCompletely = () => {
 };
 
 const promptToInstallDownloadedUpdate = async (version) => {
-	const { response } = await dialog.showMessageBox({
-		type: "info",
-		title: "Update ready",
-		message: `OpenGran ${version} is ready to install.`,
-		detail: "Install the update now or wait until you quit the app.",
-		buttons: ["Install and restart", "Later"],
-		defaultId: 0,
-		cancelId: 1,
+	const action = await promptWithUpdateWindow({
+		title: "update ready to install",
+		message: `OpenGran ${version} has finished downloading.`,
+		detail: "install now or keep working and update on quit.",
+		actions: [
+			{
+				label: "install and restart",
+				action: "install",
+				kind: "primary",
+			},
+			{
+				label: "later",
+				action: "later",
+				kind: "secondary",
+			},
+		],
 	});
 
-	if (response === 0) {
-		isQuitting = true;
-		autoUpdater.quitAndInstall();
+	if (action === "install") {
+		return;
 	}
 };
 
@@ -3003,17 +3437,85 @@ const configureAutoUpdater = () => {
 	autoUpdater.on("checking-for-update", () => {
 		isCheckingForUpdates = true;
 		setTrayStatusLabel("Checking for updates...");
+
+		if (!shouldShowUpdateResultDialogs) {
+			return;
+		}
+
+		void showUpdateWindow({
+			title: "checking for updates...",
+			message: `looking for a newer OpenGran build than ${app.getVersion()}.`,
+			detail: `current version ${app.getVersion()}`,
+			progress: {
+				mode: "indeterminate",
+				label: "contacting the update server",
+			},
+			actions: [
+				{
+					label: "hide",
+					action: "hide",
+					kind: "secondary",
+				},
+			],
+		});
 	});
 
 	autoUpdater.on("update-available", (info) => {
 		hasPendingUpdateDownload = false;
 		pendingUpdateVersion = info.version;
 		setTrayStatusLabel(`Downloading OpenGran ${info.version}...`);
+
+		if (!shouldShowUpdateResultDialogs) {
+			return;
+		}
+
+		void showUpdateWindow({
+			title: "downloading update...",
+			message: `OpenGran ${info.version} is being downloaded now.`,
+			detail: `current version ${app.getVersion()}`,
+			progress: {
+				mode: "determinate",
+				percent: 0,
+				label: "0%",
+			},
+			actions: [
+				{
+					label: "hide",
+					action: "hide",
+					kind: "secondary",
+				},
+			],
+		});
 	});
 
 	autoUpdater.on("download-progress", (progress) => {
 		setTrayStatusLabel(
 			`Downloading update... ${Math.round(progress.percent)}%`,
+		);
+
+		if (!shouldShowUpdateResultDialogs) {
+			return;
+		}
+
+		void showUpdateWindow(
+			{
+				title: "downloading update...",
+				message: `OpenGran ${pendingUpdateVersion ?? app.getVersion()} is being downloaded now.`,
+				detail: `current version ${app.getVersion()}`,
+				progress: {
+					mode: "determinate",
+					percent: progress.percent,
+					label: `${Math.round(progress.percent)}%`,
+				},
+				actions: [
+					{
+						label: "hide",
+						action: "hide",
+						kind: "secondary",
+					},
+				],
+			},
+			{ focus: false },
 		);
 	});
 
@@ -3028,10 +3530,16 @@ const configureAutoUpdater = () => {
 		}
 
 		shouldShowUpdateResultDialogs = false;
-		await dialog.showMessageBox({
-			type: "info",
-			title: "Check for updates",
-			message: "OpenGran is up to date.",
+		await promptWithUpdateWindow({
+			title: "you're up to date",
+			message: `OpenGran ${app.getVersion()} is currently the newest version available.`,
+			actions: [
+				{
+					label: "ok",
+					action: "close",
+					kind: "primary",
+				},
+			],
 		});
 	});
 
@@ -3054,30 +3562,48 @@ const configureAutoUpdater = () => {
 		}
 
 		shouldShowUpdateResultDialogs = false;
-		await dialog.showMessageBox({
-			type: "error",
-			title: "Check for updates",
+		await promptWithUpdateWindow({
+			title: "update check failed",
 			message: "OpenGran couldn't check for updates.",
 			detail: error instanceof Error ? error.message : String(error),
+			actions: [
+				{
+					label: "ok",
+					action: "close",
+					kind: "primary",
+				},
+			],
 		});
 	});
 };
 
 const handleCheckForUpdates = async () => {
 	if (!isUpdaterAvailable()) {
-		await dialog.showMessageBox({
-			type: "info",
-			title: "Check for updates",
-			message: "Updates are only available in packaged release builds.",
+		await promptWithUpdateWindow({
+			title: "updates unavailable",
+			message: "updates are only available in packaged release builds.",
+			actions: [
+				{
+					label: "ok",
+					action: "close",
+					kind: "primary",
+				},
+			],
 		});
 		return;
 	}
 
 	if (isCheckingForUpdates) {
-		await dialog.showMessageBox({
-			type: "info",
-			title: "Check for updates",
+		await promptWithUpdateWindow({
+			title: "already checking",
 			message: "OpenGran is already checking for updates.",
+			actions: [
+				{
+					label: "ok",
+					action: "close",
+					kind: "primary",
+				},
+			],
 		});
 		return;
 	}
