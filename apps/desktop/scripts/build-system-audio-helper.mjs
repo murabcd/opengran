@@ -4,18 +4,22 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const sourceFile = resolve(
-	packageRoot,
-	"native",
-	"SystemAudioCaptureCLI.swift",
-);
 const defaultOutDir = resolve(packageRoot, ".generated", "system-audio");
 const outDirFlagIndex = process.argv.indexOf("--out-dir");
 const outDir =
 	outDirFlagIndex >= 0 && process.argv[outDirFlagIndex + 1]
 		? resolve(process.argv[outDirFlagIndex + 1])
 		: defaultOutDir;
-const outputFile = resolve(outDir, "opengran-system-audio-helper");
+const helpers = [
+	{
+		outputFile: resolve(outDir, "opengran-system-audio-helper"),
+		sourceFile: resolve(packageRoot, "native", "SystemAudioCaptureCLI.swift"),
+	},
+	{
+		outputFile: resolve(outDir, "opengran-microphone-helper"),
+		sourceFile: resolve(packageRoot, "native", "MicrophoneCaptureCLI.swift"),
+	},
+];
 
 const run = (cmd, args) =>
 	new Promise((resolvePromise, rejectPromise) => {
@@ -43,5 +47,14 @@ if (process.platform !== "darwin") {
 }
 
 await mkdir(outDir, { recursive: true });
-await run("swiftc", ["-O", "-parse-as-library", "-o", outputFile, sourceFile]);
-await chmod(outputFile, 0o755);
+
+for (const { outputFile, sourceFile } of helpers) {
+	await run("swiftc", [
+		"-O",
+		"-parse-as-library",
+		"-o",
+		outputFile,
+		sourceFile,
+	]);
+	await chmod(outputFile, 0o755);
+}

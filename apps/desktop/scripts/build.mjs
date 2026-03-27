@@ -40,15 +40,15 @@ await cp(desktopAssetsDir, resolve(distDir, "assets"), { recursive: true });
 
 if (process.platform === "darwin") {
 	await mkdir(resolve(distDir, "bin"), { recursive: true });
-	await cp(
-		resolve(
-			packageRoot,
-			".generated",
-			"system-audio",
-			"opengran-system-audio-helper",
-		),
-		resolve(distDir, "bin", "opengran-system-audio-helper"),
-	);
+	for (const helperName of [
+		"opengran-system-audio-helper",
+		"opengran-microphone-helper",
+	]) {
+		await cp(
+			resolve(packageRoot, ".generated", "system-audio", helperName),
+			resolve(distDir, "bin", helperName),
+		);
+	}
 }
 
 await mkdir(bundleDesktopDistDir, { recursive: true });

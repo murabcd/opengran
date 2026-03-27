@@ -25,6 +25,7 @@ import {
 	Tray,
 } from "electron";
 import electronUpdater from "electron-updater";
+import WebSocket from "ws";
 import { getDesktopAuthClient } from "./auth-client.mjs";
 import { loadRootEnv } from "./env.mjs";
 import { startLocalServer } from "./local-server.mjs";
@@ -53,7 +54,15 @@ const transcriptDraftsDirPath = join(
 	app.getPath("userData"),
 	"transcript-drafts",
 );
+const microphoneCaptureEventChannel = "app:microphone-capture-event";
 const systemAudioCaptureEventChannel = "app:system-audio-capture-event";
+const desktopRealtimeTransportEventChannel =
+	"app:desktop-realtime-transport-event";
+const transcriptionSessionStateChannel = "app:transcription-session-state";
+const transcriptionSessionEventChannel = "app:transcription-session-event";
+const captureHealthTimeoutMs = 3_000;
+const maxRecoveryAttempts = 3;
+const recoveryBackoffMs = [750, 1_500, 3_000];
 const transcriptDraftStorageVersion = 1;
 const transcriptDraftMaxAgeMs = 72 * 60 * 60 * 1000;
 const minimumWindowSize = {
@@ -71,6 +80,38 @@ const defaultDesktopPermissionsState = {
 	systemAudioValidated: false,
 	systemAudioBlocked: false,
 };
+const createInitialTranscriptionSessionState = () => ({
+	autoStartKey: null,
+	error: null,
+	isAvailable: false,
+	isConnecting: false,
+	isListening: false,
+	liveTranscript: {
+		you: {
+			speaker: "you",
+			startedAt: null,
+			text: "",
+		},
+		them: {
+			speaker: "them",
+			startedAt: null,
+			text: "",
+		},
+	},
+	phase: "idle",
+	recoveryStatus: {
+		attempt: 0,
+		maxAttempts: 0,
+		message: null,
+		state: "idle",
+	},
+	scopeKey: null,
+	systemAudioStatus: {
+		sourceMode: "unsupported",
+		state: "unsupported",
+	},
+	utterances: [],
+});
 
 let mainWindow = null;
 let localServer = null;
@@ -80,12 +121,38 @@ let traySettings = defaultTraySettings;
 let desktopPermissionsState = defaultDesktopPermissionsState;
 let trayStatusLabel = "Updates are unavailable in development builds";
 let hasConfiguredDisplayMediaHandler = false;
+let microphoneCaptureSession = null;
+let microphoneCaptureStartRequestId = 0;
 let systemAudioCaptureSession = null;
 let systemAudioCaptureStartRequestId = 0;
 let hasPendingUpdateDownload = false;
 let isCheckingForUpdates = false;
 let shouldShowUpdateResultDialogs = false;
 let pendingUpdateVersion = null;
+let latestTranscriptionSessionState = createInitialTranscriptionSessionState();
+const desktopRealtimeTransportSessions = new Map();
+const captureEventListeners = {
+	microphone: new Set(),
+	systemAudio: new Set(),
+};
+const desktopRealtimeTransportListeners = new Set();
+const transcriptionSpeakers = {
+	them: createTranscriptionSpeakerRuntime("them"),
+	you: createTranscriptionSpeakerRuntime("you"),
+};
+let transcriptionConfig = {
+	autoStartKey: null,
+	lang: undefined,
+	scopeKey: null,
+};
+let transcriptionPolicy = null;
+let transcriptionRecoveryAttempt = 0;
+let transcriptionReconnectTimeoutId = null;
+let transcriptionLastHandledAutoStartKey = null;
+let transcriptionLifecycleOperationId = 0;
+let transcriptionPendingStartPromise = null;
+let transcriptionPendingStopPromise = null;
+let currentTranscriptionSessionCorrelationId = null;
 
 const isUpdaterAvailable = () =>
 	process.platform === "darwin" &&
@@ -131,6 +198,76 @@ const resolveSystemAudioHelperPath = () => {
 
 	return candidates.find((candidatePath) => existsSync(candidatePath)) ?? null;
 };
+
+const resolveMicrophoneHelperPath = () => {
+	const envPath = process.env.OPENGRAN_MICROPHONE_HELPER_PATH?.trim();
+	const unpackedHelperPath = app.isPackaged
+		? resolve(
+				process.resourcesPath,
+				"app.asar.unpacked",
+				".bundle-root",
+				"apps",
+				"desktop",
+				"dist",
+				"bin",
+				"opengran-microphone-helper",
+			)
+		: null;
+	const candidates = [
+		envPath,
+		unpackedHelperPath,
+		resolve(runtimeDir, "bin", "opengran-microphone-helper"),
+		resolve(
+			runtimeDir,
+			"..",
+			".generated",
+			"system-audio",
+			"opengran-microphone-helper",
+		),
+	].filter(Boolean);
+
+	return candidates.find((candidatePath) => existsSync(candidatePath)) ?? null;
+};
+
+function createTranscriptionSpeakerRuntime(speaker) {
+	return {
+		speaker,
+		activeSourceMode: "unsupported",
+		captureDispose: null,
+		emittedItemIds: new Set(),
+		lastCommittedItemId: null,
+		liveItemId: null,
+		recording: null,
+		sessionId: null,
+		transportActive: false,
+		turns: new Map(),
+	};
+}
+
+function createTranscriptRecoveryStatus(overrides = {}) {
+	return {
+		attempt: 0,
+		maxAttempts: 0,
+		message: null,
+		state: "idle",
+		...overrides,
+	};
+}
+
+function createEmptyLiveTranscriptState() {
+	return {
+		you: {
+			speaker: "you",
+			startedAt: null,
+			text: "",
+		},
+		them: {
+			speaker: "them",
+			startedAt: null,
+			text: "",
+		},
+	};
+}
 
 const hydrateDesktopPermissionsState = async () => {
 	try {
@@ -189,12 +326,472 @@ const isLikelySystemAudioPermissionError = (error) => {
 
 await hydrateDesktopPermissionsState();
 
+const getLiveDesktopWindows = () =>
+	BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+
+const broadcastToDesktopWindows = ({ channel, payload }) => {
+	for (const window of getLiveDesktopWindows()) {
+		window.webContents.send(channel, payload);
+	}
+};
+
 const emitSystemAudioCaptureEvent = (event) => {
-	if (!mainWindow || mainWindow.isDestroyed()) {
+	for (const listener of captureEventListeners.systemAudio) {
+		listener(event);
+	}
+
+	broadcastToDesktopWindows({
+		channel: systemAudioCaptureEventChannel,
+		payload: event,
+	});
+};
+
+const emitMicrophoneCaptureEvent = (event) => {
+	for (const listener of captureEventListeners.microphone) {
+		listener(event);
+	}
+
+	broadcastToDesktopWindows({
+		channel: microphoneCaptureEventChannel,
+		payload: event,
+	});
+};
+
+const emitDesktopRealtimeTransportEvent = (event) => {
+	for (const listener of desktopRealtimeTransportListeners) {
+		listener(event);
+	}
+
+	broadcastToDesktopWindows({
+		channel: desktopRealtimeTransportEventChannel,
+		payload: event,
+	});
+};
+
+const subscribeToDesktopRealtimeTransportEvents = (listener) => {
+	desktopRealtimeTransportListeners.add(listener);
+
+	return () => {
+		desktopRealtimeTransportListeners.delete(listener);
+	};
+};
+
+const subscribeToCaptureEvents = (source, listener) => {
+	const listenerSet = captureEventListeners[source];
+
+	if (!listenerSet) {
+		throw new Error(`Unsupported capture source: ${source}`);
+	}
+
+	listenerSet.add(listener);
+
+	return () => {
+		listenerSet.delete(listener);
+	};
+};
+
+const clearCaptureHealthTimeout = (session) => {
+	if (session?.healthTimeout) {
+		clearTimeout(session.healthTimeout);
+		session.healthTimeout = null;
+	}
+};
+
+const decodeBase64Pcm16 = (base64Value) => {
+	const buffer = Buffer.from(base64Value, "base64");
+
+	return new Int16Array(
+		buffer.buffer,
+		buffer.byteOffset,
+		Math.floor(buffer.byteLength / Int16Array.BYTES_PER_ELEMENT),
+	);
+};
+
+const encodeBase64Pcm16 = (pcm16Samples) =>
+	Buffer.from(
+		pcm16Samples.buffer,
+		pcm16Samples.byteOffset,
+		pcm16Samples.byteLength,
+	).toString("base64");
+
+const createPcm16Resampler = (inputRate, outputRate) => {
+	if (
+		!Number.isFinite(inputRate) ||
+		!Number.isFinite(outputRate) ||
+		inputRate <= 0 ||
+		outputRate <= 0
+	) {
+		throw new Error("Audio sample rate is invalid.");
+	}
+
+	if (inputRate === outputRate) {
+		return (base64Value) => base64Value;
+	}
+
+	let remainder = new Float32Array(0);
+	const sampleRatio = inputRate / outputRate;
+
+	return (base64Value) => {
+		const pcm16 = decodeBase64Pcm16(base64Value);
+		const nextInput = new Float32Array(remainder.length + pcm16.length);
+		nextInput.set(remainder);
+
+		for (let index = 0; index < pcm16.length; index += 1) {
+			nextInput[remainder.length + index] = pcm16[index] / 32768;
+		}
+
+		const outputLength = Math.floor((nextInput.length - 1) / sampleRatio);
+
+		if (outputLength <= 0) {
+			remainder = nextInput;
+			return "";
+		}
+
+		const output = new Int16Array(outputLength);
+
+		for (let index = 0; index < outputLength; index += 1) {
+			const position = index * sampleRatio;
+			const leftIndex = Math.floor(position);
+			const rightIndex = Math.min(leftIndex + 1, nextInput.length - 1);
+			const blend = position - leftIndex;
+			const sample =
+				nextInput[leftIndex] +
+				(nextInput[rightIndex] - nextInput[leftIndex]) * blend;
+			output[index] = Math.max(
+				-32768,
+				Math.min(32767, Math.round(sample * 32768)),
+			);
+		}
+
+		const consumedSamples = Math.floor(outputLength * sampleRatio);
+		remainder = nextInput.slice(Math.max(0, consumedSamples));
+
+		return encodeBase64Pcm16(output);
+	};
+};
+
+const syncTranscriptionSessionState = (state) => {
+	latestTranscriptionSessionState = state;
+	broadcastToDesktopWindows({
+		channel: transcriptionSessionStateChannel,
+		payload: state,
+	});
+};
+
+const emitTranscriptionSessionEvent = (event) => {
+	broadcastToDesktopWindows({
+		channel: transcriptionSessionEventChannel,
+		payload: event,
+	});
+};
+
+const patchTranscriptionSessionState = (patch) => {
+	syncTranscriptionSessionState({
+		...latestTranscriptionSessionState,
+		...patch,
+	});
+};
+
+const updateTranscriptionLiveTranscript = (speaker, value) => {
+	patchTranscriptionSessionState({
+		liveTranscript: {
+			...latestTranscriptionSessionState.liveTranscript,
+			[speaker]: {
+				...latestTranscriptionSessionState.liveTranscript[speaker],
+				...value,
+			},
+		},
+	});
+};
+
+const clearTranscriptionLiveTranscript = (speaker) => {
+	updateTranscriptionLiveTranscript(speaker, {
+		startedAt: null,
+		text: "",
+	});
+};
+
+const compareTranscriptUtterances = (left, right) => {
+	if (left.startedAt !== right.startedAt) {
+		return left.startedAt - right.startedAt;
+	}
+
+	if (left.endedAt !== right.endedAt) {
+		return left.endedAt - right.endedAt;
+	}
+
+	return left.id.localeCompare(right.id);
+};
+
+const appendTranscriptionUtterance = (utterance) => {
+	patchTranscriptionSessionState({
+		utterances: [...latestTranscriptionSessionState.utterances, utterance].sort(
+			compareTranscriptUtterances,
+		),
+	});
+	emitTranscriptionSessionEvent({
+		type: "session.utterance_committed",
+		utterance,
+	});
+};
+
+const createDesktopSystemAudioPolicy = () => {
+	if (process.platform === "darwin") {
+		const sourceMode =
+			getSystemAudioPermission().state === "granted"
+				? "desktop-native"
+				: "unsupported";
+
+		return {
+			platform: "desktop",
+			systemAudioCapability: {
+				isSupported: sourceMode !== "unsupported",
+				sourceMode,
+				shouldAutoBootstrap: sourceMode === "desktop-native",
+			},
+		};
+	}
+
+	if (process.platform === "win32") {
+		return {
+			platform: "desktop",
+			systemAudioCapability: {
+				isSupported: true,
+				sourceMode: "display-media",
+				shouldAutoBootstrap: false,
+			},
+		};
+	}
+
+	return {
+		platform: "desktop",
+		systemAudioCapability: {
+			isSupported: false,
+			sourceMode: "unsupported",
+			shouldAutoBootstrap: false,
+		},
+	};
+};
+
+const createSystemAudioStatusFromPolicy = (policy) => ({
+	state: !policy.systemAudioCapability.isSupported ? "unsupported" : "ready",
+	sourceMode: policy.systemAudioCapability.sourceMode,
+});
+
+const getDesktopRealtimeAvailability = () =>
+	process.platform === "darwin" &&
+	Boolean(process.env.OPENAI_API_KEY) &&
+	Boolean(resolveMicrophoneHelperPath());
+
+const isNonRecoverableStartError = (error) => {
+	if (!(error instanceof Error)) {
+		return false;
+	}
+
+	const message = error.message.toLowerCase();
+
+	return (
+		message.includes("microphone access") ||
+		message.includes("not configured") ||
+		message.includes("permission") ||
+		message.includes("system settings")
+	);
+};
+
+const normalizeTranscriptionError = (error) => {
+	if (!(error instanceof Error)) {
+		return {
+			code: "unknown",
+			message: "Failed to start live transcription.",
+		};
+	}
+
+	const message = error.message;
+	const normalizedMessage = message.toLowerCase();
+
+	if (
+		normalizedMessage.includes("blocked") ||
+		normalizedMessage.includes("permission denied") ||
+		normalizedMessage.includes("microphone access is required") ||
+		isNonRecoverableStartError(error)
+	) {
+		return {
+			code: "permission_denied",
+			message,
+		};
+	}
+
+	if (
+		normalizedMessage.includes("unavailable") ||
+		normalizedMessage.includes("missing")
+	) {
+		return {
+			code: "device_unavailable",
+			message,
+		};
+	}
+
+	if (normalizedMessage.includes("connect")) {
+		return {
+			code: "connection_failed",
+			message,
+		};
+	}
+
+	return {
+		code: "configuration_failed",
+		message,
+	};
+};
+
+const clearTranscriptionReconnectTimeout = () => {
+	if (transcriptionReconnectTimeoutId == null) {
 		return;
 	}
 
-	mainWindow.webContents.send(systemAudioCaptureEventChannel, event);
+	clearTimeout(transcriptionReconnectTimeoutId);
+	transcriptionReconnectTimeoutId = null;
+};
+
+const refreshTranscriptionPolicy = () => {
+	transcriptionPolicy = createDesktopSystemAudioPolicy();
+
+	if (latestTranscriptionSessionState.systemAudioStatus.state === "connected") {
+		return transcriptionPolicy;
+	}
+
+	patchTranscriptionSessionState({
+		isAvailable: getDesktopRealtimeAvailability(),
+		systemAudioStatus: createSystemAudioStatusFromPolicy(transcriptionPolicy),
+	});
+
+	return transcriptionPolicy;
+};
+
+const ensureDesktopMicrophonePermissionGranted = async () => {
+	let microphonePermission = getMicrophonePermission();
+
+	if (microphonePermission.state === "granted") {
+		return;
+	}
+
+	if (
+		microphonePermission.state === "prompt" &&
+		microphonePermission.canRequest
+	) {
+		await requestPermission("microphone");
+		microphonePermission = getMicrophonePermission();
+	}
+
+	if (microphonePermission.state === "granted") {
+		return;
+	}
+
+	if (microphonePermission.state === "blocked") {
+		throw new Error(
+			"Microphone access is blocked. Enable it in system settings, then try again.",
+		);
+	}
+
+	if (microphonePermission.state === "unsupported") {
+		throw new Error("Microphone capture is not available on this platform.");
+	}
+
+	throw new Error("Microphone access is required to start live transcription.");
+};
+
+const encodePcm16WavBase64 = ({ chunks, sampleRate }) => {
+	const pcmData = Buffer.concat(chunks);
+	const header = Buffer.alloc(44);
+	const byteRate = sampleRate * 2;
+
+	header.write("RIFF", 0, "ascii");
+	header.writeUInt32LE(36 + pcmData.length, 4);
+	header.write("WAVE", 8, "ascii");
+	header.write("fmt ", 12, "ascii");
+	header.writeUInt32LE(16, 16);
+	header.writeUInt16LE(1, 20);
+	header.writeUInt16LE(1, 22);
+	header.writeUInt32LE(sampleRate, 24);
+	header.writeUInt32LE(byteRate, 28);
+	header.writeUInt16LE(2, 32);
+	header.writeUInt16LE(16, 34);
+	header.write("data", 36, "ascii");
+	header.writeUInt32LE(pcmData.length, 40);
+
+	return Buffer.concat([header, pcmData]).toString("base64");
+};
+
+const emitSystemAudioRecordingReady = (recording) => {
+	if (!recording || recording.chunks.length === 0 || !recording.sampleRate) {
+		return;
+	}
+
+	emitTranscriptionSessionEvent({
+		type: "session.system_audio_recording_ready",
+		payload: {
+			blobBase64: encodePcm16WavBase64({
+				chunks: recording.chunks,
+				sampleRate: recording.sampleRate,
+			}),
+			endedAt: Date.now(),
+			mimeType: "audio/wav",
+			sourceMode: recording.sourceMode,
+			startedAt: recording.startedAt,
+		},
+	});
+};
+
+const emitTranscriptionOrderedTurns = (speaker) => {
+	const state = transcriptionSpeakers[speaker];
+
+	for (;;) {
+		const nextTurn = [...state.turns.values()].find(
+			(turn) =>
+				turn.completed &&
+				!state.emittedItemIds.has(turn.itemId) &&
+				turn.previousItemId === state.lastCommittedItemId,
+		);
+
+		if (!nextTurn) {
+			return;
+		}
+
+		const text = nextTurn.text.trim();
+		if (text) {
+			appendTranscriptionUtterance({
+				endedAt: Date.now(),
+				id: `${state.sessionId ?? "session"}:${speaker}:${nextTurn.itemId}`,
+				speaker,
+				startedAt: nextTurn.startedAt ?? Date.now(),
+				text,
+			});
+		}
+
+		state.emittedItemIds.add(nextTurn.itemId);
+		state.lastCommittedItemId = nextTurn.itemId;
+
+		if (state.liveItemId === nextTurn.itemId) {
+			state.liveItemId = null;
+			clearTranscriptionLiveTranscript(speaker);
+		}
+	}
+};
+
+const upsertTranscriptionTurn = (speaker, itemId, updates) => {
+	const state = transcriptionSpeakers[speaker];
+	const currentValue = state.turns.get(itemId);
+	const nextValue = {
+		completed: currentValue?.completed ?? false,
+		itemId,
+		previousItemId: currentValue?.previousItemId ?? null,
+		startedAt: currentValue?.startedAt ?? null,
+		text: currentValue?.text ?? "",
+		...updates,
+	};
+
+	state.turns.set(itemId, nextValue);
+	return nextValue;
 };
 
 const wait = (durationMs) =>
@@ -410,6 +1007,855 @@ const clearTranscriptDraft = async (noteKey) => {
 	return { ok: true };
 };
 
+const parseDesktopRealtimeTransportEvent = ({ event, speaker }) => {
+	if (!event || typeof event !== "object" || typeof event.type !== "string") {
+		return null;
+	}
+
+	if (event.type === "input_audio_buffer.committed" && event.item_id) {
+		return {
+			speaker,
+			type: "committed",
+			itemId: event.item_id,
+			previousItemId: event.previous_item_id ?? null,
+		};
+	}
+
+	if (
+		event.type === "conversation.item.input_audio_transcription.delta" &&
+		event.item_id &&
+		typeof event.delta === "string"
+	) {
+		return {
+			speaker,
+			type: "partial",
+			itemId: event.item_id,
+			textDelta: event.delta,
+		};
+	}
+
+	if (
+		event.type === "conversation.item.input_audio_transcription.completed" &&
+		event.item_id
+	) {
+		return {
+			speaker,
+			type: "final",
+			itemId: event.item_id,
+			text: event.transcript ?? event.text ?? "",
+		};
+	}
+
+	if (event.type === "error") {
+		return {
+			speaker,
+			type: "interrupted",
+			message: event.error?.message ?? "Realtime transcription failed.",
+		};
+	}
+
+	return null;
+};
+
+const stopDesktopRealtimeTransport = async (speaker) => {
+	const session = desktopRealtimeTransportSessions.get(speaker);
+
+	if (!session) {
+		return { ok: true };
+	}
+
+	desktopRealtimeTransportSessions.delete(speaker);
+	session.isClosing = true;
+	session.unsubscribeCapture?.();
+	clearTimeout(session.openTimeout);
+
+	await new Promise((resolvePromise) => {
+		const finalize = () => {
+			resolvePromise();
+		};
+
+		session.socket.once("close", finalize);
+		session.socket.close();
+
+		setTimeout(() => {
+			if (session.socket.readyState !== WebSocket.CLOSED) {
+				session.socket.terminate();
+			}
+			finalize();
+		}, 1_000);
+	});
+
+	return { ok: true };
+};
+
+const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
+	if (process.platform !== "darwin") {
+		throw new Error(
+			"Desktop realtime transcription transport is only available on macOS.",
+		);
+	}
+
+	if (!process.env.OPENAI_API_KEY) {
+		throw new Error("OPENAI_API_KEY is not configured.");
+	}
+
+	const captureSession =
+		source === "microphone"
+			? microphoneCaptureSession
+			: systemAudioCaptureSession;
+
+	if (!captureSession?.sampleRate) {
+		throw new Error("Desktop audio capture is not active.");
+	}
+
+	await stopDesktopRealtimeTransport(speaker);
+
+	return await new Promise((resolvePromise, rejectPromise) => {
+		let didResolve = false;
+		const resampleChunk = createPcm16Resampler(
+			captureSession.sampleRate,
+			24_000,
+		);
+		const socket = new WebSocket(
+			"wss://api.openai.com/v1/realtime?intent=transcription",
+			{
+				headers: {
+					Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+				},
+			},
+		);
+		const session = {
+			isClosing: false,
+			openTimeout: setTimeout(() => {
+				if (didResolve) {
+					return;
+				}
+
+				rejectPromise(
+					new Error(
+						"Timed out while connecting desktop realtime transcription.",
+					),
+				);
+				socket.terminate();
+			}, 10_000),
+			socket,
+			source,
+			speaker,
+			unsubscribeCapture: null,
+		};
+
+		const finalizeStartError = (error) => {
+			if (didResolve) {
+				emitDesktopRealtimeTransportEvent({
+					speaker,
+					type: "interrupted",
+					message:
+						error instanceof Error
+							? error.message
+							: "Realtime transcription failed.",
+				});
+				return;
+			}
+
+			didResolve = true;
+			rejectPromise(error);
+		};
+
+		session.unsubscribeCapture = subscribeToCaptureEvents(source, (event) => {
+			if (session.isClosing || socket.readyState !== WebSocket.OPEN) {
+				return;
+			}
+
+			if (event.type === "chunk" && event.pcm16) {
+				const audio = resampleChunk(event.pcm16);
+
+				if (!audio) {
+					return;
+				}
+
+				socket.send(
+					JSON.stringify({
+						type: "input_audio_buffer.append",
+						audio,
+					}),
+				);
+				return;
+			}
+
+			if (event.type === "error" || event.type === "stopped") {
+				emitDesktopRealtimeTransportEvent({
+					speaker,
+					type: "interrupted",
+					message: event.message ?? "Desktop audio capture was interrupted.",
+				});
+				void stopDesktopRealtimeTransport(speaker);
+			}
+		});
+
+		desktopRealtimeTransportSessions.set(speaker, session);
+
+		socket.on("open", () => {
+			socket.send(
+				JSON.stringify({
+					type: "transcription_session.update",
+					input_audio_format: "pcm16",
+					input_audio_noise_reduction: {
+						type: source === "microphone" ? "near_field" : "far_field",
+					},
+					input_audio_transcription: {
+						language: lang?.split("-")[0]?.trim().toLowerCase() || undefined,
+						model: "gpt-4o-transcribe",
+						prompt: "",
+					},
+					turn_detection: {
+						type: "server_vad",
+						threshold: 0.5,
+						prefix_padding_ms: 300,
+						silence_duration_ms: 200,
+					},
+				}),
+			);
+
+			clearTimeout(session.openTimeout);
+
+			if (!didResolve) {
+				didResolve = true;
+				resolvePromise({
+					ok: true,
+				});
+			}
+		});
+
+		socket.on("message", (rawValue) => {
+			try {
+				const payload = JSON.parse(String(rawValue));
+				const transportEvent = parseDesktopRealtimeTransportEvent({
+					event: payload,
+					speaker,
+				});
+
+				if (transportEvent) {
+					emitDesktopRealtimeTransportEvent(transportEvent);
+				}
+			} catch (error) {
+				console.error(
+					"[desktop-realtime] failed to parse websocket event",
+					error,
+				);
+			}
+		});
+
+		socket.on("error", (error) => {
+			clearTimeout(session.openTimeout);
+			finalizeStartError(error);
+		});
+
+		socket.on("close", () => {
+			clearTimeout(session.openTimeout);
+			session.unsubscribeCapture?.();
+			session.unsubscribeCapture = null;
+
+			if (desktopRealtimeTransportSessions.get(speaker) === session) {
+				desktopRealtimeTransportSessions.delete(speaker);
+			}
+
+			if (!session.isClosing) {
+				emitDesktopRealtimeTransportEvent({
+					speaker,
+					type: "interrupted",
+					message: "Realtime transcription connection was interrupted.",
+				});
+			}
+		});
+	});
+};
+
+const requestTranscriptionAutoStart = (autoStartKey) => {
+	if (
+		autoStartKey == null ||
+		transcriptionLastHandledAutoStartKey === autoStartKey ||
+		["starting", "listening", "reconnecting"].includes(
+			latestTranscriptionSessionState.phase,
+		)
+	) {
+		return;
+	}
+
+	void startDesktopTranscriptionSession().then((didStart) => {
+		if (didStart) {
+			transcriptionLastHandledAutoStartKey = autoStartKey;
+		}
+	});
+};
+
+const configureDesktopTranscriptionSession = ({
+	autoStartKey = null,
+	lang,
+	scopeKey = null,
+}) => {
+	const previousScopeKey = transcriptionConfig.scopeKey;
+	transcriptionConfig = {
+		autoStartKey,
+		lang,
+		scopeKey,
+	};
+
+	patchTranscriptionSessionState({
+		autoStartKey,
+		isAvailable: getDesktopRealtimeAvailability(),
+		scopeKey,
+	});
+	refreshTranscriptionPolicy();
+
+	if (previousScopeKey !== scopeKey) {
+		transcriptionLastHandledAutoStartKey = null;
+		void stopDesktopTranscriptionSession({
+			preserveUtterances: false,
+			resetError: true,
+			resetRecovery: true,
+		});
+	}
+
+	if (autoStartKey != null) {
+		requestTranscriptionAutoStart(autoStartKey);
+	}
+};
+
+const appendTranscriptionTailUtterance = (speaker) => {
+	const state = transcriptionSpeakers[speaker];
+	const liveEntry = latestTranscriptionSessionState.liveTranscript[speaker];
+	const text = liveEntry.text.trim();
+
+	if (!text) {
+		return;
+	}
+
+	appendTranscriptionUtterance({
+		endedAt: Date.now(),
+		id: `${state.sessionId ?? "session"}:${speaker}:manual:${crypto.randomUUID()}`,
+		speaker,
+		startedAt: liveEntry.startedAt ?? Date.now(),
+		text,
+	});
+};
+
+const stopTranscriptionSpeaker = async (speaker) => {
+	const state = transcriptionSpeakers[speaker];
+	appendTranscriptionTailUtterance(speaker);
+
+	if (speaker === "them" && state.recording) {
+		emitSystemAudioRecordingReady(state.recording);
+	}
+
+	if (speaker === "you") {
+		await stopDesktopRealtimeTransport("you");
+		await stopMicrophoneCapture();
+	} else {
+		await stopDesktopRealtimeTransport("them");
+		await stopSystemAudioCapture();
+	}
+
+	await state.captureDispose?.();
+	transcriptionSpeakers[speaker] = createTranscriptionSpeakerRuntime(speaker);
+	clearTranscriptionLiveTranscript(speaker);
+};
+
+const cleanupDesktopTranscriptionSession = async ({
+	operationId,
+	preserveUtterances,
+}) => {
+	await Promise.all([
+		stopTranscriptionSpeaker("you"),
+		stopTranscriptionSpeaker("them"),
+	]);
+
+	if (transcriptionLifecycleOperationId !== operationId) {
+		return;
+	}
+
+	patchTranscriptionSessionState({
+		isConnecting: false,
+		isListening: false,
+		liveTranscript: createEmptyLiveTranscriptState(),
+		phase: "idle",
+		systemAudioStatus: transcriptionPolicy
+			? createSystemAudioStatusFromPolicy(transcriptionPolicy)
+			: latestTranscriptionSessionState.systemAudioStatus,
+		utterances: preserveUtterances
+			? latestTranscriptionSessionState.utterances
+			: [],
+	});
+};
+
+const handleDesktopRealtimeTransportEvent = async (event) => {
+	const state = transcriptionSpeakers[event.speaker];
+
+	if (!state.transportActive) {
+		return;
+	}
+
+	if (event.type === "committed") {
+		upsertTranscriptionTurn(event.speaker, event.itemId, {
+			previousItemId: event.previousItemId,
+		});
+		emitTranscriptionOrderedTurns(event.speaker);
+		return;
+	}
+
+	if (event.type === "partial") {
+		const existingTurn = state.turns.get(event.itemId);
+		const nextTurn = upsertTranscriptionTurn(event.speaker, event.itemId, {
+			startedAt: existingTurn?.startedAt ?? Date.now(),
+			text: `${existingTurn?.text ?? ""}${event.textDelta}`,
+		});
+
+		state.liveItemId = event.itemId;
+		updateTranscriptionLiveTranscript(event.speaker, {
+			startedAt: nextTurn.startedAt,
+			text: nextTurn.text,
+		});
+		return;
+	}
+
+	if (event.type === "final") {
+		const existingTurn = state.turns.get(event.itemId);
+		upsertTranscriptionTurn(event.speaker, event.itemId, {
+			completed: true,
+			startedAt:
+				existingTurn?.startedAt ??
+				latestTranscriptionSessionState.liveTranscript[event.speaker]
+					.startedAt ??
+				Date.now(),
+			text:
+				event.text ||
+				existingTurn?.text ||
+				latestTranscriptionSessionState.liveTranscript[event.speaker].text,
+		});
+		emitTranscriptionOrderedTurns(event.speaker);
+		return;
+	}
+
+	await handleDesktopTransportInterrupted({
+		message: event.message,
+		speaker: event.speaker,
+	});
+};
+
+const connectDesktopTranscriptionSpeaker = async ({
+	lang,
+	source,
+	sourceMode,
+	speaker,
+}) => {
+	if (speaker === "you") {
+		await startMicrophoneCapture();
+	} else {
+		await startSystemAudioCapture();
+	}
+
+	try {
+		await startDesktopRealtimeTransport({
+			lang,
+			source,
+			speaker,
+		});
+	} catch (error) {
+		if (speaker === "you") {
+			await stopMicrophoneCapture().catch(() => {});
+		} else {
+			await stopSystemAudioCapture().catch(() => {});
+		}
+		throw error;
+	}
+
+	const state = transcriptionSpeakers[speaker];
+	state.activeSourceMode = sourceMode;
+	state.sessionId ??= currentTranscriptionSessionCorrelationId;
+	state.transportActive = true;
+
+	if (speaker === "them" && systemAudioCaptureSession?.sampleRate) {
+		state.recording = {
+			chunks: [],
+			sampleRate: systemAudioCaptureSession.sampleRate,
+			sourceMode,
+			startedAt: Date.now(),
+		};
+	}
+};
+
+const attachDesktopSystemAudio = async ({ automatic, operationId }) => {
+	const policy = transcriptionPolicy ?? refreshTranscriptionPolicy();
+
+	if (
+		!policy.systemAudioCapability.isSupported ||
+		policy.systemAudioCapability.sourceMode !== "desktop-native" ||
+		transcriptionSpeakers.them.transportActive
+	) {
+		return false;
+	}
+
+	try {
+		patchTranscriptionSessionState({
+			systemAudioStatus: {
+				sourceMode: policy.systemAudioCapability.sourceMode,
+				state: "connected",
+			},
+		});
+
+		await connectDesktopTranscriptionSpeaker({
+			lang: transcriptionConfig.lang,
+			operationId,
+			source: "systemAudio",
+			sourceMode: policy.systemAudioCapability.sourceMode,
+			speaker: "them",
+		});
+
+		return true;
+	} catch (error) {
+		console.warn("[transcription] system audio attach failed", {
+			automatic,
+			message: error instanceof Error ? error.message : String(error),
+		});
+		patchTranscriptionSessionState({
+			systemAudioStatus: createSystemAudioStatusFromPolicy(policy),
+		});
+		return false;
+	}
+};
+
+const runDesktopTranscriptionStart = async ({ preserveUtterances, reason }) => {
+	const operationId = ++transcriptionLifecycleOperationId;
+	clearTranscriptionReconnectTimeout();
+	const policy = transcriptionPolicy ?? refreshTranscriptionPolicy();
+	transcriptionPolicy = policy;
+	currentTranscriptionSessionCorrelationId = crypto.randomUUID();
+
+	patchTranscriptionSessionState({
+		error: null,
+		isConnecting: true,
+		isListening: false,
+		liveTranscript: createEmptyLiveTranscriptState(),
+		phase: reason === "reconnect" ? "reconnecting" : "starting",
+		recoveryStatus:
+			reason === "reconnect"
+				? latestTranscriptionSessionState.recoveryStatus
+				: createTranscriptRecoveryStatus(),
+		systemAudioStatus: createSystemAudioStatusFromPolicy(policy),
+		utterances: preserveUtterances
+			? latestTranscriptionSessionState.utterances
+			: [],
+	});
+
+	try {
+		await ensureDesktopMicrophonePermissionGranted();
+		await connectDesktopTranscriptionSpeaker({
+			lang: transcriptionConfig.lang,
+			source: "microphone",
+			sourceMode: "unsupported",
+			speaker: "you",
+		});
+
+		if (transcriptionLifecycleOperationId !== operationId) {
+			return false;
+		}
+
+		transcriptionRecoveryAttempt = 0;
+		patchTranscriptionSessionState({
+			error: null,
+			isConnecting: false,
+			isListening: true,
+			phase: "listening",
+			recoveryStatus: createTranscriptRecoveryStatus(),
+		});
+
+		if (policy.systemAudioCapability.shouldAutoBootstrap) {
+			void attachDesktopSystemAudio({
+				automatic: true,
+				operationId,
+			});
+		}
+
+		return true;
+	} catch (error) {
+		if (transcriptionLifecycleOperationId !== operationId) {
+			return false;
+		}
+
+		const normalizedError = normalizeTranscriptionError(error);
+		await cleanupDesktopTranscriptionSession({
+			operationId,
+			preserveUtterances,
+		});
+		patchTranscriptionSessionState({
+			error: normalizedError,
+			isConnecting: false,
+			isListening: false,
+			liveTranscript: createEmptyLiveTranscriptState(),
+			phase: "failed",
+			recoveryStatus: createTranscriptRecoveryStatus({
+				attempt: transcriptionRecoveryAttempt,
+				maxAttempts: maxRecoveryAttempts,
+				message: normalizedError.message,
+				state: "failed",
+			}),
+			systemAudioStatus: createSystemAudioStatusFromPolicy(policy),
+			utterances: preserveUtterances
+				? latestTranscriptionSessionState.utterances
+				: [],
+		});
+
+		if (normalizedError.code === "permission_denied") {
+			emitTranscriptionSessionEvent({
+				type: "session.permission_failure",
+				error: normalizedError,
+			});
+		}
+
+		return false;
+	}
+};
+
+async function handleDesktopTransportInterrupted({ message, speaker }) {
+	if (latestTranscriptionSessionState.phase === "stopping") {
+		return;
+	}
+
+	if (speaker === "them") {
+		await stopTranscriptionSpeaker("them");
+		patchTranscriptionSessionState({
+			error: null,
+			isConnecting: false,
+			isListening: transcriptionSpeakers.you.transportActive,
+			phase: transcriptionSpeakers.you.transportActive ? "listening" : "idle",
+			systemAudioStatus: transcriptionPolicy
+				? createSystemAudioStatusFromPolicy(transcriptionPolicy)
+				: {
+						sourceMode: "unsupported",
+						state: "unsupported",
+					},
+		});
+
+		if (
+			transcriptionPolicy?.systemAudioCapability.shouldAutoBootstrap &&
+			transcriptionSpeakers.you.transportActive
+		) {
+			setTimeout(() => {
+				if (
+					latestTranscriptionSessionState.phase === "listening" &&
+					!transcriptionSpeakers.them.transportActive
+				) {
+					void attachDesktopSystemAudio({
+						automatic: true,
+						operationId: transcriptionLifecycleOperationId,
+					});
+				}
+			}, 500);
+		}
+
+		return;
+	}
+
+	const operationId = ++transcriptionLifecycleOperationId;
+	await cleanupDesktopTranscriptionSession({
+		operationId,
+		preserveUtterances: true,
+	});
+
+	const nextAttempt = transcriptionRecoveryAttempt + 1;
+	if (nextAttempt > maxRecoveryAttempts) {
+		patchTranscriptionSessionState({
+			error: {
+				code: "connection_failed",
+				message,
+			},
+			phase: "failed",
+			recoveryStatus: createTranscriptRecoveryStatus({
+				attempt: transcriptionRecoveryAttempt,
+				maxAttempts: maxRecoveryAttempts,
+				message,
+				state: "failed",
+			}),
+		});
+		return;
+	}
+
+	transcriptionRecoveryAttempt = nextAttempt;
+	patchTranscriptionSessionState({
+		error: null,
+		isConnecting: true,
+		isListening: false,
+		phase: "reconnecting",
+		recoveryStatus: createTranscriptRecoveryStatus({
+			attempt: nextAttempt,
+			maxAttempts: maxRecoveryAttempts,
+			message,
+			state: "reconnecting",
+		}),
+	});
+
+	const delay =
+		recoveryBackoffMs[nextAttempt - 1] ??
+		recoveryBackoffMs[recoveryBackoffMs.length - 1];
+	transcriptionReconnectTimeoutId = setTimeout(() => {
+		transcriptionReconnectTimeoutId = null;
+		void runDesktopTranscriptionStart({
+			preserveUtterances: true,
+			reason: "reconnect",
+		});
+	}, delay);
+}
+
+const startDesktopTranscriptionSession = async () => {
+	await transcriptionPendingStopPromise;
+
+	if (transcriptionPendingStartPromise) {
+		return await transcriptionPendingStartPromise;
+	}
+
+	const startPromise = runDesktopTranscriptionStart({
+		preserveUtterances: false,
+		reason: "manual",
+	}).finally(() => {
+		if (transcriptionPendingStartPromise === startPromise) {
+			transcriptionPendingStartPromise = null;
+		}
+	});
+
+	transcriptionPendingStartPromise = startPromise;
+	return await startPromise;
+};
+
+const stopDesktopTranscriptionSession = async ({
+	preserveUtterances = true,
+	resetError = false,
+	resetRecovery = true,
+} = {}) => {
+	if (transcriptionPendingStopPromise) {
+		return await transcriptionPendingStopPromise;
+	}
+
+	const operationId = ++transcriptionLifecycleOperationId;
+	clearTranscriptionReconnectTimeout();
+	patchTranscriptionSessionState({
+		isConnecting: false,
+		isListening: false,
+		phase: "stopping",
+	});
+
+	const stopPromise = cleanupDesktopTranscriptionSession({
+		operationId,
+		preserveUtterances,
+	})
+		.finally(() => {
+			if (transcriptionPendingStopPromise === stopPromise) {
+				transcriptionPendingStopPromise = null;
+			}
+		})
+		.then(() => {
+			transcriptionRecoveryAttempt = 0;
+			currentTranscriptionSessionCorrelationId = null;
+			patchTranscriptionSessionState({
+				error: resetError ? null : latestTranscriptionSessionState.error,
+				isConnecting: false,
+				isListening: false,
+				liveTranscript: createEmptyLiveTranscriptState(),
+				phase:
+					latestTranscriptionSessionState.phase === "failed"
+						? "failed"
+						: "idle",
+				recoveryStatus: resetRecovery
+					? createTranscriptRecoveryStatus()
+					: latestTranscriptionSessionState.recoveryStatus,
+				systemAudioStatus: transcriptionPolicy
+					? createSystemAudioStatusFromPolicy(transcriptionPolicy)
+					: latestTranscriptionSessionState.systemAudioStatus,
+				utterances: preserveUtterances
+					? latestTranscriptionSessionState.utterances
+					: [],
+			});
+		});
+
+	transcriptionPendingStopPromise = stopPromise;
+	return await stopPromise;
+};
+
+const requestDesktopTranscriptionSystemAudio = async () => {
+	if (latestTranscriptionSessionState.phase !== "listening") {
+		return false;
+	}
+
+	return await attachDesktopSystemAudio({
+		automatic: false,
+		operationId: transcriptionLifecycleOperationId,
+	});
+};
+
+const detachDesktopTranscriptionSystemAudio = async () => {
+	await stopTranscriptionSpeaker("them");
+
+	patchTranscriptionSessionState({
+		systemAudioStatus: transcriptionPolicy
+			? createSystemAudioStatusFromPolicy(transcriptionPolicy)
+			: latestTranscriptionSessionState.systemAudioStatus,
+	});
+};
+
+subscribeToDesktopRealtimeTransportEvents((event) => {
+	void handleDesktopRealtimeTransportEvent(event);
+});
+
+subscribeToCaptureEvents("systemAudio", (event) => {
+	const recording = transcriptionSpeakers.them.recording;
+
+	if (!recording || event.type !== "chunk" || !event.pcm16) {
+		return;
+	}
+
+	recording.chunks.push(Buffer.from(event.pcm16, "base64"));
+});
+
+const stopMicrophoneCapture = async () => {
+	if (!microphoneCaptureSession) {
+		return;
+	}
+
+	const session = microphoneCaptureSession;
+	microphoneCaptureSession = null;
+	session.isStopping = true;
+
+	if (session.cleanupTimeout) {
+		clearTimeout(session.cleanupTimeout);
+		session.cleanupTimeout = null;
+	}
+
+	clearCaptureHealthTimeout(session);
+
+	session.lineReader?.removeAllListeners();
+	session.process.stdout?.removeAllListeners();
+	session.process.stderr?.removeAllListeners();
+	session.process.removeAllListeners();
+
+	await new Promise((resolvePromise) => {
+		const finalize = () => {
+			resolvePromise();
+		};
+
+		session.process.once("exit", finalize);
+		session.process.kill("SIGTERM");
+
+		setTimeout(() => {
+			if (!session.process.killed) {
+				session.process.kill("SIGKILL");
+			}
+			finalize();
+		}, 1_000);
+	});
+
+	emitMicrophoneCaptureEvent({
+		type: "stopped",
+	});
+};
+
 const stopSystemAudioCapture = async () => {
 	if (!systemAudioCaptureSession) {
 		return;
@@ -423,6 +1869,8 @@ const stopSystemAudioCapture = async () => {
 		clearTimeout(session.cleanupTimeout);
 		session.cleanupTimeout = null;
 	}
+
+	clearCaptureHealthTimeout(session);
 
 	session.lineReader?.removeAllListeners();
 	session.process.stdout?.removeAllListeners();
@@ -447,6 +1895,234 @@ const stopSystemAudioCapture = async () => {
 
 	emitSystemAudioCaptureEvent({
 		type: "stopped",
+	});
+};
+
+const startMicrophoneCapture = async () => {
+	if (process.platform !== "darwin") {
+		throw new Error("Native microphone capture is only available on macOS.");
+	}
+
+	const helperPath = resolveMicrophoneHelperPath();
+	if (!helperPath) {
+		throw new Error("The macOS microphone helper is missing.");
+	}
+
+	console.info("[microphone] starting macOS helper", {
+		helperPath,
+	});
+
+	const requestId = ++microphoneCaptureStartRequestId;
+	await stopMicrophoneCapture();
+
+	return await new Promise((resolvePromise, rejectPromise) => {
+		const child = spawn(helperPath, [], {
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		const lineReader = createInterface({
+			input: child.stdout,
+			crlfDelay: Infinity,
+		});
+		let didResolve = false;
+		let session;
+
+		const rejectStart = (error) => {
+			if (requestId !== microphoneCaptureStartRequestId) {
+				console.info("[microphone] ignoring stale helper start failure", {
+					requestId,
+					currentRequestId: microphoneCaptureStartRequestId,
+					message: error instanceof Error ? error.message : String(error),
+				});
+				return;
+			}
+
+			console.error(
+				"[microphone] helper failed to start",
+				error instanceof Error ? error.message : error,
+			);
+			if (didResolve) {
+				emitMicrophoneCaptureEvent({
+					type: "error",
+					message: error instanceof Error ? error.message : String(error),
+				});
+				return;
+			}
+
+			didResolve = true;
+			rejectPromise(error);
+		};
+
+		const resolveStart = (payload) => {
+			if (requestId !== microphoneCaptureStartRequestId) {
+				console.info("[microphone] ignoring stale helper ready event", {
+					requestId,
+					currentRequestId: microphoneCaptureStartRequestId,
+				});
+				return;
+			}
+
+			if (didResolve) {
+				return;
+			}
+
+			console.info("[microphone] helper reported ready", payload);
+			didResolve = true;
+			resolvePromise(payload);
+		};
+
+		const cleanupTimeout = setTimeout(() => {
+			if (requestId !== microphoneCaptureStartRequestId) {
+				console.info("[microphone] cleared stale helper startup timeout", {
+					requestId,
+					currentRequestId: microphoneCaptureStartRequestId,
+				});
+				return;
+			}
+
+			console.error("[microphone] helper startup timed out after 5000ms");
+			rejectStart(
+				new Error("Timed out while starting macOS microphone capture."),
+			);
+			child.kill("SIGKILL");
+		}, 5_000);
+
+		const resetHealthTimeout = () => {
+			if (!session || session.isStopping) {
+				return;
+			}
+
+			clearCaptureHealthTimeout(session);
+			session.healthTimeout = setTimeout(() => {
+				if (microphoneCaptureSession !== session || session.isStopping) {
+					return;
+				}
+
+				const timeoutError = new Error(
+					"Timed out while receiving macOS microphone audio frames.",
+				);
+				console.error("[microphone] helper stopped producing audio frames");
+
+				if (didResolve) {
+					emitMicrophoneCaptureEvent({
+						type: "error",
+						message: timeoutError.message,
+					});
+				} else {
+					rejectStart(timeoutError);
+				}
+
+				child.kill("SIGKILL");
+			}, captureHealthTimeoutMs);
+		};
+
+		session = {
+			isStopping: false,
+			cleanupTimeout,
+			healthTimeout: null,
+			lineReader,
+			process: child,
+			requestId,
+			sampleRate: null,
+		};
+		microphoneCaptureSession = session;
+
+		child.stderr.setEncoding("utf8");
+		child.stderr.on("data", (chunk) => {
+			const message = String(chunk).trim();
+			if (message) {
+				console.error("[microphone-helper]", message);
+			}
+		});
+
+		lineReader.on("line", (line) => {
+			let event;
+
+			try {
+				event = JSON.parse(line);
+			} catch (error) {
+				console.error("Failed to parse microphone helper event", error, line);
+				return;
+			}
+
+			if (event?.type !== "chunk") {
+				console.info("[microphone] helper event", event?.type ?? "unknown");
+			}
+
+			if (event?.type === "ready") {
+				clearTimeout(cleanupTimeout);
+				session.cleanupTimeout = null;
+				session.sampleRate = Number(event.sampleRate) || 48_000;
+				resetHealthTimeout();
+				resolveStart({
+					channels: Number(event.channels) || 1,
+					sampleRate: session.sampleRate,
+				});
+				return;
+			}
+
+			if (event?.type === "error") {
+				const nextError = new Error(
+					typeof event.message === "string"
+						? event.message
+						: "Microphone capture failed.",
+				);
+				clearTimeout(cleanupTimeout);
+				session.cleanupTimeout = null;
+				clearCaptureHealthTimeout(session);
+				rejectStart(nextError);
+				return;
+			}
+
+			if (event?.type === "chunk") {
+				resetHealthTimeout();
+			}
+
+			emitMicrophoneCaptureEvent(event);
+		});
+
+		child.on("error", (error) => {
+			clearTimeout(cleanupTimeout);
+			session.cleanupTimeout = null;
+			clearCaptureHealthTimeout(session);
+			if (microphoneCaptureSession === session) {
+				microphoneCaptureSession = null;
+			}
+			console.error("[microphone] helper process error", error);
+			rejectStart(error);
+		});
+
+		child.on("exit", (code, signal) => {
+			clearTimeout(cleanupTimeout);
+			session.cleanupTimeout = null;
+			clearCaptureHealthTimeout(session);
+			if (microphoneCaptureSession === session) {
+				microphoneCaptureSession = null;
+			}
+
+			console.info("[microphone] helper exited", {
+				code,
+				signal,
+				didResolve,
+				isStopping: session.isStopping,
+			});
+
+			if (!session.isStopping && !didResolve) {
+				rejectStart(
+					new Error(
+						`Microphone capture exited before it became ready (code ${code ?? "null"}, signal ${signal ?? "null"}).`,
+					),
+				);
+				return;
+			}
+
+			if (!session.isStopping) {
+				emitMicrophoneCaptureEvent({
+					type: "stopped",
+					code,
+					signal,
+				});
+			}
+		});
 	});
 };
 
@@ -476,6 +2152,7 @@ const startSystemAudioCapture = async () => {
 			crlfDelay: Infinity,
 		});
 		let didResolve = false;
+		let session;
 
 		const rejectStart = (error) => {
 			if (requestId !== systemAudioCaptureStartRequestId) {
@@ -537,12 +2214,43 @@ const startSystemAudioCapture = async () => {
 			child.kill("SIGKILL");
 		}, 5_000);
 
-		const session = {
+		const resetHealthTimeout = () => {
+			if (!session || session.isStopping) {
+				return;
+			}
+
+			clearCaptureHealthTimeout(session);
+			session.healthTimeout = setTimeout(() => {
+				if (systemAudioCaptureSession !== session || session.isStopping) {
+					return;
+				}
+
+				const timeoutError = new Error(
+					"Timed out while receiving macOS system audio frames.",
+				);
+				console.error("[system-audio] helper stopped producing audio frames");
+
+				if (didResolve) {
+					emitSystemAudioCaptureEvent({
+						type: "error",
+						message: timeoutError.message,
+					});
+				} else {
+					rejectStart(timeoutError);
+				}
+
+				child.kill("SIGKILL");
+			}, captureHealthTimeoutMs);
+		};
+
+		session = {
 			isStopping: false,
 			cleanupTimeout,
+			healthTimeout: null,
 			lineReader,
 			process: child,
 			requestId,
+			sampleRate: null,
 		};
 		systemAudioCaptureSession = session;
 
@@ -571,9 +2279,11 @@ const startSystemAudioCapture = async () => {
 			if (event?.type === "ready") {
 				clearTimeout(cleanupTimeout);
 				session.cleanupTimeout = null;
+				session.sampleRate = Number(event.sampleRate) || 48_000;
+				resetHealthTimeout();
 				resolveStart({
 					channels: Number(event.channels) || 1,
-					sampleRate: Number(event.sampleRate) || 48_000,
+					sampleRate: session.sampleRate,
 				});
 				return;
 			}
@@ -586,8 +2296,13 @@ const startSystemAudioCapture = async () => {
 				);
 				clearTimeout(cleanupTimeout);
 				session.cleanupTimeout = null;
+				clearCaptureHealthTimeout(session);
 				rejectStart(nextError);
 				return;
+			}
+
+			if (event?.type === "chunk") {
+				resetHealthTimeout();
 			}
 
 			emitSystemAudioCaptureEvent(event);
@@ -596,6 +2311,7 @@ const startSystemAudioCapture = async () => {
 		child.on("error", (error) => {
 			clearTimeout(cleanupTimeout);
 			session.cleanupTimeout = null;
+			clearCaptureHealthTimeout(session);
 			if (systemAudioCaptureSession === session) {
 				systemAudioCaptureSession = null;
 			}
@@ -606,6 +2322,7 @@ const startSystemAudioCapture = async () => {
 		child.on("exit", (code, signal) => {
 			clearTimeout(cleanupTimeout);
 			session.cleanupTimeout = null;
+			clearCaptureHealthTimeout(session);
 			if (systemAudioCaptureSession === session) {
 				systemAudioCaptureSession = null;
 			}
@@ -807,6 +2524,17 @@ const getMicrophonePermission = () => {
 		};
 	}
 
+	if (process.platform === "darwin" && !resolveMicrophoneHelperPath()) {
+		return {
+			id: "microphone",
+			description: "The macOS microphone helper is missing from this build.",
+			required: true,
+			state: "unsupported",
+			canRequest: false,
+			canOpenSystemSettings: false,
+		};
+	}
+
 	const rawStatus = systemPreferences.getMediaAccessStatus("microphone");
 	const canRequest =
 		process.platform === "darwin" && rawStatus === "not-determined";
@@ -915,6 +2643,7 @@ const requestPermission = async (permissionId) => {
 			throw error;
 		}
 
+		refreshTranscriptionPolicy();
 		return getPermissionsStatus();
 	}
 
@@ -929,6 +2658,7 @@ const requestPermission = async (permissionId) => {
 		await systemPreferences.askForMediaAccess("microphone");
 	}
 
+	refreshTranscriptionPolicy();
 	return getPermissionsStatus();
 };
 
@@ -1048,6 +2778,40 @@ ipcMain.handle("app:auth-fetch", async (_event, request) => {
 
 ipcMain.handle("app:get-permissions-status", () => getPermissionsStatus());
 
+ipcMain.handle("app:get-transcription-session-state", async () => {
+	return latestTranscriptionSessionState;
+});
+
+ipcMain.handle(
+	"app:configure-transcription-session",
+	async (_event, options) => {
+		if (!options || typeof options !== "object") {
+			throw new Error("Transcription session options are required.");
+		}
+
+		configureDesktopTranscriptionSession(options);
+		return { ok: true };
+	},
+);
+
+ipcMain.handle("app:start-transcription-session", async () => {
+	return await startDesktopTranscriptionSession();
+});
+
+ipcMain.handle("app:stop-transcription-session", async () => {
+	await stopDesktopTranscriptionSession();
+	return { ok: true };
+});
+
+ipcMain.handle("app:request-transcription-system-audio", async () => {
+	return await requestDesktopTranscriptionSystemAudio();
+});
+
+ipcMain.handle("app:detach-transcription-system-audio", async () => {
+	await detachDesktopTranscriptionSystemAudio();
+	return { ok: true };
+});
+
 ipcMain.handle("app:open-external-url", async (_event, url) => {
 	if (typeof url !== "string" || !url.startsWith("http")) {
 		throw new Error("Invalid external URL.");
@@ -1081,6 +2845,37 @@ ipcMain.handle("app:stop-system-audio-capture", async () => {
 	await stopSystemAudioCapture();
 	return { ok: true };
 });
+
+ipcMain.handle("app:start-microphone-capture", async () => {
+	return await startMicrophoneCapture();
+});
+
+ipcMain.handle("app:stop-microphone-capture", async () => {
+	await stopMicrophoneCapture();
+	return { ok: true };
+});
+
+ipcMain.handle(
+	"app:start-desktop-realtime-transport",
+	async (_event, options) => {
+		if (!options || typeof options !== "object") {
+			throw new Error("Desktop realtime transport options are required.");
+		}
+
+		return await startDesktopRealtimeTransport(options);
+	},
+);
+
+ipcMain.handle(
+	"app:stop-desktop-realtime-transport",
+	async (_event, speaker) => {
+		if (speaker !== "you" && speaker !== "them") {
+			throw new Error("Desktop realtime transport speaker is invalid.");
+		}
+
+		return await stopDesktopRealtimeTransport(speaker);
+	},
+);
 
 ipcMain.handle("app:get-auth-callback-url", async () => {
 	return {
@@ -1422,6 +3217,8 @@ if (!singleInstanceLock) {
 	});
 
 	app.whenReady().then(async () => {
+		refreshTranscriptionPolicy();
+
 		if (process.platform === "darwin") {
 			app.dock?.setIcon(dockIconPath);
 		}
@@ -1444,6 +3241,9 @@ if (!singleInstanceLock) {
 	});
 
 	app.on("window-all-closed", async () => {
+		await stopDesktopRealtimeTransport("you");
+		await stopDesktopRealtimeTransport("them");
+		await stopMicrophoneCapture();
 		await stopSystemAudioCapture();
 		await closeLocalServer();
 
@@ -1454,6 +3254,9 @@ if (!singleInstanceLock) {
 
 	app.on("before-quit", () => {
 		isQuitting = true;
+		void stopDesktopRealtimeTransport("you");
+		void stopDesktopRealtimeTransport("them");
+		void stopMicrophoneCapture();
 		void stopSystemAudioCapture();
 		void closeLocalServer();
 	});

@@ -34,8 +34,110 @@ declare global {
 		permissions: DesktopPermissionStatus[];
 	}
 
+	type DesktopTranscriptionControllerPhase =
+		| "idle"
+		| "starting"
+		| "listening"
+		| "reconnecting"
+		| "stopping"
+		| "failed";
+
+	type DesktopTranscriptionControllerErrorCode =
+		| "permission_denied"
+		| "device_unavailable"
+		| "connection_failed"
+		| "configuration_failed"
+		| "unknown";
+
+	type DesktopTranscriptionControllerState = {
+		autoStartKey: string | number | null;
+		error: {
+			code: DesktopTranscriptionControllerErrorCode;
+			message: string;
+		} | null;
+		isAvailable: boolean;
+		isConnecting: boolean;
+		isListening: boolean;
+		liveTranscript: Record<
+			"you" | "them",
+			{
+				speaker: "you" | "them";
+				startedAt: number | null;
+				text: string;
+			}
+		>;
+		phase: DesktopTranscriptionControllerPhase;
+		recoveryStatus: {
+			attempt: number;
+			maxAttempts: number;
+			message: string | null;
+			state: "idle" | "reconnecting" | "failed";
+		};
+		scopeKey: string | null;
+		systemAudioStatus: {
+			sourceMode: "desktop-native" | "display-media" | "unsupported";
+			state: "unsupported" | "ready" | "connected";
+		};
+		utterances: Array<{
+			endedAt: number;
+			id: string;
+			speaker: "you" | "them" | `remote:${number}`;
+			startedAt: number;
+			text: string;
+		}>;
+	};
+
+	type DesktopTranscriptionSessionEvent =
+		| {
+				type: "session.permission_failure";
+				error: {
+					code: DesktopTranscriptionControllerErrorCode;
+					message: string;
+				};
+		  }
+		| {
+				type: "session.system_audio_recording_ready";
+				payload: {
+					blobBase64: string;
+					endedAt: number;
+					mimeType: string;
+					sourceMode: "desktop-native" | "display-media" | "unsupported";
+					startedAt: number;
+				};
+		  }
+		| {
+				type: "session.utterance_committed";
+				utterance: DesktopTranscriptionControllerState["utterances"][number];
+		  };
+
+	type DesktopRealtimeTransportEvent =
+		| {
+				speaker: "you" | "them";
+				type: "committed";
+				itemId: string;
+				previousItemId: string | null;
+		  }
+		| {
+				speaker: "you" | "them";
+				type: "partial";
+				itemId: string;
+				textDelta: string;
+		  }
+		| {
+				speaker: "you" | "them";
+				type: "final";
+				itemId: string;
+				text: string;
+		  }
+		| {
+				speaker: "you" | "them";
+				type: "interrupted";
+				message: string;
+		  };
+
 	interface Window {
 		openGranDesktop?: {
+			platform: DesktopPlatform;
 			getMeta: () => Promise<{
 				name: string;
 				version: string;
@@ -70,6 +172,28 @@ declare global {
 			openPermissionSettings: (permissionId: DesktopPermissionId) => Promise<{
 				ok: boolean;
 			}>;
+			getTranscriptionSessionState: () => Promise<DesktopTranscriptionControllerState>;
+			configureTranscriptionSession: (options: {
+				autoStartKey?: string | number | null;
+				lang?: string;
+				scopeKey?: string | null;
+			}) => Promise<{
+				ok: boolean;
+			}>;
+			startTranscriptionSession: () => Promise<boolean>;
+			stopTranscriptionSession: () => Promise<{
+				ok: boolean;
+			}>;
+			requestTranscriptionSystemAudio: () => Promise<boolean>;
+			detachTranscriptionSystemAudio: () => Promise<{
+				ok: boolean;
+			}>;
+			onTranscriptionSessionState: (
+				listener: (state: DesktopTranscriptionControllerState) => void,
+			) => () => void;
+			onTranscriptionSessionEvent: (
+				listener: (event: DesktopTranscriptionSessionEvent) => void,
+			) => () => void;
 			startSystemAudioCapture: () => Promise<{
 				channels: number;
 				sampleRate: number;
@@ -77,6 +201,35 @@ declare global {
 			stopSystemAudioCapture: () => Promise<{
 				ok: boolean;
 			}>;
+			startMicrophoneCapture: () => Promise<{
+				channels: number;
+				sampleRate: number;
+			}>;
+			stopMicrophoneCapture: () => Promise<{
+				ok: boolean;
+			}>;
+			startDesktopRealtimeTransport: (options: {
+				lang?: string;
+				source: "microphone" | "systemAudio";
+				speaker: "you" | "them";
+			}) => Promise<{
+				ok: boolean;
+			}>;
+			stopDesktopRealtimeTransport: (speaker: "you" | "them") => Promise<{
+				ok: boolean;
+			}>;
+			onDesktopRealtimeTransportEvent: (
+				listener: (payload: DesktopRealtimeTransportEvent) => void,
+			) => () => void;
+			onMicrophoneCaptureEvent: (
+				listener: (payload: {
+					type: "chunk" | "error" | "stopped";
+					pcm16?: string;
+					message?: string;
+					code?: number | null;
+					signal?: string | number | null;
+				}) => void,
+			) => () => void;
 			onSystemAudioCaptureEvent: (
 				listener: (payload: {
 					type: "chunk" | "error" | "stopped";

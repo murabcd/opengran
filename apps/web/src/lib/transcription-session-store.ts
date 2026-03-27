@@ -68,6 +68,11 @@ export class TranscriptionSessionStore {
 
 	getSnapshot = () => this.state;
 
+	replaceState = (state: TranscriptionControllerState) => {
+		this.state = state;
+		this.emitState();
+	};
+
 	dispatch = (event: TranscriptionSessionEvent) => {
 		if (event.type === "session.state_patch") {
 			this.state = {
@@ -91,6 +96,10 @@ export class TranscriptionSessionStore {
 			return;
 		}
 
+		this.emitEvent(event);
+	};
+
+	emitExternalEvent = (event: TranscriptionSessionEvent) => {
 		this.emitEvent(event);
 	};
 

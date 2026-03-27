@@ -29,6 +29,7 @@
         "conf": "^15.0.2",
         "convex": "^1.34.0",
         "electron-updater": "^6.6.2",
+        "ws": "^8.18.0",
         "zod": "^4.1.12",
       },
       "devDependencies": {

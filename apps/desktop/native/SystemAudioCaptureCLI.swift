@@ -161,18 +161,27 @@ final class SystemAudioCapture: @unchecked Sendable {
 	)
 	private let encoder: PcmChunkEncoder
 	private let logger: StderrLogger
+	private let routeChangeHandler: @Sendable () -> Void
 	private var aggregateDeviceID = AudioObjectID(kAudioObjectUnknown)
+	private var defaultOutputChangeListener: AudioObjectPropertyListenerBlock?
+	private var hasHandledRouteChange = false
 	private var ioProcID: AudioDeviceIOProcID?
 	private var tapID = AudioObjectID(kAudioObjectUnknown)
 
-	init(encoder: PcmChunkEncoder, logger: StderrLogger) {
+	init(
+		encoder: PcmChunkEncoder,
+		logger: StderrLogger,
+		routeChangeHandler: @escaping @Sendable () -> Void
+	) {
 		self.encoder = encoder
 		self.logger = logger
+		self.routeChangeHandler = routeChangeHandler
 	}
 
 	func start() throws -> AVAudioFormat {
 		try stop()
 		logger.log("[helper] start() entered")
+		hasHandledRouteChange = false
 
 		let outputDeviceID = try Self.defaultOutputDeviceID()
 		logger.log("[helper] resolved default output device id: \(outputDeviceID)")
@@ -268,6 +277,7 @@ final class SystemAudioCapture: @unchecked Sendable {
 		tapID = nextTapID
 		aggregateDeviceID = nextAggregateDeviceID
 		ioProcID = nextIoProcID
+		try registerDefaultOutputChangeListener()
 		encoder.start()
 		logger.log("[helper] encoder started, returning ready format")
 
@@ -285,6 +295,8 @@ final class SystemAudioCapture: @unchecked Sendable {
 		aggregateDeviceID = AudioObjectID(kAudioObjectUnknown)
 		ioProcID = nil
 		tapID = AudioObjectID(kAudioObjectUnknown)
+		try removeDefaultOutputChangeListener()
+		hasHandledRouteChange = false
 
 		var firstError: CaptureError?
 
@@ -378,6 +390,60 @@ final class SystemAudioCapture: @unchecked Sendable {
 		}
 
 		encoder.append(buffer: pcmBuffer)
+	}
+
+	private func registerDefaultOutputChangeListener() throws {
+		try removeDefaultOutputChangeListener()
+		var address = Self.propertyAddress(
+			selector: kAudioHardwarePropertyDefaultOutputDevice
+		)
+		let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+			self?.handleDefaultOutputDeviceChange()
+		}
+		let status = AudioObjectAddPropertyListenerBlock(
+			AudioObjectID(kAudioObjectSystemObject),
+			&address,
+			callbackQueue,
+			listener
+		)
+
+		guard status == noErr else {
+			throw CaptureError.defaultOutputLookupFailed(status)
+		}
+
+		defaultOutputChangeListener = listener
+	}
+
+	private func removeDefaultOutputChangeListener() throws {
+		guard let defaultOutputChangeListener else {
+			return
+		}
+
+		var address = Self.propertyAddress(
+			selector: kAudioHardwarePropertyDefaultOutputDevice
+		)
+		let status = AudioObjectRemovePropertyListenerBlock(
+			AudioObjectID(kAudioObjectSystemObject),
+			&address,
+			callbackQueue,
+			defaultOutputChangeListener
+		)
+
+		self.defaultOutputChangeListener = nil
+
+		guard status == noErr else {
+			throw CaptureError.tapTeardownFailed(status)
+		}
+	}
+
+	private func handleDefaultOutputDeviceChange() {
+		guard !hasHandledRouteChange else {
+			return
+		}
+
+		hasHandledRouteChange = true
+		logger.log("[helper] default output device changed")
+		routeChangeHandler()
 	}
 
 	private static func propertyAddress(
@@ -498,7 +564,18 @@ enum SystemAudioCaptureCLI {
 		let emitter = StdoutEmitter()
 		let logger = StderrLogger()
 		let encoder = PcmChunkEncoder(emitter: emitter)
-		let capture = SystemAudioCapture(encoder: encoder, logger: logger)
+		let capture = SystemAudioCapture(
+			encoder: encoder,
+			logger: logger,
+			routeChangeHandler: {
+				logger.log("[helper] system audio route changed, restarting capture")
+				emitter.send(event: [
+					"type": "error",
+					"message": "System audio output changed. Restarting capture.",
+				])
+				exit(EXIT_FAILURE)
+			}
+		)
 		var signalSources: [DispatchSourceSignal] = []
 		logger.log("[helper] process launched")
 

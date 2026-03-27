@@ -1,4 +1,4 @@
-type DesktopSystemAudioStream = {
+type DesktopMicrophoneStream = {
 	dispose: () => Promise<void>;
 	stream: MediaStream;
 };
@@ -22,18 +22,18 @@ const decodePcm16Base64 = (base64Value: string) => {
 	return float32;
 };
 
-export const createDesktopSystemAudioStream =
-	async (): Promise<DesktopSystemAudioStream> => {
+export const createDesktopMicrophoneInputStream =
+	async (): Promise<DesktopMicrophoneStream> => {
 		if (
 			typeof window === "undefined" ||
-			!window.openGranDesktop?.startSystemAudioCapture ||
-			!window.openGranDesktop?.onSystemAudioCaptureEvent
+			!window.openGranDesktop?.startMicrophoneCapture ||
+			!window.openGranDesktop?.onMicrophoneCaptureEvent
 		) {
-			throw new Error("Desktop system audio capture is unavailable.");
+			throw new Error("Desktop microphone capture is unavailable.");
 		}
 
 		const { sampleRate } =
-			await window.openGranDesktop.startSystemAudioCapture();
+			await window.openGranDesktop.startMicrophoneCapture();
 		const audioContext = new AudioContext({
 			latencyHint: "interactive",
 			sampleRate,
@@ -44,7 +44,7 @@ export const createDesktopSystemAudioStream =
 			const track = streamDestination.stream.getAudioTracks()[0];
 
 			if (!track) {
-				throw new Error("Desktop system audio track could not be created.");
+				throw new Error("Desktop microphone track could not be created.");
 			}
 
 			await audioContext.resume();
@@ -101,7 +101,7 @@ export const createDesktopSystemAudioStream =
 				track.stop();
 				await Promise.allSettled([
 					audioContext.close(),
-					window.openGranDesktop?.stopSystemAudioCapture?.(),
+					window.openGranDesktop?.stopMicrophoneCapture?.(),
 				]);
 			};
 
@@ -132,12 +132,10 @@ export const createDesktopSystemAudioStream =
 					}
 
 					const restartResult =
-						await window.openGranDesktop?.startSystemAudioCapture?.();
+						await window.openGranDesktop?.startMicrophoneCapture?.();
 
 					if (!restartResult || restartResult.sampleRate !== sampleRate) {
-						throw new Error(
-							"Desktop system audio capture could not be resumed.",
-						);
+						throw new Error("Desktop microphone capture could not be resumed.");
 					}
 
 					nextPlaybackTime = audioContext.currentTime + 0.02;
@@ -149,7 +147,7 @@ export const createDesktopSystemAudioStream =
 				}
 			};
 
-			const unsubscribe = window.openGranDesktop.onSystemAudioCaptureEvent(
+			const unsubscribe = window.openGranDesktop.onMicrophoneCaptureEvent(
 				(event) => {
 					if (hasDisposed || isRestarting) {
 						return;
@@ -178,7 +176,7 @@ export const createDesktopSystemAudioStream =
 		} catch (error) {
 			await Promise.allSettled([
 				audioContext.close(),
-				window.openGranDesktop.stopSystemAudioCapture(),
+				window.openGranDesktop.stopMicrophoneCapture(),
 			]);
 			throw error;
 		}

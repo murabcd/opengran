@@ -62,7 +62,7 @@ type SpeakerRuntimeState = {
 	speaker: TranscriptSpeaker;
 };
 
-type TranscriptionControllerOptions = {
+export type TranscriptionControllerOptions = {
 	autoStartKey?: string | number | null;
 	lang?: string;
 	scopeKey?: string | null;
@@ -623,6 +623,7 @@ export class TranscriptionController {
 					speaker: pendingInput.speaker,
 				});
 			},
+			sourceMode: pendingInput.sourceMode,
 			speaker: pendingInput.speaker,
 			stream: pendingInput.stream,
 		});
