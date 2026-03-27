@@ -1,7 +1,7 @@
 {
   "name": "desktop",
   "productName": "OpenGran",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "OpenGran desktop app",
   "author": "OpenGran",
   "private": true,
