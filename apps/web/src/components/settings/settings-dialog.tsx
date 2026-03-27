@@ -54,12 +54,10 @@ import {
 	Database,
 	ImageUp,
 	LoaderCircle,
-	Settings,
 	UserRound,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { DesktopRuntimeConfigForm } from "@/components/settings/desktop-runtime-config";
 import { authClient } from "@/lib/auth-client";
 import { getAvatarSrc } from "@/lib/avatar";
 import { api } from "../../../../../convex/_generated/api";
@@ -70,7 +68,7 @@ type SettingsUser = {
 	avatar: string;
 };
 
-export type SettingsPage = "Profile" | "Calendar" | "Data controls" | "Desktop";
+export type SettingsPage = "Profile" | "Calendar" | "Data controls";
 
 type SettingsDialogProps = {
 	open: boolean;
@@ -81,7 +79,7 @@ type SettingsDialogProps = {
 	onPageChange?: (page: SettingsPage) => void;
 };
 
-const baseSettingsNav = [
+const settingsNav = [
 	{ name: "Profile", icon: UserRound },
 	{ name: "Calendar", icon: CalendarDays },
 	{ name: "Data controls", icon: Database },
@@ -111,15 +109,7 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
 	const [selectedPage, setSelectedPage] = useState<SettingsPage | null>(null);
 	const { data: session } = authClient.useSession();
-	const isDesktop =
-		typeof window !== "undefined" && Boolean(window.openGranDesktop);
-	const settingsNav = isDesktop
-		? [...baseSettingsNav, { name: "Desktop" as const, icon: Settings }]
-		: [...baseSettingsNav];
-	const activePage = (() => {
-		const nextPage = selectedPage ?? initialPage;
-		return !isDesktop && nextPage === "Desktop" ? "Profile" : nextPage;
-	})();
+	const activePage = selectedPage ?? initialPage;
 
 	const handlePageSelect = (page: SettingsPage) => {
 		setSelectedPage(page);
@@ -215,9 +205,7 @@ export function SettingsDialog({
 									canDeleteData={Boolean(session?.user)}
 									onClose={() => onOpenChange(false)}
 								/>
-							) : (
-								<DesktopRuntimeConfigForm />
-							)}
+							) : null}
 						</div>
 					</main>
 				</SidebarProvider>

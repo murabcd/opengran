@@ -91,14 +91,12 @@ const SETTINGS_PAGE_BY_SLUG = {
 	profile: "Profile",
 	calendar: "Calendar",
 	"data-controls": "Data controls",
-	desktop: "Desktop",
 } as const satisfies Record<string, SettingsPage>;
 
 const SETTINGS_SLUG_BY_PAGE: Record<SettingsPage, string> = {
 	Profile: "profile",
 	Calendar: "calendar",
 	"Data controls": "data-controls",
-	Desktop: "desktop",
 };
 
 type DesktopPermissionRow = {
