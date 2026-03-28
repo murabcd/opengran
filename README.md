@@ -20,32 +20,19 @@
 ## Features
 
 - Live meeting transcription
-  - Capture microphone audio in the browser or use the desktop app for native microphone and system-audio transcription
-  - Stream live transcript updates directly into your notes workflow
 - AI-powered note refinement
-  - Rewrite rough notes into cleaner, structured meeting notes
-  - Apply note templates and use chat grounded in your workspace context
 - Custom note templates
-  - Start from built-in meeting formats like 1:1s, standups, and weekly team meetings
-  - Create and manage your own note templates and sections
 - Workspace organization
-  - Group notes by workspace and keep context scoped to the right team or project
-  - Search and reuse workspace context inside chat
 - Desktop meeting workflow
-  - Use the Electron app for native permissions, tray behavior, packaged updates, and desktop-native capture flows
-  - Includes meeting detection and a lightweight desktop meeting widget
 - Calendar-aware setup
-  - Optional Google Calendar connection for upcoming meeting context
-  - Designed to fit recurring note-taking and meeting prep flows
 - Browser extension integration
-  - Detect meetings in the browser and connect them back to the desktop experience
 
 ## Built with
 
 - [Vite](https://vite.dev/)
-  - Fast web development and production builds for the shared renderer
+  - Fast local development and production builds for the shared OpenGran renderer
 - [Electron](https://www.electronjs.org/)
-  - Desktop shell for native capture, tray behavior, and packaged macOS releases
+  - Desktop shell for native windowing, tray support, and packaged app distribution
 - [AI SDK](https://sdk.vercel.ai/docs)
   - Text generation, streaming responses, and AI-assisted note workflows
 - [OpenAI](https://openai.com/)
