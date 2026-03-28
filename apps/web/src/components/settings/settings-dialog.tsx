@@ -121,6 +121,38 @@ type LinkedAccount = {
 	scopes: string[];
 };
 
+type WorkspaceFormState = {
+	name: string;
+	iconStorageId: Id<"_storage"> | null;
+	iconPreviewUrl: string | null;
+};
+
+type DataControlsState = {
+	showDeleteAccountDialog: boolean;
+	isDeletingAccount: boolean;
+	showDeleteAllNotesDialog: boolean;
+	isDeletingAllNotes: boolean;
+	showDeleteAllChatsDialog: boolean;
+	isDeletingAllChats: boolean;
+};
+
+const getWorkspaceFormState = (
+	workspace: WorkspaceRecord | null,
+): WorkspaceFormState => ({
+	name: workspace?.name ?? "",
+	iconStorageId: workspace?.iconStorageId ?? null,
+	iconPreviewUrl: null,
+});
+
+const initialDataControlsState: DataControlsState = {
+	showDeleteAccountDialog: false,
+	isDeletingAccount: false,
+	showDeleteAllNotesDialog: false,
+	isDeletingAllNotes: false,
+	showDeleteAllChatsDialog: false,
+	isDeletingAllChats: false,
+};
+
 export function SettingsDialog({
 	open,
 	onOpenChange,
@@ -444,20 +476,27 @@ function WorkspaceSettings({
 		api.workspaces.generateIconUploadUrl,
 	);
 	const updateWorkspace = useMutation(api.workspaces.update);
-	const [name, setName] = useState(workspace?.name ?? "");
-	const [iconStorageId, setIconStorageId] = useState<Id<"_storage"> | null>(
-		workspace?.iconStorageId ?? null,
+	const [formState, setFormState] = useState<WorkspaceFormState>(() =>
+		getWorkspaceFormState(workspace),
 	);
-	const [iconPreviewUrl, setIconPreviewUrl] = useState<string | null>(null);
 	const [isSaving, setIsSaving] = useState(false);
 	const [isUploadingIcon, setIsUploadingIcon] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const { name, iconStorageId, iconPreviewUrl } = formState;
 
 	useEffect(() => {
-		setName(workspace?.name ?? "");
-		setIconStorageId(workspace?.iconStorageId ?? null);
-		setIconPreviewUrl(null);
+		setFormState(getWorkspaceFormState(workspace));
 	}, [workspace]);
+
+	useEffect(() => {
+		if (!iconPreviewUrl?.startsWith("blob:")) {
+			return;
+		}
+
+		return () => {
+			URL.revokeObjectURL(iconPreviewUrl);
+		};
+	}, [iconPreviewUrl]);
 
 	if (!workspace) {
 		return (
@@ -507,8 +546,11 @@ function WorkspaceSettings({
 				throw new Error("Workspace icon upload did not return a storage id.");
 			}
 
-			setIconStorageId(result.storageId);
-			setIconPreviewUrl(URL.createObjectURL(file));
+			setFormState((currentState) => ({
+				...currentState,
+				iconStorageId: result.storageId,
+				iconPreviewUrl: URL.createObjectURL(file),
+			}));
 		} catch (error) {
 			console.error("Failed to upload workspace icon", error);
 			toast.error(
@@ -601,7 +643,12 @@ function WorkspaceSettings({
 					<Input
 						id="settings-workspace-name"
 						value={name}
-						onChange={(event) => setName(event.target.value)}
+						onChange={(event) =>
+							setFormState((currentState) => ({
+								...currentState,
+								name: event.target.value,
+							}))
+						}
 						placeholder="My workspace"
 						disabled={isSaving}
 					/>
@@ -636,16 +683,19 @@ function DataControlsSettings({
 	canDeleteData: boolean;
 	onClose: () => void;
 }) {
-	const [showDeleteAccountDialog, setShowDeleteAccountDialog] = useState(false);
-	const [isDeletingAccount, setIsDeletingAccount] = useState(false);
-	const [showDeleteAllNotesDialog, setShowDeleteAllNotesDialog] =
-		useState(false);
-	const [isDeletingAllNotes, setIsDeletingAllNotes] = useState(false);
-	const [showDeleteAllChatsDialog, setShowDeleteAllChatsDialog] =
-		useState(false);
-	const [isDeletingAllChats, setIsDeletingAllChats] = useState(false);
+	const [state, setState] = useState<DataControlsState>(
+		initialDataControlsState,
+	);
 	const removeAllNotes = useMutation(api.notes.removeAll);
 	const removeAllChats = useMutation(api.chats.removeAll);
+	const {
+		showDeleteAccountDialog,
+		isDeletingAccount,
+		showDeleteAllNotesDialog,
+		isDeletingAllNotes,
+		showDeleteAllChatsDialog,
+		isDeletingAllChats,
+	} = state;
 
 	const navigateTo = (pathname: string) => {
 		window.history.pushState(null, "", pathname);
@@ -653,7 +703,10 @@ function DataControlsSettings({
 	};
 
 	const handleDeleteAccount = async () => {
-		setIsDeletingAccount(true);
+		setState((currentState) => ({
+			...currentState,
+			isDeletingAccount: true,
+		}));
 
 		try {
 			await authClient.$fetch("/delete-user", {
@@ -661,24 +714,39 @@ function DataControlsSettings({
 				throw: true,
 				body: { callbackURL: "/" },
 			});
-			setShowDeleteAccountDialog(false);
+			setState((currentState) => ({
+				...currentState,
+				showDeleteAccountDialog: false,
+			}));
 			onClose();
 			window.location.assign("/");
 		} catch (error) {
 			console.error("Failed to delete account", error);
-			setShowDeleteAccountDialog(false);
+			setState((currentState) => ({
+				...currentState,
+				showDeleteAccountDialog: false,
+			}));
 			toast.error("Failed to delete account");
 		} finally {
-			setIsDeletingAccount(false);
+			setState((currentState) => ({
+				...currentState,
+				isDeletingAccount: false,
+			}));
 		}
 	};
 
 	const handleDeleteAllNotes = async () => {
-		setIsDeletingAllNotes(true);
+		setState((currentState) => ({
+			...currentState,
+			isDeletingAllNotes: true,
+		}));
 
 		try {
 			const result = await removeAllNotes({});
-			setShowDeleteAllNotesDialog(false);
+			setState((currentState) => ({
+				...currentState,
+				showDeleteAllNotesDialog: false,
+			}));
 			onClose();
 			navigateTo("/home");
 			toast.success(
@@ -686,19 +754,31 @@ function DataControlsSettings({
 			);
 		} catch (error) {
 			console.error("Failed to delete all notes", error);
-			setShowDeleteAllNotesDialog(false);
+			setState((currentState) => ({
+				...currentState,
+				showDeleteAllNotesDialog: false,
+			}));
 			toast.error("Failed to delete all notes");
 		} finally {
-			setIsDeletingAllNotes(false);
+			setState((currentState) => ({
+				...currentState,
+				isDeletingAllNotes: false,
+			}));
 		}
 	};
 
 	const handleDeleteAllChats = async () => {
-		setIsDeletingAllChats(true);
+		setState((currentState) => ({
+			...currentState,
+			isDeletingAllChats: true,
+		}));
 
 		try {
 			const result = await removeAllChats({});
-			setShowDeleteAllChatsDialog(false);
+			setState((currentState) => ({
+				...currentState,
+				showDeleteAllChatsDialog: false,
+			}));
 			onClose();
 			navigateTo("/home");
 			toast.success(
@@ -706,10 +786,16 @@ function DataControlsSettings({
 			);
 		} catch (error) {
 			console.error("Failed to delete all chats", error);
-			setShowDeleteAllChatsDialog(false);
+			setState((currentState) => ({
+				...currentState,
+				showDeleteAllChatsDialog: false,
+			}));
 			toast.error("Failed to delete all chats");
 		} finally {
-			setIsDeletingAllChats(false);
+			setState((currentState) => ({
+				...currentState,
+				isDeletingAllChats: false,
+			}));
 		}
 	};
 

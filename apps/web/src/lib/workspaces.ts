@@ -69,9 +69,6 @@ export const getWorkspaceRoleOption = (role: string | undefined | null) => {
 		workspaceRoleOptions[0]
 	);
 };
-
-export { workspaceRoleOptions };
-
 export type WorkspaceRecord = {
 	_id: Id<"workspaces">;
 	_creationTime: number;
