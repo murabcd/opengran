@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+
+set -eu
+
+message_file="$1"
+message="$(head -n 1 "$message_file")"
+
+case "$message" in
+  feat:\ *|fix:\ *|docs:\ *|test:\ *|refactor:\ *|chore:\ *|ci:\ *|build:\ *|perf:\ *|style:\ *|revert:\ *)
+    ;;
+  *)
+    echo "Invalid commit message: $message"
+    echo "Use Conventional Commits, for example: fix: publish github releases immediately"
+    exit 1
+    ;;
+esac
