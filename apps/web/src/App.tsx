@@ -75,7 +75,10 @@ import { OpenGranMark } from "@/components/ui/open-gran-mark";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
-import { getSuggestedWorkspaceName } from "@/lib/workspaces";
+import {
+	getSuggestedWorkspaceName,
+	type WorkspaceRecord,
+} from "@/lib/workspaces";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 
@@ -994,7 +997,7 @@ function AppGate({
 	isDesktopMac: boolean;
 	onGitHubSignIn: () => void;
 	onGoogleSignIn: () => void;
-	workspaces: Array<Doc<"workspaces">> | undefined;
+	workspaces: Array<WorkspaceRecord> | undefined;
 	onboardingStatus:
 		| {
 				hasSeenWelcomeCelebration: boolean;
@@ -1471,7 +1474,7 @@ const useAppShellState = ({
 	initialDesktopMac,
 }: {
 	session: AuthSession;
-	workspaces: Array<Doc<"workspaces">>;
+	workspaces: Array<WorkspaceRecord>;
 	initialDesktopMac: boolean;
 }) => {
 	const { isAuthenticated: isConvexAuthenticated } = useConvexAuth();
@@ -2028,7 +2031,7 @@ function AppShell({
 	initialDesktopMac,
 }: {
 	session: AuthSession;
-	workspaces: Array<Doc<"workspaces">>;
+	workspaces: Array<WorkspaceRecord>;
 	initialDesktopMac: boolean;
 }) {
 	const controller = useAppShellState({

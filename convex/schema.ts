@@ -57,6 +57,7 @@ export default defineSchema({
 		name: v.string(),
 		normalizedName: v.string(),
 		icon: v.optional(v.string()),
+		iconStorageId: v.optional(v.id("_storage")),
 		role: workspaceRoleValidator,
 		createdAt: v.number(),
 		updatedAt: v.number(),

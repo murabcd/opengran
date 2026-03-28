@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
 
@@ -17,12 +18,17 @@ const workspaceFields = {
 	name: v.string(),
 	normalizedName: v.string(),
 	icon: v.optional(v.string()),
+	iconStorageId: v.optional(v.id("_storage")),
 	role: workspaceRoleValidator,
 	createdAt: v.number(),
 	updatedAt: v.number(),
 };
 
 const workspaceValidator = v.object(workspaceFields);
+const workspaceResponseValidator = v.object({
+	...workspaceFields,
+	iconUrl: v.union(v.string(), v.null()),
+});
 
 const REMOVE_ALL_WORKSPACES_BATCH_SIZE = 100;
 const MAX_RETURNED_WORKSPACES = 20;
@@ -59,7 +65,13 @@ const deleteWorkspaceBatch = async (
 		.take(REMOVE_ALL_WORKSPACES_BATCH_SIZE);
 
 	await Promise.all(
-		workspaces.map((workspace) => ctx.db.delete(workspace._id)),
+		workspaces.map(async (workspace) => {
+			if (workspace.iconStorageId) {
+				await ctx.storage.delete(workspace.iconStorageId);
+			}
+
+			await ctx.db.delete(workspace._id);
+		}),
 	);
 
 	return {
@@ -68,18 +80,40 @@ const deleteWorkspaceBatch = async (
 	};
 };
 
+const toWorkspaceResponse = async (
+	ctx: QueryCtx | MutationCtx,
+	workspace: Doc<"workspaces">,
+) => ({
+	...workspace,
+	iconUrl: workspace.iconStorageId
+		? await ctx.storage.getUrl(workspace.iconStorageId)
+		: (workspace.icon ?? null),
+});
+
 export const list = query({
 	args: {},
-	returns: v.array(workspaceValidator),
+	returns: v.array(workspaceResponseValidator),
 	handler: async (ctx) => {
 		const identity = await requireIdentity(ctx);
-
-		return await ctx.db
+		const workspaces = await ctx.db
 			.query("workspaces")
 			.withIndex("by_ownerTokenIdentifier_and_createdAt", (q) =>
 				q.eq("ownerTokenIdentifier", identity.tokenIdentifier),
 			)
 			.take(MAX_RETURNED_WORKSPACES);
+
+		return await Promise.all(
+			workspaces.map((workspace) => toWorkspaceResponse(ctx, workspace)),
+		);
+	},
+});
+
+export const generateIconUploadUrl = mutation({
+	args: {},
+	returns: v.string(),
+	handler: async (ctx) => {
+		await requireIdentity(ctx);
+		return await ctx.storage.generateUploadUrl();
 	},
 });
 
@@ -87,9 +121,10 @@ export const create = mutation({
 	args: {
 		name: v.string(),
 		icon: v.optional(v.string()),
+		iconStorageId: v.optional(v.id("_storage")),
 		role: v.optional(workspaceRoleValidator),
 	},
-	returns: workspaceValidator,
+	returns: workspaceResponseValidator,
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
 		const ownerTokenIdentifier = identity.tokenIdentifier;
@@ -132,6 +167,7 @@ export const create = mutation({
 			name,
 			normalizedName,
 			icon: args.icon,
+			iconStorageId: args.iconStorageId,
 			role: args.role ?? "startup-generalist",
 			createdAt: now,
 			updatedAt: now,
@@ -145,7 +181,7 @@ export const create = mutation({
 			});
 		}
 
-		return workspace;
+		return await toWorkspaceResponse(ctx, workspace);
 	},
 });
 
@@ -154,9 +190,10 @@ export const update = mutation({
 		workspaceId: v.id("workspaces"),
 		name: v.optional(v.string()),
 		icon: v.optional(v.string()),
+		iconStorageId: v.optional(v.id("_storage")),
 		role: v.optional(workspaceRoleValidator),
 	},
-	returns: workspaceValidator,
+	returns: workspaceResponseValidator,
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
 		const existingWorkspace = await ctx.db.get(args.workspaceId);
@@ -193,8 +230,12 @@ export const update = mutation({
 		const nextRole = args.role ?? existingWorkspace.role;
 		const nextNormalizedName = toNormalizedWorkspaceKey(nextName);
 		const nextIcon = args.icon ?? existingWorkspace.icon;
+		const nextIconStorageId =
+			args.iconStorageId ?? existingWorkspace.iconStorageId;
 		const hasNameChange = nextName !== existingWorkspace.name;
 		const hasIconChange = nextIcon !== existingWorkspace.icon;
+		const hasIconStorageChange =
+			nextIconStorageId !== existingWorkspace.iconStorageId;
 		const hasRoleChange = nextRole !== existingWorkspace.role;
 
 		if (hasNameChange) {
@@ -218,14 +259,27 @@ export const update = mutation({
 			}
 		}
 
-		if (!hasNameChange && !hasIconChange && !hasRoleChange) {
-			return existingWorkspace;
+		if (
+			!hasNameChange &&
+			!hasIconChange &&
+			!hasIconStorageChange &&
+			!hasRoleChange
+		) {
+			return await toWorkspaceResponse(ctx, existingWorkspace);
+		}
+
+		if (
+			existingWorkspace.iconStorageId &&
+			nextIconStorageId !== existingWorkspace.iconStorageId
+		) {
+			await ctx.storage.delete(existingWorkspace.iconStorageId);
 		}
 
 		await ctx.db.patch(args.workspaceId, {
 			name: nextName,
 			normalizedName: nextNormalizedName,
 			icon: nextIcon,
+			iconStorageId: nextIconStorageId,
 			role: nextRole,
 			updatedAt: Date.now(),
 		});
@@ -239,7 +293,7 @@ export const update = mutation({
 			});
 		}
 
-		return updatedWorkspace;
+		return await toWorkspaceResponse(ctx, updatedWorkspace);
 	},
 });
 

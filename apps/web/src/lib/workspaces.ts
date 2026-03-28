@@ -5,6 +5,7 @@ import {
 	TrendingUp,
 	Users,
 } from "lucide-react";
+import type { Id } from "../../../convex/_generated/dataModel";
 
 const workspaceRoleValues = [
 	"startup-generalist",
@@ -13,7 +14,7 @@ const workspaceRoleValues = [
 	"customer-facing",
 ] as const;
 
-type WorkspaceRole = (typeof workspaceRoleValues)[number];
+export type WorkspaceRole = (typeof workspaceRoleValues)[number];
 
 type WorkspaceRoleOption = {
 	value: WorkspaceRole;
@@ -70,6 +71,20 @@ export const getWorkspaceRoleOption = (role: string | undefined | null) => {
 };
 
 export { workspaceRoleOptions };
+
+export type WorkspaceRecord = {
+	_id: Id<"workspaces">;
+	_creationTime: number;
+	ownerTokenIdentifier: string;
+	name: string;
+	normalizedName: string;
+	icon?: string;
+	iconStorageId?: Id<"_storage">;
+	iconUrl: string | null;
+	role: WorkspaceRole;
+	createdAt: number;
+	updatedAt: number;
+};
 
 export const getSuggestedWorkspaceName = (name: string | null | undefined) => {
 	const trimmedName = name?.trim();

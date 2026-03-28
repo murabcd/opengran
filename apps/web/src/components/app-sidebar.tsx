@@ -98,7 +98,7 @@ import { TemplatesDialog } from "@/components/templates/templates-dialog";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { getAvatarSrc } from "@/lib/avatar";
 import { getChatId } from "@/lib/chat";
-import { getWorkspaceRoleOption } from "@/lib/workspaces";
+import { getWorkspaceRoleOption, type WorkspaceRecord } from "@/lib/workspaces";
 import { api } from "../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import type { SearchCommandItem } from "./search/search-command";
@@ -173,7 +173,7 @@ export function AppSidebar({
 	onNoteTrashed,
 	...props
 }: React.ComponentProps<typeof Sidebar> & {
-	workspaces: Array<Doc<"workspaces">>;
+	workspaces: Array<WorkspaceRecord>;
 	activeWorkspaceId: Id<"workspaces"> | null;
 	currentView: "home" | "chat" | "shared" | "note";
 	user: {
@@ -183,7 +183,7 @@ export function AppSidebar({
 	};
 	notes: Array<Doc<"notes">> | undefined;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
-	onWorkspaceCreate: (input: { name: string }) => Promise<Doc<"workspaces">>;
+	onWorkspaceCreate: (input: { name: string }) => Promise<WorkspaceRecord>;
 	onViewChange: (view: "home" | "chat" | "shared" | "note") => void;
 	settingsOpen: boolean;
 	settingsPage?: SettingsPage;
@@ -495,10 +495,10 @@ function WorkspaceSwitcher({
 	onSelect,
 	onCreateWorkspace,
 }: {
-	workspaces: Array<Doc<"workspaces">>;
+	workspaces: Array<WorkspaceRecord>;
 	activeWorkspaceId: Id<"workspaces"> | null;
 	onSelect: (workspaceId: Id<"workspaces">) => void;
-	onCreateWorkspace: (input: { name: string }) => Promise<Doc<"workspaces">>;
+	onCreateWorkspace: (input: { name: string }) => Promise<WorkspaceRecord>;
 }) {
 	const [createOpen, setCreateOpen] = React.useState(false);
 	const [name, setName] = React.useState("");
@@ -523,7 +523,7 @@ function WorkspaceSwitcher({
 
 	const activeWorkspaceMeta = getWorkspaceRoleOption(activeWorkspace.role);
 	const activeWorkspaceAvatarSrc =
-		activeWorkspace.icon ??
+		activeWorkspace.iconUrl ??
 		getAvatarSrc({
 			name: activeWorkspace.name,
 		});
@@ -591,7 +591,7 @@ function WorkspaceSwitcher({
 						>
 							{workspaces.map((workspace) => {
 								const workspaceAvatarSrc =
-									workspace.icon ??
+									workspace.iconUrl ??
 									getAvatarSrc({
 										name: workspace.name,
 									});

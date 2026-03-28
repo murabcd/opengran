@@ -72,8 +72,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { getAvatarSrc } from "@/lib/avatar";
+import type { WorkspaceRecord } from "@/lib/workspaces";
 import { api } from "../../../../../convex/_generated/api";
-import type { Doc } from "../../../../../convex/_generated/dataModel";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 
 type SettingsUser = {
 	name: string;
@@ -92,7 +93,7 @@ type SettingsDialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	user: SettingsUser;
-	workspace: Doc<"workspaces"> | null;
+	workspace: WorkspaceRecord | null;
 	onUserChange: (user: SettingsUser) => void;
 	initialPage?: SettingsPage;
 	onPageChange?: (page: SettingsPage) => void;
@@ -435,19 +436,27 @@ function WorkspaceSettings({
 	onCancel,
 	onSave,
 }: {
-	workspace: Doc<"workspaces"> | null;
+	workspace: WorkspaceRecord | null;
 	onCancel: () => void;
 	onSave: () => void;
 }) {
+	const generateIconUploadUrl = useMutation(
+		api.workspaces.generateIconUploadUrl,
+	);
 	const updateWorkspace = useMutation(api.workspaces.update);
 	const [name, setName] = useState(workspace?.name ?? "");
-	const [icon, setIcon] = useState(workspace?.icon ?? "");
+	const [iconStorageId, setIconStorageId] = useState<Id<"_storage"> | null>(
+		workspace?.iconStorageId ?? null,
+	);
+	const [iconPreviewUrl, setIconPreviewUrl] = useState<string | null>(null);
 	const [isSaving, setIsSaving] = useState(false);
+	const [isUploadingIcon, setIsUploadingIcon] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
 		setName(workspace?.name ?? "");
-		setIcon(workspace?.icon ?? "");
+		setIconStorageId(workspace?.iconStorageId ?? null);
+		setIconPreviewUrl(null);
 	}, [workspace]);
 
 	if (!workspace) {
@@ -468,24 +477,52 @@ function WorkspaceSettings({
 
 	const trimmedName = name.trim();
 	const hasChanges =
-		trimmedName !== workspace.name || icon !== (workspace.icon ?? "");
+		trimmedName !== workspace.name ||
+		iconStorageId !== (workspace.iconStorageId ?? null);
+	const workspaceAvatarSrc = getAvatarSrc({
+		avatar: iconPreviewUrl ?? workspace.iconUrl,
+		name: trimmedName || workspace.name,
+	});
 
-	const handleUpload = (file: File) => {
-		const reader = new FileReader();
+	const handleUpload = async (file: File) => {
+		setIsUploadingIcon(true);
 
-		reader.onload = () => {
-			const result = reader.result;
+		try {
+			const uploadUrl = await generateIconUploadUrl();
+			const response = await fetch(uploadUrl, {
+				method: "POST",
+				headers: {
+					"Content-Type": file.type || "application/octet-stream",
+				},
+				body: file,
+			});
 
-			if (typeof result === "string") {
-				setIcon(result);
+			if (!response.ok) {
+				throw new Error("Failed to upload workspace icon.");
 			}
-		};
 
-		reader.readAsDataURL(file);
+			const result = (await response.json()) as { storageId?: Id<"_storage"> };
+
+			if (!result.storageId) {
+				throw new Error("Workspace icon upload did not return a storage id.");
+			}
+
+			setIconStorageId(result.storageId);
+			setIconPreviewUrl(URL.createObjectURL(file));
+		} catch (error) {
+			console.error("Failed to upload workspace icon", error);
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Failed to upload workspace icon",
+			);
+		} finally {
+			setIsUploadingIcon(false);
+		}
 	};
 
 	const handleSubmit = async () => {
-		if (!trimmedName || isSaving || !hasChanges) {
+		if (!trimmedName || isSaving || isUploadingIcon || !hasChanges) {
 			return;
 		}
 
@@ -495,7 +532,10 @@ function WorkspaceSettings({
 			await updateWorkspace({
 				workspaceId: workspace._id,
 				name: trimmedName,
-				icon: icon !== (workspace.icon ?? "") ? icon : undefined,
+				iconStorageId:
+					iconStorageId !== (workspace.iconStorageId ?? null)
+						? (iconStorageId ?? undefined)
+						: undefined,
 			});
 			toast.success("Workspace settings updated");
 			onSave();
@@ -516,13 +556,11 @@ function WorkspaceSettings({
 					<FieldTitle>Icon</FieldTitle>
 					<div className="flex items-center gap-4">
 						<Avatar className="size-20 rounded-lg border">
-							{icon ? (
-								<AvatarImage
-									src={icon}
-									alt="Workspace icon preview"
-									className="object-cover"
-								/>
-							) : null}
+							<AvatarImage
+								src={workspaceAvatarSrc}
+								alt="Workspace icon preview"
+								className="object-cover"
+							/>
 							<AvatarFallback className="rounded-lg bg-muted/40">
 								<ImageUp className="size-8 text-muted-foreground" />
 							</AvatarFallback>
@@ -533,9 +571,9 @@ function WorkspaceSettings({
 								size="sm"
 								className="w-min"
 								onClick={() => fileInputRef.current?.click()}
-								disabled={isSaving}
+								disabled={isSaving || isUploadingIcon}
 							>
-								Upload
+								{isUploadingIcon ? "Uploading..." : "Upload"}
 							</Button>
 							<input
 								ref={fileInputRef}
@@ -548,7 +586,7 @@ function WorkspaceSettings({
 										return;
 									}
 
-									handleUpload(file);
+									void handleUpload(file);
 									event.target.value = "";
 								}}
 							/>
@@ -575,7 +613,7 @@ function WorkspaceSettings({
 				</Button>
 				<Button
 					onClick={handleSubmit}
-					disabled={!trimmedName || !hasChanges || isSaving}
+					disabled={!trimmedName || !hasChanges || isSaving || isUploadingIcon}
 				>
 					{isSaving ? (
 						<>
