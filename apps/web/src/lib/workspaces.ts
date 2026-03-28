@@ -69,6 +69,8 @@ export const getWorkspaceRoleOption = (role: string | undefined | null) => {
 	);
 };
 
+export { workspaceRoleOptions };
+
 export const getSuggestedWorkspaceName = (name: string | null | undefined) => {
 	const trimmedName = name?.trim();
 

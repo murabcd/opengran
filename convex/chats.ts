@@ -53,6 +53,11 @@ const storedUiMessageValidator = v.object({
 	createdAt: v.number(),
 });
 
+const removeAllChatsResultValidator = v.object({
+	deletedCount: v.number(),
+	hasMore: v.boolean(),
+});
+
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
 const MAX_RETURNED_CHATS = 100;
@@ -159,6 +164,31 @@ const deleteChatMessageBatch = async (
 	};
 };
 
+const deleteChatBatch = async (
+	ctx: MutationCtx,
+	ownerTokenIdentifier: string,
+) => {
+	const chats = await ctx.db
+		.query("chats")
+		.withIndex("by_ownerTokenIdentifier_and_updatedAt", (q) =>
+			q.eq("ownerTokenIdentifier", ownerTokenIdentifier),
+		)
+		.take(REMOVE_ALL_CHATS_BATCH_SIZE);
+
+	await Promise.all(
+		chats.map((chat) =>
+			ctx.scheduler.runAfter(0, internal.chats.removeMessagesAndDeleteChat, {
+				chatId: chat._id,
+			}),
+		),
+	);
+
+	return {
+		deletedCount: chats.length,
+		hasMore: chats.length === REMOVE_ALL_CHATS_BATCH_SIZE,
+	};
+};
+
 export const list = query({
 	args: {},
 	returns: v.array(chatValidator),
@@ -247,11 +277,7 @@ export const getMessages = query({
 	returns: v.array(storedUiMessageValidator),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const chat = await getOwnedChatById(
-			ctx,
-			ownerTokenIdentifier,
-			args.chatId,
-		);
+		const chat = await getOwnedChatById(ctx, ownerTokenIdentifier, args.chatId);
 
 		if (!chat) {
 			return [];
@@ -287,9 +313,13 @@ export const removeMessagesAndDeleteChat = internalMutation({
 		const result = await deleteChatMessageBatch(ctx, args.chatId);
 
 		if (result.hasMore) {
-			await ctx.scheduler.runAfter(0, internal.chats.removeMessagesAndDeleteChat, {
-				chatId: args.chatId,
-			});
+			await ctx.scheduler.runAfter(
+				0,
+				internal.chats.removeMessagesAndDeleteChat,
+				{
+					chatId: args.chatId,
+				},
+			);
 			return null;
 		}
 
@@ -509,11 +539,7 @@ export const moveToTrash = mutation({
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const chat = await getOwnedChatById(
-			ctx,
-			ownerTokenIdentifier,
-			args.chatId,
-		);
+		const chat = await getOwnedChatById(ctx, ownerTokenIdentifier, args.chatId);
 
 		if (!chat) {
 			return null;
@@ -536,11 +562,7 @@ export const restore = mutation({
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const chat = await getOwnedChatById(
-			ctx,
-			ownerTokenIdentifier,
-			args.chatId,
-		);
+		const chat = await getOwnedChatById(ctx, ownerTokenIdentifier, args.chatId);
 
 		if (!chat) {
 			return null;
@@ -563,11 +585,7 @@ export const remove = mutation({
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const chat = await getOwnedChatById(
-			ctx,
-			ownerTokenIdentifier,
-			args.chatId,
-		);
+		const chat = await getOwnedChatById(ctx, ownerTokenIdentifier, args.chatId);
 
 		if (!chat) {
 			return null;
@@ -576,9 +594,13 @@ export const remove = mutation({
 		const result = await deleteChatMessageBatch(ctx, chat._id);
 
 		if (result.hasMore) {
-			await ctx.scheduler.runAfter(0, internal.chats.removeMessagesAndDeleteChat, {
-				chatId: chat._id,
-			});
+			await ctx.scheduler.runAfter(
+				0,
+				internal.chats.removeMessagesAndDeleteChat,
+				{
+					chatId: chat._id,
+				},
+			);
 			return null;
 		}
 
@@ -588,28 +610,32 @@ export const remove = mutation({
 	},
 });
 
+export const removeAll = mutation({
+	args: {},
+	returns: removeAllChatsResultValidator,
+	handler: async (ctx) => {
+		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		const result = await deleteChatBatch(ctx, ownerTokenIdentifier);
+
+		if (result.hasMore) {
+			await ctx.scheduler.runAfter(0, internal.chats.removeAllForOwner, {
+				ownerTokenIdentifier,
+			});
+		}
+
+		return result;
+	},
+});
+
 export const removeAllForOwner = internalMutation({
 	args: {
 		ownerTokenIdentifier: v.string(),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
-		const chats = await ctx.db
-			.query("chats")
-			.withIndex("by_ownerTokenIdentifier_and_updatedAt", (q) =>
-				q.eq("ownerTokenIdentifier", args.ownerTokenIdentifier),
-			)
-			.take(REMOVE_ALL_CHATS_BATCH_SIZE);
+		const chats = await deleteChatBatch(ctx, args.ownerTokenIdentifier);
 
-		await Promise.all(
-			chats.map((chat) =>
-				ctx.scheduler.runAfter(0, internal.chats.removeMessagesAndDeleteChat, {
-					chatId: chat._id,
-				}),
-			),
-		);
-
-		if (chats.length === REMOVE_ALL_CHATS_BATCH_SIZE) {
+		if (chats.hasMore) {
 			await ctx.scheduler.runAfter(0, internal.chats.removeAllForOwner, {
 				ownerTokenIdentifier: args.ownerTokenIdentifier,
 			});

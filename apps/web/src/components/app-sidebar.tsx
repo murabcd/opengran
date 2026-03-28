@@ -282,6 +282,10 @@ export function AppSidebar({
 				open={settingsOpen}
 				onOpenChange={onSettingsOpenChange}
 				user={draftUser}
+				workspace={
+					workspaces.find((workspace) => workspace._id === activeWorkspaceId) ??
+					null
+				}
 				onUserChange={setDraftUser}
 				initialPage={settingsPage}
 				onPageChange={(page) => onSettingsOpenChange(true, page)}
@@ -518,9 +522,11 @@ function WorkspaceSwitcher({
 	}
 
 	const activeWorkspaceMeta = getWorkspaceRoleOption(activeWorkspace.role);
-	const activeWorkspaceAvatarSrc = getAvatarSrc({
-		name: activeWorkspace.name,
-	});
+	const activeWorkspaceAvatarSrc =
+		activeWorkspace.icon ??
+		getAvatarSrc({
+			name: activeWorkspace.name,
+		});
 	const getWorkspaceInitials = (name: string) =>
 		name
 			.split(" ")
@@ -584,9 +590,11 @@ function WorkspaceSwitcher({
 							sideOffset={4}
 						>
 							{workspaces.map((workspace) => {
-								const workspaceAvatarSrc = getAvatarSrc({
-									name: workspace.name,
-								});
+								const workspaceAvatarSrc =
+									workspace.icon ??
+									getAvatarSrc({
+										name: workspace.name,
+									});
 
 								return (
 									<DropdownMenuItem

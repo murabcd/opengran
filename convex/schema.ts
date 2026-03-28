@@ -56,6 +56,7 @@ export default defineSchema({
 		ownerTokenIdentifier: v.string(),
 		name: v.string(),
 		normalizedName: v.string(),
+		icon: v.optional(v.string()),
 		role: workspaceRoleValidator,
 		createdAt: v.number(),
 		updatedAt: v.number(),

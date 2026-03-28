@@ -32,12 +32,19 @@ import {
 } from "@workspace/ui/components/dialog";
 import {
 	Field,
+	FieldContent,
 	FieldDescription,
 	FieldGroup,
 	FieldLabel,
 	FieldTitle,
 } from "@workspace/ui/components/field";
 import { Input } from "@workspace/ui/components/input";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+} from "@workspace/ui/components/select";
 import {
 	Sidebar,
 	SidebarContent,
@@ -48,12 +55,17 @@ import {
 	SidebarMenuItem,
 	SidebarProvider,
 } from "@workspace/ui/components/sidebar";
+import { useTheme } from "@workspace/ui/components/theme-provider";
 import { useMutation } from "convex/react";
 import {
 	CalendarDays,
 	Database,
+	FolderKanban,
 	ImageUp,
 	LoaderCircle,
+	Moon,
+	Paintbrush,
+	Sun,
 	UserRound,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -61,6 +73,7 @@ import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { getAvatarSrc } from "@/lib/avatar";
 import { api } from "../../../../../convex/_generated/api";
+import type { Doc } from "../../../../../convex/_generated/dataModel";
 
 type SettingsUser = {
 	name: string;
@@ -68,12 +81,18 @@ type SettingsUser = {
 	avatar: string;
 };
 
-export type SettingsPage = "Profile" | "Calendar" | "Data controls";
+export type SettingsPage =
+	| "Profile"
+	| "Appearance"
+	| "Workspace"
+	| "Calendar"
+	| "Data controls";
 
 type SettingsDialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	user: SettingsUser;
+	workspace: Doc<"workspaces"> | null;
 	onUserChange: (user: SettingsUser) => void;
 	initialPage?: SettingsPage;
 	onPageChange?: (page: SettingsPage) => void;
@@ -81,6 +100,8 @@ type SettingsDialogProps = {
 
 const settingsNav = [
 	{ name: "Profile", icon: UserRound },
+	{ name: "Appearance", icon: Paintbrush },
+	{ name: "Workspace", icon: FolderKanban },
 	{ name: "Calendar", icon: CalendarDays },
 	{ name: "Data controls", icon: Database },
 ] as const;
@@ -103,6 +124,7 @@ export function SettingsDialog({
 	open,
 	onOpenChange,
 	user,
+	workspace,
 	onUserChange,
 	initialPage = "Profile",
 	onPageChange,
@@ -160,7 +182,7 @@ export function SettingsDialog({
 						</SidebarContent>
 					</Sidebar>
 					<main className="flex h-[480px] flex-1 flex-col overflow-hidden">
-						<header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+						<header className="flex min-h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
 							<div className="flex items-center gap-2 px-4">
 								<Breadcrumb className="hidden md:block">
 									<BreadcrumbList>
@@ -173,7 +195,7 @@ export function SettingsDialog({
 										</BreadcrumbItem>
 									</BreadcrumbList>
 								</Breadcrumb>
-								<div className="flex gap-2 md:hidden">
+								<div className="flex gap-2 overflow-x-auto py-2 md:hidden">
 									{settingsNav.map((item) => (
 										<Button
 											key={item.name}
@@ -198,6 +220,14 @@ export function SettingsDialog({
 										onOpenChange(false);
 									}}
 								/>
+							) : activePage === "Appearance" ? (
+								<AppearanceSettings />
+							) : activePage === "Workspace" ? (
+								<WorkspaceSettings
+									workspace={workspace}
+									onCancel={() => onOpenChange(false)}
+									onSave={() => onOpenChange(false)}
+								/>
 							) : activePage === "Calendar" ? (
 								<CalendarSettings />
 							) : activePage === "Data controls" ? (
@@ -211,6 +241,62 @@ export function SettingsDialog({
 				</SidebarProvider>
 			</DialogContent>
 		</Dialog>
+	);
+}
+
+function AppearanceSettings() {
+	const { theme, setTheme } = useTheme();
+
+	const themeOptions = [
+		{
+			value: "light",
+			label: "Light",
+			icon: Sun,
+		},
+		{
+			value: "dark",
+			label: "Dark",
+			icon: Moon,
+		},
+	] as const;
+	const selectedTheme =
+		theme === "dark" ||
+		(theme === "system" && document.documentElement.classList.contains("dark"))
+			? "dark"
+			: "light";
+
+	return (
+		<div className="py-4">
+			<FieldGroup className="gap-6">
+				<Field orientation="responsive">
+					<FieldContent>
+						<FieldTitle>Theme</FieldTitle>
+					</FieldContent>
+					<Select
+						value={selectedTheme}
+						onValueChange={(value) => setTheme(value as "light" | "dark")}
+					>
+						<SelectTrigger
+							size="sm"
+							className="w-full cursor-pointer justify-between @md/field-group:w-48"
+							aria-label="Select theme"
+						>
+							<span>{selectedTheme === "dark" ? "Dark" : "Light"}</span>
+						</SelectTrigger>
+						<SelectContent align="end">
+							{themeOptions.map(({ value, label, icon: Icon }) => (
+								<SelectItem key={value} value={value}>
+									<span className="flex items-center gap-2">
+										<Icon className="size-4 text-muted-foreground" />
+										<span>{label}</span>
+									</span>
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</Field>
+			</FieldGroup>
+		</div>
 	);
 }
 
@@ -344,6 +430,167 @@ function CalendarSettings() {
 	);
 }
 
+function WorkspaceSettings({
+	workspace,
+	onCancel,
+	onSave,
+}: {
+	workspace: Doc<"workspaces"> | null;
+	onCancel: () => void;
+	onSave: () => void;
+}) {
+	const updateWorkspace = useMutation(api.workspaces.update);
+	const [name, setName] = useState(workspace?.name ?? "");
+	const [icon, setIcon] = useState(workspace?.icon ?? "");
+	const [isSaving, setIsSaving] = useState(false);
+	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	useEffect(() => {
+		setName(workspace?.name ?? "");
+		setIcon(workspace?.icon ?? "");
+	}, [workspace]);
+
+	if (!workspace) {
+		return (
+			<div className="py-4">
+				<FieldGroup>
+					<Field>
+						<FieldTitle>No workspace selected</FieldTitle>
+						<FieldDescription>
+							Select a workspace from the sidebar, then reopen settings to edit
+							it here.
+						</FieldDescription>
+					</Field>
+				</FieldGroup>
+			</div>
+		);
+	}
+
+	const trimmedName = name.trim();
+	const hasChanges =
+		trimmedName !== workspace.name || icon !== (workspace.icon ?? "");
+
+	const handleUpload = (file: File) => {
+		const reader = new FileReader();
+
+		reader.onload = () => {
+			const result = reader.result;
+
+			if (typeof result === "string") {
+				setIcon(result);
+			}
+		};
+
+		reader.readAsDataURL(file);
+	};
+
+	const handleSubmit = async () => {
+		if (!trimmedName || isSaving || !hasChanges) {
+			return;
+		}
+
+		setIsSaving(true);
+
+		try {
+			await updateWorkspace({
+				workspaceId: workspace._id,
+				name: trimmedName,
+				icon: icon !== (workspace.icon ?? "") ? icon : undefined,
+			});
+			toast.success("Workspace settings updated");
+			onSave();
+		} catch (error) {
+			console.error("Failed to update workspace", error);
+			toast.error(
+				error instanceof Error ? error.message : "Failed to update workspace",
+			);
+		} finally {
+			setIsSaving(false);
+		}
+	};
+
+	return (
+		<div className="py-4">
+			<FieldGroup className="gap-6">
+				<Field>
+					<FieldTitle>Icon</FieldTitle>
+					<div className="flex items-center gap-4">
+						<Avatar className="size-20 rounded-lg border">
+							{icon ? (
+								<AvatarImage
+									src={icon}
+									alt="Workspace icon preview"
+									className="object-cover"
+								/>
+							) : null}
+							<AvatarFallback className="rounded-lg bg-muted/40">
+								<ImageUp className="size-8 text-muted-foreground" />
+							</AvatarFallback>
+						</Avatar>
+						<div className="flex flex-col gap-2">
+							<Button
+								variant="outline"
+								size="sm"
+								className="w-min"
+								onClick={() => fileInputRef.current?.click()}
+								disabled={isSaving}
+							>
+								Upload
+							</Button>
+							<input
+								ref={fileInputRef}
+								type="file"
+								accept="image/png,image/jpeg,image/gif,image/webp"
+								className="hidden"
+								onChange={(event) => {
+									const file = event.target.files?.[0];
+									if (!file) {
+										return;
+									}
+
+									handleUpload(file);
+									event.target.value = "";
+								}}
+							/>
+							<FieldDescription>
+								Recommend size 1:1, up to 5MB.
+							</FieldDescription>
+						</div>
+					</div>
+				</Field>
+				<Field>
+					<FieldLabel htmlFor="settings-workspace-name">Name</FieldLabel>
+					<Input
+						id="settings-workspace-name"
+						value={name}
+						onChange={(event) => setName(event.target.value)}
+						placeholder="My workspace"
+						disabled={isSaving}
+					/>
+				</Field>
+			</FieldGroup>
+			<div className="flex justify-end gap-2 pt-6">
+				<Button variant="ghost" onClick={onCancel} disabled={isSaving}>
+					Cancel
+				</Button>
+				<Button
+					onClick={handleSubmit}
+					disabled={!trimmedName || !hasChanges || isSaving}
+				>
+					{isSaving ? (
+						<>
+							<LoaderCircle className="animate-spin" />
+							Saving
+						</>
+					) : (
+						"Save"
+					)}
+				</Button>
+			</div>
+		</div>
+	);
+}
+
 function DataControlsSettings({
 	canDeleteData,
 	onClose,
@@ -356,7 +603,11 @@ function DataControlsSettings({
 	const [showDeleteAllNotesDialog, setShowDeleteAllNotesDialog] =
 		useState(false);
 	const [isDeletingAllNotes, setIsDeletingAllNotes] = useState(false);
+	const [showDeleteAllChatsDialog, setShowDeleteAllChatsDialog] =
+		useState(false);
+	const [isDeletingAllChats, setIsDeletingAllChats] = useState(false);
 	const removeAllNotes = useMutation(api.notes.removeAll);
+	const removeAllChats = useMutation(api.chats.removeAll);
 
 	const navigateTo = (pathname: string) => {
 		window.history.pushState(null, "", pathname);
@@ -404,6 +655,26 @@ function DataControlsSettings({
 		}
 	};
 
+	const handleDeleteAllChats = async () => {
+		setIsDeletingAllChats(true);
+
+		try {
+			const result = await removeAllChats({});
+			setShowDeleteAllChatsDialog(false);
+			onClose();
+			navigateTo("/home");
+			toast.success(
+				result.hasMore ? "Chat deletion started" : "All chats deleted",
+			);
+		} catch (error) {
+			console.error("Failed to delete all chats", error);
+			setShowDeleteAllChatsDialog(false);
+			toast.error("Failed to delete all chats");
+		} finally {
+			setIsDeletingAllChats(false);
+		}
+	};
+
 	return (
 		<div className="py-4">
 			<div className="flex flex-col gap-4">
@@ -426,6 +697,16 @@ function DataControlsSettings({
 					confirmDisabled={isDeletingAllNotes}
 					buttonDisabled={isDeletingAllNotes || !canDeleteData}
 					dialogDescription="This action cannot be undone. All notes you own will be permanently deleted."
+				/>
+				<DataControlAction
+					title="Delete all chats"
+					buttonLabel={isDeletingAllChats ? "Deleting..." : "Delete"}
+					dialogOpen={showDeleteAllChatsDialog}
+					onDialogOpenChange={setShowDeleteAllChatsDialog}
+					onConfirm={handleDeleteAllChats}
+					confirmDisabled={isDeletingAllChats}
+					buttonDisabled={isDeletingAllChats || !canDeleteData}
+					dialogDescription="This action cannot be undone. All chats you own will be permanently deleted."
 				/>
 			</div>
 		</div>

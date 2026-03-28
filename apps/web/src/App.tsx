@@ -90,12 +90,16 @@ type SocialAuthProvider = "github" | "google";
 
 const SETTINGS_PAGE_BY_SLUG = {
 	profile: "Profile",
+	appearance: "Appearance",
+	workspace: "Workspace",
 	calendar: "Calendar",
 	"data-controls": "Data controls",
 } as const satisfies Record<string, SettingsPage>;
 
 const SETTINGS_SLUG_BY_PAGE: Record<SettingsPage, string> = {
 	Profile: "profile",
+	Appearance: "appearance",
+	Workspace: "workspace",
 	Calendar: "calendar",
 	"Data controls": "data-controls",
 };
