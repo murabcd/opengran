@@ -1,7 +1,4 @@
-import type { JSONContent } from "@tiptap/core";
-import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import {
 	Empty,
 	EmptyDescription,
@@ -14,20 +11,11 @@ import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import { FileText } from "lucide-react";
 import * as React from "react";
+import {
+	createNoteEditorExtensions,
+	parseStoredNoteContent,
+} from "@/lib/note-editor";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
-
-const EMPTY_DOCUMENT: JSONContent = {
-	type: "doc",
-	content: [{ type: "paragraph" }],
-};
-
-function parseNoteContent(content: string) {
-	try {
-		return JSON.parse(content) as JSONContent;
-	} catch {
-		return EMPTY_DOCUMENT;
-	}
-}
 
 export function SharedNotePage({
 	note,
@@ -36,17 +24,7 @@ export function SharedNotePage({
 	onOpenNote?: (noteId: Doc<"notes">["_id"]) => void;
 }) {
 	const editor = useEditor({
-		extensions: [
-			StarterKit.configure({
-				heading: false,
-				codeBlock: false,
-				horizontalRule: false,
-			}),
-			Placeholder.configure({
-				placeholder: "Write notes...",
-				emptyEditorClass: "is-editor-empty",
-			}),
-		],
+		extensions: createNoteEditorExtensions(),
 		immediatelyRender: false,
 		editable: false,
 		editorProps: {
@@ -62,9 +40,12 @@ export function SharedNotePage({
 			return;
 		}
 
-		editor.commands.setContent(parseNoteContent(note?.content ?? ""), {
-			emitUpdate: false,
-		});
+		editor.commands.setContent(
+			parseStoredNoteContent(note?.content ?? "", editor.state.schema),
+			{
+				emitUpdate: false,
+			},
+		);
 	}, [editor, note?.content]);
 
 	if (note === undefined) {
@@ -125,11 +106,19 @@ export function SharedNotePage({
 								className={cn(
 									"min-h-[320px] text-foreground",
 									"[&_.ProseMirror]:min-h-[320px]",
+									"[&_.ProseMirror_h1]:mb-4 [&_.ProseMirror_h1]:text-3xl [&_.ProseMirror_h1]:font-semibold",
+									"[&_.ProseMirror_h2]:mb-4 [&_.ProseMirror_h2]:text-2xl [&_.ProseMirror_h2]:font-semibold",
+									"[&_.ProseMirror_h3]:mb-3 [&_.ProseMirror_h3]:text-xl [&_.ProseMirror_h3]:font-semibold",
 									"[&_.ProseMirror_p]:mb-3 [&_.ProseMirror_p]:mt-0",
 									"[&_.ProseMirror_ul]:mb-3 [&_.ProseMirror_ul]:pl-6",
 									"[&_.ProseMirror_ol]:mb-3 [&_.ProseMirror_ol]:pl-6",
 									"[&_.ProseMirror_li]:mb-1",
 									"[&_.ProseMirror_blockquote]:my-4 [&_.ProseMirror_blockquote]:border-l [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-4 [&_.ProseMirror_blockquote]:text-muted-foreground",
+									"[&_.ProseMirror_pre]:my-4 [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_pre]:rounded-lg [&_.ProseMirror_pre]:border [&_.ProseMirror_pre]:border-border/70 [&_.ProseMirror_pre]:bg-muted/50 [&_.ProseMirror_pre]:p-4",
+									"[&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:bg-muted/60 [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:py-0.5 [&_.ProseMirror_code]:font-mono [&_.ProseMirror_code]:text-[0.9em]",
+									"[&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0",
+									"[&_.ProseMirror_hr]:my-6 [&_.ProseMirror_hr]:border-border",
+									"[&_.ProseMirror_a]:text-primary [&_.ProseMirror_a]:underline [&_.ProseMirror_a]:underline-offset-2",
 								)}
 							/>
 						</div>

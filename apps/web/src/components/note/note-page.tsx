@@ -1,7 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
-import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
@@ -10,6 +8,16 @@ import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
 import {
+	createNoteEditorExtensions,
+	EMPTY_DOCUMENT,
+	EMPTY_DOCUMENT_STRING,
+	handleMarkdownPaste,
+	looksLikeMarkdown,
+	parseMarkdownToDocument,
+	parseStoredNoteContent,
+	serializeDocumentToMarkdown,
+} from "@/lib/note-editor";
+import {
 	isEnhancedNoteTemplate,
 	type NoteTemplate,
 } from "@/lib/note-templates";
@@ -17,13 +25,6 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { NoteComposer } from "./note-composer";
 import { writeTextToClipboard } from "./share-note";
-
-const EMPTY_DOCUMENT: JSONContent = {
-	type: "doc",
-	content: [{ type: "paragraph" }],
-};
-
-const EMPTY_DOCUMENT_STRING = JSON.stringify(EMPTY_DOCUMENT);
 
 type StructuredNoteSection = {
 	title: string;
@@ -54,6 +55,29 @@ const getPlainTextContent = ({
 		.join("\n\n");
 };
 
+const getMarkdownContent = ({
+	editor,
+	title,
+	searchableText,
+}: {
+	editor: NonNullable<ReturnType<typeof useEditor>>;
+	title: string;
+	searchableText: string;
+}) => {
+	const editorMarkdown = serializeDocumentToMarkdown(
+		editor.state.doc,
+		editor.state.schema,
+	);
+	const titleText = title.trim();
+
+	return [
+		titleText ? `# ${titleText}` : "",
+		editorMarkdown || searchableText.trim(),
+	]
+		.filter(Boolean)
+		.join("\n\n");
+};
+
 const getExportFileName = (title: string) =>
 	`${
 		title
@@ -61,7 +85,7 @@ const getExportFileName = (title: string) =>
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, "-")
 			.replace(/^-+|-+$/g, "") || "note"
-	}.txt`;
+	}.md`;
 
 const createTextNode = (text: string, bold = false): JSONContent => ({
 	type: "text",
@@ -175,13 +199,13 @@ const showActionError = (message: string, error: unknown) => {
 };
 
 export type NoteEditorActions = {
-	canCopyText: boolean;
+	canCopyMarkdown: boolean;
 	canUndo: boolean;
 	canRedo: boolean;
-	copyText: () => Promise<void>;
+	copyMarkdown: () => Promise<void>;
 	undo: () => void;
 	redo: () => void;
-	exportNote: () => Promise<void>;
+	exportMarkdown: () => Promise<void>;
 	applyTemplate: (template: NoteTemplate) => Promise<boolean>;
 };
 
@@ -225,7 +249,7 @@ const useNotePageController = ({
 	const lastSavedSnapshotRef = React.useRef<string | null>(null);
 	const publishedEditorActionsRef = React.useRef<{
 		noteId: Id<"notes">;
-		canCopyText: boolean;
+		canCopyMarkdown: boolean;
 		canUndo: boolean;
 		canRedo: boolean;
 	} | null>(null);
@@ -330,17 +354,7 @@ const useNotePageController = ({
 	);
 
 	const editor = useEditor({
-		extensions: [
-			StarterKit.configure({
-				heading: false,
-				codeBlock: false,
-				horizontalRule: false,
-			}),
-			Placeholder.configure({
-				placeholder: "Write notes...",
-				emptyEditorClass: "is-editor-empty",
-			}),
-		],
+		extensions: createNoteEditorExtensions(),
 		immediatelyRender: false,
 		autofocus: "end",
 		editorProps: {
@@ -348,6 +362,7 @@ const useNotePageController = ({
 				class:
 					"note-tiptap min-h-[240px] border border-transparent bg-transparent px-0 py-0 text-base outline-none",
 			},
+			handlePaste: (view, event) => handleMarkdownPaste(view, event),
 		},
 		onUpdate: ({ editor }) => {
 			setContent(JSON.stringify(editor.getJSON()));
@@ -390,12 +405,10 @@ const useNotePageController = ({
 		}
 
 		if (note) {
-			let nextContent = EMPTY_DOCUMENT;
-			try {
-				nextContent = JSON.parse(note.content) as JSONContent;
-			} catch {
-				nextContent = EMPTY_DOCUMENT;
-			}
+			const nextContent = parseStoredNoteContent(
+				note.content,
+				editor.state.schema,
+			);
 
 			setTitle(note.title);
 			onTitleChange?.(note.title);
@@ -482,22 +495,22 @@ const useNotePageController = ({
 		}
 
 		const { title, searchableText } = latestEditorStateRef.current;
-		const serializedText = getPlainTextContent({
+		const serializedMarkdown = getMarkdownContent({
 			editor,
 			title,
 			searchableText,
 		});
 
-		if (!serializedText) {
+		if (!serializedMarkdown) {
 			toast("Nothing to copy yet");
 			return;
 		}
 
 		try {
-			await writeTextToClipboard(serializedText);
-			toast.success("Text copied");
+			await writeTextToClipboard(serializedMarkdown);
+			toast.success("Markdown copied");
 		} catch (error) {
-			showActionError("Failed to copy text", error);
+			showActionError("Failed to copy markdown", error);
 		}
 	}, [editor]);
 
@@ -535,13 +548,13 @@ const useNotePageController = ({
 		}
 
 		const { title, searchableText } = latestEditorStateRef.current;
-		const serializedText = getPlainTextContent({
+		const serializedMarkdown = getMarkdownContent({
 			editor,
 			title,
 			searchableText,
 		});
 
-		if (!serializedText) {
+		if (!serializedMarkdown) {
 			toast("Nothing to export yet");
 			return;
 		}
@@ -549,7 +562,7 @@ const useNotePageController = ({
 		try {
 			const result = await exportTextFile({
 				fileName: getExportFileName(title),
-				content: serializedText,
+				content: serializedMarkdown,
 			});
 
 			if (result.canceled) {
@@ -575,11 +588,13 @@ const useNotePageController = ({
 				return;
 			}
 
-			editor
-				.chain()
-				.focus()
-				.insertContent(plainTextToDocumentNodes(nextText))
-				.run();
+			const nextContent = looksLikeMarkdown(nextText)
+				? ((parseMarkdownToDocument(nextText, editor.state.schema).toJSON()
+						.content as JSONContent[] | undefined) ??
+					plainTextToDocumentNodes(nextText))
+				: plainTextToDocumentNodes(nextText);
+
+			editor.chain().focus().insertContent(nextContent).run();
 			toast.success("Added to note");
 		},
 		[editor],
@@ -836,7 +851,7 @@ const useNotePageController = ({
 			});
 			const nextActions = {
 				noteId,
-				canCopyText: Boolean(serializedText),
+				canCopyMarkdown: Boolean(serializedText),
 				canUndo: editor.can().undo(),
 				canRedo: editor.can().redo(),
 			};
@@ -845,7 +860,7 @@ const useNotePageController = ({
 			if (
 				previousActions &&
 				previousActions.noteId === nextActions.noteId &&
-				previousActions.canCopyText === nextActions.canCopyText &&
+				previousActions.canCopyMarkdown === nextActions.canCopyMarkdown &&
 				previousActions.canUndo === nextActions.canUndo &&
 				previousActions.canRedo === nextActions.canRedo
 			) {
@@ -855,10 +870,10 @@ const useNotePageController = ({
 			publishedEditorActionsRef.current = nextActions;
 			onEditorActionsChange?.({
 				...nextActions,
-				copyText,
+				copyMarkdown: copyText,
 				undo,
 				redo,
-				exportNote,
+				exportMarkdown: exportNote,
 				applyTemplate,
 			});
 		};
@@ -965,11 +980,19 @@ export function NotePage({
 								className={cn(
 									"min-h-[320px] text-foreground",
 									"[&_.ProseMirror]:min-h-[320px]",
+									"[&_.ProseMirror_h1]:mb-4 [&_.ProseMirror_h1]:text-3xl [&_.ProseMirror_h1]:font-semibold",
+									"[&_.ProseMirror_h2]:mb-4 [&_.ProseMirror_h2]:text-2xl [&_.ProseMirror_h2]:font-semibold",
+									"[&_.ProseMirror_h3]:mb-3 [&_.ProseMirror_h3]:text-xl [&_.ProseMirror_h3]:font-semibold",
 									"[&_.ProseMirror_p]:mb-3 [&_.ProseMirror_p]:mt-0",
 									"[&_.ProseMirror_ul]:mb-3 [&_.ProseMirror_ul]:pl-6",
 									"[&_.ProseMirror_ol]:mb-3 [&_.ProseMirror_ol]:pl-6",
 									"[&_.ProseMirror_li]:mb-1",
 									"[&_.ProseMirror_blockquote]:my-4 [&_.ProseMirror_blockquote]:border-l [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-4 [&_.ProseMirror_blockquote]:text-muted-foreground",
+									"[&_.ProseMirror_pre]:my-4 [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_pre]:rounded-lg [&_.ProseMirror_pre]:border [&_.ProseMirror_pre]:border-border/70 [&_.ProseMirror_pre]:bg-muted/50 [&_.ProseMirror_pre]:p-4",
+									"[&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:bg-muted/60 [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:py-0.5 [&_.ProseMirror_code]:font-mono [&_.ProseMirror_code]:text-[0.9em]",
+									"[&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0",
+									"[&_.ProseMirror_hr]:my-6 [&_.ProseMirror_hr]:border-border",
+									"[&_.ProseMirror_a]:text-primary [&_.ProseMirror_a]:underline [&_.ProseMirror_a]:underline-offset-2",
 									controller.templateApplyState.isRunning && "hidden",
 								)}
 							/>

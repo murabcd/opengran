@@ -2224,14 +2224,14 @@ function AppShellHeader({
 								currentNoteEditorActions ? (
 									<DropdownMenuItem
 										className="cursor-pointer"
-										disabled={!currentNoteEditorActions.canCopyText}
+										disabled={!currentNoteEditorActions.canCopyMarkdown}
 										onSelect={(event) => {
 											event.preventDefault();
-											currentNoteEditorActions.copyText();
+											currentNoteEditorActions.copyMarkdown();
 										}}
 									>
 										<Copy />
-										Copy text
+										Copy markdown
 									</DropdownMenuItem>
 								) : null
 							}
@@ -2262,14 +2262,14 @@ function AppShellHeader({
 										</DropdownMenuItem>
 										<DropdownMenuItem
 											className="cursor-pointer"
-											disabled={!currentNoteEditorActions.canCopyText}
+											disabled={!currentNoteEditorActions.canCopyMarkdown}
 											onSelect={(event) => {
 												event.preventDefault();
-												currentNoteEditorActions.exportNote();
+												currentNoteEditorActions.exportMarkdown();
 											}}
 										>
 											<ArrowDown />
-											Export
+											Export markdown
 										</DropdownMenuItem>
 									</>
 								) : null
