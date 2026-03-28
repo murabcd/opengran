@@ -4,9 +4,14 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-macos-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release-macos:
@@ -16,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -29,6 +36,51 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Validate tag matches desktop version
+        run: |
+          expected_tag="v$(node -p "require('./apps/desktop/package.json').version")"
+
+          if [ "$GITHUB_REF_NAME" != "$expected_tag" ]; then
+            echo "Release tag mismatch."
+            echo "Expected: $expected_tag"
+            echo "Actual:   $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - name: Validate workspace
+        run: |
+          bun run check
+          bun run typecheck
+          bun run test
+
+      - name: Validate signing configuration
+        env:
+          REQUIRE_MACOS_SIGNING: ${{ vars.REQUIRE_MACOS_SIGNING || 'false' }}
+          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_KEY_SECRET_VALUE: ${{ secrets.APPLE_API_KEY }}
+          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
+        run: |
+          missing=""
+
+          for name in APPLE_API_ISSUER_SECRET APPLE_API_KEY_ID_SECRET APPLE_API_KEY_SECRET_VALUE CSC_KEY_PASSWORD_SECRET CSC_LINK_SECRET; do
+            if [ -z "${!name}" ]; then
+              missing="${missing} ${name}"
+            fi
+          done
+
+          if [ -n "$missing" ]; then
+            if [ "$REQUIRE_MACOS_SIGNING" = "true" ]; then
+              echo "Missing required release secrets:${missing}"
+              echo "REQUIRE_MACOS_SIGNING=true, so refusing to publish an unsigned or unnotarized public macOS release."
+              exit 1
+            fi
+
+            echo "Signing secrets not configured:${missing}"
+            echo "Continuing with an unsigned, non-notarized macOS release."
+          fi
 
       - name: Prepare release environment
         env:
@@ -59,7 +111,7 @@ jobs:
           fi
 
       - name: Prepare notarization key
-        if: ${{ env.APPLE_API_KEY_SECRET != '' }}
+        if: ${{ secrets.APPLE_API_KEY != '' }}
         run: |
           mkdir -p private_keys
           printf '%s' "$APPLE_API_KEY_SECRET" > private_keys/AuthKey.p8
