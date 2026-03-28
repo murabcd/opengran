@@ -1,5 +1,11 @@
 # desktop
 
+## 0.0.3
+
+### Patch Changes
+
+- b886fc2: stabilize desktop live transcription reconnect behavior and remove the redundant interruption alert from the bundled transcript UI
+
 ## 0.0.2
 
 ### Patch Changes
