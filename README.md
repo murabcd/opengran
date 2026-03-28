@@ -86,24 +86,3 @@ Your app should then be available on [localhost:3000](http://localhost:3000/).
 On macOS, `bun dev` launches an unpacked `OpenGran.app` wired to the local renderer so native permissions and desktop bundle behavior stay close to production.
 
 If you only want the browser app, run `bun run dev:web`.
-
-## Versioning and releases
-
-This repo uses Changesets for versioning.
-
-```bash
-bun changeset
-```
-
-Use `patch` for smaller desktop updates and `minor` for larger feature milestones.
-
-When you are ready to ship:
-
-```bash
-bun run release:prepare
-git add .
-git commit -m "version packages"
-git push origin main
-```
-
-GitHub Actions handles CI, matching tag creation, and desktop release publishing after the version bump lands on `main`.
