@@ -92,6 +92,4 @@ git commit -m "version packages"
 git push origin main
 ```
 
-GitHub Actions handles the matching tag creation and desktop release publishing after the version bump lands on `main`.
-
-For OSS builds, macOS signing and notarization can be added later when you are ready for broader distribution.
+GitHub Actions handles the matching tag creation and desktop release publishing after the version bump lands on `main`. For OSS builds, macOS signing and notarization can be added later when you are ready for broader distribution.
