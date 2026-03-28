@@ -71,6 +71,7 @@ import { type NoteEditorActions, NotePage } from "@/components/note/note-page";
 import { SharedNotePage } from "@/components/note/shared-note-page";
 import type { SettingsPage } from "@/components/settings/settings-dialog";
 import { NoteTemplateSelect } from "@/components/templates/note-template-select";
+import { OpenGranMark } from "@/components/ui/open-gran-mark";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
@@ -3133,25 +3134,6 @@ function LoginForm({
 				</CardContent>
 			</Card>
 		</div>
-	);
-}
-
-function OpenGranMark({ className }: { className?: string }) {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			fill="none"
-			className={className}
-			aria-hidden="true"
-		>
-			<path
-				d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"
-				stroke="currentColor"
-				strokeWidth="2"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-			/>
-		</svg>
 	);
 }
 

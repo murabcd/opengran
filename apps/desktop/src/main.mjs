@@ -20,6 +20,7 @@ import {
 	ipcMain,
 	Menu,
 	nativeImage,
+	screen,
 	shell,
 	systemPreferences,
 	Tray,
@@ -60,11 +61,16 @@ const desktopRealtimeTransportEventChannel =
 	"app:desktop-realtime-transport-event";
 const transcriptionSessionStateChannel = "app:transcription-session-state";
 const transcriptionSessionEventChannel = "app:transcription-session-event";
+const meetingDetectionStateChannel = "app:meeting-detection-state";
 const captureHealthTimeoutMs = 3_000;
 const maxRecoveryAttempts = 3;
 const recoveryBackoffMs = [750, 1_500, 3_000];
 const transcriptDraftStorageVersion = 1;
 const transcriptDraftMaxAgeMs = 72 * 60 * 60 * 1000;
+const meetingDetectionDebounceMs = 8_000;
+const meetingDetectionDismissMs = 30 * 60 * 1000;
+const meetingWidgetAutoHideMs = 12 * 1000;
+const browserMeetingSignalFreshMs = 30 * 1000;
 const minimumWindowSize = {
 	width: 390,
 	height: 640,
@@ -80,6 +86,15 @@ const defaultDesktopPermissionsState = {
 	systemAudioValidated: false,
 	systemAudioBlocked: false,
 };
+const createInitialMeetingDetectionState = () => ({
+	candidateStartedAt: null,
+	confidence: 0,
+	dismissedUntil: null,
+	isMicrophoneActive: false,
+	isSuppressed: false,
+	sourceName: null,
+	status: "idle",
+});
 const createInitialTranscriptionSessionState = () => ({
 	autoStartKey: null,
 	error: null,
@@ -123,8 +138,12 @@ let trayStatusLabel = "Updates are unavailable in development builds";
 let hasConfiguredDisplayMediaHandler = false;
 let microphoneCaptureSession = null;
 let microphoneCaptureStartRequestId = 0;
+let microphoneActivitySession = null;
 let systemAudioCaptureSession = null;
 let systemAudioCaptureStartRequestId = 0;
+let meetingWidgetWindow = null;
+let latestMeetingWidgetSize = { width: 360, height: 104 };
+let meetingWidgetAutoHideTimeoutId = null;
 let hasPendingUpdateDownload = false;
 let isCheckingForUpdates = false;
 let shouldShowUpdateResultDialogs = false;
@@ -133,6 +152,7 @@ let updateWindow = null;
 let updateWindowReady = false;
 let pendingUpdateWindowState = null;
 let resolveUpdateWindowActionPromise = null;
+let latestMeetingDetectionState = createInitialMeetingDetectionState();
 let latestTranscriptionSessionState = createInitialTranscriptionSessionState();
 const desktopRealtimeTransportSessions = new Map();
 const captureEventListeners = {
@@ -157,6 +177,16 @@ let transcriptionLifecycleOperationId = 0;
 let transcriptionPendingStartPromise = null;
 let transcriptionPendingStopPromise = null;
 let currentTranscriptionSessionCorrelationId = null;
+let meetingDetectionDebounceTimeoutId = null;
+let latestBrowserMeetingSignal = {
+	active: false,
+	lastSeenAt: 0,
+	sourceName: null,
+	tabTitle: null,
+	urlHost: null,
+};
+const areDesktopTestHooksEnabled =
+	app.isPackaged !== true || process.env.OPENGRAN_ENABLE_TEST_HOOKS === "1";
 
 const isUpdaterAvailable = () =>
 	process.platform === "darwin" &&
@@ -167,6 +197,27 @@ const setTrayStatusLabel = (value) => {
 	trayStatusLabel = value;
 	refreshTrayMenu();
 };
+
+const getCurrentBrowserMeetingSignal = () => {
+	if (!latestBrowserMeetingSignal.active) {
+		return null;
+	}
+
+	if (
+		Date.now() - latestBrowserMeetingSignal.lastSeenAt >
+		browserMeetingSignalFreshMs
+	) {
+		return null;
+	}
+
+	return latestBrowserMeetingSignal;
+};
+
+const getCurrentBrowserMeetingSourceName = () =>
+	getCurrentBrowserMeetingSignal()?.sourceName ?? null;
+
+const hasFreshBrowserMeetingSignal = () =>
+	getCurrentBrowserMeetingSignal() !== null;
 
 const getUpdateWindowIconDataUrl = () => {
 	const icon = nativeImage.createFromPath(dockIconPath);
@@ -475,6 +526,161 @@ const closeUpdateWindow = () => {
 	updateWindow.close();
 };
 
+const normalizeMeetingWidgetSize = (value) => {
+	const nextWidth = Number.isFinite(value?.width)
+		? Math.max(240, Math.min(560, Math.round(value.width)))
+		: latestMeetingWidgetSize.width;
+	const nextHeight = Number.isFinite(value?.height)
+		? Math.max(64, Math.min(220, Math.round(value.height)))
+		: latestMeetingWidgetSize.height;
+
+	return {
+		width: nextWidth,
+		height: nextHeight,
+	};
+};
+
+const getMeetingWidgetWindowBounds = (size = latestMeetingWidgetSize) => {
+	const display = screen.getPrimaryDisplay();
+	const { width, x, y } = display.workArea;
+	const widgetSize = normalizeMeetingWidgetSize(size);
+	return {
+		width: widgetSize.width,
+		height: widgetSize.height,
+		x: Math.round(x + width - widgetSize.width - 18),
+		y: Math.round(y + 18),
+	};
+};
+
+const updateMeetingWidgetWindowSize = (size) => {
+	latestMeetingWidgetSize = normalizeMeetingWidgetSize(size);
+
+	if (!meetingWidgetWindow || meetingWidgetWindow.isDestroyed()) {
+		return;
+	}
+
+	meetingWidgetWindow.setBounds(
+		getMeetingWidgetWindowBounds(latestMeetingWidgetSize),
+	);
+};
+
+const syncMeetingDetectionState = (patch) => {
+	latestMeetingDetectionState = {
+		...latestMeetingDetectionState,
+		...patch,
+	};
+
+	broadcastToDesktopWindows({
+		channel: meetingDetectionStateChannel,
+		payload: latestMeetingDetectionState,
+	});
+};
+
+const clearMeetingWidgetAutoHideTimeout = () => {
+	if (meetingWidgetAutoHideTimeoutId == null) {
+		return;
+	}
+
+	clearTimeout(meetingWidgetAutoHideTimeoutId);
+	meetingWidgetAutoHideTimeoutId = null;
+};
+
+const hideMeetingWidgetWindow = () => {
+	clearMeetingWidgetAutoHideTimeout();
+
+	if (!meetingWidgetWindow || meetingWidgetWindow.isDestroyed()) {
+		meetingWidgetWindow = null;
+		return;
+	}
+
+	meetingWidgetWindow.hide();
+};
+
+const ensureMeetingWidgetWindow = async () => {
+	if (meetingWidgetWindow && !meetingWidgetWindow.isDestroyed()) {
+		return meetingWidgetWindow;
+	}
+
+	const bounds = getMeetingWidgetWindowBounds();
+	meetingWidgetWindow = new BrowserWindow({
+		...bounds,
+		show: false,
+		frame: false,
+		hasShadow: false,
+		transparent: true,
+		backgroundColor: "#00000000",
+		resizable: false,
+		fullscreenable: false,
+		skipTaskbar: true,
+		alwaysOnTop: true,
+		focusable: true,
+		title: "OpenGran meeting widget",
+		webPreferences: {
+			preload: join(runtimeDir, "preload.cjs"),
+			contextIsolation: true,
+			nodeIntegration: false,
+			sandbox: false,
+		},
+	});
+
+	meetingWidgetWindow.setAlwaysOnTop(true, "floating");
+	meetingWidgetWindow.setVisibleOnAllWorkspaces(true, {
+		visibleOnFullScreen: true,
+	});
+
+	meetingWidgetWindow.on("closed", () => {
+		meetingWidgetWindow = null;
+	});
+
+	await meetingWidgetWindow.loadURL(
+		await getNavigationUrl({
+			pathname: "/desktop/meeting-widget",
+		}),
+	);
+
+	return meetingWidgetWindow;
+};
+
+const autoHideMeetingWidgetPrompt = () => {
+	hideMeetingWidgetWindow();
+
+	const hasBrowserSignal = hasFreshBrowserMeetingSignal();
+	const hasMeetingSignal =
+		latestMeetingDetectionState.isMicrophoneActive || hasBrowserSignal;
+
+	if (!hasMeetingSignal || isMeetingDetectionSuppressed()) {
+		syncMeetingDetectionState({
+			candidateStartedAt: null,
+			confidence: 0,
+			isSuppressed: isMeetingDetectionSuppressed(),
+			sourceName: null,
+			status: "idle",
+		});
+		return;
+	}
+
+	syncMeetingDetectionState({
+		confidence: hasBrowserSignal ? 0.68 : 0.35,
+		isSuppressed: false,
+		sourceName: getCurrentBrowserMeetingSourceName(),
+		status: "monitoring",
+	});
+};
+
+const showMeetingWidgetWindow = async () => {
+	clearMeetingWidgetAutoHideTimeout();
+
+	const nextWindow = await ensureMeetingWidgetWindow();
+	const bounds = getMeetingWidgetWindowBounds();
+	nextWindow.setBounds(bounds);
+	nextWindow.showInactive();
+
+	meetingWidgetAutoHideTimeoutId = setTimeout(() => {
+		meetingWidgetAutoHideTimeoutId = null;
+		autoHideMeetingWidgetPrompt();
+	}, meetingWidgetAutoHideMs);
+};
+
 const ensureUpdateWindow = async () => {
 	if (updateWindow && !updateWindow.isDestroyed()) {
 		return updateWindow;
@@ -650,6 +856,36 @@ const resolveMicrophoneHelperPath = () => {
 			".generated",
 			"system-audio",
 			"opengran-microphone-helper",
+		),
+	].filter(Boolean);
+
+	return candidates.find((candidatePath) => existsSync(candidatePath)) ?? null;
+};
+
+const resolveMicrophoneActivityHelperPath = () => {
+	const envPath = process.env.OPENGRAN_MICROPHONE_ACTIVITY_HELPER_PATH?.trim();
+	const unpackedHelperPath = app.isPackaged
+		? resolve(
+				process.resourcesPath,
+				"app.asar.unpacked",
+				".bundle-root",
+				"apps",
+				"desktop",
+				"dist",
+				"bin",
+				"opengran-microphone-activity-helper",
+			)
+		: null;
+	const candidates = [
+		envPath,
+		unpackedHelperPath,
+		resolve(runtimeDir, "bin", "opengran-microphone-activity-helper"),
+		resolve(
+			runtimeDir,
+			"..",
+			".generated",
+			"system-audio",
+			"opengran-microphone-activity-helper",
 		),
 	].filter(Boolean);
 
@@ -903,6 +1139,7 @@ const syncTranscriptionSessionState = (state) => {
 		channel: transcriptionSessionStateChannel,
 		payload: state,
 	});
+	reevaluateMeetingDetection();
 };
 
 const emitTranscriptionSessionEvent = (event) => {
@@ -1095,6 +1332,159 @@ const refreshTranscriptionPolicy = () => {
 	return transcriptionPolicy;
 };
 
+const clearMeetingDetectionDebounceTimeout = () => {
+	if (meetingDetectionDebounceTimeoutId == null) {
+		return;
+	}
+
+	clearTimeout(meetingDetectionDebounceTimeoutId);
+	meetingDetectionDebounceTimeoutId = null;
+};
+
+const isMeetingDetectionSuppressed = () =>
+	["starting", "listening", "reconnecting", "stopping"].includes(
+		latestTranscriptionSessionState.phase,
+	) || (latestMeetingDetectionState.dismissedUntil ?? 0) > Date.now();
+
+const handleBrowserMeetingSignal = (payload) => {
+	latestBrowserMeetingSignal = {
+		active: payload?.active === true,
+		lastSeenAt: Date.now(),
+		sourceName:
+			typeof payload?.sourceName === "string" && payload.sourceName.trim()
+				? payload.sourceName.trim()
+				: null,
+		tabTitle:
+			typeof payload?.tabTitle === "string" && payload.tabTitle.trim()
+				? payload.tabTitle.trim()
+				: null,
+		urlHost:
+			typeof payload?.urlHost === "string" && payload.urlHost.trim()
+				? payload.urlHost.trim()
+				: null,
+	};
+
+	reevaluateMeetingDetection();
+};
+
+const reevaluateMeetingDetection = () => {
+	const isSuppressed = isMeetingDetectionSuppressed();
+	const sourceName = getCurrentBrowserMeetingSourceName();
+	const hasBrowserSignal = hasFreshBrowserMeetingSignal();
+	const hasMeetingSignal =
+		latestMeetingDetectionState.isMicrophoneActive || hasBrowserSignal;
+	const confidence = hasBrowserSignal ? 0.68 : 0.35;
+	const promptConfidence = hasBrowserSignal ? 0.96 : 0.82;
+	const debounceMs = hasBrowserSignal ? 1_200 : meetingDetectionDebounceMs;
+
+	if (!hasMeetingSignal || isSuppressed) {
+		clearMeetingDetectionDebounceTimeout();
+		hideMeetingWidgetWindow();
+		syncMeetingDetectionState({
+			candidateStartedAt: null,
+			confidence: 0,
+			isSuppressed,
+			sourceName: null,
+			status: "idle",
+		});
+		return;
+	}
+
+	syncMeetingDetectionState({
+		confidence,
+		isSuppressed: false,
+		sourceName,
+		status: "monitoring",
+	});
+
+	if (meetingDetectionDebounceTimeoutId != null) {
+		return;
+	}
+
+	meetingDetectionDebounceTimeoutId = setTimeout(() => {
+		meetingDetectionDebounceTimeoutId = null;
+
+		if (
+			!(
+				latestMeetingDetectionState.isMicrophoneActive ||
+				hasFreshBrowserMeetingSignal()
+			) ||
+			isMeetingDetectionSuppressed()
+		) {
+			reevaluateMeetingDetection();
+			return;
+		}
+
+		syncMeetingDetectionState({
+			candidateStartedAt: Date.now(),
+			confidence: promptConfidence,
+			isSuppressed: false,
+			sourceName: getCurrentBrowserMeetingSourceName(),
+			status: "prompting",
+		});
+		void showMeetingWidgetWindow();
+	}, debounceMs);
+};
+
+const dismissDetectedMeetingWidget = () => {
+	clearMeetingDetectionDebounceTimeout();
+	hideMeetingWidgetWindow();
+	syncMeetingDetectionState({
+		candidateStartedAt: null,
+		confidence: 0,
+		dismissedUntil: Date.now() + meetingDetectionDismissMs,
+		isSuppressed: true,
+		sourceName: null,
+		status: "idle",
+	});
+};
+
+const startDetectedMeetingNote = async () => {
+	clearMeetingDetectionDebounceTimeout();
+	hideMeetingWidgetWindow();
+	syncMeetingDetectionState({
+		candidateStartedAt: null,
+		confidence: 0,
+		dismissedUntil: null,
+		isSuppressed: true,
+		sourceName: null,
+		status: "idle",
+	});
+
+	await showMainWindow({
+		pathname: "/note",
+		search: "?capture=1",
+	});
+};
+
+const showMeetingWidgetForTest = async () => {
+	clearMeetingDetectionDebounceTimeout();
+	syncMeetingDetectionState({
+		candidateStartedAt: Date.now(),
+		confidence: 1,
+		dismissedUntil: null,
+		isMicrophoneActive: true,
+		isSuppressed: false,
+		sourceName: null,
+		status: "prompting",
+	});
+	await showMeetingWidgetWindow();
+};
+
+const resetMeetingDetectionForTest = () => {
+	clearMeetingDetectionDebounceTimeout();
+	hideMeetingWidgetWindow();
+	syncMeetingDetectionState({
+		candidateStartedAt: null,
+		confidence: 0,
+		dismissedUntil: null,
+		isMicrophoneActive: false,
+		isSuppressed: false,
+		sourceName: null,
+		status: "idle",
+	});
+};
+
 const ensureDesktopMicrophonePermissionGranted = async () => {
 	let microphonePermission = getMicrophonePermission();
 
@@ -1276,6 +1666,7 @@ const ensureLocalServer = async () => {
 	if (!localServer) {
 		localServer = await startLocalServer({
 			onAuthCallback: handleDesktopAuthCallback,
+			onBrowserMeetingSignal: handleBrowserMeetingSignal,
 		});
 	}
 
@@ -2325,6 +2716,199 @@ const stopSystemAudioCapture = async () => {
 	});
 };
 
+const stopMicrophoneActivityMonitor = async () => {
+	clearMeetingDetectionDebounceTimeout();
+
+	if (!microphoneActivitySession) {
+		syncMeetingDetectionState({
+			candidateStartedAt: null,
+			confidence: 0,
+			isMicrophoneActive: false,
+			sourceName: null,
+			status: "idle",
+		});
+		hideMeetingWidgetWindow();
+		return;
+	}
+
+	const session = microphoneActivitySession;
+	microphoneActivitySession = null;
+	session.isStopping = true;
+
+	if (session.cleanupTimeout) {
+		clearTimeout(session.cleanupTimeout);
+		session.cleanupTimeout = null;
+	}
+
+	session.lineReader?.removeAllListeners();
+	session.process.stdout?.removeAllListeners();
+	session.process.stderr?.removeAllListeners();
+	session.process.removeAllListeners();
+
+	await new Promise((resolvePromise) => {
+		const finalize = () => {
+			resolvePromise();
+		};
+
+		session.process.once("exit", finalize);
+		session.process.kill("SIGTERM");
+
+		setTimeout(() => {
+			if (!session.process.killed) {
+				session.process.kill("SIGKILL");
+			}
+			finalize();
+		}, 1_000);
+	});
+
+	syncMeetingDetectionState({
+		candidateStartedAt: null,
+		confidence: 0,
+		isMicrophoneActive: false,
+		sourceName: null,
+		status: "idle",
+	});
+	hideMeetingWidgetWindow();
+};
+
+const startMicrophoneActivityMonitor = async () => {
+	if (process.platform !== "darwin") {
+		return false;
+	}
+
+	const helperPath = resolveMicrophoneActivityHelperPath();
+	if (!helperPath) {
+		console.warn("[meeting-detection] microphone activity helper is missing");
+		return false;
+	}
+
+	await stopMicrophoneActivityMonitor();
+
+	return await new Promise((resolvePromise, rejectPromise) => {
+		const child = spawn(helperPath, [], {
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		const lineReader = createInterface({
+			input: child.stdout,
+			crlfDelay: Infinity,
+		});
+		let didResolve = false;
+		let session;
+
+		const failStart = (error) => {
+			if (didResolve) {
+				console.error(
+					"[meeting-detection] microphone activity helper failed after start",
+					error,
+				);
+				void stopMicrophoneActivityMonitor();
+				return;
+			}
+
+			didResolve = true;
+			rejectPromise(error);
+		};
+
+		const startupTimeout = setTimeout(() => {
+			failStart(
+				new Error("Timed out while starting the microphone activity monitor."),
+			);
+			child.kill("SIGKILL");
+		}, 5_000);
+
+		session = {
+			cleanupTimeout: startupTimeout,
+			isStopping: false,
+			lineReader,
+			process: child,
+		};
+		microphoneActivitySession = session;
+
+		child.stderr.setEncoding("utf8");
+		child.stderr.on("data", (chunk) => {
+			const message = String(chunk).trim();
+			if (message) {
+				console.error("[microphone-activity-helper]", message);
+			}
+		});
+
+		lineReader.on("line", (line) => {
+			let event;
+
+			try {
+				event = JSON.parse(line);
+			} catch (error) {
+				console.error(
+					"[meeting-detection] failed to parse microphone activity event",
+					error,
+					line,
+				);
+				return;
+			}
+
+			if (event?.type === "ready") {
+				clearTimeout(startupTimeout);
+				session.cleanupTimeout = null;
+				syncMeetingDetectionState({
+					dismissedUntil: latestMeetingDetectionState.dismissedUntil ?? null,
+					isMicrophoneActive: event.active === true,
+				});
+				reevaluateMeetingDetection();
+				if (!didResolve) {
+					didResolve = true;
+					resolvePromise(true);
+				}
+				return;
+			}
+
+			if (event?.type === "active-changed") {
+				syncMeetingDetectionState({
+					isMicrophoneActive: event.active === true,
+				});
+				reevaluateMeetingDetection();
+			}
+		});
+
+		child.on("error", (error) => {
+			clearTimeout(startupTimeout);
+			if (microphoneActivitySession === session) {
+				microphoneActivitySession = null;
+			}
+			failStart(error);
+		});
+
+		child.on("exit", (code, signal) => {
+			clearTimeout(startupTimeout);
+			if (microphoneActivitySession === session) {
+				microphoneActivitySession = null;
+			}
+
+			if (!session.isStopping) {
+				console.error("[meeting-detection] microphone activity helper exited", {
+					code,
+					signal,
+				});
+				syncMeetingDetectionState({
+					candidateStartedAt: null,
+					confidence: 0,
+					isMicrophoneActive: false,
+					sourceName: null,
+					status: "idle",
+				});
+				hideMeetingWidgetWindow();
+			}
+
+			if (!didResolve && !session.isStopping) {
+				failStart(
+					new Error(
+						`Microphone activity monitor exited before it became ready (code ${code ?? "null"}, signal ${signal ?? "null"}).`,
+					),
+				);
+			}
+		});
+	});
+};
+
 const startMicrophoneCapture = async () => {
 	if (process.platform !== "darwin") {
 		throw new Error("Native microphone capture is only available on macOS.");
@@ -3209,6 +3793,10 @@ ipcMain.handle("app:get-transcription-session-state", async () => {
 	return latestTranscriptionSessionState;
 });
 
+ipcMain.handle("app:get-meeting-detection-state", async () => {
+	return latestMeetingDetectionState;
+});
+
 ipcMain.handle(
 	"app:configure-transcription-session",
 	async (_event, options) => {
@@ -3238,6 +3826,40 @@ ipcMain.handle("app:detach-transcription-system-audio", async () => {
 	await detachDesktopTranscriptionSystemAudio();
 	return { ok: true };
 });
+
+ipcMain.handle("app:start-detected-meeting-note", async () => {
+	await startDetectedMeetingNote();
+	return { ok: true };
+});
+
+ipcMain.handle("app:dismiss-detected-meeting-widget", async () => {
+	dismissDetectedMeetingWidget();
+	return { ok: true };
+});
+
+ipcMain.on("app:report-meeting-widget-size", (event, size) => {
+	if (
+		!meetingWidgetWindow ||
+		meetingWidgetWindow.isDestroyed() ||
+		event.sender !== meetingWidgetWindow.webContents
+	) {
+		return;
+	}
+
+	updateMeetingWidgetWindowSize(size);
+});
+
+if (areDesktopTestHooksEnabled) {
+	ipcMain.handle("app:test-show-meeting-widget", async () => {
+		await showMeetingWidgetForTest();
+		return { ok: true };
+	});
+
+	ipcMain.handle("app:test-reset-meeting-detection", async () => {
+		resetMeetingDetectionForTest();
+		return { ok: true };
+	});
+}
 
 ipcMain.handle("app:open-external-url", async (_event, url) => {
 	if (typeof url !== "string" || !url.startsWith("http")) {
@@ -3750,7 +4372,11 @@ if (!singleInstanceLock) {
 		}
 
 		await loadTraySettings();
+		await ensureLocalServer();
 		await createMainWindow();
+		await startMicrophoneActivityMonitor().catch((error) => {
+			console.error("Failed to start meeting detection", error);
+		});
 		createTray();
 		configureAutoUpdater();
 
@@ -3769,6 +4395,7 @@ if (!singleInstanceLock) {
 	app.on("window-all-closed", async () => {
 		await stopDesktopRealtimeTransport("you");
 		await stopDesktopRealtimeTransport("them");
+		await stopMicrophoneActivityMonitor();
 		await stopMicrophoneCapture();
 		await stopSystemAudioCapture();
 		await closeLocalServer();
@@ -3782,6 +4409,7 @@ if (!singleInstanceLock) {
 		isQuitting = true;
 		void stopDesktopRealtimeTransport("you");
 		void stopDesktopRealtimeTransport("them");
+		void stopMicrophoneActivityMonitor();
 		void stopMicrophoneCapture();
 		void stopSystemAudioCapture();
 		void closeLocalServer();

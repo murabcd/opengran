@@ -43,6 +43,7 @@ if (process.platform === "darwin") {
 	for (const helperName of [
 		"opengran-system-audio-helper",
 		"opengran-microphone-helper",
+		"opengran-microphone-activity-helper",
 	]) {
 		await cp(
 			resolve(packageRoot, ".generated", "system-audio", helperName),

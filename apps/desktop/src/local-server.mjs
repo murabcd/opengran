@@ -48,6 +48,10 @@ const fallbackChatModel = chatModels[0];
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
 const CHAT_TITLE_MODEL = "gpt-5.4-nano";
+const preferredExtensionBridgePorts = Array.from(
+	{ length: 20 },
+	(_value, index) => 42831 + index,
+);
 const generateMessageId = createIdGenerator({
 	prefix: "msg",
 	size: 16,
@@ -226,6 +230,13 @@ const sendJson = (response, statusCode, payload) => {
 	response.statusCode = statusCode;
 	response.setHeader("Content-Type", "application/json");
 	response.end(JSON.stringify(payload));
+};
+
+const setExtensionBridgeHeaders = (response) => {
+	response.setHeader("Access-Control-Allow-Origin", "*");
+	response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+	response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+	response.setHeader("Cache-Control", "no-store");
 };
 
 const createFormDataRequest = (request) =>
@@ -668,7 +679,10 @@ const serveStaticAsset = async (request, response, options = {}) => {
 	serveFile(response, join(distDir, "index.html"));
 };
 
-export const startLocalServer = async ({ onAuthCallback } = {}) => {
+export const startLocalServer = async ({
+	onAuthCallback,
+	onBrowserMeetingSignal,
+} = {}) => {
 	const server = createServer((request, response) => {
 		const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
 
@@ -770,6 +784,55 @@ export const startLocalServer = async ({ onAuthCallback } = {}) => {
 			return;
 		}
 
+		if (requestUrl.pathname === "/api/browser-meeting-bridge-info") {
+			setExtensionBridgeHeaders(response);
+
+			if (request.method === "OPTIONS") {
+				response.statusCode = 204;
+				response.end();
+				return;
+			}
+
+			if (request.method !== "GET") {
+				sendJson(response, 405, { error: "Method not allowed." });
+				return;
+			}
+
+			sendJson(response, 200, {
+				app: "OpenGran",
+				bridge: "browser-meeting",
+				version: 1,
+			});
+			return;
+		}
+
+		if (requestUrl.pathname === "/api/browser-meeting-signal") {
+			setExtensionBridgeHeaders(response);
+
+			if (request.method === "OPTIONS") {
+				response.statusCode = 204;
+				response.end();
+				return;
+			}
+
+			if (request.method !== "POST") {
+				sendJson(response, 405, { error: "Method not allowed." });
+				return;
+			}
+
+			void readJsonBody(request)
+				.then(async (payload) => {
+					await onBrowserMeetingSignal?.(payload);
+					sendJson(response, 200, { ok: true });
+				})
+				.catch((error) => {
+					const message =
+						error instanceof Error ? error.message : "Unexpected server error.";
+					sendJson(response, 500, { error: message });
+				});
+			return;
+		}
+
 		if (request.method !== "GET" && request.method !== "HEAD") {
 			response.statusCode = 405;
 			response.end("Method not allowed");
@@ -784,13 +847,34 @@ export const startLocalServer = async ({ onAuthCallback } = {}) => {
 		});
 	});
 
-	await new Promise((resolvePromise, rejectPromise) => {
-		server.once("error", rejectPromise);
-		server.listen(0, "127.0.0.1", () => {
-			server.off("error", rejectPromise);
-			resolvePromise();
+	let lastListenError = null;
+
+	for (const port of preferredExtensionBridgePorts) {
+		try {
+			await new Promise((resolvePromise, rejectPromise) => {
+				server.once("error", rejectPromise);
+				server.listen(port, "127.0.0.1", () => {
+					server.off("error", rejectPromise);
+					resolvePromise();
+				});
+			});
+			lastListenError = null;
+			break;
+		} catch (error) {
+			server.removeAllListeners("error");
+			lastListenError = error;
+		}
+	}
+
+	if (lastListenError !== null && !server.listening) {
+		await new Promise((resolvePromise, rejectPromise) => {
+			server.once("error", rejectPromise);
+			server.listen(0, "127.0.0.1", () => {
+				server.off("error", rejectPromise);
+				resolvePromise();
+			});
 		});
-	});
+	}
 
 	const address = server.address();
 	if (!address || typeof address === "string") {

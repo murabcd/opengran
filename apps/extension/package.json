@@ -1,0 +1,15 @@
+{
+  "name": "opengran-extension",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun ./scripts/build.mjs",
+    "dev": "bun ./scripts/build.mjs --watch",
+    "lint": "biome lint --write src scripts package.json manifest.json README.md",
+    "check": "biome check --write src scripts package.json manifest.json README.md",
+    "format": "biome format --write src scripts package.json manifest.json README.md",
+    "test": "node -e \"process.exit(0)\"",
+    "typecheck": "node -e \"process.exit(0)\""
+  }
+}

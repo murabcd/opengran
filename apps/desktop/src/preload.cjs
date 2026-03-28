@@ -5,6 +5,7 @@ const desktopRealtimeTransportEventChannel =
 	"app:desktop-realtime-transport-event";
 const transcriptionSessionStateChannel = "app:transcription-session-state";
 const transcriptionSessionEventChannel = "app:transcription-session-event";
+const meetingDetectionStateChannel = "app:meeting-detection-state";
 
 contextBridge.exposeInMainWorld("openGranDesktop", {
 	platform: process.platform,
@@ -21,6 +22,8 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 		ipcRenderer.invoke("app:open-permission-settings", permissionId),
 	getTranscriptionSessionState: () =>
 		ipcRenderer.invoke("app:get-transcription-session-state"),
+	getMeetingDetectionState: () =>
+		ipcRenderer.invoke("app:get-meeting-detection-state"),
 	configureTranscriptionSession: (options) =>
 		ipcRenderer.invoke("app:configure-transcription-session", options),
 	startTranscriptionSession: () =>
@@ -31,6 +34,22 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 		ipcRenderer.invoke("app:request-transcription-system-audio"),
 	detachTranscriptionSystemAudio: () =>
 		ipcRenderer.invoke("app:detach-transcription-system-audio"),
+	startDetectedMeetingNote: () =>
+		ipcRenderer.invoke("app:start-detected-meeting-note"),
+	dismissDetectedMeetingWidget: () =>
+		ipcRenderer.invoke("app:dismiss-detected-meeting-widget"),
+	reportMeetingWidgetSize: (size) =>
+		ipcRenderer.send("app:report-meeting-widget-size", size),
+	test:
+		process.env.NODE_ENV !== "production" ||
+		process.env.OPENGRAN_ENABLE_TEST_HOOKS === "1"
+			? {
+					showMeetingWidget: () =>
+						ipcRenderer.invoke("app:test-show-meeting-widget"),
+					resetMeetingDetection: () =>
+						ipcRenderer.invoke("app:test-reset-meeting-detection"),
+				}
+			: undefined,
 	onTranscriptionSessionState: (listener) => {
 		const handler = (_event, payload) => {
 			listener(payload);
@@ -51,6 +70,17 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 
 		return () => {
 			ipcRenderer.removeListener(transcriptionSessionEventChannel, handler);
+		};
+	},
+	onMeetingDetectionState: (listener) => {
+		const handler = (_event, payload) => {
+			listener(payload);
+		};
+
+		ipcRenderer.on(meetingDetectionStateChannel, handler);
+
+		return () => {
+			ipcRenderer.removeListener(meetingDetectionStateChannel, handler);
 		};
 	},
 	startSystemAudioCapture: () =>

@@ -49,6 +49,16 @@ declare global {
 		| "configuration_failed"
 		| "unknown";
 
+	type DesktopMeetingDetectionState = {
+		candidateStartedAt: number | null;
+		confidence: number;
+		dismissedUntil: number | null;
+		isMicrophoneActive: boolean;
+		isSuppressed: boolean;
+		sourceName: string | null;
+		status: "idle" | "monitoring" | "prompting";
+	};
+
 	type DesktopTranscriptionControllerState = {
 		autoStartKey: string | number | null;
 		error: {
@@ -173,6 +183,7 @@ declare global {
 				ok: boolean;
 			}>;
 			getTranscriptionSessionState: () => Promise<DesktopTranscriptionControllerState>;
+			getMeetingDetectionState: () => Promise<DesktopMeetingDetectionState>;
 			configureTranscriptionSession: (options: {
 				autoStartKey?: string | number | null;
 				lang?: string;
@@ -188,11 +199,34 @@ declare global {
 			detachTranscriptionSystemAudio: () => Promise<{
 				ok: boolean;
 			}>;
+			startDetectedMeetingNote: () => Promise<{
+				ok: boolean;
+			}>;
+			dismissDetectedMeetingWidget: () => Promise<{
+				ok: boolean;
+			}>;
+			reportMeetingWidgetSize: (size: {
+				width: number;
+				height: number;
+			}) => void;
+			test?:
+				| {
+						showMeetingWidget: () => Promise<{
+							ok: boolean;
+						}>;
+						resetMeetingDetection: () => Promise<{
+							ok: boolean;
+						}>;
+				  }
+				| undefined;
 			onTranscriptionSessionState: (
 				listener: (state: DesktopTranscriptionControllerState) => void,
 			) => () => void;
 			onTranscriptionSessionEvent: (
 				listener: (event: DesktopTranscriptionSessionEvent) => void,
+			) => () => void;
+			onMeetingDetectionState: (
+				listener: (state: DesktopMeetingDetectionState) => void,
 			) => () => void;
 			startSystemAudioCapture: () => Promise<{
 				channels: number;

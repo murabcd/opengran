@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "OpenGran Meeting Detector",
+  "version": "0.0.1",
+  "description": "Detect meeting tabs and hand them off to the OpenGran desktop app.",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["alarms", "storage", "tabs"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "https://meet.google.com/*",
+    "https://telemost.yandex.ru/*",
+    "https://telemost.360.yandex.ru/*",
+    "https://*.zoom.us/*",
+    "https://teams.microsoft.com/*",
+    "https://*.teams.microsoft.com/*"
+  ],
+  "action": {
+    "default_title": "OpenGran Meeting Detector",
+    "default_icon": {
+      "16": "icons/opengran.png",
+      "32": "icons/opengran.png",
+      "48": "icons/opengran.png",
+      "128": "icons/opengran.png"
+    }
+  },
+  "icons": {
+    "16": "icons/opengran.png",
+    "32": "icons/opengran.png",
+    "48": "icons/opengran.png",
+    "128": "icons/opengran.png"
+  }
+}

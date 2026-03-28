@@ -6,6 +6,7 @@ import "./index.css";
 import { Toaster } from "@workspace/ui/components/sonner";
 import { ThemeProvider } from "@workspace/ui/components/theme-provider";
 import App from "./App.tsx";
+import { MeetingWidgetScreen } from "./components/desktop/meeting-widget-screen";
 import { initializeAuthClient } from "./lib/auth-client";
 import { initializeConvexClient } from "./lib/convex";
 import { loadRuntimeConfig } from "./lib/runtime-config";
@@ -17,8 +18,24 @@ if (!rootElement) {
 }
 
 const root = createRoot(rootElement);
+const meetingWidgetPathname = "/desktop/meeting-widget";
+
+const isMeetingWidgetRoute = () =>
+	typeof window !== "undefined" &&
+	window.location.pathname === meetingWidgetPathname;
 
 async function bootstrap() {
+	if (isMeetingWidgetRoute()) {
+		root.render(
+			<StrictMode>
+				<ThemeProvider>
+					<MeetingWidgetScreen />
+				</ThemeProvider>
+			</StrictMode>,
+		);
+		return;
+	}
+
 	const runtimeConfig = await loadRuntimeConfig();
 
 	const convex = initializeConvexClient(runtimeConfig.convexUrl);

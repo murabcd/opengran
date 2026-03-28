@@ -19,6 +19,10 @@ const helpers = [
 		outputFile: resolve(outDir, "opengran-microphone-helper"),
 		sourceFile: resolve(packageRoot, "native", "MicrophoneCaptureCLI.swift"),
 	},
+	{
+		outputFile: resolve(outDir, "opengran-microphone-activity-helper"),
+		sourceFile: resolve(packageRoot, "native", "MicrophoneActivityCLI.swift"),
+	},
 ];
 
 const run = (cmd, args) =>
