@@ -22,12 +22,12 @@
     "preview": "turbo run preview --filter=web"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.8",
+    "@biomejs/biome": "2.4.9",
     "@changesets/cli": "^2.30.0",
     "@types/node": "^24.12.0",
     "concurrently": "^9.2.1",
     "husky": "^9.1.7",
-    "turbo": "^2.8.17",
+    "turbo": "^2.8.21",
     "typescript": "~5.9.3"
   },
   "engines": {
@@ -38,9 +38,9 @@
     "packages/*"
   ],
   "dependencies": {
-    "@convex-dev/better-auth": "^0.11.2",
+    "@convex-dev/better-auth": "^0.11.3",
     "better-auth": "1.5.5",
     "canvas-confetti": "^1.9.4",
-    "convex": "^1.34.0"
+    "convex": "^1.34.1"
   }
 }

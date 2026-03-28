@@ -19,32 +19,40 @@
 
 ## Features
 
-- Live meeting transcription
-- AI-powered note refinement
-- Custom note templates
-- Workspace organization
-- Desktop meeting workflow
-- Calendar-aware setup
-- Browser extension integration
+- Live meeting transcription with notes generated as conversations happen
+- AI-powered note refinement for cleaner summaries and better structure
+- Custom note templates for repeatable meeting formats and workflows
+- Workspace organization for keeping teams, notes, and context aligned
+- Desktop meeting workflow with quick capture during active calls
+- Calendar-aware setup that prepares notes around scheduled meetings
+- Browser extension integration for collecting context directly from the web
 
 ## Built with
 
 - [Vite](https://vite.dev/)
-  - Fast local development and production builds for the shared OpenGran renderer
+  - Fast local development with a lightweight frontend toolchain
+  - Production builds for the shared OpenGran renderer
 - [Electron](https://www.electronjs.org/)
-  - Desktop shell for native windowing, tray support, and packaged app distribution
+  - Native desktop shell for window management and tray support
+  - Packaged app distribution for the OpenGran desktop client
 - [AI SDK](https://sdk.vercel.ai/docs)
-  - Text generation, streaming responses, and AI-assisted note workflows
+  - Text generation and streaming responses across AI features
+  - AI-assisted note workflows for drafting and rewriting
 - [OpenAI](https://openai.com/)
-  - Default provider for chat, note enhancement, and transcription APIs
+  - Default model provider for chat and note enhancement
+  - Transcription APIs for voice and meeting workflows
 - [Convex](https://www.convex.dev/)
-  - Realtime backend for auth, data sync, queries, mutations, and HTTP routes
+  - Realtime backend for auth and synchronized application data
+  - Queries, mutations, and HTTP routes for product features
 - [Better Auth](https://www.better-auth.com/)
-  - Authentication with GitHub and Google provider support
+  - Authentication layer for account and session management
+  - GitHub and Google provider support for sign-in
 - [Tiptap](https://tiptap.dev/)
-  - Rich-text editing for note composition and template-driven rewriting
+  - Rich-text editing for note composition inside the editor
+  - Template-driven rewriting for structured note generation
 - [Shadcn/UI](https://ui.shadcn.com)
-  - UI primitives built on [Radix UI](https://radix-ui.com) and [Tailwind CSS](https://tailwindcss.com)
+  - UI primitives built on [Radix UI](https://radix-ui.com)
+  - Styling and layout with [Tailwind CSS](https://tailwindcss.com)
 
 ## Apps
 
