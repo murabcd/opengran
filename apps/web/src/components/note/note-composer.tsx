@@ -1376,13 +1376,6 @@ export function NoteComposer(props: NoteComposerProps) {
 						controller.isSidebarPresentation ? "px-2 pb-2" : "px-4 pb-20",
 					)}
 				>
-					{controller.recoveryStatus.state !== "idle" ? (
-						<div className="mb-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-							{controller.recoveryStatus.state === "reconnecting"
-								? `Live transcription was interrupted. Reconnecting (${controller.recoveryStatus.attempt}/${controller.recoveryStatus.maxAttempts})...`
-								: "Live transcription stopped after repeated interruptions. Your transcript was preserved. Tap record to continue."}
-						</div>
-					) : null}
 					{controller.isRefiningTranscript ? (
 						<div className="mb-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
 							Refining remote speakers from the recorded system-audio track.
