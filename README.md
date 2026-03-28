@@ -19,7 +19,7 @@
 
 - `apps/web`: the browser app and shared renderer
 - `apps/desktop`: the Electron desktop app built on the same renderer
-- `apps/extension`: the browser extension for in-browser capture and integration
+- `apps/extension`: the browser extension for in-browser meeting detection and desktop integration
 
 ## Features
 
