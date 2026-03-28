@@ -71,7 +71,8 @@
       {
         "provider": "github",
         "owner": "murabcd",
-        "repo": "opengran"
+        "repo": "opengran",
+        "releaseType": "release"
       }
     ]
   }
