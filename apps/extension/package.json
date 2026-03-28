@@ -6,8 +6,10 @@
   "scripts": {
     "build": "bun ./scripts/build.mjs",
     "dev": "bun ./scripts/build.mjs --watch",
-    "lint": "biome lint --write src scripts package.json manifest.json README.md",
-    "check": "biome check --write src scripts package.json manifest.json README.md",
+    "lint": "biome lint src scripts package.json manifest.json README.md",
+    "lint:fix": "biome lint --write src scripts package.json manifest.json README.md",
+    "check": "biome check src scripts package.json manifest.json README.md",
+    "check:fix": "biome check --write src scripts package.json manifest.json README.md",
     "format": "biome format --write src scripts package.json manifest.json README.md",
     "test": "node -e \"process.exit(0)\"",
     "typecheck": "node -e \"process.exit(0)\""

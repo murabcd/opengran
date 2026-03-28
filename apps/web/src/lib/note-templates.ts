@@ -13,7 +13,7 @@ export type NoteTemplate = {
 
 export const ENHANCED_NOTE_TEMPLATE_SLUG = "enhanced";
 
-export const ENHANCED_NOTE_TEMPLATE: NoteTemplate = {
+const ENHANCED_NOTE_TEMPLATE: NoteTemplate = {
 	slug: ENHANCED_NOTE_TEMPLATE_SLUG,
 	name: "Enhanced",
 	meetingContext:

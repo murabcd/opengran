@@ -1,4 +1,4 @@
-export type AppRuntimeConfig = {
+type AppRuntimeConfig = {
 	convexUrl: string;
 	convexSiteUrl: string;
 	hasOpenAIApiKey: boolean;

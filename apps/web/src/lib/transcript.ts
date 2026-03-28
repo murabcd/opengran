@@ -1,7 +1,7 @@
-export type TranscriptLiveSpeaker = "you" | "them";
+type TranscriptLiveSpeaker = "you" | "them";
 export type TranscriptSpeaker = TranscriptLiveSpeaker | `remote:${number}`;
 
-export type SystemAudioCaptureState = "unsupported" | "ready" | "connected";
+type SystemAudioCaptureState = "unsupported" | "ready" | "connected";
 export type SystemAudioCaptureSourceMode =
 	| "desktop-native"
 	| "display-media"
@@ -12,7 +12,7 @@ export type SystemAudioCaptureStatus = {
 	sourceMode: SystemAudioCaptureSourceMode;
 };
 
-export type TranscriptRecoveryState = "idle" | "reconnecting" | "failed";
+type TranscriptRecoveryState = "idle" | "reconnecting" | "failed";
 
 export type TranscriptRecoveryStatus = {
 	state: TranscriptRecoveryState;
@@ -29,7 +29,7 @@ export type TranscriptUtterance = {
 	endedAt: number;
 };
 
-export type LiveTranscriptEntry = {
+type LiveTranscriptEntry = {
 	speaker: TranscriptLiveSpeaker;
 	startedAt: number | null;
 	text: string;
@@ -46,11 +46,11 @@ const STATIC_TRANSCRIPT_SPEAKER_LABELS: Record<TranscriptLiveSpeaker, string> =
 		them: "Them",
 	};
 
-export const isRemoteTranscriptSpeaker = (
+const isRemoteTranscriptSpeaker = (
 	speaker: TranscriptSpeaker,
 ): speaker is `remote:${number}` => speaker.startsWith("remote:");
 
-export const getTranscriptSpeakerLabel = (speaker: TranscriptSpeaker) => {
+const getTranscriptSpeakerLabel = (speaker: TranscriptSpeaker) => {
 	if (!isRemoteTranscriptSpeaker(speaker)) {
 		return STATIC_TRANSCRIPT_SPEAKER_LABELS[speaker];
 	}
@@ -290,7 +290,7 @@ export const createRefinedSpeakerUtterances = ({
 		.filter((utterance) => utterance.text);
 };
 
-export type DiarizedTranscriptSegment = {
+type DiarizedTranscriptSegment = {
 	end: number;
 	speaker: string;
 	start: number;

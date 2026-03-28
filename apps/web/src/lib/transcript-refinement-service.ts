@@ -26,7 +26,7 @@ type RefineSystemAudioTranscriptArgs = {
 	startedAt: number;
 };
 
-export type RefinedSystemAudioTranscript = {
+type RefinedSystemAudioTranscript = {
 	nextTranscript: string;
 	nextUtterances: TranscriptUtterance[];
 	refinedUtterances: TranscriptUtterance[];

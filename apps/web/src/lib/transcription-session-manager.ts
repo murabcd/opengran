@@ -7,7 +7,7 @@ import {
 } from "@/lib/transcription-controller";
 import { TranscriptionSessionStore } from "@/lib/transcription-session-store";
 
-export const GLOBAL_TRANSCRIPTION_SESSION_SCOPE = "global" as const;
+const GLOBAL_TRANSCRIPTION_SESSION_SCOPE = "global" as const;
 
 type TranscriptionControllerLike = {
 	configure: (options: TranscriptionControllerOptions) => void | Promise<void>;
@@ -23,7 +23,7 @@ type TranscriptionControllerLike = {
 
 // The app intentionally supports one active transcription session at a time.
 // All UI surfaces subscribe to this single manager so capture ownership stays explicit.
-export class TranscriptionSessionManager {
+class TranscriptionSessionManager {
 	readonly scope = GLOBAL_TRANSCRIPTION_SESSION_SCOPE;
 
 	readonly store: TranscriptionSessionStore;

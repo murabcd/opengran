@@ -1201,25 +1201,53 @@ function ComposerInputShell({
 
 export function NoteComposer(props: NoteComposerProps) {
 	const controller = useNoteComposerController(props);
-	const speechControls = (
-		<NoteSpeechControls
-			autoStartKey={controller.autoStartKey}
-			captureScopeKey={controller.captureScopeKey}
-			isTranscriptOpen={controller.isTranscriptOpen}
-			onToggleTranscript={() => {
-				controller.closeRightSidebar();
-				controller.setPanelMode((currentValue) =>
-					currentValue === "transcript" ? null : "transcript",
-				);
-			}}
-			onLiveTranscriptChange={controller.onLiveTranscriptChange}
-			onSystemAudioRecordingReady={controller.onSystemAudioRecordingReady}
-			onSystemAudioStatusChange={controller.onSystemAudioStatusChange}
-			onRecoveryStatusChange={controller.onRecoveryStatusChange}
-			onTranscriptListeningChange={controller.onTranscriptListeningChange}
-			onTranscriptUtterance={controller.onTranscriptUtterance}
-		/>
+	return (
+		<div ref={controller.rootRef} className="relative w-full">
+			<input
+				ref={controller.fileInputRef}
+				type="file"
+				multiple
+				className="sr-only"
+				onChange={() => {}}
+			/>
+			{controller.canGenerateNotes ? (
+				<div className="pointer-events-none absolute inset-x-0 bottom-full z-30 mb-3 flex justify-center">
+					<Button
+						type="button"
+						size="sm"
+						className="pointer-events-auto px-4 shadow-lg"
+						onClick={controller.handleGenerateNotes}
+						disabled={
+							controller.isGeneratingNotes || controller.isRefiningTranscript
+						}
+					>
+						<Sparkles className="size-4" />
+						{controller.isGeneratingNotes
+							? "Generating..."
+							: controller.isRefiningTranscript
+								? "Refining transcript..."
+								: "Generate notes"}
+					</Button>
+				</div>
+			) : null}
+			<NoteComposerPanels
+				controller={controller}
+				onAddMessageToNote={props.onAddMessageToNote}
+			/>
+			<NoteComposerDock controller={controller} />
+		</div>
 	);
+}
+
+type NoteComposerController = ReturnType<typeof useNoteComposerController>;
+
+function NoteComposerPanels({
+	controller,
+	onAddMessageToNote,
+}: {
+	controller: NoteComposerController;
+	onAddMessageToNote?: NoteComposerProps["onAddMessageToNote"];
+}) {
 	const chatHeader = (
 		<NoteChatHeader
 			chatTitle={controller.chatTitle}
@@ -1240,10 +1268,10 @@ export function NoteComposer(props: NoteComposerProps) {
 			chatError={controller.chatError}
 			chatMessages={controller.chatMessages}
 			chatViewportRef={controller.chatViewportRef}
-			disableAddToNote={!props.onAddMessageToNote}
+			disableAddToNote={!onAddMessageToNote}
 			disablePadding={controller.isSidebarPresentation}
 			isChatLoading={controller.isChatLoading}
-			onAddMessageToNote={props.onAddMessageToNote}
+			onAddMessageToNote={onAddMessageToNote}
 			onReactionChange={(messageId, reaction) => {
 				controller.setReactionsByMessageId((currentValue) => ({
 					...currentValue,
@@ -1254,8 +1282,76 @@ export function NoteComposer(props: NoteComposerProps) {
 			reactionsByMessageId={controller.reactionsByMessageId}
 		/>
 	);
-
 	const panelContent = (
+		<NoteComposerPanelContent
+			controller={controller}
+			chatHeader={chatHeader}
+			chatMessages={chatMessages}
+		/>
+	);
+
+	if (!controller.panelMode) {
+		return null;
+	}
+
+	if (controller.shouldShowInlinePanel) {
+		return (
+			<div
+				ref={controller.inlinePanelRef}
+				className={cn(
+					"absolute inset-x-0 z-20",
+					controller.isTranscriptOpen ? "bottom-0" : "-bottom-4",
+				)}
+			>
+				<div className="relative flex items-end gap-3">
+					<Card className="pointer-events-auto relative -mx-6 h-96 max-h-[calc(100dvh-6rem)] w-[calc(100%+3rem)] gap-0 py-0">
+						{panelContent}
+					</Card>
+				</div>
+			</div>
+		);
+	}
+
+	if (!controller.isChatOpen || controller.presentationMode === "inline") {
+		return null;
+	}
+
+	return (
+		<Sidebar
+			side="right"
+			variant={
+				controller.presentationMode === "floating" ? "floating" : "sidebar"
+			}
+			collapsible="offcanvas"
+			style={
+				controller.presentationMode === "floating" && !controller.isMobile
+					? ({
+							"--sidebar-width": NOTE_CHAT_FLOATING_WIDTH,
+						} as React.CSSProperties)
+					: undefined
+			}
+			className={cn(
+				"flex flex-col",
+				controller.presentationMode === "floating"
+					? "md:right-2 md:top-auto md:bottom-2 md:h-[min(32rem,calc(100svh-2rem))]"
+					: "border-l",
+			)}
+		>
+			<div className="flex h-full flex-col">{panelContent}</div>
+		</Sidebar>
+	);
+}
+
+function NoteComposerPanelContent({
+	controller,
+	chatHeader,
+	chatMessages,
+}: {
+	controller: NoteComposerController;
+	chatHeader: React.ReactNode;
+	chatMessages: React.ReactNode;
+}) {
+	return (
 		<>
 			{controller.isTranscriptOpen ? (
 				<CardHeader
@@ -1306,65 +1402,7 @@ export function NoteComposer(props: NoteComposerProps) {
 				)}
 			>
 				{controller.isTranscriptOpen ? (
-					controller.fullTranscript ? (
-						<div
-							ref={controller.transcriptViewportRef}
-							className="w-full overflow-y-auto"
-						>
-							<div className="flex flex-col gap-4 pr-4">
-								{controller.orderedTranscriptUtterances.map((utterance) => (
-									<div
-										key={utterance.id}
-										className={cn(
-											"flex w-full",
-											utterance.speaker === "you"
-												? "justify-end"
-												: "justify-start",
-										)}
-									>
-										<div
-											className={cn(
-												"max-w-[85%] text-sm leading-6",
-												utterance.speaker === "you"
-													? "rounded-2xl bg-secondary px-4 py-3 text-right text-secondary-foreground"
-													: "text-foreground",
-											)}
-										>
-											<p className="whitespace-pre-wrap">{utterance.text}</p>
-										</div>
-									</div>
-								))}
-								{controller.liveTranscriptEntries.map((entry) => (
-									<div
-										key={`live:${entry.speaker}`}
-										className={cn(
-											"flex w-full opacity-75",
-											entry.speaker === "you" ? "justify-end" : "justify-start",
-										)}
-									>
-										<div
-											className={cn(
-												"max-w-[85%] text-sm leading-6",
-												entry.speaker === "you"
-													? "rounded-2xl bg-secondary px-4 py-3 text-right text-secondary-foreground"
-													: "text-foreground",
-											)}
-										>
-											<p className="whitespace-pre-wrap">{entry.text}</p>
-										</div>
-									</div>
-								))}
-							</div>
-						</div>
-					) : (
-						<div className="flex flex-1 items-center justify-center">
-							<p className="text-center text-sm font-medium tracking-tight">
-								{controller.isSpeechListening
-									? "Listening..."
-									: "Transcript paused"}
-							</p>
-						</div>
-					)
+					<NoteTranscriptPanel controller={controller} />
 				) : (
 					chatMessages
 				)}
@@ -1415,117 +1453,134 @@ export function NoteComposer(props: NoteComposerProps) {
 			)}
 		</>
 	);
+}
+
+function NoteTranscriptPanel({
+	controller,
+}: {
+	controller: NoteComposerController;
+}) {
+	if (!controller.fullTranscript) {
+		return (
+			<div className="flex flex-1 items-center justify-center">
+				<p className="text-center text-sm font-medium tracking-tight">
+					{controller.isSpeechListening ? "Listening..." : "Transcript paused"}
+				</p>
+			</div>
+		);
+	}
 
 	return (
-		<div ref={controller.rootRef} className="relative w-full">
-			<input
-				ref={controller.fileInputRef}
-				type="file"
-				multiple
-				className="sr-only"
-				onChange={() => {}}
-			/>
-			{controller.canGenerateNotes ? (
-				<div className="pointer-events-none absolute inset-x-0 bottom-full z-30 mb-3 flex justify-center">
-					<Button
-						type="button"
-						size="sm"
-						className="pointer-events-auto px-4 shadow-lg"
-						onClick={controller.handleGenerateNotes}
-						disabled={
-							controller.isGeneratingNotes || controller.isRefiningTranscript
-						}
-					>
-						<Sparkles className="size-4" />
-						{controller.isGeneratingNotes
-							? "Generating..."
-							: controller.isRefiningTranscript
-								? "Refining transcript..."
-								: "Generate notes"}
-					</Button>
-				</div>
-			) : null}
-			{controller.panelMode ? (
-				controller.shouldShowInlinePanel ? (
+		<div
+			ref={controller.transcriptViewportRef}
+			className="w-full overflow-y-auto"
+		>
+			<div className="flex flex-col gap-4 pr-4">
+				{controller.orderedTranscriptUtterances.map((utterance) => (
 					<div
-						ref={controller.inlinePanelRef}
+						key={utterance.id}
 						className={cn(
-							"absolute inset-x-0 z-20",
-							controller.isTranscriptOpen ? "bottom-0" : "-bottom-4",
+							"flex w-full",
+							utterance.speaker === "you" ? "justify-end" : "justify-start",
 						)}
 					>
-						<div className="relative flex items-end gap-3">
-							<Card className="pointer-events-auto relative -mx-6 h-96 max-h-[calc(100dvh-6rem)] w-[calc(100%+3rem)] gap-0 py-0">
-								{panelContent}
-							</Card>
-						</div>
-					</div>
-				) : (
-					controller.isChatOpen &&
-					controller.presentationMode !== "inline" && (
-						<Sidebar
-							side="right"
-							variant={
-								controller.presentationMode === "floating"
-									? "floating"
-									: "sidebar"
-							}
-							collapsible="offcanvas"
-							style={
-								controller.presentationMode === "floating" &&
-								!controller.isMobile
-									? ({
-											"--sidebar-width": NOTE_CHAT_FLOATING_WIDTH,
-										} as React.CSSProperties)
-									: undefined
-							}
+						<div
 							className={cn(
-								"flex flex-col",
-								controller.presentationMode === "floating"
-									? "md:right-2 md:top-auto md:bottom-2 md:h-[min(32rem,calc(100svh-2rem))]"
-									: "border-l",
+								"max-w-[85%] text-sm leading-6",
+								utterance.speaker === "you"
+									? "rounded-2xl bg-secondary px-4 py-3 text-right text-secondary-foreground"
+									: "text-foreground",
 							)}
 						>
-							<div className="flex h-full flex-col">{panelContent}</div>
-						</Sidebar>
-					)
-				)
-			) : null}
-			<div
-				className={cn("flex items-center gap-3", controller.panelMode && "h-0")}
-			>
-				<div
-					className={cn(
-						!controller.panelMode
-							? "relative shrink-0"
-							: controller.shouldShowInlinePanel && controller.isTranscriptOpen
-								? "pointer-events-auto absolute bottom-[13px] left-0 z-30"
-								: "hidden",
-					)}
-				>
-					{speechControls}
-				</div>
-
-				{controller.panelMode ? null : (
-					<form
-						onSubmit={controller.handleSubmit}
-						className="group/composer w-full"
+							<p className="whitespace-pre-wrap">{utterance.text}</p>
+						</div>
+					</div>
+				))}
+				{controller.liveTranscriptEntries.map((entry) => (
+					<div
+						key={`live:${entry.speaker}`}
+						className={cn(
+							"flex w-full opacity-75",
+							entry.speaker === "you" ? "justify-end" : "justify-start",
+						)}
 					>
-						<ComposerInputShell
-							activateInlineOnFocus
-							composerPlaceholder={controller.composerPlaceholder}
-							fileInputRef={controller.fileInputRef}
-							handleComposerFocus={controller.handleComposerFocus}
-							handleKeyDown={controller.handleKeyDown}
-							handleTextareaChange={controller.handleTextareaChange}
-							hasMessage={controller.hasMessage}
-							isChatLoading={controller.isChatLoading}
-							message={controller.message}
-							textareaRef={controller.textareaRef}
-						/>
-					</form>
-				)}
+						<div
+							className={cn(
+								"max-w-[85%] text-sm leading-6",
+								entry.speaker === "you"
+									? "rounded-2xl bg-secondary px-4 py-3 text-right text-secondary-foreground"
+									: "text-foreground",
+							)}
+						>
+							<p className="whitespace-pre-wrap">{entry.text}</p>
+						</div>
+					</div>
+				))}
 			</div>
+		</div>
+	);
+}
+
+function NoteComposerDock({
+	controller,
+}: {
+	controller: NoteComposerController;
+}) {
+	const speechControls = (
+		<NoteSpeechControls
+			autoStartKey={controller.autoStartKey}
+			captureScopeKey={controller.captureScopeKey}
+			isTranscriptOpen={controller.isTranscriptOpen}
+			onToggleTranscript={() => {
+				controller.closeRightSidebar();
+				controller.setPanelMode((currentValue) =>
+					currentValue === "transcript" ? null : "transcript",
+				);
+			}}
+			onLiveTranscriptChange={controller.onLiveTranscriptChange}
+			onSystemAudioRecordingReady={controller.onSystemAudioRecordingReady}
+			onSystemAudioStatusChange={controller.onSystemAudioStatusChange}
+			onRecoveryStatusChange={controller.onRecoveryStatusChange}
+			onTranscriptListeningChange={controller.onTranscriptListeningChange}
+			onTranscriptUtterance={controller.onTranscriptUtterance}
+		/>
+	);
+
+	return (
+		<div
+			className={cn("flex items-center gap-3", controller.panelMode && "h-0")}
+		>
+			<div
+				className={cn(
+					!controller.panelMode
+						? "relative shrink-0"
+						: controller.shouldShowInlinePanel && controller.isTranscriptOpen
+							? "pointer-events-auto absolute bottom-[13px] left-0 z-30"
+							: "hidden",
+				)}
+			>
+				{speechControls}
+			</div>
+
+			{controller.panelMode ? null : (
+				<form
+					onSubmit={controller.handleSubmit}
+					className="group/composer w-full"
+				>
+					<ComposerInputShell
+						activateInlineOnFocus
+						composerPlaceholder={controller.composerPlaceholder}
+						fileInputRef={controller.fileInputRef}
+						handleComposerFocus={controller.handleComposerFocus}
+						handleKeyDown={controller.handleKeyDown}
+						handleTextareaChange={controller.handleTextareaChange}
+						hasMessage={controller.hasMessage}
+						isChatLoading={controller.isChatLoading}
+						message={controller.message}
+						textareaRef={controller.textareaRef}
+					/>
+				</form>
+			)}
 		</div>
 	);
 }

@@ -24,11 +24,7 @@ import {
 	type TranscriptionControllerState,
 } from "@/lib/transcription-session-types";
 
-export type {
-	SystemAudioRecordingPayload,
-	TranscriptionControllerError,
-	TranscriptionControllerState,
-} from "@/lib/transcription-session-types";
+export type { TranscriptionControllerState } from "@/lib/transcription-session-types";
 
 import {
 	createSystemAudioStatusFromPolicy,

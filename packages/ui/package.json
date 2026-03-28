@@ -4,8 +4,10 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "lint": "biome lint --write src",
-    "check": "biome check --write src",
+    "lint": "biome lint src",
+    "lint:fix": "biome lint --write src",
+    "check": "biome check src",
+    "check:fix": "biome check --write src",
     "format": "biome format --write src",
     "test": "node -e \"process.exit(0)\"",
     "typecheck": "tsc --noEmit"
