@@ -6,6 +6,7 @@
   "scripts": {
     "build": "turbo run build",
     "changeset": "changeset",
+    "release:prepare": "bun install --frozen-lockfile && bun run version-packages && bun run check && bun run typecheck",
     "version-packages": "changeset version",
     "dev": "concurrently --kill-others-on-fail -n desktop,convex -c cyan,magenta \"bun run dev:desktop\" \"bunx convex dev\"",
     "dev:web": "turbo run dev --filter=web",

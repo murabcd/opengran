@@ -8,4 +8,4 @@ For this repo, prefer:
 - `minor` for meaningful new features
 - `major` only when you intentionally want breaking change semantics
 
-The version workflow will open or update a release PR from merged changesets on `main`.
+When you are ready to release, run `bun run release:prepare`, commit the generated version changes directly to `main`, and then push a matching `v*` tag for the desktop release workflow.

@@ -75,16 +75,25 @@ Typical flow:
 bun changeset
 ```
 
-Choose a `patch` release for small desktop updates and a `minor` release for larger feature milestones. Merged changesets on `main` will open or update a version PR automatically.
+Choose a `patch` release for small desktop updates and a `minor` release for larger feature milestones.
 
-macOS releases are built from version tags that match `v*`. After the version PR is merged, create and push a tag that matches the desktop version, for example:
+When you are ready to ship, version directly on `main`:
+
+```bash
+bun run release:prepare
+git add .
+git commit -m "version packages"
+git push origin main
+```
+
+Then create and push a tag that matches the desktop version, for example:
 
 ```bash
 git tag v0.0.2
 git push origin v0.0.2
 ```
 
-The GitHub Actions release workflow will build and publish the macOS release assets. For smooth macOS installs and auto-updates, add these GitHub Actions secrets before shipping broadly:
+macOS releases are built from tags that match `v*`, and the GitHub Actions release workflow will build and publish the desktop assets. For smooth macOS installs and auto-updates, add these GitHub Actions secrets before shipping broadly:
 
 - `CSC_LINK`
 - `CSC_KEY_PASSWORD`
