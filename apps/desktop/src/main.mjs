@@ -162,6 +162,7 @@ let systemAudioCaptureStartRequestId = 0;
 let meetingWidgetWindow = null;
 let latestMeetingWidgetSize = { width: 360, height: 104 };
 let meetingWidgetAutoHideTimeoutId = null;
+let hasPlayedMeetingWidgetSoundForVisiblePrompt = false;
 let hasPendingUpdateDownload = false;
 let isCheckingForUpdates = false;
 let shouldShowUpdateResultDialogs = false;
@@ -935,6 +936,7 @@ const clearMeetingWidgetAutoHideTimeout = () => {
 
 const hideMeetingWidgetWindow = () => {
 	clearMeetingWidgetAutoHideTimeout();
+	hasPlayedMeetingWidgetSoundForVisiblePrompt = false;
 
 	if (!meetingWidgetWindow || meetingWidgetWindow.isDestroyed()) {
 		meetingWidgetWindow = null;
@@ -1020,9 +1022,15 @@ const showMeetingWidgetWindow = async () => {
 
 	const nextWindow = await ensureMeetingWidgetWindow();
 	const bounds = getMeetingWidgetWindowBounds();
+	const shouldPlaySound =
+		!nextWindow.isVisible() || !hasPlayedMeetingWidgetSoundForVisiblePrompt;
 	nextWindow.setBounds(bounds);
 	ensureDockVisible();
 	nextWindow.showInactive();
+	if (shouldPlaySound) {
+		shell.beep();
+		hasPlayedMeetingWidgetSoundForVisiblePrompt = true;
+	}
 
 	meetingWidgetAutoHideTimeoutId = setTimeout(() => {
 		meetingWidgetAutoHideTimeoutId = null;
