@@ -49,6 +49,10 @@ const desktopPermissionsPath = join(
 	app.getPath("userData"),
 	"desktop-permissions.json",
 );
+const lastNavigationPath = join(
+	app.getPath("userData"),
+	"last-navigation.json",
+);
 const transcriptDraftsDirPath = join(
 	app.getPath("userData"),
 	"transcript-drafts",
@@ -86,6 +90,11 @@ const defaultTraySettings = {
 const defaultDesktopPermissionsState = {
 	systemAudioValidated: false,
 	systemAudioBlocked: false,
+};
+const defaultLastNavigation = {
+	hash: "",
+	pathname: "/home",
+	search: "",
 };
 const createInitialTrayCalendarState = () => ({
 	status: "idle",
@@ -190,6 +199,7 @@ let transcriptionPendingStartPromise = null;
 let transcriptionPendingStopPromise = null;
 let currentTranscriptionSessionCorrelationId = null;
 let meetingDetectionDebounceTimeoutId = null;
+let lastNavigation = { ...defaultLastNavigation };
 let latestBrowserMeetingSignal = {
 	active: false,
 	lastSeenAt: 0,
@@ -2074,6 +2084,122 @@ const saveTraySettings = async () => {
 	}
 };
 
+const normalizeRestorableNavigation = ({
+	pathname = "/home",
+	search = "",
+} = {}) => {
+	if (typeof pathname !== "string") {
+		return null;
+	}
+
+	if (!["/home", "/chat", "/note", "/shared"].includes(pathname)) {
+		return null;
+	}
+
+	const params = new URLSearchParams(typeof search === "string" ? search : "");
+
+	if (pathname === "/note") {
+		const noteId = params.get("noteId")?.trim();
+
+		if (!noteId) {
+			return null;
+		}
+
+		return {
+			hash: "",
+			pathname,
+			search: `?noteId=${encodeURIComponent(noteId)}`,
+		};
+	}
+
+	if (pathname === "/chat") {
+		const chatId = params.get("chatId")?.trim();
+
+		return {
+			hash: "",
+			pathname,
+			search: chatId ? `?chatId=${encodeURIComponent(chatId)}` : "",
+		};
+	}
+
+	return {
+		hash: "",
+		pathname,
+		search: "",
+	};
+};
+
+const loadLastNavigation = async () => {
+	try {
+		const raw = await readFile(lastNavigationPath, "utf8");
+		const parsed = JSON.parse(raw);
+
+		lastNavigation = normalizeRestorableNavigation(parsed) ?? {
+			...defaultLastNavigation,
+		};
+	} catch (error) {
+		if (
+			error &&
+			typeof error === "object" &&
+			"code" in error &&
+			error.code === "ENOENT"
+		) {
+			lastNavigation = { ...defaultLastNavigation };
+			return;
+		}
+
+		console.warn("Failed to read last navigation.", error);
+		lastNavigation = { ...defaultLastNavigation };
+	}
+};
+
+const saveLastNavigation = async () => {
+	try {
+		await mkdir(app.getPath("userData"), { recursive: true });
+		await writeFile(
+			lastNavigationPath,
+			JSON.stringify(lastNavigation, null, 2),
+			"utf8",
+		);
+	} catch (error) {
+		console.warn("Failed to save last navigation.", error);
+	}
+};
+
+const rememberRendererNavigation = async (urlString) => {
+	try {
+		const rendererUrl = new URL(await resolveRendererUrl());
+		const nextUrl = new URL(urlString);
+
+		if (nextUrl.origin !== rendererUrl.origin) {
+			return;
+		}
+
+		const normalizedNavigation = normalizeRestorableNavigation({
+			hash: nextUrl.hash,
+			pathname: nextUrl.pathname,
+			search: nextUrl.search,
+		});
+
+		if (!normalizedNavigation) {
+			return;
+		}
+
+		if (
+			lastNavigation.pathname === normalizedNavigation.pathname &&
+			lastNavigation.search === normalizedNavigation.search &&
+			lastNavigation.hash === normalizedNavigation.hash
+		) {
+			return;
+		}
+
+		lastNavigation = normalizedNavigation;
+		await saveLastNavigation();
+	} catch (error) {
+		console.warn("Failed to remember renderer navigation.", error);
+	}
+};
+
 const getTranscriptDraftPath = (noteKey) =>
 	join(
 		transcriptDraftsDirPath,
@@ -3942,7 +4068,11 @@ const getDesktopAuthCallbackUrl = async () => {
 };
 
 const showMainWindow = async (options = {}) => {
-	const targetUrl = await getNavigationUrl(options);
+	const hasExplicitNavigation =
+		"pathname" in options || "search" in options || "hash" in options;
+	const targetUrl = await getNavigationUrl(
+		hasExplicitNavigation ? options : lastNavigation,
+	);
 
 	if (!mainWindow) {
 		await createMainWindow(targetUrl);
@@ -3985,7 +4115,7 @@ const handleDesktopAuthCallback = async (callbackUrl) => {
 };
 
 const createMainWindow = async (targetUrl) => {
-	const navigationUrl = targetUrl ?? (await getNavigationUrl());
+	const navigationUrl = targetUrl ?? (await getNavigationUrl(lastNavigation));
 	const isMac = process.platform === "darwin";
 
 	mainWindow = new BrowserWindow({
@@ -4055,6 +4185,13 @@ const createMainWindow = async (targetUrl) => {
 
 	mainWindow.on("closed", () => {
 		mainWindow = null;
+	});
+
+	mainWindow.webContents.on("did-navigate", (_event, url) => {
+		void rememberRendererNavigation(url);
+	});
+	mainWindow.webContents.on("did-navigate-in-page", (_event, url) => {
+		void rememberRendererNavigation(url);
 	});
 
 	await mainWindow.loadURL(navigationUrl);
@@ -4905,6 +5042,7 @@ if (!singleInstanceLock) {
 		}
 
 		await loadTraySettings();
+		await loadLastNavigation();
 		await ensureLocalServer();
 		await createMainWindow();
 		await startMicrophoneActivityMonitor().catch((error) => {

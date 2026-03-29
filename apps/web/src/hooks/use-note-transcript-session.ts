@@ -278,12 +278,10 @@ export const useNoteTranscriptSession = ({
 	]);
 
 	React.useEffect(() => {
-		if (hasRestoredTranscriptDraftRef.current) {
-			return;
-		}
-
 		let isCancelled = false;
-		hasRestoredTranscriptDraftRef.current = true;
+		hasRestoredTranscriptDraftRef.current = false;
+		hasLoadedTranscriptDraftContentRef.current = false;
+		setIsTranscriptDraftReady(false);
 		void transcriptSessionRepository
 			.loadDraft(transcriptDraftKey)
 			.then((draft) => {
@@ -307,6 +305,7 @@ export const useNoteTranscriptSession = ({
 			})
 			.finally(() => {
 				if (!isCancelled) {
+					hasRestoredTranscriptDraftRef.current = true;
 					setIsTranscriptDraftReady(true);
 				}
 			});
@@ -314,7 +313,7 @@ export const useNoteTranscriptSession = ({
 		return () => {
 			isCancelled = true;
 		};
-	}, [transcriptDraftKey, transcriptSessionRepository]);
+	}, [transcriptDraftKey, transcriptSessionRepository.loadDraft]);
 
 	React.useEffect(() => {
 		if (
