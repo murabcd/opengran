@@ -100,7 +100,7 @@ export const SpeechInput = ({
 			{session.isListening &&
 				pulseAnimationDelays.map((delay) => (
 					<div
-						className="absolute inset-0 animate-ping rounded-full border-2 border-red-400/30"
+						className="absolute inset-0 animate-ping rounded-full border-2 border-destructive/30"
 						key={delay}
 						style={{
 							animationDelay: delay,
@@ -113,7 +113,7 @@ export const SpeechInput = ({
 				className={cn(
 					"relative z-10 rounded-full transition-all duration-300",
 					session.isListening || session.isConnecting
-						? "!bg-destructive !text-white hover:!bg-destructive/80 hover:!text-white"
+						? "!bg-destructive/15 !text-destructive hover:!bg-destructive/20 hover:!text-destructive"
 						: "!bg-background !text-foreground hover:!bg-muted hover:!text-foreground",
 					!session.isAvailable && "cursor-not-allowed",
 					className,

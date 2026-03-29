@@ -1176,7 +1176,7 @@ function DataControlAction({
 					<Button
 						variant="outline"
 						size="sm"
-						className="shrink-0 text-destructive hover:text-destructive focus:text-destructive dark:text-red-500"
+						className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:hover:bg-destructive/20"
 						disabled={buttonDisabled}
 					>
 						{buttonLabel}
