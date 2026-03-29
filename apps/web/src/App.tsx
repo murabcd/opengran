@@ -71,7 +71,10 @@ import * as React from "react";
 import { toast } from "sonner";
 import { ChatPage } from "@/components/chat/chat-page";
 import { AppShellInset } from "@/components/layout/app-shell-inset";
-import { NoteActionsMenu } from "@/components/note/note-actions-menu";
+import {
+	NoteActionsMenu,
+	NoteStarButton,
+} from "@/components/note/note-actions-menu";
 import { type NoteEditorActions, NotePage } from "@/components/note/note-page";
 import { NoteTitleEditInput } from "@/components/note/note-title-edit-input";
 import { optimisticRenameNote } from "@/components/note/optimistic-rename-note";
@@ -2379,10 +2382,12 @@ function AppShellHeader({
 								false
 							}
 						/>
+						<NoteStarButton noteId={currentNoteId} className="size-7" />
 						<NoteActionsMenu
 							noteId={currentNoteId}
 							onMoveToTrash={onNoteTrashed}
 							align="end"
+							showRename={false}
 							itemsBeforeDefaults={
 								currentNoteEditorActions ? (
 									<DropdownMenuItem
@@ -2394,7 +2399,7 @@ function AppShellHeader({
 										}}
 									>
 										<Copy />
-										Copy markdown
+										Copy note content
 									</DropdownMenuItem>
 								) : null
 							}
@@ -2432,7 +2437,7 @@ function AppShellHeader({
 											}}
 										>
 											<ArrowDown />
-											Export markdown
+											Export
 										</DropdownMenuItem>
 									</>
 								) : null
@@ -2441,7 +2446,7 @@ function AppShellHeader({
 							<Button
 								type="button"
 								variant="ghost"
-								size="icon"
+								size="icon-sm"
 								className="text-muted-foreground hover:text-foreground"
 								aria-label={`Open actions for ${currentNoteTitle || "note"}`}
 							>

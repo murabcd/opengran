@@ -57,55 +57,9 @@ import {
 	writeTextToClipboard,
 } from "./share-note";
 
-export function NoteActionsMenu({
-	noteId,
-	onMoveToTrash,
-	children,
-	renameAnchor,
-	renamePopoverAlign = "start",
-	renamePopoverSide = "bottom",
-	renamePopoverSideOffset = 8,
-	renamePopoverClassName,
-	onRenamePreviewChange,
-	onRenamePreviewReset,
-	align = "start",
-	side = "bottom",
-	itemsBeforeDefaults,
-	itemsAfterDefaults,
-}: {
-	noteId: Id<"notes">;
-	onMoveToTrash?: (noteId: Id<"notes">) => void;
-	children: React.ReactNode;
-	renameAnchor?: React.ReactNode;
-	renamePopoverAlign?: "start" | "center" | "end";
-	renamePopoverSide?: "top" | "right" | "bottom" | "left";
-	renamePopoverSideOffset?: number;
-	renamePopoverClassName?: string;
-	onRenamePreviewChange?: (title: string) => void;
-	onRenamePreviewReset?: () => void;
-	align?: "start" | "center" | "end";
-	side?: "top" | "right" | "bottom" | "left";
-	itemsBeforeDefaults?: React.ReactNode;
-	itemsAfterDefaults?: React.ReactNode;
-}) {
-	const preventMenuCloseAutoFocusRef = React.useRef(false);
-	const ignoreInitialRenameInteractOutsideRef = React.useRef(false);
-	const [confirmOpen, setConfirmOpen] = React.useState(false);
-	const [menuOpen, setMenuOpen] = React.useState(false);
-	const [renameOpen, setRenameOpen] = React.useState(false);
-	const [renameValue, setRenameValue] = React.useState("");
-	const renameInputRef = React.useRef<HTMLInputElement>(null);
-	const [isMovingToTrash, setIsMovingToTrash] = React.useState(false);
-	const [isRenaming, setIsRenaming] = React.useState(false);
-	const [isUpdatingShare, setIsUpdatingShare] = React.useState(false);
+function useNoteStarControl(noteId: Id<"notes">) {
 	const [isUpdatingStar, setIsUpdatingStar] = React.useState(false);
 	const note = useQuery(api.notes.get, { id: noteId });
-	const ensureShareId = useMutation(api.notes.ensureShareId);
-	const renameNote = useMutation(api.notes.rename).withOptimisticUpdate(
-		(localStore, args) => {
-			optimisticRenameNote(localStore, args.id, args.title);
-		},
-	);
 	const toggleStar = useMutation(api.notes.toggleStar).withOptimisticUpdate(
 		(localStore, args) => {
 			const updateNoteList = (
@@ -159,6 +113,116 @@ export function NoteActionsMenu({
 					},
 				);
 			}
+		},
+	);
+
+	const handleToggleStar = React.useCallback(async () => {
+		if (!note || isUpdatingStar) {
+			return;
+		}
+
+		setIsUpdatingStar(true);
+
+		try {
+			const result = await toggleStar({ id: noteId });
+			toast.success(result.isStarred ? "Note starred" : "Note unstarred");
+		} catch (error) {
+			console.error("Failed to update note star", error);
+			toast.error("Failed to update note star");
+		} finally {
+			setIsUpdatingStar(false);
+		}
+	}, [isUpdatingStar, note, noteId, toggleStar]);
+
+	return {
+		handleToggleStar,
+		isUpdatingStar,
+		note,
+	};
+}
+
+export function NoteStarButton({
+	noteId,
+	className,
+}: {
+	noteId: Id<"notes">;
+	className?: string;
+}) {
+	const { handleToggleStar, isUpdatingStar, note } = useNoteStarControl(noteId);
+	const isStarred = note?.isStarred ?? false;
+
+	return (
+		<Button
+			type="button"
+			variant="ghost"
+			size="icon"
+			className={cn(
+				"text-muted-foreground hover:text-foreground",
+				isStarred && "text-foreground",
+				className,
+			)}
+			aria-label={
+				isStarred ? "Remove note from favorites" : "Add note to favorites"
+			}
+			aria-pressed={isStarred}
+			disabled={!note || isUpdatingStar}
+			onClick={() => {
+				void handleToggleStar();
+			}}
+		>
+			<Star className={cn("size-4", isStarred && "fill-current")} />
+		</Button>
+	);
+}
+
+export function NoteActionsMenu({
+	noteId,
+	onMoveToTrash,
+	children,
+	renameAnchor,
+	renamePopoverAlign = "start",
+	renamePopoverSide = "bottom",
+	renamePopoverSideOffset = 8,
+	renamePopoverClassName,
+	onRenamePreviewChange,
+	onRenamePreviewReset,
+	align = "start",
+	side = "bottom",
+	showRename = true,
+	itemsBeforeDefaults,
+	itemsAfterDefaults,
+}: {
+	noteId: Id<"notes">;
+	onMoveToTrash?: (noteId: Id<"notes">) => void;
+	children: React.ReactNode;
+	renameAnchor?: React.ReactNode;
+	renamePopoverAlign?: "start" | "center" | "end";
+	renamePopoverSide?: "top" | "right" | "bottom" | "left";
+	renamePopoverSideOffset?: number;
+	renamePopoverClassName?: string;
+	onRenamePreviewChange?: (title: string) => void;
+	onRenamePreviewReset?: () => void;
+	align?: "start" | "center" | "end";
+	side?: "top" | "right" | "bottom" | "left";
+	showRename?: boolean;
+	itemsBeforeDefaults?: React.ReactNode;
+	itemsAfterDefaults?: React.ReactNode;
+}) {
+	const preventMenuCloseAutoFocusRef = React.useRef(false);
+	const ignoreInitialRenameInteractOutsideRef = React.useRef(false);
+	const [confirmOpen, setConfirmOpen] = React.useState(false);
+	const [menuOpen, setMenuOpen] = React.useState(false);
+	const [renameOpen, setRenameOpen] = React.useState(false);
+	const [renameValue, setRenameValue] = React.useState("");
+	const renameInputRef = React.useRef<HTMLInputElement>(null);
+	const [isMovingToTrash, setIsMovingToTrash] = React.useState(false);
+	const [isRenaming, setIsRenaming] = React.useState(false);
+	const [isUpdatingShare, setIsUpdatingShare] = React.useState(false);
+	const { handleToggleStar, isUpdatingStar, note } = useNoteStarControl(noteId);
+	const ensureShareId = useMutation(api.notes.ensureShareId);
+	const renameNote = useMutation(api.notes.rename).withOptimisticUpdate(
+		(localStore, args) => {
+			optimisticRenameNote(localStore, args.id, args.title);
 		},
 	);
 	const moveToTrash = useMutation(api.notes.moveToTrash).withOptimisticUpdate(
@@ -241,24 +305,6 @@ export function NoteActionsMenu({
 			setIsRenaming(false);
 		}
 	}, [isRenaming, note, noteId, renameNote, renameValue]);
-
-	const handleToggleStar = React.useCallback(async () => {
-		if (!note || isUpdatingStar) {
-			return;
-		}
-
-		setIsUpdatingStar(true);
-
-		try {
-			const result = await toggleStar({ id: noteId });
-			toast.success(result.isStarred ? "Note starred" : "Note unstarred");
-		} catch (error) {
-			console.error("Failed to update note star", error);
-			toast.error("Failed to update note star");
-		} finally {
-			setIsUpdatingStar(false);
-		}
-	}, [isUpdatingStar, note, noteId, toggleStar]);
 
 	React.useEffect(() => {
 		if (renameOpen) {
@@ -460,6 +506,7 @@ export function NoteActionsMenu({
 			<DropdownMenuContent
 				align={align}
 				side={side}
+				className="w-56 overflow-hidden rounded-lg p-0"
 				onCloseAutoFocus={(event) => {
 					if (preventMenuCloseAutoFocusRef.current) {
 						event.preventDefault();
@@ -504,20 +551,22 @@ export function NoteActionsMenu({
 						</DropdownMenuSubContent>
 					</DropdownMenuPortal>
 				</DropdownMenuSub>
-				<DropdownMenuItem
-					className="cursor-pointer"
-					disabled={!note}
-					onClick={() => {
-						setMenuOpen(false);
-						preventMenuCloseAutoFocusRef.current = true;
-						ignoreInitialRenameInteractOutsideRef.current = true;
-						setRenameValue(note?.title || "New note");
-						setRenameOpen(true);
-					}}
-				>
-					<Pencil />
-					Rename
-				</DropdownMenuItem>
+				{showRename ? (
+					<DropdownMenuItem
+						className="cursor-pointer"
+						disabled={!note}
+						onClick={() => {
+							setMenuOpen(false);
+							preventMenuCloseAutoFocusRef.current = true;
+							ignoreInitialRenameInteractOutsideRef.current = true;
+							setRenameValue(note?.title || "New note");
+							setRenameOpen(true);
+						}}
+					>
+						<Pencil />
+						Rename
+					</DropdownMenuItem>
+				) : null}
 				<DropdownMenuItem
 					className="cursor-pointer"
 					disabled={!note || isUpdatingStar}
@@ -560,12 +609,12 @@ export function NoteActionsMenu({
 				<Popover open={renameOpen} onOpenChange={handleRenameOpenChange}>
 					<PopoverAnchor asChild>{renameAnchor}</PopoverAnchor>
 					{dropdownMenu}
-					{renameEditor}
+					{showRename ? renameEditor : null}
 				</Popover>
 			) : (
 				<>
 					{dropdownMenu}
-					{renameEditor}
+					{showRename ? renameEditor : null}
 				</>
 			)}
 			<AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
