@@ -43,6 +43,7 @@ import {
 	Pencil,
 	Share2,
 	Star,
+	StarOff,
 	Trash2,
 } from "lucide-react";
 import * as React from "react";
@@ -150,6 +151,7 @@ export function NoteStarButton({
 }) {
 	const { handleToggleStar, isUpdatingStar, note } = useNoteStarControl(noteId);
 	const isStarred = note?.isStarred ?? false;
+	const StarIcon = isStarred ? StarOff : Star;
 
 	return (
 		<Button
@@ -170,7 +172,7 @@ export function NoteStarButton({
 				void handleToggleStar();
 			}}
 		>
-			<Star className={cn("size-4", isStarred && "fill-current")} />
+			<StarIcon className="size-4" />
 		</Button>
 	);
 }
@@ -574,7 +576,7 @@ export function NoteActionsMenu({
 						void handleToggleStar();
 					}}
 				>
-					<Star />
+					{note?.isStarred ? <StarOff /> : <Star />}
 					{note?.isStarred ? "Unstar" : "Star"}
 				</DropdownMenuItem>
 				<DropdownMenuItem
