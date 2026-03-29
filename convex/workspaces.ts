@@ -308,6 +308,38 @@ export const update = mutation({
 	},
 });
 
+export const remove = mutation({
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const identity = await requireIdentity(ctx);
+		const workspace = await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
+
+		await ctx.scheduler.runAfter(0, internal.notes.removeAllForWorkspace, {
+			ownerTokenIdentifier: identity.tokenIdentifier,
+			workspaceId: args.workspaceId,
+		});
+		await ctx.scheduler.runAfter(0, internal.chats.removeAllForWorkspace, {
+			ownerTokenIdentifier: identity.tokenIdentifier,
+			workspaceId: args.workspaceId,
+		});
+
+		if (workspace.iconStorageId) {
+			await ctx.storage.delete(workspace.iconStorageId);
+		}
+
+		await ctx.db.delete(args.workspaceId);
+
+		return null;
+	},
+});
+
 export const removeAllForOwner = internalMutation({
 	args: {
 		ownerTokenIdentifier: v.string(),

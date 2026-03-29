@@ -18,6 +18,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
+import { Kbd } from "@workspace/ui/components/kbd";
 import {
 	SidebarMenu,
 	SidebarMenuButton,
@@ -130,7 +131,7 @@ export function WorkspaceSwitcher({
 							align="start"
 							sideOffset={4}
 						>
-							{workspaces.map((workspace) => {
+							{workspaces.map((workspace, index) => {
 								const workspaceAvatarSrc =
 									workspace.iconUrl ??
 									getAvatarSrc({
@@ -153,6 +154,12 @@ export function WorkspaceSwitcher({
 											</AvatarFallback>
 										</Avatar>
 										{workspace.name}
+										{index < 9 ? (
+											<Kbd className="ml-auto font-mono text-[10px]">
+												<span className="text-xs">⌘</span>
+												{index + 1}
+											</Kbd>
+										) : null}
 									</DropdownMenuItem>
 								);
 							})}

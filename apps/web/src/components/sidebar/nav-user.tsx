@@ -11,6 +11,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
+import { Kbd } from "@workspace/ui/components/kbd";
 import {
 	SidebarMenu,
 	SidebarMenuButton,
@@ -111,6 +112,9 @@ export function NavUser({
 						>
 							<Settings />
 							Settings
+							<Kbd className="ml-auto font-mono text-[10px]">
+								<span className="text-xs">⌘</span>,
+							</Kbd>
 						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 						<DropdownMenuItem

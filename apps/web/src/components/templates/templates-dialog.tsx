@@ -31,8 +31,9 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@workspace/ui/components/dialog";
-import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field";
+import { Field, FieldGroup } from "@workspace/ui/components/field";
 import { Input } from "@workspace/ui/components/input";
+import { Label } from "@workspace/ui/components/label";
 import {
 	Sidebar,
 	SidebarContent,
@@ -565,22 +566,23 @@ function TemplatesEditor({
 	return (
 		<div className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 pt-0">
 			{selectedTemplate ? (
-				<>
-					<FieldGroup>
-						<Field>
-							<FieldLabel htmlFor="template-meeting-context">
-								Meeting context
-							</FieldLabel>
-							<Textarea
-								id="template-meeting-context"
-								value={selectedTemplate.meetingContext}
-								onChange={(event) => onMeetingContextChange(event.target.value)}
-								className="h-32 resize-none border-border/70 bg-background/30 text-sm leading-6"
-							/>
-						</Field>
-					</FieldGroup>
-					<div className="space-y-3">
-						<FieldLabel>Sections</FieldLabel>
+				<FieldGroup className="gap-2">
+					<Field>
+						<Label
+							htmlFor="template-meeting-context"
+							className="text-xs text-muted-foreground"
+						>
+							Meeting context
+						</Label>
+						<Textarea
+							id="template-meeting-context"
+							value={selectedTemplate.meetingContext}
+							onChange={(event) => onMeetingContextChange(event.target.value)}
+							className="h-32 resize-none border-border/70 bg-background/30 text-sm leading-6"
+						/>
+					</Field>
+					<Field>
+						<Label className="text-xs text-muted-foreground">Sections</Label>
 						<DndContext
 							sensors={sensors}
 							collisionDetection={closestCenter}
@@ -612,8 +614,8 @@ function TemplatesEditor({
 							<Plus />
 							Add section
 						</Button>
-					</div>
-				</>
+					</Field>
+				</FieldGroup>
 			) : (
 				<div className="text-sm text-muted-foreground">
 					Loading templates...

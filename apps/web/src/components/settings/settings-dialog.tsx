@@ -35,11 +35,10 @@ import {
 	FieldContent,
 	FieldDescription,
 	FieldGroup,
-	FieldLabel,
-	FieldTitle,
 } from "@workspace/ui/components/field";
 import { Icons } from "@workspace/ui/components/icons";
 import { Input } from "@workspace/ui/components/input";
+import { Label } from "@workspace/ui/components/label";
 import {
 	Select,
 	SelectContent,
@@ -65,9 +64,7 @@ import {
 	ImageUp,
 	Link2,
 	LoaderCircle,
-	Moon,
 	Paintbrush,
-	Sun,
 	UserRound,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -118,6 +115,8 @@ const GOOGLE_CALENDAR_SCOPES = [
 	"profile",
 	"https://www.googleapis.com/auth/calendar.readonly",
 ] as const;
+
+const SETTINGS_LABEL_CLASSNAME = "text-xs text-muted-foreground";
 
 const withoutTrailingPeriod = (message: string) =>
 	message.trimEnd().replace(/\.+$/u, "");
@@ -309,12 +308,10 @@ function AppearanceSettings() {
 		{
 			value: "light",
 			label: "Light",
-			icon: Sun,
 		},
 		{
 			value: "dark",
 			label: "Dark",
-			icon: Moon,
 		},
 	] as const;
 	const selectedTheme =
@@ -326,9 +323,12 @@ function AppearanceSettings() {
 	return (
 		<div className="py-4">
 			<FieldGroup className="gap-6">
-				<Field orientation="responsive">
-					<FieldContent>
-						<FieldTitle>Theme</FieldTitle>
+				<Field
+					orientation="responsive"
+					className="@md/field-group:items-center @md/field-group:has-[>[data-slot=field-content]]:items-center"
+				>
+					<FieldContent className="@md/field-group:justify-center">
+						<Label>Theme</Label>
 					</FieldContent>
 					<Select
 						value={selectedTheme}
@@ -342,12 +342,9 @@ function AppearanceSettings() {
 							<span>{selectedTheme === "dark" ? "Dark" : "Light"}</span>
 						</SelectTrigger>
 						<SelectContent align="end">
-							{themeOptions.map(({ value, label, icon: Icon }) => (
+							{themeOptions.map(({ value, label }) => (
 								<SelectItem key={value} value={value}>
-									<span className="flex items-center gap-2">
-										<Icon className="size-4 text-muted-foreground" />
-										<span>{label}</span>
-									</span>
+									<span>{label}</span>
 								</SelectItem>
 							))}
 						</SelectContent>
@@ -466,31 +463,34 @@ function CalendarSettings() {
 
 	return (
 		<div className="py-4">
-			<div className="flex items-center justify-between gap-4">
-				<div className="flex min-w-0 items-center gap-3">
-					<Icons.googleLogo className="size-5 shrink-0" />
-					<div className="min-w-0">
-						<FieldLabel className="text-sm font-medium">
-							Google Calendar
-						</FieldLabel>
+			<Field>
+				<Label className={SETTINGS_LABEL_CLASSNAME}>Calendars</Label>
+				<div className="flex items-center justify-between gap-4">
+					<div className="flex min-w-0 items-center gap-3">
+						<Icons.googleLogo className="size-5 shrink-0" />
+						<div className="min-w-0">
+							<Label className="text-sm font-medium text-foreground">
+								Google Calendar
+							</Label>
+						</div>
 					</div>
+					<Button
+						type="button"
+						variant={googleAccount ? "outline" : "default"}
+						onClick={handleConnectGoogleCalendar}
+						disabled={isConnectingGoogle || !session?.user || isLoadingAccounts}
+					>
+						{isConnectingGoogle ? (
+							<LoaderCircle className="animate-spin" />
+						) : null}
+						{googleAccount
+							? hasCalendarScope
+								? "Reconnect"
+								: "Grant calendar access"
+							: "Connect"}
+					</Button>
 				</div>
-				<Button
-					type="button"
-					variant={googleAccount ? "outline" : "default"}
-					onClick={handleConnectGoogleCalendar}
-					disabled={isConnectingGoogle || !session?.user || isLoadingAccounts}
-				>
-					{isConnectingGoogle ? (
-						<LoaderCircle className="animate-spin" />
-					) : null}
-					{googleAccount
-						? hasCalendarScope
-							? "Reconnect"
-							: "Grant calendar access"
-						: "Connect"}
-				</Button>
-			</div>
+			</Field>
 		</div>
 	);
 }
@@ -557,23 +557,26 @@ function ConnectionsSettings() {
 
 	return (
 		<div className="py-4">
-			<div className="flex items-center justify-between gap-4">
-				<div className="flex min-w-0 items-center gap-3">
-					<Icons.yandexTrackerLogo className="size-5 shrink-0 text-blue-500" />
-					<div className="min-w-0">
-						<FieldLabel className="text-sm font-medium">
-							Yandex Tracker
-						</FieldLabel>
+			<Field>
+				<Label className={SETTINGS_LABEL_CLASSNAME}>Tools</Label>
+				<div className="flex items-center justify-between gap-4">
+					<div className="flex min-w-0 items-center gap-3">
+						<Icons.yandexTrackerLogo className="size-5 shrink-0 text-blue-500" />
+						<div className="min-w-0">
+							<Label className="text-sm font-medium text-foreground">
+								Yandex Tracker
+							</Label>
+						</div>
 					</div>
+					<Button
+						type="button"
+						variant="outline"
+						onClick={() => setIsYandexTrackerDialogOpen(true)}
+					>
+						{yandexTrackerConnection ? "Reconnect" : "Connect"}
+					</Button>
 				</div>
-				<Button
-					type="button"
-					variant="outline"
-					onClick={() => setIsYandexTrackerDialogOpen(true)}
-				>
-					{yandexTrackerConnection ? "Reconnect" : "Connect"}
-				</Button>
-			</div>
+			</Field>
 			<Dialog
 				open={isYandexTrackerDialogOpen}
 				onOpenChange={handleYandexTrackerDialogOpenChange}
@@ -589,7 +592,9 @@ function ConnectionsSettings() {
 					<FieldGroup className="gap-4">
 						<Field>
 							<FieldContent>
-								<FieldLabel>Organization type</FieldLabel>
+								<Label className={SETTINGS_LABEL_CLASSNAME}>
+									Organization type
+								</Label>
 							</FieldContent>
 							<Select
 								value={formState.orgType}
@@ -618,9 +623,12 @@ function ConnectionsSettings() {
 							</Select>
 						</Field>
 						<Field>
-							<FieldLabel htmlFor="yandex-tracker-org-id">
+							<Label
+								htmlFor="yandex-tracker-org-id"
+								className={SETTINGS_LABEL_CLASSNAME}
+							>
 								Organization ID
-							</FieldLabel>
+							</Label>
 							<Input
 								id="yandex-tracker-org-id"
 								value={formState.orgId}
@@ -634,9 +642,12 @@ function ConnectionsSettings() {
 							/>
 						</Field>
 						<Field>
-							<FieldLabel htmlFor="yandex-tracker-token">
+							<Label
+								htmlFor="yandex-tracker-token"
+								className={SETTINGS_LABEL_CLASSNAME}
+							>
 								OAuth token
-							</FieldLabel>
+							</Label>
 							<Input
 								id="yandex-tracker-token"
 								type="password"
@@ -725,7 +736,9 @@ function WorkspaceSettings({
 			<div className="py-4">
 				<FieldGroup>
 					<Field>
-						<FieldTitle>No workspace selected</FieldTitle>
+						<Label className={SETTINGS_LABEL_CLASSNAME}>
+							No workspace selected
+						</Label>
 						<FieldDescription>
 							Select a workspace from the sidebar, then reopen settings to edit
 							it here.
@@ -819,7 +832,7 @@ function WorkspaceSettings({
 		<div className="py-4">
 			<FieldGroup className="gap-6">
 				<Field>
-					<FieldTitle>Icon</FieldTitle>
+					<Label className={SETTINGS_LABEL_CLASSNAME}>Icon</Label>
 					<div className="flex items-center gap-4">
 						<Avatar className="size-20 rounded-lg border">
 							<AvatarImage
@@ -863,7 +876,12 @@ function WorkspaceSettings({
 					</div>
 				</Field>
 				<Field>
-					<FieldLabel htmlFor="settings-workspace-name">Name</FieldLabel>
+					<Label
+						htmlFor="settings-workspace-name"
+						className={SETTINGS_LABEL_CLASSNAME}
+					>
+						Name
+					</Label>
 					<Input
 						id="settings-workspace-name"
 						value={name}
@@ -913,6 +931,10 @@ function DataControlsSettings({
 	);
 	const removeAllNotes = useMutation(api.notes.removeAll);
 	const removeAllChats = useMutation(api.chats.removeAll);
+	const removeWorkspace = useMutation(api.workspaces.remove);
+	const [showDeleteWorkspaceDialog, setShowDeleteWorkspaceDialog] =
+		useState(false);
+	const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
 	const {
 		showDeleteAccountDialog,
 		isDeletingAccount,
@@ -957,6 +979,32 @@ function DataControlsSettings({
 				...currentState,
 				isDeletingAccount: false,
 			}));
+		}
+	};
+
+	const handleDeleteWorkspace = async () => {
+		if (!activeWorkspaceId || isDeletingWorkspace) {
+			return;
+		}
+
+		setIsDeletingWorkspace(true);
+
+		try {
+			await removeWorkspace({ workspaceId: activeWorkspaceId });
+			setShowDeleteWorkspaceDialog(false);
+			onClose();
+			navigateTo("/home");
+			toast.success("Workspace deleted");
+		} catch (error) {
+			console.error("Failed to delete workspace", error);
+			setShowDeleteWorkspaceDialog(false);
+			toast.error(
+				error instanceof Error
+					? withoutTrailingPeriod(error.message)
+					: "Failed to delete workspace",
+			);
+		} finally {
+			setIsDeletingWorkspace(false);
 		}
 	};
 
@@ -1034,53 +1082,69 @@ function DataControlsSettings({
 
 	return (
 		<div className="py-4">
-			<div className="flex flex-col gap-4">
-				<DataControlAction
-					title="Delete account"
-					buttonLabel={isDeletingAccount ? "Deleting..." : "Delete"}
-					dialogOpen={showDeleteAccountDialog}
-					onDialogOpenChange={(open) => {
-						setState((currentState) => ({
-							...currentState,
-							showDeleteAccountDialog: open,
-						}));
-					}}
-					onConfirm={handleDeleteAccount}
-					confirmDisabled={isDeletingAccount}
-					buttonDisabled={isDeletingAccount || !canDeleteData}
-					dialogDescription="This action cannot be undone. Your account will be permanently deleted, and OpenGran will remove your notes from the backend."
-				/>
-				<DataControlAction
-					title="Delete all notes"
-					buttonLabel={isDeletingAllNotes ? "Deleting..." : "Delete"}
-					dialogOpen={showDeleteAllNotesDialog}
-					onDialogOpenChange={(open) => {
-						setState((currentState) => ({
-							...currentState,
-							showDeleteAllNotesDialog: open,
-						}));
-					}}
-					onConfirm={handleDeleteAllNotes}
-					confirmDisabled={isDeletingAllNotes}
-					buttonDisabled={isDeletingAllNotes || !canDeleteData}
-					dialogDescription="This action cannot be undone. All notes you own will be permanently deleted."
-				/>
-				<DataControlAction
-					title="Delete all chats"
-					buttonLabel={isDeletingAllChats ? "Deleting..." : "Delete"}
-					dialogOpen={showDeleteAllChatsDialog}
-					onDialogOpenChange={(open) => {
-						setState((currentState) => ({
-							...currentState,
-							showDeleteAllChatsDialog: open,
-						}));
-					}}
-					onConfirm={handleDeleteAllChats}
-					confirmDisabled={isDeletingAllChats}
-					buttonDisabled={isDeletingAllChats || !canDeleteData}
-					dialogDescription="This action cannot be undone. All chats you own will be permanently deleted."
-				/>
-			</div>
+			<FieldGroup className="gap-6">
+				<Field>
+					<Label className={SETTINGS_LABEL_CLASSNAME}>Workspace</Label>
+					<DataControlAction
+						title="Delete all notes"
+						buttonLabel={isDeletingAllNotes ? "Deleting..." : "Delete"}
+						dialogOpen={showDeleteAllNotesDialog}
+						onDialogOpenChange={(open) => {
+							setState((currentState) => ({
+								...currentState,
+								showDeleteAllNotesDialog: open,
+							}));
+						}}
+						onConfirm={handleDeleteAllNotes}
+						confirmDisabled={isDeletingAllNotes}
+						buttonDisabled={isDeletingAllNotes || !canDeleteData}
+						dialogDescription="This action cannot be undone. All notes you own will be permanently deleted."
+					/>
+					<DataControlAction
+						title="Delete all chats"
+						buttonLabel={isDeletingAllChats ? "Deleting..." : "Delete"}
+						dialogOpen={showDeleteAllChatsDialog}
+						onDialogOpenChange={(open) => {
+							setState((currentState) => ({
+								...currentState,
+								showDeleteAllChatsDialog: open,
+							}));
+						}}
+						onConfirm={handleDeleteAllChats}
+						confirmDisabled={isDeletingAllChats}
+						buttonDisabled={isDeletingAllChats || !canDeleteData}
+						dialogDescription="This action cannot be undone. All chats you own will be permanently deleted."
+					/>
+					<DataControlAction
+						title="Delete workspace"
+						buttonLabel={isDeletingWorkspace ? "Deleting..." : "Delete"}
+						dialogOpen={showDeleteWorkspaceDialog}
+						onDialogOpenChange={setShowDeleteWorkspaceDialog}
+						onConfirm={handleDeleteWorkspace}
+						confirmDisabled={isDeletingWorkspace}
+						buttonDisabled={isDeletingWorkspace || !canDeleteData}
+						dialogDescription="This action cannot be undone. The current workspace and its notes and chats will be permanently deleted."
+					/>
+				</Field>
+				<Field>
+					<Label className={SETTINGS_LABEL_CLASSNAME}>Account</Label>
+					<DataControlAction
+						title="Delete account"
+						buttonLabel={isDeletingAccount ? "Deleting..." : "Delete"}
+						dialogOpen={showDeleteAccountDialog}
+						onDialogOpenChange={(open) => {
+							setState((currentState) => ({
+								...currentState,
+								showDeleteAccountDialog: open,
+							}));
+						}}
+						onConfirm={handleDeleteAccount}
+						confirmDisabled={isDeletingAccount}
+						buttonDisabled={isDeletingAccount || !canDeleteData}
+						dialogDescription="This action cannot be undone. Your account will be permanently deleted, and OpenGran will remove your notes from the backend."
+					/>
+				</Field>
+			</FieldGroup>
 		</div>
 	);
 }
@@ -1176,7 +1240,7 @@ function ManageAccountForm({
 		<div className="py-4">
 			<FieldGroup className="gap-6">
 				<Field>
-					<FieldTitle>Avatar</FieldTitle>
+					<Label className={SETTINGS_LABEL_CLASSNAME}>Avatar</Label>
 					<div className="flex items-center gap-4">
 						<Avatar className="size-20 rounded-lg">
 							<AvatarImage
@@ -1227,7 +1291,9 @@ function ManageAccountForm({
 					</div>
 				</Field>
 				<Field>
-					<FieldLabel htmlFor="settings-name">Full name</FieldLabel>
+					<Label htmlFor="settings-name" className={SETTINGS_LABEL_CLASSNAME}>
+						Full name
+					</Label>
 					<Input
 						id="settings-name"
 						value={formState.name}
@@ -1242,7 +1308,9 @@ function ManageAccountForm({
 					/>
 				</Field>
 				<Field>
-					<FieldLabel htmlFor="settings-email">Email</FieldLabel>
+					<Label htmlFor="settings-email" className={SETTINGS_LABEL_CLASSNAME}>
+						Email
+					</Label>
 					<Input id="settings-email" value={user.email} disabled />
 				</Field>
 			</FieldGroup>

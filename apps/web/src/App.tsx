@@ -2039,6 +2039,59 @@ const useAppShellState = ({
 		[],
 	);
 
+	React.useEffect(() => {
+		if (typeof window === "undefined" || !window.openGranDesktop) {
+			return;
+		}
+
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (
+				event.defaultPrevented ||
+				!(event.metaKey || event.ctrlKey) ||
+				event.altKey ||
+				event.shiftKey ||
+				(event.key !== "," && event.code !== "Comma")
+			) {
+				return;
+			}
+
+			event.preventDefault();
+			handleSettingsOpenChange(true, "Profile");
+		};
+
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [handleSettingsOpenChange]);
+
+	React.useEffect(() => {
+		if (typeof window === "undefined" || !window.openGranDesktop) {
+			return;
+		}
+
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (
+				event.defaultPrevented ||
+				!(event.metaKey || event.ctrlKey) ||
+				event.altKey ||
+				event.shiftKey ||
+				!/^[1-9]$/.test(event.key)
+			) {
+				return;
+			}
+
+			const workspace = workspaces[Number(event.key) - 1];
+			if (!workspace || workspace._id === resolvedActiveWorkspaceId) {
+				return;
+			}
+
+			event.preventDefault();
+			setActiveWorkspaceId(workspace._id);
+		};
+
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [resolvedActiveWorkspaceId, workspaces]);
+
 	const handleOpenCalendarSettings = React.useCallback(() => {
 		handleSettingsOpenChange(true, "Calendar");
 	}, [handleSettingsOpenChange]);
