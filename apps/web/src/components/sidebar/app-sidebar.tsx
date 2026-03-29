@@ -79,7 +79,7 @@ export function AppSidebar({
 }: React.ComponentProps<typeof Sidebar> & {
 	workspaces: Array<WorkspaceRecord>;
 	activeWorkspaceId: Id<"workspaces"> | null;
-	currentView: "home" | "chat" | "shared" | "note";
+	currentView: "home" | "chat" | "shared" | "note" | "notFound";
 	user: {
 		name: string;
 		email: string;

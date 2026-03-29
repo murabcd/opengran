@@ -219,6 +219,16 @@ export const get = query({
 	},
 });
 
+export const normalizeId = query({
+	args: {
+		id: v.string(),
+	},
+	returns: v.union(v.id("notes"), v.null()),
+	handler: async (ctx, args) => {
+		return ctx.db.normalizeId("notes", args.id);
+	},
+});
+
 export const getChatContext = query({
 	args: {
 		ids: v.array(v.id("notes")),

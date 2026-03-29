@@ -99,7 +99,15 @@ type AppUser = {
 	avatar: string;
 };
 
-type AppView = "home" | "chat" | "shared" | "note";
+type AppView = "home" | "chat" | "shared" | "note" | "notFound";
+type AppLocationState = {
+	view: AppView;
+	chatId: string | null;
+	noteIdString: string | null;
+	shouldAutoStartNoteCapture: boolean;
+	canonicalPath: "/home" | "/chat" | "/shared" | "/note" | null;
+	canonicalSearch: string;
+};
 type SocialAuthProvider = "github" | "google";
 
 const SETTINGS_PAGE_BY_SLUG = {
@@ -272,19 +280,85 @@ const getSettingsPageFromPath = (pathname: string): SettingsPage | null => {
 const getSettingsPath = (page: SettingsPage) =>
 	`/settings/${SETTINGS_SLUG_BY_PAGE[page]}`;
 
-const getAppViewFromUrl = (url: URL): AppView =>
-	url.pathname === "/note" || url.hash === "#note"
-		? "note"
-		: url.pathname === "/chat" || url.hash === "#chat"
-			? "chat"
-			: url.pathname === "/shared" || url.hash === "#shared"
-				? "shared"
-				: "home";
+const normalizePathname = (pathname: string) => {
+	const normalizedPath = pathname.replace(/\/+$/, "");
+	return normalizedPath === "" ? "/" : normalizedPath;
+};
+
+const getNoteIdStringFromUrl = (url: URL) => {
+	const nextValue = url.searchParams.get("noteId")?.trim();
+
+	return nextValue ? nextValue : null;
+};
+
+const getAppLocationState = (url: URL): AppLocationState => {
+	const pathname = normalizePathname(url.pathname);
+	const noteIdString = getNoteIdStringFromUrl(url);
+	const chatId = getChatIdFromUrl(url);
+	const hashView =
+		pathname === "/" || pathname === "/home"
+			? url.hash === "#note"
+				? "note"
+				: url.hash === "#chat"
+					? "chat"
+					: url.hash === "#shared"
+						? "shared"
+						: null
+			: null;
+	const pathView =
+		pathname === "/"
+			? "home"
+			: pathname === "/home"
+				? "home"
+				: pathname === "/note"
+					? "note"
+					: pathname === "/chat"
+						? "chat"
+						: pathname === "/shared"
+							? "shared"
+							: null;
+	const view = hashView ?? pathView;
+
+	if (view === null) {
+		return {
+			view: "notFound",
+			chatId: null,
+			noteIdString: null,
+			shouldAutoStartNoteCapture: false,
+			canonicalPath: null,
+			canonicalSearch: "",
+		};
+	}
+
+	return {
+		view,
+		chatId: view === "chat" ? chatId : null,
+		noteIdString: view === "note" ? noteIdString : null,
+		shouldAutoStartNoteCapture:
+			view === "note" &&
+			url.searchParams.get("capture") === "1" &&
+			!url.searchParams.get("noteId"),
+		canonicalPath:
+			view === "home"
+				? "/home"
+				: view === "chat"
+					? "/chat"
+					: view === "shared"
+						? "/shared"
+						: "/note",
+		canonicalSearch:
+			view === "note" && noteIdString
+				? `?noteId=${encodeURIComponent(noteIdString)}${url.searchParams.get("capture") === "1" ? "&capture=1" : ""}`
+				: view === "note" && url.searchParams.get("capture") === "1"
+					? "?capture=1"
+					: view === "chat" && chatId
+						? `?chatId=${encodeURIComponent(chatId)}`
+						: "",
+	};
+};
 
 const shouldAutoStartNoteCaptureFromUrl = (url: URL) =>
-	getAppViewFromUrl(url) === "note" &&
-	url.searchParams.get("capture") === "1" &&
-	!url.searchParams.get("noteId");
+	getAppLocationState(url).shouldAutoStartNoteCapture;
 
 const getInitialNonSettingsLocation = () => {
 	if (typeof window === "undefined") {
@@ -1494,7 +1568,7 @@ const useAppShellState = ({
 			return "home";
 		}
 
-		return getAppViewFromUrl(new URL(window.location.href));
+		return getAppLocationState(new URL(window.location.href)).view;
 	});
 	const [isDesktopMac, setIsDesktopMac] = React.useState(initialDesktopMac);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -1509,7 +1583,7 @@ const useAppShellState = ({
 				return null;
 			}
 
-			return getChatIdFromUrl(new URL(window.location.href));
+			return getAppLocationState(new URL(window.location.href)).chatId;
 		},
 	);
 	const [chatComposerId, setChatComposerId] = React.useState(() => {
@@ -1518,22 +1592,22 @@ const useAppShellState = ({
 		}
 
 		return (
-			getChatIdFromUrl(new URL(window.location.href)) ?? crypto.randomUUID()
+			getAppLocationState(new URL(window.location.href)).chatId ??
+			crypto.randomUUID()
 		);
 	});
 	const [currentNoteId, setCurrentNoteId] = React.useState<Id<"notes"> | null>(
-		() => {
-			if (typeof window === "undefined") {
-				return null;
-			}
-
-			return (
-				(new URL(window.location.href).searchParams.get(
-					"noteId",
-				) as Id<"notes"> | null) ?? null
-			);
-		},
+		null,
 	);
+	const [currentRouteNoteId, setCurrentRouteNoteId] = React.useState<
+		string | null
+	>(() => {
+		if (typeof window === "undefined") {
+			return null;
+		}
+
+		return getAppLocationState(new URL(window.location.href)).noteIdString;
+	});
 	const [shouldAutoStartNoteCapture, setShouldAutoStartNoteCapture] =
 		React.useState(() => {
 			if (typeof window === "undefined") {
@@ -1581,14 +1655,48 @@ const useAppShellState = ({
 				}
 			: "skip",
 	);
-	const selectedNote = useQuery(
-		api.notes.get,
-		currentNoteId
+	const normalizedRouteNoteId = useQuery(
+		api.notes.normalizeId,
+		currentView === "note" && currentRouteNoteId && currentNoteId === null
 			? {
-					id: currentNoteId,
+					id: currentRouteNoteId,
 				}
 			: "skip",
 	);
+	const resolvedCurrentNoteId = currentNoteId ?? normalizedRouteNoteId ?? null;
+	const isResolvingCurrentNoteRouteId =
+		currentView === "note" &&
+		currentRouteNoteId !== null &&
+		currentNoteId === null &&
+		normalizedRouteNoteId === undefined;
+	const hasInvalidCurrentNoteRoute =
+		currentView === "note" &&
+		currentRouteNoteId !== null &&
+		currentNoteId === null &&
+		normalizedRouteNoteId === null;
+	const selectedNote = useQuery(
+		api.notes.get,
+		currentView === "note" &&
+			!hasInvalidCurrentNoteRoute &&
+			resolvedCurrentNoteId
+			? {
+					id: resolvedCurrentNoteId,
+				}
+			: "skip",
+	);
+	const isResolvingCurrentNote =
+		isResolvingCurrentNoteRouteId ||
+		(currentView === "note" &&
+			resolvedCurrentNoteId !== null &&
+			selectedNote === undefined);
+	const hasMissingCurrentNote =
+		currentView === "note" &&
+		resolvedCurrentNoteId !== null &&
+		selectedNote === null;
+	const resolvedCurrentView =
+		hasInvalidCurrentNoteRoute || hasMissingCurrentNote
+			? "notFound"
+			: currentView;
 
 	const refreshUpcomingCalendarEvents = React.useEffectEvent(async () => {
 		if (!session?.user?.email || !isConvexAuthenticated) {
@@ -1673,47 +1781,44 @@ const useAppShellState = ({
 			const contentUrl = nextSettingsOpen
 				? new URL(lastNonSettingsLocationRef.current, url.origin)
 				: url;
-			const nextChatId = getChatIdFromUrl(contentUrl);
-			const nextView = getAppViewFromUrl(contentUrl);
-			const nextNoteId =
-				(contentUrl.searchParams.get("noteId") as Id<"notes"> | null) ?? null;
+			const nextLocationState = getAppLocationState(contentUrl);
+			const nextChatId = nextLocationState.chatId;
+			const nextView = nextLocationState.view;
+			const nextNoteIdString = nextLocationState.noteIdString;
 			const nextShouldAutoStartNoteCapture =
-				shouldAutoStartNoteCaptureFromUrl(contentUrl);
+				nextLocationState.shouldAutoStartNoteCapture;
 
 			setCurrentView(nextView);
 			setCurrentChatId(nextChatId);
-			setChatComposerId(nextChatId ?? crypto.randomUUID());
-			setCurrentNoteId(nextNoteId);
+			setChatComposerId(
+				nextView === "chat"
+					? (nextChatId ?? crypto.randomUUID())
+					: crypto.randomUUID(),
+			);
+			setCurrentNoteId(null);
+			setCurrentRouteNoteId(nextView === "note" ? nextNoteIdString : null);
 			setShouldAutoStartNoteCapture(nextShouldAutoStartNoteCapture);
 			setCurrentNoteEditorActions(null);
 			setSettingsPage(nextSettingsPage ?? "Profile");
 
 			const nextPath = nextSettingsOpen
 				? getSettingsPath(nextSettingsPage ?? "Profile")
-				: nextView === "note"
-					? "/note"
-					: nextView === "chat"
-						? "/chat"
-						: nextView === "shared"
-							? "/shared"
-							: "/home";
+				: nextLocationState.canonicalPath;
 			const nextSearch = nextSettingsOpen
 				? ""
-				: nextView === "note" && nextNoteId
-					? `?noteId=${nextNoteId}${nextShouldAutoStartNoteCapture ? "&capture=1" : ""}`
-					: nextView === "note" && nextShouldAutoStartNoteCapture
-						? "?capture=1"
-						: nextView === "chat" && nextChatId
-							? `?chatId=${encodeURIComponent(nextChatId)}`
-							: "";
+				: nextLocationState.canonicalSearch;
 			const nextHash = "";
-			const nextLocation = `${nextPath}${nextSearch}${nextHash}`;
 			if (
-				window.location.pathname !== nextPath ||
-				window.location.search !== nextSearch ||
-				window.location.hash !== nextHash
+				nextPath &&
+				(window.location.pathname !== nextPath ||
+					window.location.search !== nextSearch ||
+					window.location.hash !== nextHash)
 			) {
-				window.history.replaceState(null, "", nextLocation);
+				window.history.replaceState(
+					null,
+					"",
+					`${nextPath}${nextSearch}${nextHash}`,
+				);
 			}
 
 			setSettingsOpen(nextSettingsOpen);
@@ -1733,10 +1838,10 @@ const useAppShellState = ({
 			return;
 		}
 
-		if (currentView === "note") {
+		if (resolvedCurrentView === "note") {
 			setCurrentNoteTitle("New note");
 		}
-	}, [currentView, selectedNote?.title]);
+	}, [resolvedCurrentView, selectedNote?.title]);
 
 	React.useEffect(() => {
 		void window.openGranDesktop
@@ -1768,7 +1873,9 @@ const useAppShellState = ({
 			setSettingsOpen(false);
 			setCurrentNoteEditorActions(null);
 			const search =
-				view === "note" && currentNoteId ? `?noteId=${currentNoteId}` : "";
+				view === "note" && resolvedCurrentNoteId
+					? `?noteId=${resolvedCurrentNoteId}`
+					: "";
 			window.history.pushState(
 				null,
 				"",
@@ -1779,7 +1886,7 @@ const useAppShellState = ({
 						: "/home",
 			);
 		},
-		[currentNoteId, openFreshChat],
+		[openFreshChat, resolvedCurrentNoteId],
 	);
 
 	const openNote = React.useCallback(
@@ -1792,6 +1899,7 @@ const useAppShellState = ({
 			setCurrentView("note");
 			setSettingsOpen(false);
 			setCurrentNoteId(noteId);
+			setCurrentRouteNoteId(noteId);
 			setShouldAutoStartNoteCapture(options?.autoStartCapture === true);
 			setCurrentNoteEditorActions(null);
 			window.history.pushState(
@@ -1833,6 +1941,7 @@ const useAppShellState = ({
 		setCurrentView("note");
 		setSettingsOpen(false);
 		setCurrentNoteId(null);
+		setCurrentRouteNoteId(null);
 		setShouldAutoStartNoteCapture(true);
 		setCurrentNoteEditorActions(null);
 		window.history.pushState(null, "", "/note?capture=1");
@@ -1841,23 +1950,32 @@ const useAppShellState = ({
 	const handleAutoStartNoteCaptureHandled = React.useCallback(() => {
 		setShouldAutoStartNoteCapture(false);
 
-		if (currentView !== "note" || !currentNoteId) {
+		if (resolvedCurrentView !== "note" || !resolvedCurrentNoteId) {
 			return;
 		}
 
-		window.history.replaceState(null, "", `/note?noteId=${currentNoteId}`);
-	}, [currentNoteId, currentView]);
+		window.history.replaceState(
+			null,
+			"",
+			`/note?noteId=${resolvedCurrentNoteId}`,
+		);
+	}, [resolvedCurrentNoteId, resolvedCurrentView]);
 
 	React.useEffect(() => {
-		if (currentView === "note" && !currentNoteId) {
+		if (
+			resolvedCurrentView === "note" &&
+			!resolvedCurrentNoteId &&
+			currentRouteNoteId === null
+		) {
 			handleCreateNote({
 				autoStartCapture: shouldAutoStartNoteCapture,
 			});
 		}
 	}, [
-		currentNoteId,
-		currentView,
+		currentRouteNoteId,
 		handleCreateNote,
+		resolvedCurrentNoteId,
+		resolvedCurrentView,
 		shouldAutoStartNoteCapture,
 	]);
 
@@ -1898,16 +2016,17 @@ const useAppShellState = ({
 
 	const handleNoteTrashed = React.useCallback(
 		(noteId: Id<"notes">) => {
-			if (noteId !== currentNoteId) {
+			if (noteId !== resolvedCurrentNoteId) {
 				return;
 			}
 
 			setCurrentNoteId(null);
+			setCurrentRouteNoteId(null);
 			setCurrentNoteTitle("New note");
 			setCurrentNoteEditorActions(null);
 			handleViewChange("home");
 		},
-		[currentNoteId, handleViewChange],
+		[handleViewChange, resolvedCurrentNoteId],
 	);
 	const handleOpenChat = React.useCallback((chatId: string) => {
 		setCurrentView("chat");
@@ -1956,9 +2075,9 @@ const useAppShellState = ({
 	const currentChatTitle =
 		chats?.find((chat) => getChatId(chat) === currentChatId)?.title || "Chat";
 	const isSharedNote =
-		currentView === "note" &&
+		resolvedCurrentView === "note" &&
 		(selectedNote?.visibility === "public" ||
-			sharedNotes?.some((note) => note._id === currentNoteId) === true);
+			sharedNotes?.some((note) => note._id === resolvedCurrentNoteId) === true);
 	const initialChatMessages = React.useMemo(
 		() => toStoredChatMessages(selectedChatMessages ?? []),
 		[selectedChatMessages],
@@ -1974,9 +2093,9 @@ const useAppShellState = ({
 		currentDayOfMonth,
 		currentMonthLabel,
 		currentNoteEditorActions,
-		currentNoteId,
+		currentNoteId: resolvedCurrentNoteId,
 		currentNoteTitle,
-		currentView,
+		currentView: resolvedCurrentView,
 		currentWeekdayLabel,
 		handleAutoStartNoteCaptureHandled,
 		handleChatPersisted,
@@ -2009,27 +2128,39 @@ const useAppShellState = ({
 		upcomingCalendarStatus,
 		user,
 		workspaces,
+		isResolvingCurrentNoteRoute: isResolvingCurrentNote,
 		currentNoteTemplateSlug: selectedNote?.templateSlug ?? null,
-		breadcrumbDetailLabel:
-			currentView === "note"
-				? currentNoteTitle
-				: currentView === "chat" && currentChatId
-					? currentChatTitle
-					: null,
-		breadcrumbSectionLabel:
-			currentView === "chat"
-				? "Chat"
-				: currentView === "shared" || isSharedNote
-					? "Shared"
-					: "Home",
+		breadcrumbDetailLabel: isResolvingCurrentNote
+			? null
+			: resolvedCurrentView === "notFound"
+				? null
+				: resolvedCurrentView === "note"
+					? currentNoteTitle
+					: resolvedCurrentView === "chat" && currentChatId
+						? currentChatTitle
+						: null,
+		breadcrumbSectionLabel: isResolvingCurrentNote
+			? "Loading note"
+			: resolvedCurrentView === "notFound"
+				? "Page Not Found"
+				: resolvedCurrentView === "chat"
+					? "Chat"
+					: resolvedCurrentView === "shared" || isSharedNote
+						? "Shared"
+						: "Home",
 		handleBreadcrumbSectionClick: () => {
-			if (currentView === "chat") {
+			if (resolvedCurrentView === "notFound") {
+				handleViewChange("home");
+				return;
+			}
+
+			if (resolvedCurrentView === "chat") {
 				openFreshChat();
 				return;
 			}
 
 			handleViewChange(
-				currentView === "shared" || isSharedNote ? "shared" : "home",
+				resolvedCurrentView === "shared" || isSharedNote ? "shared" : "home",
 			);
 		},
 		handleWorkspaceCreate,
@@ -2092,6 +2223,7 @@ function AppShell({
 				/>
 				<AppShellContent
 					currentView={controller.currentView}
+					isResolvingNoteRoute={controller.isResolvingCurrentNoteRoute}
 					currentDate={controller.currentDate}
 					currentDayOfMonth={controller.currentDayOfMonth}
 					currentMonthLabel={controller.currentMonthLabel}
@@ -2123,6 +2255,7 @@ function AppShell({
 						controller.handleAutoStartNoteCaptureHandled
 					}
 					shouldAutoStartNoteCapture={controller.shouldAutoStartNoteCapture}
+					onGoHome={() => controller.handleViewChange("home")}
 				/>
 			</AppShellInset>
 		</SidebarProvider>
@@ -2469,6 +2602,7 @@ function AppShellHeader({
 
 function AppShellContent({
 	currentView,
+	isResolvingNoteRoute,
 	currentDate,
 	currentDayOfMonth,
 	currentMonthLabel,
@@ -2496,8 +2630,10 @@ function AppShellContent({
 	onNoteEditorActionsChange,
 	onAutoStartNoteCaptureHandled,
 	shouldAutoStartNoteCapture,
+	onGoHome,
 }: {
 	currentView: AppView;
+	isResolvingNoteRoute: boolean;
 	currentDate: Date;
 	currentDayOfMonth: number;
 	currentMonthLabel: string;
@@ -2525,7 +2661,20 @@ function AppShellContent({
 	onNoteEditorActionsChange: (actions: NoteEditorActions | null) => void;
 	onAutoStartNoteCaptureHandled: () => void;
 	shouldAutoStartNoteCapture: boolean;
+	onGoHome: () => void;
 }) {
+	if (currentView === "notFound") {
+		return <NotFoundView onGoHome={onGoHome} />;
+	}
+
+	if (currentView === "note" && isResolvingNoteRoute) {
+		return (
+			<div className="flex flex-1 items-center justify-center px-8 py-10">
+				<p className="text-sm text-muted-foreground">Loading note...</p>
+			</div>
+		);
+	}
+
 	if (currentView === "home") {
 		return (
 			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
@@ -2592,6 +2741,27 @@ function AppShellContent({
 			onOpenChat={onOpenChat}
 			onChatRemoved={onChatRemoved}
 		/>
+	);
+}
+
+function NotFoundView({ onGoHome }: { onGoHome: () => void }) {
+	return (
+		<div className="flex flex-1 items-center justify-center px-8 py-10">
+			<Empty className="max-w-lg border-none">
+				<EmptyHeader>
+					<EmptyTitle>404 - Not Found</EmptyTitle>
+					<EmptyDescription>
+						The page you&apos;re looking for doesn&apos;t exist. Use the sidebar
+						to search or go back home.
+					</EmptyDescription>
+				</EmptyHeader>
+				<EmptyContent>
+					<Button onClick={onGoHome} size="sm">
+						Go to Home
+					</Button>
+				</EmptyContent>
+			</Empty>
+		</div>
 	);
 }
 
