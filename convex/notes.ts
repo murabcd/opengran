@@ -14,6 +14,7 @@ const noteFields = {
 	_creationTime: v.number(),
 	ownerTokenIdentifier: v.string(),
 	authorName: v.optional(v.string()),
+	isStarred: v.optional(v.boolean()),
 	title: v.string(),
 	templateSlug: v.optional(v.string()),
 	content: v.string(),
@@ -66,6 +67,7 @@ const getAuthorName = (identity: Awaited<ReturnType<typeof requireIdentity>>) =>
 
 const normalizeNote = (note: Doc<"notes">) => ({
 	...note,
+	isStarred: note.isStarred ?? false,
 	templateSlug: note.templateSlug ?? DEFAULT_NOTE_TEMPLATE_SLUG,
 	visibility: note.visibility ?? "private",
 });
@@ -292,6 +294,7 @@ export const create = mutation({
 		return await ctx.db.insert("notes", {
 			ownerTokenIdentifier,
 			authorName: getAuthorName(identity),
+			isStarred: false,
 			title: "New note",
 			templateSlug: DEFAULT_NOTE_TEMPLATE_SLUG,
 			content: JSON.stringify({
@@ -329,6 +332,7 @@ export const save = mutation({
 
 			await ctx.db.patch(args.id, {
 				authorName: existing.authorName ?? authorName,
+				isStarred: existing.isStarred ?? false,
 				title: args.title,
 				content: args.content,
 				searchableText: args.searchableText,
@@ -347,6 +351,7 @@ export const save = mutation({
 		return await ctx.db.insert("notes", {
 			ownerTokenIdentifier,
 			authorName,
+			isStarred: false,
 			title: args.title,
 			templateSlug: DEFAULT_NOTE_TEMPLATE_SLUG,
 			content: args.content,
@@ -386,6 +391,65 @@ export const setTemplate = mutation({
 
 		return {
 			templateSlug: args.templateSlug,
+		};
+	},
+});
+
+export const rename = mutation({
+	args: {
+		id: v.id("notes"),
+		title: v.string(),
+	},
+	returns: v.object({
+		title: v.string(),
+	}),
+	handler: async (ctx, args) => {
+		const note = await requireOwnedNote(ctx, args.id);
+
+		if (note.isArchived) {
+			throw new ConvexError({
+				code: "NOTE_NOT_FOUND",
+				message: "Note not found.",
+			});
+		}
+
+		const title = args.title.trim() || "New note";
+
+		await ctx.db.patch(args.id, {
+			title,
+			updatedAt: Date.now(),
+		});
+
+		return { title };
+	},
+});
+
+export const toggleStar = mutation({
+	args: {
+		id: v.id("notes"),
+	},
+	returns: v.object({
+		isStarred: v.boolean(),
+	}),
+	handler: async (ctx, args) => {
+		const note = await requireOwnedNote(ctx, args.id);
+
+		if (note.isArchived) {
+			throw new ConvexError({
+				code: "NOTE_NOT_FOUND",
+				message: "Note not found.",
+			});
+		}
+
+		const isStarred = !(note.isStarred ?? false);
+
+		await ctx.db.patch(args.id, {
+			isStarred,
+			updatedAt: Date.now(),
+		});
+
+		return {
+			isStarred,
 		};
 	},
 });
@@ -524,9 +588,13 @@ export const removeAllForOwner = internalMutation({
 				ownerTokenIdentifier: args.ownerTokenIdentifier,
 			});
 		} else {
-			await ctx.scheduler.runAfter(0, internal.transcriptSessions.removeAllForOwner, {
-				ownerTokenIdentifier: args.ownerTokenIdentifier,
-			});
+			await ctx.scheduler.runAfter(
+				0,
+				internal.transcriptSessions.removeAllForOwner,
+				{
+					ownerTokenIdentifier: args.ownerTokenIdentifier,
+				},
+			);
 		}
 
 		return null;
@@ -545,9 +613,13 @@ export const removeAll = mutation({
 				ownerTokenIdentifier,
 			});
 		} else {
-			await ctx.scheduler.runAfter(0, internal.transcriptSessions.removeAllForOwner, {
-				ownerTokenIdentifier,
-			});
+			await ctx.scheduler.runAfter(
+				0,
+				internal.transcriptSessions.removeAllForOwner,
+				{
+					ownerTokenIdentifier,
+				},
+			);
 		}
 
 		return result;

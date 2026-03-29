@@ -73,6 +73,7 @@ export default defineSchema({
 	notes: defineTable({
 		ownerTokenIdentifier: v.string(),
 		authorName: v.optional(v.string()),
+		isStarred: v.optional(v.boolean()),
 		title: v.string(),
 		templateSlug: v.optional(v.string()),
 		content: v.string(),

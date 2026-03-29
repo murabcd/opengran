@@ -170,6 +170,7 @@ export function AppSidebar({
 	currentNoteId,
 	currentNoteTitle,
 	onNoteSelect,
+	onNoteTitleChange,
 	onNoteTrashed,
 	...props
 }: React.ComponentProps<typeof Sidebar> & {
@@ -194,6 +195,7 @@ export function AppSidebar({
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	onNoteSelect: (noteId: Id<"notes">) => void;
+	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
 	const [searchOpen, setSearchOpen] = React.useState(false);
@@ -256,6 +258,7 @@ export function AppSidebar({
 						currentNoteId={currentView === "note" ? currentNoteId : null}
 						currentNoteTitle={currentNoteTitle}
 						onNoteSelect={onNoteSelect}
+						onNoteTitleChange={onNoteTitleChange}
 						onNoteTrashed={onNoteTrashed}
 					/>
 				</SidebarContent>
@@ -393,14 +396,20 @@ function NavProjects({
 	currentNoteId,
 	currentNoteTitle,
 	onNoteSelect,
+	onNoteTitleChange,
 	onNoteTrashed,
 }: {
 	notes: Array<Doc<"notes">> | undefined;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	onNoteSelect: (noteId: Id<"notes">) => void;
+	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
+	const starredNotes = React.useMemo(
+		() => (notes ?? []).filter((note) => note.isStarred),
+		[notes],
+	);
 	const [showAllNotes, setShowAllNotes] = React.useState(false);
 	const isNotesPending = notes === undefined;
 	const hasMoreNotes = (notes?.length ?? 0) > MAX_VISIBLE_NOTES;
@@ -409,68 +418,123 @@ function NavProjects({
 		: (notes ?? []).slice(0, MAX_VISIBLE_NOTES);
 
 	return (
-		<SidebarGroup className="group-data-[collapsible=icon]:hidden">
-			<SidebarGroupLabel>Notes</SidebarGroupLabel>
-			{isNotesPending ? <NavProjectsSkeleton /> : null}
-			{notes && notes.length === 0 ? (
-				<div className="px-2 text-xs text-muted-foreground/50">
-					No notes yet
-				</div>
+		<>
+			{starredNotes.length > 0 ? (
+				<SidebarGroup className="group-data-[collapsible=icon]:hidden">
+					<SidebarGroupLabel>Starred</SidebarGroupLabel>
+					<SidebarGroupContent>
+						<SidebarNotesList
+							notes={starredNotes}
+							currentNoteId={currentNoteId}
+							currentNoteTitle={currentNoteTitle}
+							onNoteSelect={onNoteSelect}
+							onNoteTitleChange={onNoteTitleChange}
+							onNoteTrashed={onNoteTrashed}
+						/>
+					</SidebarGroupContent>
+				</SidebarGroup>
 			) : null}
-			<SidebarGroupContent className={isNotesPending ? "hidden" : undefined}>
-				<SidebarMenu>
-					{visibleNotes.map((note) => {
-						const isActive = note._id === currentNoteId;
-						const title =
-							isActive && currentNoteTitle?.trim()
-								? currentNoteTitle
-								: note.title || "New note";
+			<SidebarGroup className="group-data-[collapsible=icon]:hidden">
+				<SidebarGroupLabel>Notes</SidebarGroupLabel>
+				{isNotesPending ? <NavProjectsSkeleton /> : null}
+				{notes && notes.length === 0 ? (
+					<div className="px-2 text-xs text-muted-foreground/50">
+						No notes yet
+					</div>
+				) : null}
+				<SidebarGroupContent className={isNotesPending ? "hidden" : undefined}>
+					<SidebarNotesList
+						notes={visibleNotes}
+						currentNoteId={currentNoteId}
+						currentNoteTitle={currentNoteTitle}
+						onNoteSelect={onNoteSelect}
+						onNoteTitleChange={onNoteTitleChange}
+						onNoteTrashed={onNoteTrashed}
+					/>
+					{hasMoreNotes ? (
+						<SidebarMenu>
+							<SidebarMenuItem>
+								<SidebarMenuButton
+									className="text-sidebar-foreground/70 hover:bg-transparent hover:text-inherit"
+									onClick={() => setShowAllNotes((prev) => !prev)}
+								>
+									<MoreHorizontal />
+									<span className="text-xs">
+										{showAllNotes ? "Show less" : "Show more"}
+									</span>
+								</SidebarMenuButton>
+							</SidebarMenuItem>
+						</SidebarMenu>
+					) : null}
+				</SidebarGroupContent>
+			</SidebarGroup>
+		</>
+	);
+}
 
-						return (
-							<SidebarMenuItem key={note._id}>
+function SidebarNotesList({
+	notes,
+	currentNoteId,
+	currentNoteTitle,
+	onNoteSelect,
+	onNoteTitleChange,
+	onNoteTrashed,
+}: {
+	notes: Array<Doc<"notes">>;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle?: string;
+	onNoteSelect: (noteId: Id<"notes">) => void;
+	onNoteTitleChange?: (title: string) => void;
+	onNoteTrashed?: (noteId: Id<"notes">) => void;
+}) {
+	return (
+		<SidebarMenu>
+			{notes.map((note) => {
+				const isActive = note._id === currentNoteId;
+				const title =
+					isActive && currentNoteTitle?.trim()
+						? currentNoteTitle
+						: note.title || "New note";
+
+				return (
+					<SidebarMenuItem key={note._id}>
+						<NoteActionsMenu
+							noteId={note._id}
+							onMoveToTrash={onNoteTrashed}
+							align="start"
+							side="right"
+							renameAnchor={
 								<SidebarMenuButton
 									isActive={isActive}
 									onClick={() => onNoteSelect(note._id)}
-									tooltip={title}
 								>
 									<FileText />
 									<span>{title}</span>
 								</SidebarMenuButton>
-								<NoteActionsMenu
-									noteId={note._id}
-									onMoveToTrash={onNoteTrashed}
-									align="start"
-									side="right"
-								>
-									<SidebarMenuAction
-										showOnHover
-										className="cursor-pointer"
-										aria-label={`Open actions for ${title}`}
-									>
-										<MoreHorizontal />
-									</SidebarMenuAction>
-								</NoteActionsMenu>
-							</SidebarMenuItem>
-						);
-					})}
-				</SidebarMenu>
-				{hasMoreNotes ? (
-					<SidebarMenu>
-						<SidebarMenuItem>
-							<SidebarMenuButton
-								className="text-sidebar-foreground/70 hover:bg-transparent hover:text-inherit"
-								onClick={() => setShowAllNotes((prev) => !prev)}
+							}
+							renamePopoverAlign="start"
+							renamePopoverSide="bottom"
+							renamePopoverSideOffset={6}
+							renamePopoverClassName="w-[340px] rounded-2xl border-sidebar-border/70 bg-sidebar p-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.45)] ring-1 ring-white/8"
+							onRenamePreviewChange={isActive ? onNoteTitleChange : undefined}
+							onRenamePreviewReset={
+								isActive
+									? () => onNoteTitleChange?.(note.title || "New note")
+									: undefined
+							}
+						>
+							<SidebarMenuAction
+								showOnHover
+								className="cursor-pointer"
+								aria-label={`Open actions for ${title}`}
 							>
 								<MoreHorizontal />
-								<span className="text-xs">
-									{showAllNotes ? "Show less" : "Show more"}
-								</span>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-					</SidebarMenu>
-				) : null}
-			</SidebarGroupContent>
-		</SidebarGroup>
+							</SidebarMenuAction>
+						</NoteActionsMenu>
+					</SidebarMenuItem>
+				);
+			})}
+		</SidebarMenu>
 	);
 }
 

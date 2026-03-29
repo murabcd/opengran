@@ -31,6 +31,11 @@ import {
 	FieldLabel,
 } from "@workspace/ui/components/field";
 import { Icons } from "@workspace/ui/components/icons";
+import {
+	Popover,
+	PopoverAnchor,
+	PopoverContent,
+} from "@workspace/ui/components/popover";
 import { Separator } from "@workspace/ui/components/separator";
 import {
 	SidebarProvider,
@@ -63,11 +68,14 @@ import {
 	Volume2,
 } from "lucide-react";
 import * as React from "react";
+import { toast } from "sonner";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ChatPage } from "@/components/chat/chat-page";
 import { AppShellInset } from "@/components/layout/app-shell-inset";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
 import { type NoteEditorActions, NotePage } from "@/components/note/note-page";
+import { NoteTitleEditInput } from "@/components/note/note-title-edit-input";
+import { optimisticRenameNote } from "@/components/note/optimistic-rename-note";
 import { SharedNotePage } from "@/components/note/shared-note-page";
 import type { SettingsPage } from "@/components/settings/settings-dialog";
 import { NoteTemplateSelect } from "@/components/templates/note-template-select";
@@ -2060,6 +2068,7 @@ function AppShell({
 				currentNoteId={controller.currentNoteId}
 				currentNoteTitle={controller.currentNoteTitle}
 				onNoteSelect={controller.openNote}
+				onNoteTitleChange={controller.setCurrentNoteTitle}
 				onNoteTrashed={controller.handleNoteTrashed}
 			/>
 			<AppShellInset reserveRightSidebar={controller.currentView === "note"}>
@@ -2074,6 +2083,7 @@ function AppShell({
 					currentNoteTemplateSlug={controller.currentNoteTemplateSlug}
 					currentNoteEditorActions={controller.currentNoteEditorActions}
 					onCreateNote={controller.handleQuickNote}
+					onNoteTitleChange={controller.setCurrentNoteTitle}
 					onNoteTrashed={controller.handleNoteTrashed}
 					onNewChat={controller.handleNewChat}
 				/>
@@ -2127,6 +2137,7 @@ function AppShellHeader({
 	currentNoteTemplateSlug,
 	currentNoteEditorActions,
 	onCreateNote,
+	onNoteTitleChange,
 	onNoteTrashed,
 	onNewChat,
 }: {
@@ -2140,9 +2151,99 @@ function AppShellHeader({
 	currentNoteTemplateSlug: string | null;
 	currentNoteEditorActions: NoteEditorActions | null;
 	onCreateNote: () => void;
+	onNoteTitleChange: (title: string) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 	onNewChat: () => void;
 }) {
+	const breadcrumbRenameInitialTitleRef = React.useRef(
+		currentNoteTitle || "New note",
+	);
+	const breadcrumbRenameSavedTitleRef = React.useRef(
+		currentNoteTitle || "New note",
+	);
+	const [titleEditOpen, setTitleEditOpen] = React.useState(false);
+	const [titleValue, setTitleValue] = React.useState(
+		currentNoteTitle || "New note",
+	);
+	const [isRenamingNote, setIsRenamingNote] = React.useState(false);
+	const renameNote = useMutation(api.notes.rename).withOptimisticUpdate(
+		(localStore, args) => {
+			optimisticRenameNote(localStore, args.id, args.title);
+		},
+	);
+	const canRenameCurrentNote = currentView === "note" && currentNoteId !== null;
+
+	React.useEffect(() => {
+		if (titleEditOpen) {
+			return;
+		}
+
+		breadcrumbRenameSavedTitleRef.current = currentNoteTitle || "New note";
+		setTitleValue(currentNoteTitle || "New note");
+	}, [currentNoteTitle, titleEditOpen]);
+
+	const commitBreadcrumbRename = React.useCallback(async () => {
+		if (!canRenameCurrentNote || !currentNoteId || isRenamingNote) {
+			return;
+		}
+
+		const nextTitle = titleValue.trim() || "New note";
+		const currentTitle =
+			breadcrumbRenameSavedTitleRef.current.trim() || "New note";
+
+		if (nextTitle === currentTitle) {
+			setTitleEditOpen(false);
+			setTitleValue(nextTitle);
+			return;
+		}
+
+		setIsRenamingNote(true);
+
+		try {
+			await renameNote({
+				id: currentNoteId,
+				title: nextTitle,
+			});
+			breadcrumbRenameInitialTitleRef.current = nextTitle;
+			breadcrumbRenameSavedTitleRef.current = nextTitle;
+			setTitleEditOpen(false);
+			setTitleValue(nextTitle);
+			toast.success("Note renamed");
+		} catch (error) {
+			console.error("Failed to rename note", error);
+			toast.error("Failed to rename note");
+		} finally {
+			setIsRenamingNote(false);
+		}
+	}, [
+		canRenameCurrentNote,
+		currentNoteId,
+		isRenamingNote,
+		renameNote,
+		titleValue,
+	]);
+
+	const handleBreadcrumbTitleEditOpenChange = React.useCallback(
+		(open: boolean) => {
+			if (open) {
+				breadcrumbRenameInitialTitleRef.current =
+					currentNoteTitle || "New note";
+				breadcrumbRenameSavedTitleRef.current = currentNoteTitle || "New note";
+				setTitleEditOpen(true);
+				return;
+			}
+
+			void commitBreadcrumbRename();
+		},
+		[commitBreadcrumbRename, currentNoteTitle],
+	);
+
+	const openBreadcrumbTitleEditor = React.useCallback(() => {
+		breadcrumbRenameInitialTitleRef.current = currentNoteTitle || "New note";
+		breadcrumbRenameSavedTitleRef.current = currentNoteTitle || "New note";
+		setTitleEditOpen(true);
+	}, [currentNoteTitle]);
+
 	return (
 		<header
 			data-app-region={isDesktopMac ? "drag" : undefined}
@@ -2189,9 +2290,64 @@ function AppShellHeader({
 								</BreadcrumbItem>
 								<BreadcrumbSeparator className="hidden shrink-0 md:block" />
 								<BreadcrumbItem className="min-w-0 flex-1 overflow-hidden">
-									<BreadcrumbPage className="block truncate">
-										{breadcrumbDetailLabel}
-									</BreadcrumbPage>
+									{canRenameCurrentNote ? (
+										<Popover
+											open={titleEditOpen}
+											onOpenChange={handleBreadcrumbTitleEditOpenChange}
+										>
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<PopoverAnchor asChild>
+														<button
+															type="button"
+															aria-current="page"
+															className="line-clamp-1 cursor-pointer rounded px-1 py-0.5 -mx-1 -my-0.5 text-left"
+															onClick={openBreadcrumbTitleEditor}
+														>
+															<BreadcrumbPage className="block truncate">
+																{breadcrumbDetailLabel}
+															</BreadcrumbPage>
+														</button>
+													</PopoverAnchor>
+												</TooltipTrigger>
+												<TooltipContent>Rename note</TooltipContent>
+											</Tooltip>
+											<PopoverContent
+												align="start"
+												side="bottom"
+												sideOffset={6}
+												className="w-[340px] rounded-2xl border-sidebar-border/70 bg-sidebar p-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.45)] ring-1 ring-white/8"
+											>
+												<div className="flex items-center gap-2">
+													<NoteTitleEditInput
+														autoFocus
+														commitOnBlur={false}
+														value={titleValue}
+														onValueChange={(value) => {
+															setTitleValue(value);
+															onNoteTitleChange(value || "New note");
+														}}
+														onCommit={() => {
+															void commitBreadcrumbRename();
+														}}
+														onCancel={() => {
+															setTitleEditOpen(false);
+															onNoteTitleChange(
+																breadcrumbRenameInitialTitleRef.current,
+															);
+															setTitleValue(
+																breadcrumbRenameInitialTitleRef.current,
+															);
+														}}
+													/>
+												</div>
+											</PopoverContent>
+										</Popover>
+									) : (
+										<BreadcrumbPage className="block truncate">
+											{breadcrumbDetailLabel}
+										</BreadcrumbPage>
+									)}
 								</BreadcrumbItem>
 							</>
 						) : (
@@ -2408,6 +2564,7 @@ function AppShellContent({
 				<NotePage
 					autoStartTranscription={shouldAutoStartNoteCapture}
 					noteId={currentNoteId}
+					externalTitle={currentNoteTitle}
 					onAutoStartTranscriptionHandled={onAutoStartNoteCaptureHandled}
 					onTitleChange={onNoteTitleChange}
 					onEditorActionsChange={onNoteEditorActionsChange}

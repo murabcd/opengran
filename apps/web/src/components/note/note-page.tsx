@@ -211,10 +211,12 @@ export type NoteEditorActions = {
 
 const useNotePageController = ({
 	noteId,
+	externalTitle,
 	onTitleChange,
 	onEditorActionsChange,
 }: {
 	noteId: Id<"notes"> | null;
+	externalTitle?: string;
 	onTitleChange?: (title: string) => void;
 	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
 }) => {
@@ -245,6 +247,7 @@ const useNotePageController = ({
 	});
 	const hasHydratedRef = React.useRef(false);
 	const hydratedNoteIdRef = React.useRef<Id<"notes"> | null>(null);
+	const suppressNextTitleChangeRef = React.useRef(false);
 	const saveInFlightRef = React.useRef(false);
 	const lastSavedSnapshotRef = React.useRef<string | null>(null);
 	const publishedEditorActionsRef = React.useRef<{
@@ -476,8 +479,27 @@ const useNotePageController = ({
 	]);
 
 	React.useEffect(() => {
+		if (suppressNextTitleChangeRef.current) {
+			suppressNextTitleChangeRef.current = false;
+			return;
+		}
+
 		onTitleChange?.(title || "New note");
 	}, [onTitleChange, title]);
+
+	React.useEffect(() => {
+		if (!noteId || !hasHydratedRef.current || externalTitle === undefined) {
+			return;
+		}
+
+		const nextTitle = externalTitle || "New note";
+		if (nextTitle === title) {
+			return;
+		}
+
+		suppressNextTitleChangeRef.current = true;
+		setTitle(nextTitle);
+	}, [externalTitle, noteId, title]);
 
 	React.useEffect(() => {
 		const element = titleTextareaRef.current;
@@ -943,18 +965,21 @@ const useNotePageController = ({
 export function NotePage({
 	autoStartTranscription = false,
 	noteId,
+	externalTitle,
 	onAutoStartTranscriptionHandled,
 	onTitleChange,
 	onEditorActionsChange,
 }: {
 	autoStartTranscription?: boolean;
 	noteId: Id<"notes"> | null;
+	externalTitle?: string;
 	onAutoStartTranscriptionHandled?: () => void;
 	onTitleChange?: (title: string) => void;
 	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
 }) {
 	const controller = useNotePageController({
 		noteId,
+		externalTitle,
 		onTitleChange,
 		onEditorActionsChange,
 	});
