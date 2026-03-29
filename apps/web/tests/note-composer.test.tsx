@@ -1,6 +1,12 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import * as React from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const useChatMock = vi.fn();
 const useQueryMock = vi.fn();
@@ -154,6 +160,10 @@ vi.mock("../src/lib/auth-client", () => ({
 }));
 
 describe("NoteComposer", () => {
+	afterEach(() => {
+		cleanup();
+	});
+
 	beforeEach(() => {
 		useSidebarMock.mockReturnValue({
 			isMobile: false,
@@ -175,6 +185,62 @@ describe("NoteComposer", () => {
 			status: "ready",
 			stop: vi.fn(),
 		});
+
+		useNoteTranscriptSessionMock.mockReturnValue({
+			autoStartKey: null,
+			captureScopeKey: "note:note-1",
+			fullTranscript: "",
+			handleGenerateNotes: vi.fn(),
+			isGeneratingNotes: false,
+			isRefiningTranscript: false,
+			isSpeechListening: false,
+			liveTranscriptEntries: [],
+			onLiveTranscriptChange: vi.fn(),
+			onRecoveryStatusChange: vi.fn(),
+			onSystemAudioRecordingReady: vi.fn(),
+			onSystemAudioStatusChange: vi.fn(),
+			onTranscriptListeningChange: vi.fn(),
+			onTranscriptUtterance: vi.fn(),
+			orderedTranscriptUtterances: [],
+			recoveryStatus: {
+				attempt: 0,
+				maxAttempts: 0,
+				message: null,
+				state: "idle",
+			},
+			systemAudioStatus: {
+				sourceMode: "display-media",
+				state: "idle",
+			},
+			transcriptRefinementError: null,
+			transcriptViewportRef: {
+				current: null,
+			},
+		});
+	});
+
+	it("shows only the send button in the composer actions when empty", async () => {
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty(
+			"disabled",
+			true,
+		);
+		expect(
+			screen.queryByRole("button", { name: "Audio visualization" }),
+		).toBeNull();
 	});
 
 	it("closes the inline transcript panel on outside press without changing listening state", async () => {
@@ -234,9 +300,11 @@ describe("NoteComposer", () => {
 			/>,
 		);
 
-		fireEvent.click(
-			screen.getByRole("button", { name: "Expand speech controls" }),
-		);
+		const expandButtons = screen.getAllByRole("button", {
+			name: "Expand speech controls",
+		});
+
+		fireEvent.click(expandButtons[0]);
 
 		await waitFor(() => {
 			expect(screen.getByText("Live transcript")).toBeDefined();

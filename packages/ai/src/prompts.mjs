@@ -10,6 +10,7 @@ export const CHAT_TITLE_SYSTEM_PROMPT = joinPromptSections([
 	"Generate a short chat title that summarizes the user's message.",
 	"Use 2 to 5 words when possible.",
 	"Use the same primary language as the user's message.",
+	"Use sentence case: capitalize only the first letter, not every word.",
 	"If the message is too short, generic, or only a greeting, return exactly `New chat`.",
 	"Output only the title text.",
 	"Do not use quotes, prefixes, markdown, punctuation wrappers, or extra explanation.",

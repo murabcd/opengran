@@ -112,10 +112,20 @@ const truncate = (value: string, maxLength: number) =>
 		? `${value.slice(0, maxLength - 1).trimEnd()}…`
 		: value;
 
+const toSentenceCase = (value: string) => {
+	if (!value) {
+		return value;
+	}
+
+	return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+};
+
 const normalizeChatTitle = (value: string | undefined) => {
 	const normalized = clampWhitespace(value ?? "");
 
-	return normalized ? truncate(normalized, MAX_CHAT_TITLE_LENGTH) : "New chat";
+	return normalized
+		? truncate(toSentenceCase(normalized), MAX_CHAT_TITLE_LENGTH)
+		: "New chat";
 };
 
 const normalizeChatPreview = (value: string | undefined) =>

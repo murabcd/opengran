@@ -22,7 +22,6 @@ import { DefaultChatTransport } from "ai";
 import { useQuery } from "convex/react";
 import {
 	ArrowUp,
-	AudioLines,
 	Check,
 	ChevronDown,
 	ChevronUp,
@@ -317,7 +316,12 @@ const useNoteComposerController = ({
 		!transcriptSession.isSpeechListening &&
 		!isTranscriptOpen &&
 		!transcriptSession.isRefiningTranscript;
-	const chatTitle = currentChatSession?.title?.trim() || "New chat";
+	const selectedNoteChat =
+		(noteChats ?? []).find((chat) => chat.chatId === currentChatId) ?? null;
+	const chatTitle =
+		selectedNoteChat?.title?.trim() ||
+		currentChatSession?.title?.trim() ||
+		"New chat";
 	const groupedNoteChats = React.useMemo(
 		() => groupChatsForSelector(noteChats ?? []),
 		[noteChats],
@@ -964,9 +968,17 @@ function NoteChatHeader({
 							type="button"
 							variant="ghost"
 							size="sm"
-							className="h-8 max-w-[min(100%,28rem)] justify-start gap-1 px-2"
+							className={cn(
+								"h-8 justify-start gap-1 px-2",
+								sidebarCompact
+									? "max-w-[min(100%,18rem)]"
+									: "w-fit max-w-[min(100%,36rem)]",
+								sidebarCompact ? "-ml-1" : "-ml-2",
+							)}
 						>
-							<span className="truncate text-sm font-medium">{chatTitle}</span>
+							<span className="min-w-0 truncate text-sm font-medium">
+								{chatTitle}
+							</span>
 							<ChevronDown className="size-3 text-muted-foreground" />
 						</Button>
 					</DropdownMenuTrigger>
@@ -1045,6 +1057,7 @@ function NoteChatHeader({
 									type="button"
 									variant="ghost"
 									size="icon-sm"
+									className={sidebarCompact ? "-mr-1" : "-mr-2"}
 									aria-label="Switch chat mode"
 								>
 									{chatModeIcon}
@@ -1134,7 +1147,7 @@ function ComposerInputShell({
 	return (
 		<div
 			className={cn(
-				"w-full overflow-clip rounded-xl border border-border bg-card bg-clip-padding p-2.5 shadow-sm [--radius:1rem] transition-colors outline-none has-disabled:bg-input/50 has-disabled:opacity-50 has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-3 has-[[data-slot=input-group-control]:focus-visible]:ring-ring/50 dark:bg-input/30 dark:has-disabled:bg-input/80",
+				"w-full overflow-clip rounded-xl border border-border bg-card bg-clip-padding p-2.5 shadow-sm [--radius:1rem] transition-colors outline-none has-disabled:bg-card has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-3 has-[[data-slot=input-group-control]:focus-visible]:ring-ring/50 dark:bg-input/30 dark:has-disabled:bg-input/30",
 				"grid [grid-template-areas:'header_header_header'_'leading_primary_trailing'_'._footer_.'] [grid-template-columns:auto_1fr_auto] [grid-template-rows:auto_1fr_auto]",
 			)}
 		>
@@ -1189,28 +1202,16 @@ function ComposerInputShell({
 
 			<div className="flex items-center gap-2" style={{ gridArea: "trailing" }}>
 				<div className="ms-auto flex items-center gap-1.5">
-					{hasMessage ? (
-						<Button
-							type="submit"
-							variant="default"
-							size="icon-sm"
-							className="rounded-full"
-							aria-label="Send message"
-							disabled={isChatLoading}
-						>
-							<ArrowUp className="size-4" />
-						</Button>
-					) : (
-						<Button
-							type="button"
-							variant="default"
-							size="icon-sm"
-							className="rounded-full"
-							aria-label="Audio visualization"
-						>
-							<AudioLines className="size-4" />
-						</Button>
-					)}
+					<Button
+						type="submit"
+						variant="default"
+						size="icon-sm"
+						className="rounded-full"
+						aria-label="Send message"
+						disabled={!hasMessage || isChatLoading}
+					>
+						<ArrowUp className="size-4" />
+					</Button>
 				</div>
 			</div>
 		</div>
