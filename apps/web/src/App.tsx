@@ -2692,19 +2692,16 @@ function HomeView({
 													return (
 														<div
 															key={`${event.id}:${event.startAt}`}
-															className={cn(
-																"flex items-start gap-3 rounded-lg px-3 py-2 transition-colors",
-																isLive && "bg-muted/50",
-															)}
+															className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
 														>
 															<div
 																className={cn(
-																	"mt-0.5 h-8 w-1 shrink-0 rounded-full bg-[#8f88ff]",
+																	"h-8 w-1 shrink-0 rounded-full bg-[#8f88ff]",
 																	isLive && "bg-green-500",
 																)}
 															/>
 															<div className="min-w-0 flex-1">
-																<div className="flex items-start justify-between gap-4">
+																<div className="flex items-center justify-between gap-4">
 																	<div className="min-w-0">
 																		<p className="truncate text-sm font-medium text-foreground">
 																			{event.title}
@@ -2726,7 +2723,7 @@ function HomeView({
 																			type="button"
 																			variant="default"
 																			size="sm"
-																			className="h-8 shrink-0 px-3.5 text-xs"
+																			className="shrink-0"
 																			onClick={() => {
 																				if (event.meetingUrl) {
 																					void openMeetingLink(
