@@ -1,13 +1,13 @@
 "use node";
 
 import { ConvexError, v } from "convex/values";
+import { api, internal } from "./_generated/api";
 import type { ActionCtx } from "./_generated/server";
 import { action } from "./_generated/server";
 import { authComponent, createAuth } from "./auth";
+import { listYandexUpcomingEvents } from "./yandexCalendar";
 
-const UPCOMING_EVENTS_WINDOW_DAYS = 7;
 const UPCOMING_EVENTS_LIMIT = 12;
-const CALENDAR_LOOKBACK_MS = 6 * 60 * 60 * 1000;
 
 const upcomingCalendarEventValidator = v.object({
 	id: v.string(),
@@ -17,6 +17,7 @@ const upcomingCalendarEventValidator = v.object({
 	startAt: v.string(),
 	endAt: v.string(),
 	isAllDay: v.boolean(),
+	isMeeting: v.boolean(),
 	htmlLink: v.optional(v.string()),
 	meetingUrl: v.optional(v.string()),
 	location: v.optional(v.string()),
@@ -87,13 +88,67 @@ type UpcomingCalendarEvent = {
 	startAt: string;
 	endAt: string;
 	isAllDay: boolean;
+	isMeeting: boolean;
 	htmlLink?: string;
 	meetingUrl?: string;
 	location?: string;
 };
 
+type UpcomingEventsFetchResult = {
+	connectedCalendarCount: number;
+	events: UpcomingCalendarEvent[];
+};
+
+type CalendarVisibilityPreferences = {
+	showGoogleCalendar: boolean;
+	showYandexCalendar: boolean;
+};
+
+type UpcomingEventsResponse =
+	| {
+			status: "not_connected";
+			events: UpcomingCalendarEvent[];
+	  }
+	| {
+			status: "ready";
+			events: UpcomingCalendarEvent[];
+			connectedCalendarCount: number;
+	  };
+
+type RequestedCalendarWindow = {
+	timeMin: number;
+	timeMax: number;
+};
+
 const GOOGLE_CALENDAR_SCOPE =
 	"https://www.googleapis.com/auth/calendar.readonly";
+
+const getRequestedCalendarWindow = ({
+	timeMax,
+	timeMin,
+}: {
+	timeMax: string;
+	timeMin: string;
+}): RequestedCalendarWindow => {
+	const parsedTimeMin = new Date(timeMin).getTime();
+	const parsedTimeMax = new Date(timeMax).getTime();
+
+	if (
+		!Number.isFinite(parsedTimeMin) ||
+		!Number.isFinite(parsedTimeMax) ||
+		parsedTimeMax <= parsedTimeMin
+	) {
+		throw new ConvexError({
+			code: "INVALID_CALENDAR_WINDOW",
+			message: "Calendar window is invalid.",
+		});
+	}
+
+	return {
+		timeMin: parsedTimeMin,
+		timeMax: parsedTimeMax,
+	};
+};
 
 type BetterAuthInstance = ReturnType<typeof createAuth>;
 
@@ -252,6 +307,16 @@ const getMeetingUrl = (event: GoogleCalendarEvent) =>
 			entryPoint.entryPointType === "video" && Boolean(entryPoint.uri),
 	)?.uri;
 
+const isMeetingEvent = ({
+	attendees,
+	meetingUrl,
+}: {
+	attendees?: GoogleCalendarEvent["attendees"];
+	meetingUrl?: string;
+}) =>
+	Boolean(meetingUrl) ||
+	(attendees?.some((attendee) => attendee.self !== true) ?? false);
+
 const toDate = (value: GoogleCalendarDateTime | undefined, isEnd: boolean) => {
 	if (!value) {
 		return null;
@@ -296,6 +361,8 @@ const normalizeUpcomingEvent = (
 		return null;
 	}
 
+	const meetingUrl = getMeetingUrl(event);
+
 	return {
 		id: event.iCalUID ?? event.id,
 		calendarId: calendar.id,
@@ -304,115 +371,249 @@ const normalizeUpcomingEvent = (
 		startAt: startAt.toISOString(),
 		endAt: endAt.toISOString(),
 		isAllDay: Boolean(event.start?.date && !event.start?.dateTime),
+		isMeeting: isMeetingEvent({
+			attendees: event.attendees,
+			meetingUrl,
+		}),
 		htmlLink: event.htmlLink,
-		meetingUrl: getMeetingUrl(event),
+		meetingUrl,
 		location: event.location?.trim() || undefined,
 	};
 };
 
+const sortAndLimitUpcomingEvents = (events: UpcomingCalendarEvent[]) =>
+	events
+		.sort(
+			(left, right) =>
+				new Date(left.startAt).getTime() - new Date(right.startAt).getTime(),
+		)
+		.slice(0, UPCOMING_EVENTS_LIMIT);
+
+const dedupeUpcomingEvents = (events: UpcomingCalendarEvent[]) => {
+	const dedupedEvents = new Map<string, UpcomingCalendarEvent>();
+
+	for (const event of events) {
+		const key = `${event.id}:${event.startAt}`;
+
+		if (!dedupedEvents.has(key)) {
+			dedupedEvents.set(key, event);
+		}
+	}
+
+	return Array.from(dedupedEvents.values());
+};
+
+const fetchGoogleUpcomingEvents = async ({
+	authContext,
+	now,
+	timeMax,
+	timeMin,
+}: {
+	authContext: GoogleAuthContext;
+	now: number;
+	timeMax: string;
+	timeMin: string;
+}): Promise<UpcomingEventsFetchResult> => {
+	const googleTokens = await getGoogleAccessToken(authContext);
+
+	if (
+		!googleTokens?.accessToken ||
+		!googleTokens.scopes.includes(GOOGLE_CALENDAR_SCOPE)
+	) {
+		return {
+			connectedCalendarCount: 0,
+			events: [] as UpcomingCalendarEvent[],
+		};
+	}
+
+	const calendarListUrl = new URL(
+		"https://www.googleapis.com/calendar/v3/users/me/calendarList",
+	);
+	calendarListUrl.searchParams.set("showDeleted", "false");
+	calendarListUrl.searchParams.set("minAccessRole", "reader");
+
+	const calendarList = await fetchGoogleJsonWithRetry<GoogleCalendarListResponse>(
+		authContext,
+		googleTokens,
+		calendarListUrl,
+	);
+	const calendars = (calendarList.items ?? []).filter(isVisibleCalendar);
+
+	if (calendars.length === 0) {
+		return {
+			connectedCalendarCount: 0,
+			events: [] as UpcomingCalendarEvent[],
+		};
+	}
+
+	const perCalendarEvents = await Promise.all(
+		calendars.map(async (calendar) => {
+			const eventsUrl = new URL(
+				`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar.id)}/events`,
+			);
+			eventsUrl.searchParams.set("singleEvents", "true");
+			eventsUrl.searchParams.set("orderBy", "startTime");
+			eventsUrl.searchParams.set("showDeleted", "false");
+			eventsUrl.searchParams.set("timeMin", timeMin);
+			eventsUrl.searchParams.set("timeMax", timeMax);
+			eventsUrl.searchParams.set("maxResults", String(UPCOMING_EVENTS_LIMIT));
+
+			try {
+				const response =
+					await fetchGoogleJsonWithRetry<GoogleCalendarEventsResponse>(
+						authContext,
+						googleTokens,
+						eventsUrl,
+					);
+
+				return (response.items ?? [])
+					.map((event) => normalizeUpcomingEvent(calendar, event, now))
+					.filter((event): event is UpcomingCalendarEvent => event !== null);
+			} catch {
+				return [];
+			}
+		}),
+	);
+
+	return {
+		connectedCalendarCount: calendars.length,
+		events: perCalendarEvents.flat(),
+	};
+};
+
+const fetchYandexUpcomingEvents = async ({
+	ctx,
+	now,
+	timeMax,
+	timeMin,
+}: {
+	ctx: ActionCtx;
+	now: number;
+	timeMax: number;
+	timeMin: number;
+}): Promise<UpcomingEventsFetchResult> => {
+	const identity = await ctx.auth.getUserIdentity();
+
+	if (!identity) {
+		return {
+			connectedCalendarCount: 0,
+			events: [] as UpcomingCalendarEvent[],
+		};
+	}
+
+	const connection: {
+		provider: "yandex-calendar";
+		displayName: string;
+		email: string;
+		password: string;
+		serverAddress: string;
+		calendarHomePath: string;
+	} | null = await ctx.runQuery(
+		internal.appConnections.getYandexCalendarCredentials,
+		{
+			ownerTokenIdentifier: identity.tokenIdentifier,
+		},
+	);
+
+	if (!connection) {
+		return {
+			connectedCalendarCount: 0,
+			events: [] as UpcomingCalendarEvent[],
+		};
+	}
+
+	try {
+		return await listYandexUpcomingEvents({
+			connection,
+			now,
+			timeMax,
+			timeMin,
+		});
+	} catch {
+		return {
+			connectedCalendarCount: 0,
+			events: [] as UpcomingCalendarEvent[],
+		};
+	}
+};
+
 export const listUpcomingGoogleEvents = action({
-	args: {},
+	args: {
+		timeMax: v.string(),
+		timeMin: v.string(),
+	},
 	returns: upcomingEventsResponseValidator,
-	handler: async (ctx) => {
+	handler: async (ctx, args): Promise<UpcomingEventsResponse> => {
+		const identity = await ctx.auth.getUserIdentity();
+
+		if (!identity) {
+			return {
+				status: "not_connected" as const,
+				events: [] as UpcomingCalendarEvent[],
+			};
+		}
+
 		try {
 			const authContext = await getGoogleAuthContext(ctx);
-			const googleTokens = await getGoogleAccessToken(authContext);
-
-			if (!googleTokens?.accessToken) {
-				return {
-					status: "not_connected" as const,
-					events: [] as UpcomingCalendarEvent[],
-				};
-			}
-
-			if (!googleTokens.scopes.includes(GOOGLE_CALENDAR_SCOPE)) {
-				return {
-					status: "not_connected" as const,
-					events: [] as UpcomingCalendarEvent[],
-				};
-			}
-
-			const now = Date.now();
-			const timeMin = new Date(now - CALENDAR_LOOKBACK_MS).toISOString();
-			const timeMax = new Date(
-				now + UPCOMING_EVENTS_WINDOW_DAYS * 24 * 60 * 60 * 1000,
-			).toISOString();
-			const calendarListUrl = new URL(
-				"https://www.googleapis.com/calendar/v3/users/me/calendarList",
-			);
-			calendarListUrl.searchParams.set("showDeleted", "false");
-			calendarListUrl.searchParams.set("minAccessRole", "reader");
-
-			const calendarList =
-				await fetchGoogleJsonWithRetry<GoogleCalendarListResponse>(
-					authContext,
-					googleTokens,
-					calendarListUrl,
-				);
-			const calendars = (calendarList.items ?? []).filter(isVisibleCalendar);
-
-			if (calendars.length === 0) {
+			const calendarVisibilityPreferences: CalendarVisibilityPreferences =
+				await ctx.runQuery(api.calendarPreferences.get, {});
+			if (
+				!calendarVisibilityPreferences.showGoogleCalendar &&
+				!calendarVisibilityPreferences.showYandexCalendar
+			) {
 				return {
 					status: "ready" as const,
 					events: [] as UpcomingCalendarEvent[],
 					connectedCalendarCount: 0,
 				};
 			}
-
-			const perCalendarEvents = await Promise.all(
-				calendars.map(async (calendar) => {
-					const eventsUrl = new URL(
-						`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar.id)}/events`,
-					);
-					eventsUrl.searchParams.set("singleEvents", "true");
-					eventsUrl.searchParams.set("orderBy", "startTime");
-					eventsUrl.searchParams.set("showDeleted", "false");
-					eventsUrl.searchParams.set("timeMin", timeMin);
-					eventsUrl.searchParams.set("timeMax", timeMax);
-					eventsUrl.searchParams.set(
-						"maxResults",
-						String(UPCOMING_EVENTS_LIMIT),
-					);
-
-					try {
-						const response =
-							await fetchGoogleJsonWithRetry<GoogleCalendarEventsResponse>(
-								authContext,
-								googleTokens,
-								eventsUrl,
-							);
-
-						return (response.items ?? [])
-							.map((event) => normalizeUpcomingEvent(calendar, event, now))
-							.filter((event): event is UpcomingCalendarEvent => event !== null);
-					} catch {
-						return [];
-					}
-				}),
+			const now = Date.now();
+			const requestedWindow = getRequestedCalendarWindow(args);
+			const [googleCalendarResult, yandexCalendarResult] = await Promise.all([
+				calendarVisibilityPreferences.showGoogleCalendar
+					? fetchGoogleUpcomingEvents({
+							authContext,
+							now,
+							timeMin: new Date(requestedWindow.timeMin).toISOString(),
+							timeMax: new Date(requestedWindow.timeMax).toISOString(),
+						})
+					: Promise.resolve({
+							connectedCalendarCount: 0,
+							events: [] as UpcomingCalendarEvent[],
+						}),
+				calendarVisibilityPreferences.showYandexCalendar
+					? fetchYandexUpcomingEvents({
+							ctx,
+							now,
+							timeMin: requestedWindow.timeMin,
+							timeMax: requestedWindow.timeMax,
+						})
+					: Promise.resolve({
+							connectedCalendarCount: 0,
+							events: [] as UpcomingCalendarEvent[],
+						}),
+			]);
+			const connectedCalendarCount =
+				googleCalendarResult.connectedCalendarCount +
+				yandexCalendarResult.connectedCalendarCount;
+			const events = sortAndLimitUpcomingEvents(
+				dedupeUpcomingEvents([
+					...googleCalendarResult.events,
+					...yandexCalendarResult.events,
+				]).filter((event) => event.isMeeting),
 			);
 
-			const dedupedEvents = new Map<string, UpcomingCalendarEvent>();
-
-			for (const events of perCalendarEvents) {
-				for (const event of events) {
-					const key = `${event.id}:${event.startAt}`;
-
-					if (!dedupedEvents.has(key)) {
-						dedupedEvents.set(key, event);
-					}
-				}
+			if (connectedCalendarCount === 0) {
+				return {
+					status: "not_connected" as const,
+					events: [] as UpcomingCalendarEvent[],
+				};
 			}
 
 			return {
 				status: "ready" as const,
-				events: Array.from(dedupedEvents.values())
-					.sort(
-						(left, right) =>
-							new Date(left.startAt).getTime() -
-							new Date(right.startAt).getTime(),
-					)
-					.slice(0, UPCOMING_EVENTS_LIMIT),
-				connectedCalendarCount: calendars.length,
+				events,
+				connectedCalendarCount,
 			};
 		} catch (error) {
 			if (

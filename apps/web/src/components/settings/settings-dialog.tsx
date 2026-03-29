@@ -55,6 +55,7 @@ import {
 	SidebarMenuItem,
 	SidebarProvider,
 } from "@workspace/ui/components/sidebar";
+import { Switch } from "@workspace/ui/components/switch";
 import { useTheme } from "@workspace/ui/components/theme-provider";
 import { useAction, useMutation, useQuery } from "convex/react";
 import {
@@ -151,6 +152,11 @@ type YandexTrackerConnectionFormState = {
 	token: string;
 };
 
+type YandexCalendarConnectionFormState = {
+	email: string;
+	password: string;
+};
+
 const getWorkspaceFormState = (
 	workspace: WorkspaceRecord | null,
 ): WorkspaceFormState => ({
@@ -173,6 +179,12 @@ const initialYandexTrackerConnectionFormState: YandexTrackerConnectionFormState 
 		orgType: "x-org-id",
 		orgId: "",
 		token: "",
+	};
+
+const initialYandexCalendarConnectionFormState: YandexCalendarConnectionFormState =
+	{
+		email: "",
+		password: "",
 	};
 
 export function SettingsDialog({
@@ -357,9 +369,30 @@ function AppearanceSettings() {
 
 function CalendarSettings() {
 	const { data: session } = authClient.useSession();
+	const calendarPreferences = useQuery(api.calendarPreferences.get, {});
+	const updateCalendarPreferences = useMutation(api.calendarPreferences.update);
+	const yandexCalendarConnection = useQuery(
+		api.appConnections.getYandexCalendar,
+		{},
+	);
+	const connectYandexCalendar = useAction(
+		api.appConnectionActions.connectYandexCalendar,
+	);
 	const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
 	const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
 	const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+	const [isSavingCalendarPreferences, setIsSavingCalendarPreferences] =
+		useState(false);
+	const [isYandexCalendarDialogOpen, setIsYandexCalendarDialogOpen] =
+		useState(false);
+	const [
+		isSavingYandexCalendarConnection,
+		setIsSavingYandexCalendarConnection,
+	] = useState(false);
+	const [yandexCalendarFormState, setYandexCalendarFormState] =
+		useState<YandexCalendarConnectionFormState>(
+			initialYandexCalendarConnectionFormState,
+		);
 
 	const loadAccounts = useCallback(async () => {
 		if (!session?.user) {
@@ -403,6 +436,20 @@ function CalendarSettings() {
 		googleAccount?.scopes.includes(
 			"https://www.googleapis.com/auth/calendar.readonly",
 		) ?? false;
+
+	const handleYandexCalendarDialogOpenChange = (open: boolean) => {
+		setIsYandexCalendarDialogOpen(open);
+
+		if (open) {
+			setYandexCalendarFormState({
+				email: yandexCalendarConnection?.email ?? session?.user?.email ?? "",
+				password: "",
+			});
+			return;
+		}
+
+		setYandexCalendarFormState(initialYandexCalendarConnectionFormState);
+	};
 
 	const handleConnectGoogleCalendar = async () => {
 		setIsConnectingGoogle(true);
@@ -461,36 +508,219 @@ function CalendarSettings() {
 		}
 	};
 
+	const handleConnectYandexCalendar = async () => {
+		if (
+			!yandexCalendarFormState.email.trim() ||
+			!yandexCalendarFormState.password.trim()
+		) {
+			return;
+		}
+
+		setIsSavingYandexCalendarConnection(true);
+
+		try {
+			await connectYandexCalendar({
+				email: yandexCalendarFormState.email.trim(),
+				password: yandexCalendarFormState.password.trim(),
+			});
+			toast.success("Yandex Calendar connected");
+			handleYandexCalendarDialogOpenChange(false);
+		} catch (error) {
+			console.error("Failed to connect Yandex Calendar", error);
+			toast.error(
+				error instanceof Error
+					? withoutTrailingPeriod(error.message)
+					: "Failed to connect Yandex Calendar",
+			);
+		} finally {
+			setIsSavingYandexCalendarConnection(false);
+		}
+	};
+
+	const isYandexCalendarFormValid =
+		yandexCalendarFormState.email.trim().length > 0 &&
+		yandexCalendarFormState.password.trim().length > 0;
+
+	const handleCalendarVisibilityChange = async (nextPreferences: {
+		showGoogleCalendar: boolean;
+		showYandexCalendar: boolean;
+	}) => {
+		setIsSavingCalendarPreferences(true);
+
+		try {
+			await updateCalendarPreferences(nextPreferences);
+		} catch (error) {
+			console.error("Failed to update calendar preferences", error);
+			toast.error("Failed to update calendar visibility");
+		} finally {
+			setIsSavingCalendarPreferences(false);
+		}
+	};
+
 	return (
 		<div className="py-4">
-			<Field>
-				<Label className={SETTINGS_LABEL_CLASSNAME}>Calendars</Label>
-				<div className="flex items-center justify-between gap-4">
-					<div className="flex min-w-0 items-center gap-3">
-						<Icons.googleLogo className="size-5 shrink-0" />
-						<div className="min-w-0">
-							<Label className="text-sm font-medium text-foreground">
-								Google Calendar
-							</Label>
+			<FieldGroup className="gap-6">
+				<Field>
+					<Label className={SETTINGS_LABEL_CLASSNAME}>Calendars</Label>
+					<div className="space-y-4">
+						<div className="flex items-center justify-between gap-4">
+							<div className="flex min-w-0 items-center gap-3">
+								<Icons.googleLogo className="size-5 shrink-0" />
+								<div className="min-w-0">
+									<Label className="text-sm font-medium text-foreground">
+										Google Calendar
+									</Label>
+								</div>
+							</div>
+							<div className="flex shrink-0 items-center gap-3">
+								<Switch
+									checked={calendarPreferences?.showGoogleCalendar ?? true}
+									disabled={isSavingCalendarPreferences}
+									onCheckedChange={(checked) => {
+										void handleCalendarVisibilityChange({
+											showGoogleCalendar: checked,
+											showYandexCalendar:
+												calendarPreferences?.showYandexCalendar ?? true,
+										});
+									}}
+								/>
+								<Button
+									type="button"
+									variant={googleAccount ? "outline" : "default"}
+									onClick={handleConnectGoogleCalendar}
+									disabled={
+										isConnectingGoogle || !session?.user || isLoadingAccounts
+									}
+								>
+									{isConnectingGoogle ? (
+										<LoaderCircle className="animate-spin" />
+									) : null}
+									{googleAccount
+										? hasCalendarScope
+											? "Reconnect"
+											: "Grant calendar access"
+										: "Connect"}
+								</Button>
+							</div>
+						</div>
+						<div className="flex items-center justify-between gap-4">
+							<div className="flex min-w-0 items-center gap-3">
+								<Icons.yandexCalendarLogo className="size-5 shrink-0" />
+								<div className="min-w-0">
+									<Label className="text-sm font-medium text-foreground">
+										Yandex Calendar
+									</Label>
+								</div>
+							</div>
+							<div className="flex shrink-0 items-center gap-3">
+								<Switch
+									checked={calendarPreferences?.showYandexCalendar ?? true}
+									disabled={isSavingCalendarPreferences}
+									onCheckedChange={(checked) => {
+										void handleCalendarVisibilityChange({
+											showGoogleCalendar:
+												calendarPreferences?.showGoogleCalendar ?? true,
+											showYandexCalendar: checked,
+										});
+									}}
+								/>
+								<Button
+									type="button"
+									variant={yandexCalendarConnection ? "outline" : "default"}
+									onClick={() => handleYandexCalendarDialogOpenChange(true)}
+									disabled={!session?.user || isSavingYandexCalendarConnection}
+								>
+									{yandexCalendarConnection ? "Reconnect" : "Connect"}
+								</Button>
+							</div>
 						</div>
 					</div>
-					<Button
-						type="button"
-						variant={googleAccount ? "outline" : "default"}
-						onClick={handleConnectGoogleCalendar}
-						disabled={isConnectingGoogle || !session?.user || isLoadingAccounts}
-					>
-						{isConnectingGoogle ? (
-							<LoaderCircle className="animate-spin" />
-						) : null}
-						{googleAccount
-							? hasCalendarScope
-								? "Reconnect"
-								: "Grant calendar access"
-							: "Connect"}
-					</Button>
-				</div>
-			</Field>
+				</Field>
+			</FieldGroup>
+			<Dialog
+				open={isYandexCalendarDialogOpen}
+				onOpenChange={handleYandexCalendarDialogOpenChange}
+			>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Connect Yandex Calendar</DialogTitle>
+						<DialogDescription>
+							Enter the Yandex account OpenGran should use to load your upcoming
+							meetings.
+						</DialogDescription>
+					</DialogHeader>
+					<FieldGroup className="gap-4">
+						<Field>
+							<Label
+								htmlFor="yandex-calendar-email"
+								className={SETTINGS_LABEL_CLASSNAME}
+							>
+								Email
+							</Label>
+							<Input
+								id="yandex-calendar-email"
+								type="email"
+								value={yandexCalendarFormState.email}
+								onChange={(event) =>
+									setYandexCalendarFormState((currentState) => ({
+										...currentState,
+										email: event.target.value,
+									}))
+								}
+								placeholder="name@yandex.ru"
+							/>
+						</Field>
+						<Field>
+							<Label
+								htmlFor="yandex-calendar-password"
+								className={SETTINGS_LABEL_CLASSNAME}
+							>
+								App password
+							</Label>
+							<Input
+								id="yandex-calendar-password"
+								type="password"
+								value={yandexCalendarFormState.password}
+								onChange={(event) =>
+									setYandexCalendarFormState((currentState) => ({
+										...currentState,
+										password: event.target.value,
+									}))
+								}
+								placeholder="Paste your Yandex app password"
+							/>
+						</Field>
+					</FieldGroup>
+					<div className="flex justify-end gap-2 pt-2">
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={() => handleYandexCalendarDialogOpenChange(false)}
+							disabled={isSavingYandexCalendarConnection}
+						>
+							Cancel
+						</Button>
+						<Button
+							type="button"
+							onClick={() => {
+								void handleConnectYandexCalendar();
+							}}
+							disabled={
+								!isYandexCalendarFormValid || isSavingYandexCalendarConnection
+							}
+						>
+							{isSavingYandexCalendarConnection ? (
+								<>
+									<LoaderCircle className="animate-spin" />
+									Connecting
+								</>
+							) : (
+								"Connect"
+							)}
+						</Button>
+					</div>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }

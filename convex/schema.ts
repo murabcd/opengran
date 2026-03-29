@@ -21,7 +21,10 @@ const transcriptRefinementStatusValidator = v.union(
 	v.literal("failed"),
 );
 
-const appConnectionProviderValidator = v.literal("yandex-tracker");
+const appConnectionProviderValidator = v.union(
+	v.literal("yandex-tracker"),
+	v.literal("yandex-calendar"),
+);
 
 const appConnectionStatusValidator = v.union(
 	v.literal("connected"),
@@ -34,6 +37,13 @@ const appConnectionOrgTypeValidator = v.union(
 );
 
 export default defineSchema({
+	calendarPreferences: defineTable({
+		ownerTokenIdentifier: v.string(),
+		showGoogleCalendar: v.boolean(),
+		showYandexCalendar: v.boolean(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_ownerTokenIdentifier", ["ownerTokenIdentifier"]),
 	onboardingStates: defineTable({
 		ownerTokenIdentifier: v.string(),
 		hasSeenWelcomeCelebration: v.boolean(),
@@ -228,9 +238,13 @@ export default defineSchema({
 		provider: appConnectionProviderValidator,
 		status: appConnectionStatusValidator,
 		displayName: v.string(),
-		orgType: appConnectionOrgTypeValidator,
-		orgId: v.string(),
-		token: v.string(),
+		orgType: v.optional(appConnectionOrgTypeValidator),
+		orgId: v.optional(v.string()),
+		token: v.optional(v.string()),
+		email: v.optional(v.string()),
+		password: v.optional(v.string()),
+		serverAddress: v.optional(v.string()),
+		calendarHomePath: v.optional(v.string()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})

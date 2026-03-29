@@ -12,6 +12,7 @@ import type * as appConnectionActions from "../appConnectionActions.js";
 import type * as appConnections from "../appConnections.js";
 import type * as auth from "../auth.js";
 import type * as calendar from "../calendar.js";
+import type * as calendarPreferences from "../calendarPreferences.js";
 import type * as chats from "../chats.js";
 import type * as http from "../http.js";
 import type * as notes from "../notes.js";
@@ -19,6 +20,7 @@ import type * as onboarding from "../onboarding.js";
 import type * as templates from "../templates.js";
 import type * as transcriptSessions from "../transcriptSessions.js";
 import type * as workspaces from "../workspaces.js";
+import type * as yandexCalendar from "../yandexCalendar.js";
 
 import type {
   ApiFromModules,
@@ -31,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   appConnections: typeof appConnections;
   auth: typeof auth;
   calendar: typeof calendar;
+  calendarPreferences: typeof calendarPreferences;
   chats: typeof chats;
   http: typeof http;
   notes: typeof notes;
@@ -38,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   templates: typeof templates;
   transcriptSessions: typeof transcriptSessions;
   workspaces: typeof workspaces;
+  yandexCalendar: typeof yandexCalendar;
 }>;
 
 /**

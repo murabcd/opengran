@@ -54,6 +54,32 @@ export const Icons = {
 			/>
 		</svg>
 	),
+	yandexCalendarLogo: ({ ...props }: LucideProps) => (
+		<svg
+			aria-hidden="true"
+			viewBox="0 0 64 64"
+			fill="none"
+			stroke="none"
+			{...props}
+		>
+			<circle cx="32" cy="32" r="28" fill="#ff4743" />
+			<path
+				fill="#fff"
+				d="M24 15C22.3431 15 21 16.3431 21 18V19H19.5C17.567 19 16.1657 20.8467 16.726 22.6967L18.973 30.115C19.1796 30.7973 19.1796 31.5257 18.973 32.208L16.726 39.6263C16.1657 41.4763 17.567 43.323 19.5 43.323H21V44C21 45.6569 22.3431 47 24 47H40C41.6569 47 43 45.6569 43 44V43.323H44.5C46.433 43.323 47.8343 41.4763 47.274 39.6263L45.027 32.208C44.8204 31.5257 44.8204 30.7973 45.027 30.115L47.274 22.6967C47.8343 20.8467 46.433 19 44.5 19H43V18C43 16.3431 41.6569 15 40 15H24Z"
+			/>
+			<text
+				x="32"
+				y="36.5"
+				fill="#ff4743"
+				fontFamily="ui-sans-serif, system-ui, sans-serif"
+				fontSize="18"
+				fontWeight="500"
+				textAnchor="middle"
+			>
+				30
+			</text>
+		</svg>
+	),
 	yandexTrackerLogo: ({ ...props }: LucideProps) => (
 		<svg
 			aria-hidden="true"

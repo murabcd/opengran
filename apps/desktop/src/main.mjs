@@ -101,6 +101,18 @@ const createInitialTrayCalendarState = () => ({
 	events: [],
 	connectedCalendarCount: 0,
 });
+const getCurrentDayWindow = () => {
+	const now = new Date();
+	const timeMin = new Date(now);
+	timeMin.setHours(0, 0, 0, 0);
+	const timeMax = new Date(now);
+	timeMax.setHours(23, 59, 59, 999);
+
+	return {
+		timeMin: timeMin.toISOString(),
+		timeMax: timeMax.toISOString(),
+	};
+};
 const createInitialMeetingDetectionState = () => ({
 	candidateStartedAt: null,
 	confidence: 0,
@@ -514,7 +526,7 @@ const refreshTrayCalendar = async () => {
 			});
 			const result = await convexClient.action(
 				api.calendar.listUpcomingGoogleEvents,
-				{},
+				getCurrentDayWindow(),
 			);
 
 			trayCalendarState =

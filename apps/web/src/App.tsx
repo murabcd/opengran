@@ -181,6 +181,7 @@ type UpcomingCalendarEvent = {
 	startAt: string;
 	endAt: string;
 	isAllDay: boolean;
+	isMeeting: boolean;
 	htmlLink?: string;
 	meetingUrl?: string;
 	location?: string;
@@ -216,6 +217,24 @@ const isSameCalendarDay = (left: Date, right: Date) =>
 	left.getFullYear() === right.getFullYear() &&
 	left.getMonth() === right.getMonth() &&
 	left.getDate() === right.getDate();
+
+const getCurrentDayWindow = (currentDate: Date) => {
+	const timeMin = new Date(currentDate);
+	timeMin.setHours(0, 0, 0, 0);
+
+	const timeMax = new Date(currentDate);
+	timeMax.setHours(23, 59, 59, 999);
+
+	return {
+		timeMin: timeMin.toISOString(),
+		timeMax: timeMax.toISOString(),
+	};
+};
+
+const getDayWindowFromDayKey = (dayKey: string) => {
+	const [year, month, day] = dayKey.split("-").map((value) => Number(value));
+	return getCurrentDayWindow(new Date(year, month - 1, day));
+};
 
 const isUpcomingEventLive = (
 	event: UpcomingCalendarEvent,
@@ -381,11 +400,11 @@ const getInitialNonSettingsLocation = () => {
 	return `${url.pathname}${url.search}${url.hash}`;
 };
 
-const getDelayUntilNextMidnight = (now: Date) => {
-	const nextMidnight = new Date(now);
-	nextMidnight.setHours(24, 0, 0, 0);
+const getDelayUntilNextMinute = (now: Date) => {
+	const nextMinute = new Date(now);
+	nextMinute.setSeconds(60, 0);
 
-	return nextMidnight.getTime() - now.getTime();
+	return nextMinute.getTime() - now.getTime();
 };
 
 const groupItemsByDate = <
@@ -472,21 +491,26 @@ const useCurrentDate = () => {
 
 	React.useEffect(() => {
 		let timeoutId: number | undefined;
+		let intervalId: number | undefined;
 
-		const scheduleNextUpdate = () => {
+		const updateCurrentDate = () => {
 			const now = new Date();
 			setCurrentDate(now);
-			timeoutId = window.setTimeout(
-				scheduleNextUpdate,
-				getDelayUntilNextMidnight(now),
-			);
 		};
 
-		scheduleNextUpdate();
+		updateCurrentDate();
+		timeoutId = window.setTimeout(() => {
+			updateCurrentDate();
+			intervalId = window.setInterval(updateCurrentDate, 60 * 1000);
+		}, getDelayUntilNextMinute(new Date()));
 
 		return () => {
 			if (timeoutId !== undefined) {
 				window.clearTimeout(timeoutId);
+			}
+
+			if (intervalId !== undefined) {
+				window.clearInterval(intervalId);
 			}
 		};
 	}, []);
@@ -1644,6 +1668,7 @@ const useAppShellState = ({
 	const currentDayOfMonth = currentDate.getDate();
 	const currentMonthLabel = currentMonthFormatter.format(currentDate);
 	const currentWeekdayLabel = currentWeekdayFormatter.format(currentDate);
+	const currentDayKey = `${currentDate.getFullYear()}-${currentDate.getMonth() + 1}-${currentDate.getDate()}`;
 	const [upcomingCalendarEvents, setUpcomingCalendarEvents] = React.useState<
 		UpcomingCalendarEvent[]
 	>([]);
@@ -1732,43 +1757,47 @@ const useAppShellState = ({
 			? "notFound"
 			: currentView;
 
-	const refreshUpcomingCalendarEvents = React.useEffectEvent(async () => {
-		if (!session?.user?.email || !isConvexAuthenticated) {
-			setUpcomingCalendarEvents([]);
-			setUpcomingCalendarStatus("not_connected");
-			return;
-		}
-
-		setIsLoadingUpcomingCalendarEvents(true);
-
-		try {
-			const result = await listUpcomingGoogleEvents({});
-
-			if (result.status === "not_connected") {
+	const refreshUpcomingCalendarEvents = React.useEffectEvent(
+		async (dayKey: string) => {
+			if (!session?.user?.email || !isConvexAuthenticated) {
 				setUpcomingCalendarEvents([]);
 				setUpcomingCalendarStatus("not_connected");
 				return;
 			}
 
-			setUpcomingCalendarEvents(result.events);
-			setUpcomingCalendarStatus("ready");
-		} catch (error) {
-			console.error("Failed to load upcoming calendar events", error);
-			setUpcomingCalendarEvents([]);
-			setUpcomingCalendarStatus("error");
-		} finally {
-			setIsLoadingUpcomingCalendarEvents(false);
-		}
-	});
+			setIsLoadingUpcomingCalendarEvents(true);
+
+			try {
+				const result = await listUpcomingGoogleEvents(
+					getDayWindowFromDayKey(dayKey),
+				);
+
+				if (result.status === "not_connected") {
+					setUpcomingCalendarEvents([]);
+					setUpcomingCalendarStatus("not_connected");
+					return;
+				}
+
+				setUpcomingCalendarEvents(result.events);
+				setUpcomingCalendarStatus("ready");
+			} catch (error) {
+				console.error("Failed to load upcoming calendar events", error);
+				setUpcomingCalendarEvents([]);
+				setUpcomingCalendarStatus("error");
+			} finally {
+				setIsLoadingUpcomingCalendarEvents(false);
+			}
+		},
+	);
 
 	React.useEffect(() => {
 		if (upcomingCalendarLoadKey === "anonymous") {
-			void refreshUpcomingCalendarEvents();
+			void refreshUpcomingCalendarEvents(currentDayKey);
 			return;
 		}
 
-		void refreshUpcomingCalendarEvents();
-	}, [upcomingCalendarLoadKey]);
+		void refreshUpcomingCalendarEvents(currentDayKey);
+	}, [currentDayKey, upcomingCalendarLoadKey]);
 
 	React.useEffect(() => {
 		if (upcomingCalendarLoadKey === "anonymous") {
@@ -1776,12 +1805,12 @@ const useAppShellState = ({
 		}
 
 		const handleFocus = () => {
-			void refreshUpcomingCalendarEvents();
+			void refreshUpcomingCalendarEvents(currentDayKey);
 		};
 
 		window.addEventListener("focus", handleFocus);
 		return () => window.removeEventListener("focus", handleFocus);
-	}, [upcomingCalendarLoadKey]);
+	}, [currentDayKey, upcomingCalendarLoadKey]);
 
 	React.useEffect(() => {
 		if (workspaces.some((workspace) => workspace._id === activeWorkspaceId)) {
@@ -2909,6 +2938,7 @@ function HomeView({
 	onOpenCalendarSettings: () => void;
 }) {
 	const visibleUpcomingEvents = upcomingCalendarEvents
+		.filter((event) => event.isMeeting)
 		.filter((event) => isUpcomingEventToday(event, currentDate))
 		.slice(0, 5);
 	const shouldShowUpcomingCalendarSkeleton =
@@ -3030,16 +3060,16 @@ function HomeView({
 												</EmptyMedia>
 												<EmptyTitle>
 													{upcomingCalendarStatus === "not_connected"
-														? "Connect Google Calendar"
+														? "Connect a calendar"
 														: upcomingCalendarStatus === "error"
 															? "Couldn’t load calendar"
 															: "No upcoming events today"}
 												</EmptyTitle>
 												<EmptyDescription>
 													{upcomingCalendarStatus === "not_connected"
-														? "Link Google Calendar in settings to see upcoming meetings."
+														? "Link Google Calendar or Yandex Calendar in settings to see upcoming meetings."
 														: upcomingCalendarStatus === "error"
-															? "Try reconnecting Google Calendar or refresh the app."
+															? "Try reconnecting your calendars or refresh the app."
 															: "Check your visible calendars for today"}
 												</EmptyDescription>
 											</EmptyHeader>
