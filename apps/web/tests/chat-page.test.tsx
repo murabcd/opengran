@@ -255,7 +255,7 @@ describe("ChatPage", () => {
 			screen.getByPlaceholderText("Ask, search, or make anything..."),
 			"hello",
 		);
-		await user.click(screen.getByLabelText("Web Search"));
+		await user.click(screen.getByLabelText("Web search"));
 		await user.click(screen.getByLabelText("Apps and Integrations"));
 		const meetingNotesButtons = screen.getAllByRole("button", {
 			name: "Meeting notes",

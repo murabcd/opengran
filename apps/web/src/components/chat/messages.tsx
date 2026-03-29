@@ -23,6 +23,18 @@ type ToolSource = {
 	title: string;
 };
 
+const toDisplayTitle = (url: string, title?: string | null) => {
+	if (typeof title === "string" && title.trim()) {
+		return title;
+	}
+
+	try {
+		return new URL(url).hostname.replace(/^www\./, "");
+	} catch {
+		return url;
+	}
+};
+
 const tryParseJson = (value: unknown): unknown => {
 	if (typeof value !== "string") {
 		return value;
@@ -73,10 +85,7 @@ const collectToolSources = (message: UIMessage): ToolSource[] => {
 			if (typeof url === "string" && url) {
 				sources.push({
 					href: url,
-					title:
-						typeof title === "string" && title.trim()
-							? title
-							: new URL(url).hostname.replace(/^www\./, ""),
+					title: toDisplayTitle(url, typeof title === "string" ? title : null),
 				});
 			}
 		}
@@ -114,6 +123,36 @@ const collectToolSources = (message: UIMessage): ToolSource[] => {
 	});
 };
 
+const collectMessageSources = (message: UIMessage): ToolSource[] => {
+	const sources: ToolSource[] = [];
+
+	for (const part of message.parts) {
+		if (part.type !== "source-url") {
+			continue;
+		}
+
+		sources.push({
+			href: part.url,
+			title: toDisplayTitle(part.url, part.title),
+		});
+	}
+
+	sources.push(...collectToolSources(message));
+
+	const seen = new Set<string>();
+
+	return sources.filter((source) => {
+		const key = `${source.href}::${source.title}`;
+
+		if (seen.has(key)) {
+			return false;
+		}
+
+		seen.add(key);
+		return true;
+	});
+};
+
 export function ChatMessages({
 	messages,
 	error,
@@ -134,8 +173,8 @@ export function ChatMessages({
 			<div className="mx-auto w-full max-w-xl space-y-4 pt-8">
 				{messages.map((message) => {
 					const textParts = extractTextParts(message);
-					const toolSources =
-						message.role === "assistant" ? collectToolSources(message) : [];
+					const messageSources =
+						message.role === "assistant" ? collectMessageSources(message) : [];
 					const isStreamingAssistantMessage =
 						isLoading &&
 						message.role === "assistant" &&
@@ -178,11 +217,11 @@ export function ChatMessages({
 											)}
 										</div>
 									</div>
-									{message.role === "assistant" && toolSources.length > 0 ? (
+									{message.role === "assistant" && messageSources.length > 0 ? (
 										<Sources defaultOpen={false}>
-											<SourcesTrigger count={toolSources.length} />
+											<SourcesTrigger count={messageSources.length} />
 											<SourcesContent>
-												{toolSources.map((source) => (
+												{messageSources.map((source) => (
 													<Source
 														key={`${message.id}:${source.href}`}
 														href={source.href}

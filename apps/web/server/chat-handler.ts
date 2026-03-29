@@ -567,6 +567,7 @@ export const handleChatRequest = async (
 		originalMessages: chatMessages,
 		generateMessageId,
 		consumeSseStream: consumeStream,
+		sendSources: true,
 		onFinish: async ({ responseMessage }) => {
 			if (!convexClient || !id || !resolvedWorkspaceId) {
 				return;

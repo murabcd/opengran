@@ -460,7 +460,7 @@ function ScopePicker({
 						onSelect={(event) => event.preventDefault()}
 					>
 						<label htmlFor="web-search">
-							<Globe /> Web Search
+							<Globe /> Web search
 							<Switch
 								id="web-search"
 								className="ml-auto"
