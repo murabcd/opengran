@@ -27,6 +27,7 @@ import {
 	ChevronDown,
 	ChevronUp,
 	Copy,
+	LoaderCircle,
 	Minus,
 	PanelRight,
 	PanelRightDashed,
@@ -1221,7 +1222,11 @@ export function NoteComposer(props: NoteComposerProps) {
 							controller.isGeneratingNotes || controller.isRefiningTranscript
 						}
 					>
-						<Sparkles className="size-4" />
+						{controller.isGeneratingNotes ? (
+							<LoaderCircle className="size-4 animate-spin" />
+						) : (
+							<Sparkles className="size-4" />
+						)}
 						{controller.isGeneratingNotes
 							? "Generating..."
 							: controller.isRefiningTranscript

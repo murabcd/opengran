@@ -29,21 +29,24 @@ export function NoteTemplateSelect({
 		() => getSelectableNoteTemplates(templateData),
 		[templateData],
 	);
-	const currentSlug = selectedSlug ?? ENHANCED_NOTE_TEMPLATE_SLUG;
+	const currentSlug = selectedSlug;
 	const currentTemplate = templates.find(
-		(template) => template.slug === currentSlug,
+		(template) => currentSlug !== null && template.slug === currentSlug,
 	);
 	const isDisabled = disabled || isApplyingTemplate || templates.length === 0;
-	const placeholder = isApplyingTemplate
+	const triggerLabel = isApplyingTemplate
 		? "Applying..."
 		: templates.length === 0
 			? "No templates"
-			: (currentTemplate?.name ?? "Templates");
+			: (currentTemplate?.name ?? "Enhance");
+	const triggerIcon =
+		currentTemplate?.slug ??
+		(currentSlug === null ? ENHANCED_NOTE_TEMPLATE_SLUG : null);
 
 	return (
 		<Select
 			disabled={isDisabled}
-			value={currentSlug || undefined}
+			value={currentSlug ?? undefined}
 			onValueChange={async (value) => {
 				const selectedTemplate = templates.find(
 					(template) => template.slug === value,
@@ -67,23 +70,29 @@ export function NoteTemplateSelect({
 				className="h-9 w-auto min-w-0 cursor-pointer border-transparent !bg-transparent pr-2 pl-2 shadow-none dark:!bg-transparent hover:!bg-accent/50 dark:hover:!bg-accent/50 focus-visible:ring-0"
 				aria-label="Select note template"
 			>
-				{currentTemplate ? (
-					<span className="flex items-center gap-2 text-foreground">
-						{(() => {
-							const Icon =
-								NOTE_TEMPLATE_ICONS[
-									currentTemplate.slug as keyof typeof NOTE_TEMPLATE_ICONS
-								];
+				<span
+					className={
+						currentTemplate || currentSlug === null
+							? "flex items-center gap-2 text-foreground"
+							: "text-muted-foreground"
+					}
+				>
+					{(() => {
+						if (!triggerIcon) {
+							return null;
+						}
 
-							return Icon ? (
-								<Icon className="size-4 text-muted-foreground" />
-							) : null;
-						})()}
-						<span>{currentTemplate.name}</span>
-					</span>
-				) : (
-					<span className="text-muted-foreground">{placeholder}</span>
-				)}
+						const Icon =
+							NOTE_TEMPLATE_ICONS[
+								triggerIcon as keyof typeof NOTE_TEMPLATE_ICONS
+							];
+
+						return Icon ? (
+							<Icon className="size-4 text-muted-foreground" />
+						) : null;
+					})()}
+					<span>{triggerLabel}</span>
+				</span>
 			</SelectTrigger>
 			<SelectContent align="end">
 				{templates.map((template) => {
@@ -100,7 +109,12 @@ export function NoteTemplateSelect({
 								{Icon ? (
 									<Icon className="size-4 text-muted-foreground" />
 								) : null}
-								<span>{template.name}</span>
+								<span>
+									{template.slug === ENHANCED_NOTE_TEMPLATE_SLUG &&
+									currentSlug === null
+										? "Enhance"
+										: template.name}
+								</span>
 							</span>
 						</SelectItem>
 					);

@@ -2374,14 +2374,16 @@ function AppShellHeader({
 					</Button>
 				) : currentView === "note" && currentNoteId ? (
 					<div className="flex items-center gap-2">
-						<NoteTemplateSelect
-							disabled={!currentNoteEditorActions}
-							selectedSlug={currentNoteTemplateSlug}
-							onTemplateSelect={async (template) =>
-								(await currentNoteEditorActions?.applyTemplate(template)) ??
-								false
-							}
-						/>
+						{currentNoteEditorActions?.canShowTemplateSelect ? (
+							<NoteTemplateSelect
+								disabled={!currentNoteEditorActions}
+								selectedSlug={currentNoteTemplateSlug}
+								onTemplateSelect={async (template) =>
+									(await currentNoteEditorActions?.applyTemplate(template)) ??
+									false
+								}
+							/>
+						) : null}
 						<NoteStarButton noteId={currentNoteId} className="size-7" />
 						<NoteActionsMenu
 							noteId={currentNoteId}

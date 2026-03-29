@@ -202,6 +202,7 @@ export type NoteEditorActions = {
 	canCopyMarkdown: boolean;
 	canUndo: boolean;
 	canRedo: boolean;
+	canShowTemplateSelect: boolean;
 	copyMarkdown: () => Promise<void>;
 	undo: () => void;
 	redo: () => void;
@@ -239,11 +240,13 @@ const useNotePageController = ({
 		searchableText: string;
 		templateSlug: string | null;
 		isApplyingTemplate: boolean;
+		canShowTemplateSelect: boolean;
 	}>({
 		title: "",
 		searchableText: "",
 		templateSlug: null,
 		isApplyingTemplate: false,
+		canShowTemplateSelect: false,
 	});
 	const hasHydratedRef = React.useRef(false);
 	const hydratedNoteIdRef = React.useRef<Id<"notes"> | null>(null);
@@ -255,6 +258,7 @@ const useNotePageController = ({
 		canCopyMarkdown: boolean;
 		canUndo: boolean;
 		canRedo: boolean;
+		canShowTemplateSelect: boolean;
 	} | null>(null);
 	const publishEditorActionsRef = React.useRef<(() => void) | null>(null);
 	const queuedSaveRef = React.useRef<{
@@ -391,6 +395,7 @@ const useNotePageController = ({
 			searchableText,
 			templateSlug: note?.templateSlug ?? null,
 			isApplyingTemplate: templateApplyState.isRunning,
+			canShowTemplateSelect: searchableText.trim().length > 0,
 		};
 		publishEditorActionsRef.current?.();
 	}, [note?.templateSlug, searchableText, templateApplyState.isRunning, title]);
@@ -865,7 +870,8 @@ const useNotePageController = ({
 		}
 
 		const publishEditorActions = () => {
-			const { title, searchableText } = latestEditorStateRef.current;
+			const { title, searchableText, canShowTemplateSelect } =
+				latestEditorStateRef.current;
 			const serializedText = getPlainTextContent({
 				editor,
 				title,
@@ -876,6 +882,7 @@ const useNotePageController = ({
 				canCopyMarkdown: Boolean(serializedText),
 				canUndo: editor.can().undo(),
 				canRedo: editor.can().redo(),
+				canShowTemplateSelect,
 			};
 			const previousActions = publishedEditorActionsRef.current;
 
@@ -884,7 +891,9 @@ const useNotePageController = ({
 				previousActions.noteId === nextActions.noteId &&
 				previousActions.canCopyMarkdown === nextActions.canCopyMarkdown &&
 				previousActions.canUndo === nextActions.canUndo &&
-				previousActions.canRedo === nextActions.canRedo
+				previousActions.canRedo === nextActions.canRedo &&
+				previousActions.canShowTemplateSelect ===
+					nextActions.canShowTemplateSelect
 			) {
 				return;
 			}
@@ -940,13 +949,24 @@ const useNotePageController = ({
 				setTitle(nextTitle);
 				setContent(nextContent);
 				setSearchableText(nextSearchableText);
+				await setNoteTemplate({
+					id: nextNoteIdRef.current ?? noteId,
+					templateSlug: "enhanced",
+				});
 				toast.success("Structured notes ready");
 			} catch (error) {
 				showActionError("Failed to enhance transcript", error);
 				throw error;
 			}
 		},
-		[editor, requestStructuredNote, searchableText, title],
+		[
+			noteId,
+			editor,
+			requestStructuredNote,
+			searchableText,
+			setNoteTemplate,
+			title,
+		],
 	);
 
 	return {
