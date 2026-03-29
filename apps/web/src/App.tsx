@@ -69,7 +69,6 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import { AppSidebar } from "@/components/app-sidebar";
 import { ChatPage } from "@/components/chat/chat-page";
 import { AppShellInset } from "@/components/layout/app-shell-inset";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
@@ -78,6 +77,7 @@ import { NoteTitleEditInput } from "@/components/note/note-title-edit-input";
 import { optimisticRenameNote } from "@/components/note/optimistic-rename-note";
 import { SharedNotePage } from "@/components/note/shared-note-page";
 import type { SettingsPage } from "@/components/settings/settings-dialog";
+import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { NoteTemplateSelect } from "@/components/templates/note-template-select";
 import { OpenGranMark } from "@/components/ui/open-gran-mark";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";

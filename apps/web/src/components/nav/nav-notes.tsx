@@ -1,0 +1,184 @@
+import {
+	SidebarGroup,
+	SidebarGroupContent,
+	SidebarGroupLabel,
+	SidebarMenu,
+	SidebarMenuAction,
+	SidebarMenuButton,
+	SidebarMenuItem,
+} from "@workspace/ui/components/sidebar";
+import { Skeleton } from "@workspace/ui/components/skeleton";
+import { FileText, MoreHorizontal } from "lucide-react";
+import * as React from "react";
+import { NoteActionsMenu } from "@/components/note/note-actions-menu";
+import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
+
+const MAX_VISIBLE_NOTES = 5;
+const SIDEBAR_NOTE_SKELETON_IDS = [
+	"sidebar-note-skeleton-1",
+	"sidebar-note-skeleton-2",
+	"sidebar-note-skeleton-3",
+	"sidebar-note-skeleton-4",
+] as const;
+
+export function NavNotes({
+	notes,
+	currentNoteId,
+	currentNoteTitle,
+	onNoteSelect,
+	onNoteTitleChange,
+	onNoteTrashed,
+}: {
+	notes: Array<Doc<"notes">> | undefined;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle?: string;
+	onNoteSelect: (noteId: Id<"notes">) => void;
+	onNoteTitleChange?: (title: string) => void;
+	onNoteTrashed?: (noteId: Id<"notes">) => void;
+}) {
+	const starredNotes = React.useMemo(
+		() => (notes ?? []).filter((note) => note.isStarred),
+		[notes],
+	);
+	const [showAllNotes, setShowAllNotes] = React.useState(false);
+	const isNotesPending = notes === undefined;
+	const hasMoreNotes = (notes?.length ?? 0) > MAX_VISIBLE_NOTES;
+	const visibleNotes = showAllNotes
+		? (notes ?? [])
+		: (notes ?? []).slice(0, MAX_VISIBLE_NOTES);
+
+	return (
+		<>
+			{starredNotes.length > 0 ? (
+				<SidebarGroup className="group-data-[collapsible=icon]:hidden">
+					<SidebarGroupLabel>Starred</SidebarGroupLabel>
+					<SidebarGroupContent>
+						<SidebarNotesList
+							notes={starredNotes}
+							currentNoteId={currentNoteId}
+							currentNoteTitle={currentNoteTitle}
+							onNoteSelect={onNoteSelect}
+							onNoteTitleChange={onNoteTitleChange}
+							onNoteTrashed={onNoteTrashed}
+						/>
+					</SidebarGroupContent>
+				</SidebarGroup>
+			) : null}
+			<SidebarGroup className="group-data-[collapsible=icon]:hidden">
+				<SidebarGroupLabel>Notes</SidebarGroupLabel>
+				{isNotesPending ? <NavNotesSkeleton /> : null}
+				{notes && notes.length === 0 ? (
+					<div className="px-2 text-xs text-muted-foreground/50">
+						No notes yet
+					</div>
+				) : null}
+				<SidebarGroupContent className={isNotesPending ? "hidden" : undefined}>
+					<SidebarNotesList
+						notes={visibleNotes}
+						currentNoteId={currentNoteId}
+						currentNoteTitle={currentNoteTitle}
+						onNoteSelect={onNoteSelect}
+						onNoteTitleChange={onNoteTitleChange}
+						onNoteTrashed={onNoteTrashed}
+					/>
+					{hasMoreNotes ? (
+						<SidebarMenu>
+							<SidebarMenuItem>
+								<SidebarMenuButton
+									className="text-sidebar-foreground/70 hover:bg-transparent hover:text-inherit"
+									onClick={() => setShowAllNotes((prev) => !prev)}
+								>
+									<MoreHorizontal />
+									<span className="text-xs">
+										{showAllNotes ? "Show less" : "Show more"}
+									</span>
+								</SidebarMenuButton>
+							</SidebarMenuItem>
+						</SidebarMenu>
+					) : null}
+				</SidebarGroupContent>
+			</SidebarGroup>
+		</>
+	);
+}
+
+function SidebarNotesList({
+	notes,
+	currentNoteId,
+	currentNoteTitle,
+	onNoteSelect,
+	onNoteTitleChange,
+	onNoteTrashed,
+}: {
+	notes: Array<Doc<"notes">>;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle?: string;
+	onNoteSelect: (noteId: Id<"notes">) => void;
+	onNoteTitleChange?: (title: string) => void;
+	onNoteTrashed?: (noteId: Id<"notes">) => void;
+}) {
+	return (
+		<SidebarMenu>
+			{notes.map((note) => {
+				const isActive = note._id === currentNoteId;
+				const title =
+					isActive && currentNoteTitle?.trim()
+						? currentNoteTitle
+						: note.title || "New note";
+
+				return (
+					<SidebarMenuItem key={note._id}>
+						<NoteActionsMenu
+							noteId={note._id}
+							onMoveToTrash={onNoteTrashed}
+							align="start"
+							side="right"
+							renameAnchor={
+								<SidebarMenuButton
+									isActive={isActive}
+									onClick={() => onNoteSelect(note._id)}
+								>
+									<FileText />
+									<span>{title}</span>
+								</SidebarMenuButton>
+							}
+							renamePopoverAlign="start"
+							renamePopoverSide="bottom"
+							renamePopoverSideOffset={6}
+							renamePopoverClassName="w-[340px] rounded-2xl border-sidebar-border/70 bg-sidebar p-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.45)] ring-1 ring-white/8"
+							onRenamePreviewChange={isActive ? onNoteTitleChange : undefined}
+							onRenamePreviewReset={
+								isActive
+									? () => onNoteTitleChange?.(note.title || "New note")
+									: undefined
+							}
+						>
+							<SidebarMenuAction
+								showOnHover
+								className="cursor-pointer"
+								aria-label={`Open actions for ${title}`}
+							>
+								<MoreHorizontal />
+							</SidebarMenuAction>
+						</NoteActionsMenu>
+					</SidebarMenuItem>
+				);
+			})}
+		</SidebarMenu>
+	);
+}
+
+function NavNotesSkeleton() {
+	return (
+		<div className="px-2">
+			<div className="space-y-2">
+				{SIDEBAR_NOTE_SKELETON_IDS.map((id) => (
+					<div key={id} className="flex items-center gap-2 rounded-md py-1">
+						<Skeleton className="size-4 rounded-sm" />
+						<Skeleton className="h-4 flex-1" />
+					</div>
+				))}
+			</div>
+		</div>
+	);
+}
