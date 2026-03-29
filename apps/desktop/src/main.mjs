@@ -11,6 +11,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { ConvexHttpClient } from "convex/browser";
 import {
 	app,
 	BrowserWindow,
@@ -27,6 +28,7 @@ import {
 } from "electron";
 import electronUpdater from "electron-updater";
 import WebSocket from "ws";
+import { api } from "../../../convex/_generated/api.js";
 import { getDesktopAuthClient } from "./auth-client.mjs";
 import { loadRootEnv } from "./env.mjs";
 import { startLocalServer } from "./local-server.mjs";
@@ -67,6 +69,8 @@ const transcriptDraftMaxAgeMs = 72 * 60 * 60 * 1000;
 const meetingDetectionDebounceMs = 8_000;
 const meetingDetectionDismissMs = 30 * 60 * 1000;
 const meetingWidgetAutoHideMs = 12 * 1000;
+const trayCalendarRefreshMs = 60 * 1000;
+const trayCalendarMenuEventLimit = 5;
 const browserMeetingSignalFreshMs = 30 * 1000;
 const minimumWindowSize = {
 	width: 390,
@@ -83,6 +87,11 @@ const defaultDesktopPermissionsState = {
 	systemAudioValidated: false,
 	systemAudioBlocked: false,
 };
+const createInitialTrayCalendarState = () => ({
+	status: "idle",
+	events: [],
+	connectedCalendarCount: 0,
+});
 const createInitialMeetingDetectionState = () => ({
 	candidateStartedAt: null,
 	confidence: 0,
@@ -131,6 +140,9 @@ let tray = null;
 let isQuitting = false;
 let traySettings = defaultTraySettings;
 let desktopPermissionsState = defaultDesktopPermissionsState;
+let trayCalendarState = createInitialTrayCalendarState();
+let trayCalendarRefreshTimeoutId = null;
+let trayCalendarRefreshPromise = null;
 let trayStatusLabel = "Updates are unavailable in development builds";
 let hasConfiguredDisplayMediaHandler = false;
 let microphoneCaptureSession = null;
@@ -196,6 +208,332 @@ const isUpdaterAvailable = () =>
 const setTrayStatusLabel = (value) => {
 	trayStatusLabel = value;
 	refreshTrayMenu();
+};
+
+const ensureDockVisible = () => {
+	if (process.platform !== "darwin") {
+		return;
+	}
+
+	app.dock?.show();
+};
+
+const getConvexUrl = () => {
+	const value = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
+
+	if (!value) {
+		throw new Error("CONVEX_URL is not configured.");
+	}
+
+	return value;
+};
+
+const trayDateFormatter = new Intl.DateTimeFormat(undefined, {
+	day: "numeric",
+	month: "short",
+	weekday: "short",
+});
+
+const trayTimeFormatter = new Intl.DateTimeFormat(undefined, {
+	hour: "numeric",
+	minute: "2-digit",
+});
+
+const isSameCalendarDay = (left, right) =>
+	left.getFullYear() === right.getFullYear() &&
+	left.getMonth() === right.getMonth() &&
+	left.getDate() === right.getDate();
+
+const isTrayEventLive = (event, currentDate) => {
+	const startAt = new Date(event.startAt).getTime();
+	const endAt = new Date(event.endAt).getTime();
+	const now = currentDate.getTime();
+
+	return now >= startAt && now <= endAt;
+};
+
+const isTrayEventToday = (event, currentDate) => {
+	const startAt = new Date(event.startAt);
+	const endAt = new Date(event.endAt).getTime();
+
+	return (
+		isSameCalendarDay(startAt, currentDate) && endAt >= currentDate.getTime()
+	);
+};
+
+const getTrayTodayEvents = (events, currentDate) =>
+	events
+		.filter((event) => isTrayEventToday(event, currentDate))
+		.sort(
+			(left, right) =>
+				new Date(left.startAt).getTime() - new Date(right.startAt).getTime(),
+		);
+
+const truncateTrayLabel = (value, maxLength) =>
+	value.length > maxLength
+		? `${value.slice(0, maxLength - 1).trimEnd()}…`
+		: value;
+
+const formatTrayDuration = (durationMs) => {
+	const totalMinutes = Math.max(1, Math.ceil(durationMs / 60_000));
+
+	if (totalMinutes < 60) {
+		return `${totalMinutes}m`;
+	}
+
+	const hours = Math.floor(totalMinutes / 60);
+	const minutes = totalMinutes % 60;
+
+	return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+};
+
+const formatTrayEventTimeRange = (event) => {
+	if (event.isAllDay) {
+		return "All day";
+	}
+
+	const startAt = new Date(event.startAt);
+	const endAt = new Date(event.endAt);
+	return `${trayTimeFormatter.format(startAt)} - ${trayTimeFormatter.format(endAt)}`;
+};
+
+const formatTrayNextEventHeader = (event, currentDate) => {
+	if (isTrayEventLive(event, currentDate)) {
+		return "Live now";
+	}
+
+	if (event.isAllDay) {
+		return "All day";
+	}
+
+	const startsInMs = new Date(event.startAt).getTime() - currentDate.getTime();
+
+	if (startsInMs <= 0) {
+		return "Starting now";
+	}
+
+	return `Starts in ${formatTrayDuration(startsInMs)}`;
+};
+
+const formatTrayEventMenuLabel = (event) =>
+	`${truncateTrayLabel(event.title, 42)} • ${formatTrayEventTimeRange(event)}`;
+
+const openTrayMeetingLink = async (event) => {
+	if (!event?.meetingUrl) {
+		return;
+	}
+
+	await shell.openExternal(event.meetingUrl);
+};
+
+const buildTrayEventMenuItem = (event) => ({
+	label: formatTrayEventMenuLabel(event),
+	enabled: Boolean(event.meetingUrl),
+	click: () => {
+		void openTrayMeetingLink(event);
+	},
+});
+
+const getTrayTitle = () => {
+	const currentDate = new Date();
+	const todayEvents = getTrayTodayEvents(trayCalendarState.events, currentDate);
+
+	if (todayEvents.length === 0) {
+		if (trayCalendarState.status === "idle") {
+			return "";
+		}
+
+		if (trayCalendarState.status === "not_connected") {
+			return "Connect Calendar";
+		}
+
+		if (trayCalendarState.status === "error") {
+			return "Calendar unavailable";
+		}
+
+		return "";
+	}
+
+	const nextEvent = todayEvents[0];
+
+	if (isTrayEventLive(nextEvent, currentDate)) {
+		return `${truncateTrayLabel(nextEvent.title, 22)} • now`;
+	}
+
+	if (nextEvent.isAllDay) {
+		return `${truncateTrayLabel(nextEvent.title, 22)} • today`;
+	}
+
+	return `${truncateTrayLabel(nextEvent.title, 22)} • in ${formatTrayDuration(new Date(nextEvent.startAt).getTime() - currentDate.getTime())}`;
+};
+
+const buildTrayCalendarMenuItems = () => {
+	const currentDate = new Date();
+	const todayLabel = `Today (${trayDateFormatter.format(currentDate)})`;
+	const todayEvents = getTrayTodayEvents(
+		trayCalendarState.events,
+		currentDate,
+	).slice(0, trayCalendarMenuEventLimit);
+
+	if (trayCalendarState.status === "not_connected") {
+		return [
+			{
+				label: todayLabel,
+				enabled: false,
+			},
+			{
+				label: "Connect Google Calendar",
+				click: () => {
+					void showMainWindow({ pathname: "/settings/profile" });
+				},
+			},
+			{ type: "separator" },
+		];
+	}
+
+	if (trayCalendarState.status === "error") {
+		return [
+			{
+				label: todayLabel,
+				enabled: false,
+			},
+			{
+				label: "Couldn’t load calendar",
+				enabled: false,
+			},
+			{ type: "separator" },
+		];
+	}
+
+	if (trayCalendarState.status === "idle") {
+		return [
+			{
+				label: todayLabel,
+				enabled: false,
+			},
+			{
+				label: "Loading calendar…",
+				enabled: false,
+			},
+			{ type: "separator" },
+		];
+	}
+
+	if (todayEvents.length === 0) {
+		return [
+			{
+				label: todayLabel,
+				enabled: false,
+			},
+			{
+				label: "Nothing for today",
+				enabled: false,
+			},
+			{ type: "separator" },
+		];
+	}
+
+	const [nextEvent, ...laterEvents] = todayEvents;
+
+	return [
+		{
+			label: formatTrayNextEventHeader(nextEvent, currentDate),
+			enabled: false,
+		},
+		buildTrayEventMenuItem(nextEvent),
+		...(laterEvents.length > 0
+			? [
+					{ type: "separator" },
+					{
+						label: todayLabel,
+						enabled: false,
+					},
+					...laterEvents.map((event) => buildTrayEventMenuItem(event)),
+				]
+			: []),
+		{ type: "separator" },
+	];
+};
+
+const getDesktopConvexToken = async () => {
+	const desktopAuthClient = getDesktopAuthClient();
+	const result = await desktopAuthClient.$fetch("/convex/token", {
+		method: "GET",
+	});
+
+	return result &&
+		typeof result === "object" &&
+		"token" in result &&
+		typeof result.token === "string" &&
+		result.token.trim()
+		? result.token
+		: null;
+};
+
+const scheduleTrayCalendarRefresh = (delayMs = trayCalendarRefreshMs) => {
+	if (trayCalendarRefreshTimeoutId != null) {
+		clearTimeout(trayCalendarRefreshTimeoutId);
+	}
+
+	trayCalendarRefreshTimeoutId = setTimeout(() => {
+		trayCalendarRefreshTimeoutId = null;
+		void refreshTrayCalendar();
+	}, delayMs);
+};
+
+const refreshTrayCalendar = async () => {
+	if (trayCalendarRefreshPromise) {
+		return await trayCalendarRefreshPromise;
+	}
+
+	trayCalendarRefreshPromise = (async () => {
+		try {
+			const convexToken = await getDesktopConvexToken();
+
+			if (!convexToken) {
+				trayCalendarState = {
+					...createInitialTrayCalendarState(),
+					status: "not_connected",
+				};
+				return;
+			}
+
+			const convexClient = new ConvexHttpClient(getConvexUrl(), {
+				auth: convexToken,
+			});
+			const result = await convexClient.action(
+				api.calendar.listUpcomingGoogleEvents,
+				{},
+			);
+
+			trayCalendarState =
+				result && typeof result === "object" && result.status === "ready"
+					? {
+							status: "ready",
+							events: Array.isArray(result.events) ? result.events : [],
+							connectedCalendarCount:
+								typeof result.connectedCalendarCount === "number"
+									? result.connectedCalendarCount
+									: 0,
+						}
+					: {
+							...createInitialTrayCalendarState(),
+							status: "not_connected",
+						};
+		} catch (error) {
+			console.warn("Failed to refresh tray calendar.", error);
+			trayCalendarState = {
+				...createInitialTrayCalendarState(),
+				status: "error",
+			};
+		} finally {
+			refreshTrayMenu();
+			scheduleTrayCalendarRefresh();
+			trayCalendarRefreshPromise = null;
+		}
+	})();
+
+	return await trayCalendarRefreshPromise;
 };
 
 const getCurrentBrowserMeetingSignal = () => {
@@ -673,6 +1011,7 @@ const showMeetingWidgetWindow = async () => {
 	const nextWindow = await ensureMeetingWidgetWindow();
 	const bounds = getMeetingWidgetWindowBounds();
 	nextWindow.setBounds(bounds);
+	ensureDockVisible();
 	nextWindow.showInactive();
 
 	meetingWidgetAutoHideTimeoutId = setTimeout(() => {
@@ -1651,6 +1990,7 @@ const verifyDesktopOneTimeToken = async (oneTimeToken) => {
 				},
 				throw: true,
 			});
+			void refreshTrayCalendar();
 			return;
 		} catch (error) {
 			lastError = error;
@@ -3614,6 +3954,7 @@ const showMainWindow = async (options = {}) => {
 		mainWindow.restore();
 	}
 
+	ensureDockVisible();
 	mainWindow.show();
 	mainWindow.focus();
 };
@@ -3638,6 +3979,7 @@ const handleDesktopAuthCallback = async (callbackUrl) => {
 		mainWindow.restore();
 	}
 
+	ensureDockVisible();
 	mainWindow.show();
 	mainWindow.focus();
 };
@@ -3716,6 +4058,7 @@ const createMainWindow = async (targetUrl) => {
 	});
 
 	await mainWindow.loadURL(navigationUrl);
+	ensureDockVisible();
 };
 
 const getMicrophonePermission = () => {
@@ -4446,6 +4789,7 @@ const handleTrayQuit = async () => {
 
 const buildTrayMenu = () =>
 	Menu.buildFromTemplate([
+		...buildTrayCalendarMenuItems(),
 		{
 			label: "Open desktop",
 			click: () => {
@@ -4519,6 +4863,7 @@ const refreshTrayMenu = () => {
 		return;
 	}
 
+	tray.setTitle(getTrayTitle());
 	tray.setContextMenu(buildTrayMenu());
 };
 
@@ -4566,6 +4911,7 @@ if (!singleInstanceLock) {
 			console.error("Failed to start meeting detection", error);
 		});
 		createTray();
+		void refreshTrayCalendar();
 		configureAutoUpdater();
 
 		if (isUpdaterAvailable()) {
