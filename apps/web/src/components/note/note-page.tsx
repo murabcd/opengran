@@ -1055,7 +1055,7 @@ export function NotePage({
 								placeholder="New note"
 								aria-label="Note title"
 								rows={1}
-								className="min-h-0 resize-none overflow-hidden border-0 !bg-transparent px-0 py-0 text-3xl font-semibold leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
+								className="min-h-0 resize-none overflow-hidden rounded-none border-0 !bg-transparent px-0 py-0 text-3xl font-semibold leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
 							/>
 
 							<EditorContent
