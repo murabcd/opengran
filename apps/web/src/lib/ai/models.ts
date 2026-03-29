@@ -24,9 +24,25 @@ export const chatModels: Array<ChatModel> = [
 
 const DEFAULT_CHAT_MODEL = "gpt-5.4";
 
-export const fallbackChatModel =
-	chatModels.find((model) => model.id === DEFAULT_CHAT_MODEL) ?? chatModels[0];
+export const defaultChatModel = chatModels.find(
+	(model) => model.id === DEFAULT_CHAT_MODEL,
+);
 
-export const resolveChatModel = (value?: string | null) =>
-	chatModels.find((model) => model.id === value || model.model === value) ??
-	fallbackChatModel;
+if (!defaultChatModel) {
+	throw new Error(
+		`Default chat model "${DEFAULT_CHAT_MODEL}" is not configured.`,
+	);
+}
+
+export const findChatModel = (value?: string | null) =>
+	chatModels.find((model) => model.id === value || model.model === value);
+
+export const getChatModel = (value: string) => {
+	const model = findChatModel(value);
+
+	if (!model) {
+		throw new Error(`Unsupported chat model: ${value}`);
+	}
+
+	return model;
+};

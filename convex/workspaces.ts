@@ -53,6 +53,23 @@ const normalizeWorkspaceName = (value: string) =>
 const toNormalizedWorkspaceKey = (value: string) =>
 	normalizeWorkspaceName(value).toLowerCase();
 
+const requireOwnedWorkspace = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+) => {
+	const workspace = await ctx.db.get(workspaceId);
+
+	if (!workspace || workspace.ownerTokenIdentifier !== ownerTokenIdentifier) {
+		throw new ConvexError({
+			code: "WORKSPACE_NOT_FOUND",
+			message: "Workspace not found.",
+		});
+	}
+
+	return workspace;
+};
+
 const deleteWorkspaceBatch = async (
 	ctx: MutationCtx,
 	ownerTokenIdentifier: string,
@@ -196,17 +213,11 @@ export const update = mutation({
 	returns: workspaceResponseValidator,
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
-		const existingWorkspace = await ctx.db.get(args.workspaceId);
-
-		if (
-			!existingWorkspace ||
-			existingWorkspace.ownerTokenIdentifier !== identity.tokenIdentifier
-		) {
-			throw new ConvexError({
-				code: "WORKSPACE_NOT_FOUND",
-				message: "Workspace not found.",
-			});
-		}
+		const existingWorkspace = await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
 
 		const nextName =
 			args.name === undefined

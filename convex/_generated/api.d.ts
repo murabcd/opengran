@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as appConnectionActions from "../appConnectionActions.js";
+import type * as appConnections from "../appConnections.js";
 import type * as auth from "../auth.js";
 import type * as calendar from "../calendar.js";
 import type * as chats from "../chats.js";
@@ -25,6 +27,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  appConnectionActions: typeof appConnectionActions;
+  appConnections: typeof appConnections;
   auth: typeof auth;
   calendar: typeof calendar;
   chats: typeof chats;

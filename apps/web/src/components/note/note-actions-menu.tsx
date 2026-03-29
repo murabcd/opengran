@@ -48,6 +48,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { NoteTitleEditInput } from "./note-title-edit-input";
@@ -59,8 +60,12 @@ import {
 } from "./share-note";
 
 function useNoteStarControl(noteId: Id<"notes">) {
+	const activeWorkspaceId = useActiveWorkspaceId();
 	const [isUpdatingStar, setIsUpdatingStar] = React.useState(false);
-	const note = useQuery(api.notes.get, { id: noteId });
+	const note = useQuery(
+		api.notes.get,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId, id: noteId } : "skip",
+	);
 	const toggleStar = useMutation(api.notes.toggleStar).withOptimisticUpdate(
 		(localStore, args) => {
 			const updateNoteList = (
@@ -73,7 +78,7 @@ function useNoteStarControl(noteId: Id<"notes">) {
 
 				localStore.setQuery(
 					query,
-					{},
+					{ workspaceId: args.workspaceId },
 					notes.map((item) =>
 						item._id === args.id
 							? {
@@ -85,17 +90,27 @@ function useNoteStarControl(noteId: Id<"notes">) {
 				);
 			};
 
-			updateNoteList(localStore.getQuery(api.notes.list, {}), api.notes.list);
 			updateNoteList(
-				localStore.getQuery(api.notes.listShared, {}),
+				localStore.getQuery(api.notes.list, {
+					workspaceId: args.workspaceId,
+				}),
+				api.notes.list,
+			);
+			updateNoteList(
+				localStore.getQuery(api.notes.listShared, {
+					workspaceId: args.workspaceId,
+				}),
 				api.notes.listShared,
 			);
 
-			const activeNote = localStore.getQuery(api.notes.get, { id: args.id });
+			const activeNote = localStore.getQuery(api.notes.get, {
+				workspaceId: args.workspaceId,
+				id: args.id,
+			});
 			if (activeNote) {
 				localStore.setQuery(
 					api.notes.get,
-					{ id: args.id },
+					{ workspaceId: args.workspaceId, id: args.id },
 					{
 						...activeNote,
 						isStarred: !(activeNote.isStarred ?? false),
@@ -103,11 +118,13 @@ function useNoteStarControl(noteId: Id<"notes">) {
 				);
 			}
 
-			const latestNote = localStore.getQuery(api.notes.getLatest, {});
+			const latestNote = localStore.getQuery(api.notes.getLatest, {
+				workspaceId: args.workspaceId,
+			});
 			if (latestNote?._id === args.id) {
 				localStore.setQuery(
 					api.notes.getLatest,
-					{},
+					{ workspaceId: args.workspaceId },
 					{
 						...latestNote,
 						isStarred: !(latestNote.isStarred ?? false),
@@ -118,14 +135,17 @@ function useNoteStarControl(noteId: Id<"notes">) {
 	);
 
 	const handleToggleStar = React.useCallback(async () => {
-		if (!note || isUpdatingStar) {
+		if (!note || !activeWorkspaceId || isUpdatingStar) {
 			return;
 		}
 
 		setIsUpdatingStar(true);
 
 		try {
-			const result = await toggleStar({ id: noteId });
+			const result = await toggleStar({
+				workspaceId: activeWorkspaceId,
+				id: noteId,
+			});
 			toast.success(result.isStarred ? "Note starred" : "Note unstarred");
 		} catch (error) {
 			console.error("Failed to update note star", error);
@@ -133,7 +153,7 @@ function useNoteStarControl(noteId: Id<"notes">) {
 		} finally {
 			setIsUpdatingStar(false);
 		}
-	}, [isUpdatingStar, note, noteId, toggleStar]);
+	}, [activeWorkspaceId, isUpdatingStar, note, noteId, toggleStar]);
 
 	return {
 		handleToggleStar,
@@ -210,6 +230,7 @@ export function NoteActionsMenu({
 	itemsBeforeDefaults?: React.ReactNode;
 	itemsAfterDefaults?: React.ReactNode;
 }) {
+	const activeWorkspaceId = useActiveWorkspaceId();
 	const preventMenuCloseAutoFocusRef = React.useRef(false);
 	const ignoreInitialRenameInteractOutsideRef = React.useRef(false);
 	const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -224,18 +245,22 @@ export function NoteActionsMenu({
 	const ensureShareId = useMutation(api.notes.ensureShareId);
 	const renameNote = useMutation(api.notes.rename).withOptimisticUpdate(
 		(localStore, args) => {
-			optimisticRenameNote(localStore, args.id, args.title);
+			optimisticRenameNote(localStore, args.workspaceId, args.id, args.title);
 		},
 	);
 	const moveToTrash = useMutation(api.notes.moveToTrash).withOptimisticUpdate(
 		(localStore, args) => {
-			const notes = localStore.getQuery(api.notes.list, {});
-			const sharedNotes = localStore.getQuery(api.notes.listShared, {});
+			const notes = localStore.getQuery(api.notes.list, {
+				workspaceId: args.workspaceId,
+			});
+			const sharedNotes = localStore.getQuery(api.notes.listShared, {
+				workspaceId: args.workspaceId,
+			});
 
 			if (notes !== undefined) {
 				localStore.setQuery(
 					api.notes.list,
-					{},
+					{ workspaceId: args.workspaceId },
 					notes.filter((item) => item._id !== args.id),
 				);
 			}
@@ -243,30 +268,50 @@ export function NoteActionsMenu({
 			if (sharedNotes !== undefined) {
 				localStore.setQuery(
 					api.notes.listShared,
-					{},
+					{ workspaceId: args.workspaceId },
 					sharedNotes.filter((item) => item._id !== args.id),
 				);
 			}
 
-			const activeNote = localStore.getQuery(api.notes.get, { id: args.id });
+			const activeNote = localStore.getQuery(api.notes.get, {
+				workspaceId: args.workspaceId,
+				id: args.id,
+			});
 			if (activeNote !== undefined) {
-				localStore.setQuery(api.notes.get, { id: args.id }, null);
+				localStore.setQuery(
+					api.notes.get,
+					{ workspaceId: args.workspaceId, id: args.id },
+					null,
+				);
 			}
 
-			const latestNote = localStore.getQuery(api.notes.getLatest, {});
+			const latestNote = localStore.getQuery(api.notes.getLatest, {
+				workspaceId: args.workspaceId,
+			});
 			if (latestNote?._id === args.id) {
 				const nextLatest =
 					notes?.find((item) => item._id !== args.id) ??
 					(null as Doc<"notes"> | null);
-				localStore.setQuery(api.notes.getLatest, {}, nextLatest);
+				localStore.setQuery(
+					api.notes.getLatest,
+					{ workspaceId: args.workspaceId },
+					nextLatest,
+				);
 			}
 		},
 	);
 	const updateVisibility = useMutation(api.notes.updateVisibility);
 
 	const handleCopyLink = React.useCallback(async () => {
+		if (!activeWorkspaceId) {
+			return;
+		}
+
 		try {
-			const result = await ensureShareId({ id: noteId });
+			const result = await ensureShareId({
+				workspaceId: activeWorkspaceId,
+				id: noteId,
+			});
 			const shareUrl = await buildNoteShareUrl(result.shareId);
 			await writeTextToClipboard(shareUrl);
 			toast.success("Link copied");
@@ -274,10 +319,10 @@ export function NoteActionsMenu({
 			console.error("Failed to copy note link", error);
 			toast.error("Failed to copy link");
 		}
-	}, [ensureShareId, noteId]);
+	}, [activeWorkspaceId, ensureShareId, noteId]);
 
 	const handleRename = React.useCallback(async () => {
-		if (!note || isRenaming) {
+		if (!note || !activeWorkspaceId || isRenaming) {
 			return;
 		}
 
@@ -294,6 +339,7 @@ export function NoteActionsMenu({
 
 		try {
 			await renameNote({
+				workspaceId: activeWorkspaceId,
 				id: noteId,
 				title: nextTitle,
 			});
@@ -306,7 +352,7 @@ export function NoteActionsMenu({
 		} finally {
 			setIsRenaming(false);
 		}
-	}, [isRenaming, note, noteId, renameNote, renameValue]);
+	}, [activeWorkspaceId, isRenaming, note, noteId, renameNote, renameValue]);
 
 	React.useEffect(() => {
 		if (renameOpen) {
@@ -338,7 +384,7 @@ export function NoteActionsMenu({
 
 	const handleSetVisibility = React.useCallback(
 		async (visibility: NoteVisibility) => {
-			if (!note || isUpdatingShare) {
+			if (!note || !activeWorkspaceId || isUpdatingShare) {
 				return;
 			}
 
@@ -351,6 +397,7 @@ export function NoteActionsMenu({
 					}
 
 					await updateVisibility({
+						workspaceId: activeWorkspaceId,
 						id: noteId,
 						visibility: "private",
 					});
@@ -361,6 +408,7 @@ export function NoteActionsMenu({
 				let shareId = note.shareId;
 				if (note.visibility !== "public" || !shareId) {
 					const result = await updateVisibility({
+						workspaceId: activeWorkspaceId,
 						id: noteId,
 						visibility: "public",
 					});
@@ -385,17 +433,17 @@ export function NoteActionsMenu({
 				setIsUpdatingShare(false);
 			}
 		},
-		[isUpdatingShare, note, noteId, updateVisibility],
+		[activeWorkspaceId, isUpdatingShare, note, noteId, updateVisibility],
 	);
 
 	const handleMoveToTrash = React.useCallback(() => {
-		if (isMovingToTrash) {
+		if (!activeWorkspaceId || isMovingToTrash) {
 			return;
 		}
 
 		setIsMovingToTrash(true);
 
-		void moveToTrash({ id: noteId })
+		void moveToTrash({ workspaceId: activeWorkspaceId, id: noteId })
 			.then(() => {
 				onMoveToTrash?.(noteId);
 				setConfirmOpen(false);
@@ -408,7 +456,7 @@ export function NoteActionsMenu({
 			.finally(() => {
 				setIsMovingToTrash(false);
 			});
-	}, [isMovingToTrash, moveToTrash, noteId, onMoveToTrash]);
+	}, [activeWorkspaceId, isMovingToTrash, moveToTrash, noteId, onMoveToTrash]);
 
 	const renameEditor = renameAnchor ? (
 		<PopoverContent

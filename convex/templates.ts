@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
 
@@ -13,6 +14,7 @@ const templateFields = {
 	_id: v.id("templates"),
 	_creationTime: v.number(),
 	ownerTokenIdentifier: v.string(),
+	workspaceId: v.id("workspaces"),
 	slug: v.string(),
 	name: v.string(),
 	meetingContext: v.string(),
@@ -167,6 +169,21 @@ const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	return identity;
 };
 
+const requireOwnedWorkspace = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+) => {
+	const workspace = await ctx.db.get(workspaceId);
+
+	if (!workspace || workspace.ownerTokenIdentifier !== ownerTokenIdentifier) {
+		throw new ConvexError({
+			code: "WORKSPACE_NOT_FOUND",
+			message: "Workspace not found.",
+		});
+	}
+};
+
 const normalizeWhitespace = (value: string) => value.trim();
 
 const normalizeTemplatePayload = (
@@ -211,14 +228,19 @@ const deleteTemplateBatch = async (
 };
 
 export const list = query({
-	args: {},
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
 	returns: v.array(templatePayloadValidator),
-	handler: async (ctx) => {
+	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
+		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
 		const templates = await ctx.db
 			.query("templates")
-			.withIndex("by_ownerTokenIdentifier_and_createdAt", (q) =>
-				q.eq("ownerTokenIdentifier", identity.tokenIdentifier),
+			.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_createdAt", (q) =>
+				q
+					.eq("ownerTokenIdentifier", identity.tokenIdentifier)
+					.eq("workspaceId", args.workspaceId),
 			)
 			.take(MAX_TEMPLATES);
 
@@ -239,12 +261,14 @@ export const list = query({
 
 export const saveAll = mutation({
 	args: {
+		workspaceId: v.id("workspaces"),
 		templates: v.array(templatePayloadValidator),
 	},
 	returns: v.array(templatePayloadValidator),
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
 		const ownerTokenIdentifier = identity.tokenIdentifier;
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 		const nextTemplates = args.templates
 			.slice(0, MAX_TEMPLATES)
 			.map(normalizeTemplatePayload);
@@ -285,8 +309,10 @@ export const saveAll = mutation({
 
 		const existingTemplates = await ctx.db
 			.query("templates")
-			.withIndex("by_ownerTokenIdentifier_and_createdAt", (q) =>
-				q.eq("ownerTokenIdentifier", ownerTokenIdentifier),
+			.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_createdAt", (q) =>
+				q
+					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+					.eq("workspaceId", args.workspaceId),
 			)
 			.take(MAX_TEMPLATES);
 
@@ -298,6 +324,7 @@ export const saveAll = mutation({
 		for (const template of nextTemplates) {
 			await ctx.db.insert("templates", {
 				ownerTokenIdentifier,
+				workspaceId: args.workspaceId,
 				slug: template.slug,
 				name: template.name,
 				meetingContext: template.meetingContext,

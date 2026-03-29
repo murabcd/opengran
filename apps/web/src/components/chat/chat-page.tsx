@@ -15,9 +15,11 @@ import { useMutation, useQuery } from "convex/react";
 import { FileText } from "lucide-react";
 import * as React from "react";
 import { ChatMessages } from "@/components/chat/messages";
-import { fallbackChatModel, resolveChatModel } from "@/lib/ai/models";
+import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
+import { defaultChatModel, findChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
+import type { WorkspaceRecord } from "@/lib/workspaces";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
 import { ChatComposer } from "./chat-composer";
@@ -32,6 +34,7 @@ type ChatPageProps = {
 	activeChatId: string | null;
 	onOpenChat: (chatId: string) => void;
 	onChatRemoved: (chatId: string) => void;
+	activeWorkspace: WorkspaceRecord | null;
 };
 
 const useChatPageController = ({
@@ -40,15 +43,22 @@ const useChatPageController = ({
 	onChatPersisted,
 	chats,
 	onChatRemoved,
+	activeWorkspace,
 }: Pick<
 	ChatPageProps,
-	"chatId" | "initialMessages" | "onChatPersisted" | "chats" | "onChatRemoved"
+	| "chatId"
+	| "initialMessages"
+	| "onChatPersisted"
+	| "chats"
+	| "onChatRemoved"
+	| "activeWorkspace"
 >) => {
+	const activeWorkspaceId = useActiveWorkspaceId();
 	const [draft, setDraft] = React.useState("");
 	const [confirmTrashChatId, setConfirmTrashChatId] = React.useState<
 		string | null
 	>(null);
-	const [selectedModel, setSelectedModel] = React.useState(fallbackChatModel);
+	const [selectedModel, setSelectedModel] = React.useState(defaultChatModel);
 	const [mentionPopoverOpen, setMentionPopoverOpen] = React.useState(false);
 	const [documentSearchTerm, setDocumentSearchTerm] = React.useState("");
 	const [mentions, setMentions] = React.useState<string[]>([]);
@@ -62,26 +72,40 @@ const useChatPageController = ({
 	const [selectedSourceIds, setSelectedSourceIds] = React.useState<string[]>(
 		[],
 	);
-	const notes = useQuery(api.notes.list, {});
+	const workspaceSourceId = activeWorkspaceId
+		? `workspace:${activeWorkspaceId}`
+		: null;
+	const notes = useQuery(
+		api.notes.list,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
+	const appSources = useQuery(api.appConnections.listSources, {});
 	const moveChatToTrash = useMutation(
 		api.chats.moveToTrash,
 	).withOptimisticUpdate((localStore, args) => {
-		const currentChats = localStore.getQuery(api.chats.list, {});
+		const currentChats = localStore.getQuery(api.chats.list, {
+			workspaceId: args.workspaceId,
+		});
 
 		if (currentChats !== undefined) {
 			localStore.setQuery(
 				api.chats.list,
-				{},
+				{ workspaceId: args.workspaceId },
 				currentChats.filter((chat) => getChatId(chat) !== args.chatId),
 			);
 		}
 
 		const currentMessages = localStore.getQuery(api.chats.getMessages, {
+			workspaceId: args.workspaceId,
 			chatId: args.chatId,
 		});
 
 		if (currentMessages !== undefined) {
-			localStore.setQuery(api.chats.getMessages, { chatId: args.chatId }, []);
+			localStore.setQuery(
+				api.chats.getMessages,
+				{ workspaceId: args.workspaceId, chatId: args.chatId },
+				[],
+			);
 		}
 	});
 	const transport = React.useMemo(
@@ -103,15 +127,17 @@ const useChatPageController = ({
 								...body,
 								id,
 								message: messages[messages.length - 1],
+								workspaceId: activeWorkspaceId,
 							}
 						: {
 								...body,
 								id,
 								messages,
+								workspaceId: activeWorkspaceId,
 							},
 				}),
 			}),
-		[],
+		[activeWorkspaceId],
 	);
 	const { messages, setMessages, sendMessage, error, status } = useChat({
 		id: chatId,
@@ -139,7 +165,16 @@ const useChatPageController = ({
 	);
 
 	React.useEffect(() => {
-		setSelectedModel(resolveChatModel(currentChat?.model));
+		if (!currentChat?.model) {
+			setSelectedModel(defaultChatModel);
+			return;
+		}
+
+		const model = findChatModel(currentChat.model);
+
+		if (model) {
+			setSelectedModel(model);
+		}
 	}, [currentChat?.model]);
 
 	const contextPages = React.useMemo(
@@ -198,6 +233,7 @@ const useChatPageController = ({
 						appsEnabled,
 						mentions,
 						selectedSourceIds,
+						workspaceId: activeWorkspaceId,
 						convexToken: data?.token ?? null,
 					},
 				},
@@ -207,6 +243,7 @@ const useChatPageController = ({
 			setIsPreparingRequest(false);
 		}
 	}, [
+		activeWorkspaceId,
 		appsEnabled,
 		chatId,
 		draft,
@@ -236,13 +273,16 @@ const useChatPageController = ({
 	);
 
 	const handleMoveChatToTrash = React.useCallback(() => {
-		if (!confirmTrashChatId || isMovingChatToTrash) {
+		if (!confirmTrashChatId || !activeWorkspaceId || isMovingChatToTrash) {
 			return;
 		}
 
 		setIsMovingChatToTrash(true);
 
-		void moveChatToTrash({ chatId: confirmTrashChatId })
+		void moveChatToTrash({
+			workspaceId: activeWorkspaceId,
+			chatId: confirmTrashChatId,
+		})
 			.then(() => {
 				onChatRemoved(confirmTrashChatId);
 				setConfirmTrashChatId(null);
@@ -253,7 +293,13 @@ const useChatPageController = ({
 			.finally(() => {
 				setIsMovingChatToTrash(false);
 			});
-	}, [confirmTrashChatId, isMovingChatToTrash, moveChatToTrash, onChatRemoved]);
+	}, [
+		activeWorkspaceId,
+		confirmTrashChatId,
+		isMovingChatToTrash,
+		moveChatToTrash,
+		onChatRemoved,
+	]);
 
 	return {
 		appsEnabled,
@@ -261,6 +307,7 @@ const useChatPageController = ({
 		contextPages,
 		draft,
 		error,
+		activeWorkspace,
 		handleClearSelectedSources: () => setSelectedSourceIds([]),
 		handleDraftKeyDown,
 		handleMoveChatToTrash,
@@ -275,6 +322,7 @@ const useChatPageController = ({
 		modelPopoverOpen,
 		selectedModel,
 		selectedSourceIds,
+		workspaceSourceId,
 		setAppsEnabled,
 		setConfirmTrashChatId,
 		setDocumentSearchTerm,
@@ -291,6 +339,7 @@ const useChatPageController = ({
 		sourcesOpen,
 		webSearchEnabled,
 		workspaceSources,
+		appSources: appSources ?? [],
 		documentSearchTerm,
 		mentions,
 		onAddMention: (pageId: string) => {
@@ -304,11 +353,26 @@ const useChatPageController = ({
 			setMentions((current) => current.filter((id) => id !== pageId));
 		},
 		onToggleSource: (sourceId: string) => {
-			setSelectedSourceIds((current) =>
-				current.includes(sourceId)
+			setSelectedSourceIds((current) => {
+				if (sourceId.startsWith("workspace:")) {
+					return current.includes(sourceId)
+						? current.filter((id) => id !== sourceId)
+						: current.filter((id) => id.startsWith("app:")).concat(sourceId);
+				}
+
+				if (sourceId.startsWith("app:")) {
+					return current.includes(sourceId)
+						? current.filter((id) => id !== sourceId)
+						: [
+								...current.filter((id) => !id.startsWith("workspace:")),
+								sourceId,
+							];
+				}
+
+				return current.includes(sourceId)
 					? current.filter((id) => id !== sourceId)
-					: [...current, sourceId],
-			);
+					: [...current.filter((id) => !id.startsWith("workspace:")), sourceId];
+			});
 		},
 	};
 };
@@ -322,6 +386,7 @@ export function ChatPage({
 	activeChatId,
 	onOpenChat,
 	onChatRemoved,
+	activeWorkspace,
 }: ChatPageProps) {
 	const controller = useChatPageController({
 		chatId,
@@ -329,6 +394,7 @@ export function ChatPage({
 		onChatPersisted,
 		chats,
 		onChatRemoved,
+		activeWorkspace,
 	});
 
 	return (
@@ -392,6 +458,9 @@ export function ChatPage({
 						onSourceSearchTermChange={controller.setSourceSearchTerm}
 						selectedSourceIds={controller.selectedSourceIds}
 						workspaceSources={controller.workspaceSources}
+						workspaceSourceId={controller.workspaceSourceId}
+						activeWorkspace={controller.activeWorkspace}
+						appSources={controller.appSources}
 						onToggleSource={controller.onToggleSource}
 						onClearSelectedSources={controller.handleClearSelectedSources}
 					/>

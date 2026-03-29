@@ -6,6 +6,7 @@ import {
 } from "@workspace/ui/components/select";
 import { useQuery } from "convex/react";
 import * as React from "react";
+import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import {
 	ENHANCED_NOTE_TEMPLATE_SLUG,
 	getSelectableNoteTemplates,
@@ -23,7 +24,11 @@ export function NoteTemplateSelect({
 	selectedSlug?: string | null;
 	onTemplateSelect: (template: NoteTemplate) => Promise<boolean>;
 }) {
-	const templateData = useQuery(api.templates.list);
+	const activeWorkspaceId = useActiveWorkspaceId();
+	const templateData = useQuery(
+		api.templates.list,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const [isApplyingTemplate, setIsApplyingTemplate] = React.useState(false);
 	const templates = React.useMemo(
 		() => getSelectableNoteTemplates(templateData),

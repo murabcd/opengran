@@ -14,6 +14,7 @@ const chatFields = {
 	_id: v.id("chats"),
 	_creationTime: v.number(),
 	ownerTokenIdentifier: v.string(),
+	workspaceId: v.id("workspaces"),
 	authorName: v.optional(v.string()),
 	chatId: v.string(),
 	noteId: v.optional(v.id("notes")),
@@ -84,6 +85,23 @@ const requireTokenIdentifier = async (ctx: QueryCtx | MutationCtx) => {
 	return identity.tokenIdentifier;
 };
 
+const requireOwnedWorkspace = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+) => {
+	const workspace = await ctx.db.get(workspaceId);
+
+	if (!workspace || workspace.ownerTokenIdentifier !== ownerTokenIdentifier) {
+		throw new ConvexError({
+			code: "WORKSPACE_NOT_FOUND",
+			message: "Workspace not found.",
+		});
+	}
+
+	return workspace;
+};
+
 const getAuthorName = (identity: Awaited<ReturnType<typeof requireIdentity>>) =>
 	identity.name?.trim() || identity.email?.trim() || "Unknown user";
 
@@ -106,23 +124,32 @@ const normalizeChatPreview = (value: string | undefined) =>
 const getOwnedChatById = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
 	chatId: string,
 ) =>
 	await ctx.db
 		.query("chats")
-		.withIndex("by_ownerTokenIdentifier_and_chatId", (q) =>
-			q.eq("ownerTokenIdentifier", ownerTokenIdentifier).eq("chatId", chatId),
+		.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_chatId", (q) =>
+			q
+				.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+				.eq("workspaceId", workspaceId)
+				.eq("chatId", chatId),
 		)
 		.unique();
 
 const requireOwnedNoteId = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
 	noteId: Id<"notes">,
 ) => {
 	const note = await ctx.db.get(noteId);
 
-	if (!note || note.ownerTokenIdentifier !== ownerTokenIdentifier) {
+	if (
+		!note ||
+		note.ownerTokenIdentifier !== ownerTokenIdentifier ||
+		note.workspaceId !== workspaceId
+	) {
 		throw new ConvexError({
 			code: "NOTE_NOT_FOUND",
 			message: "Note not found.",
@@ -190,16 +217,22 @@ const deleteChatBatch = async (
 };
 
 export const list = query({
-	args: {},
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
 	returns: v.array(chatValidator),
-	handler: async (ctx) => {
+	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 
 		return await ctx.db
 			.query("chats")
-			.withIndex("by_ownerTokenIdentifier_and_isArchived_and_updatedAt", (q) =>
+			.withIndex(
+				"by_owner_ws_chat_arch_upd",
+				(q) =>
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+					.eq("workspaceId", args.workspaceId)
 					.eq("isArchived", false),
 			)
 			.order("desc")
@@ -208,16 +241,22 @@ export const list = query({
 });
 
 export const listArchived = query({
-	args: {},
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
 	returns: v.array(chatValidator),
-	handler: async (ctx) => {
+	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 
 		return await ctx.db
 			.query("chats")
-			.withIndex("by_ownerTokenIdentifier_and_isArchived_and_updatedAt", (q) =>
+			.withIndex(
+				"by_owner_ws_chat_arch_upd",
+				(q) =>
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+					.eq("workspaceId", args.workspaceId)
 					.eq("isArchived", true),
 			)
 			.order("desc")
@@ -227,20 +266,28 @@ export const listArchived = query({
 
 export const listForNote = query({
 	args: {
+		workspaceId: v.id("workspaces"),
 		noteId: v.id("notes"),
 	},
 	returns: v.array(chatValidator),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		await requireOwnedNoteId(ctx, ownerTokenIdentifier, args.noteId);
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
+		await requireOwnedNoteId(
+			ctx,
+			ownerTokenIdentifier,
+			args.workspaceId,
+			args.noteId,
+		);
 
 		return await ctx.db
 			.query("chats")
 			.withIndex(
-				"by_ownerTokenIdentifier_and_noteId_and_isArchived_and_updatedAt",
+				"by_owner_ws_note_chat_arch_upd",
 				(q) =>
 					q
 						.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+						.eq("workspaceId", args.workspaceId)
 						.eq("noteId", args.noteId)
 						.eq("isArchived", false),
 			)
@@ -251,14 +298,17 @@ export const listForNote = query({
 
 export const getSession = query({
 	args: {
+		workspaceId: v.id("workspaces"),
 		chatId: v.string(),
 	},
 	returns: v.union(chatValidator, v.null()),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 		const chat = await getOwnedChatById(
 			ctx,
 			ownerTokenIdentifier,
+			args.workspaceId,
 			clampWhitespace(args.chatId),
 		);
 
@@ -272,12 +322,19 @@ export const getSession = query({
 
 export const getMessages = query({
 	args: {
+		workspaceId: v.id("workspaces"),
 		chatId: v.string(),
 	},
 	returns: v.array(storedUiMessageValidator),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const chat = await getOwnedChatById(ctx, ownerTokenIdentifier, args.chatId);
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
+		const chat = await getOwnedChatById(
+			ctx,
+			ownerTokenIdentifier,
+			args.workspaceId,
+			args.chatId,
+		);
 
 		if (!chat) {
 			return [];
@@ -335,6 +392,7 @@ export const removeMessagesAndDeleteChat = internalMutation({
 
 export const saveMessage = mutation({
 	args: {
+		workspaceId: v.id("workspaces"),
 		chatId: v.string(),
 		noteId: v.optional(v.id("notes")),
 		title: v.optional(v.string()),
@@ -356,6 +414,7 @@ export const saveMessage = mutation({
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
 		const ownerTokenIdentifier = identity.tokenIdentifier;
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 		const authorName = getAuthorName(identity);
 		const now = Date.now();
 		const normalizedTitle = normalizeChatTitle(args.title);
@@ -370,12 +429,18 @@ export const saveMessage = mutation({
 			`msg-${now}-${Math.random().toString(36).slice(2, 10)}`;
 
 		if (storedNoteId) {
-			await requireOwnedNoteId(ctx, ownerTokenIdentifier, storedNoteId);
+			await requireOwnedNoteId(
+				ctx,
+				ownerTokenIdentifier,
+				args.workspaceId,
+				storedNoteId,
+			);
 		}
 
 		const existingChat = await getOwnedChatById(
 			ctx,
 			ownerTokenIdentifier,
+			args.workspaceId,
 			storedChatId,
 		);
 
@@ -383,6 +448,7 @@ export const saveMessage = mutation({
 			existingChat?._id ??
 			(await ctx.db.insert("chats", {
 				ownerTokenIdentifier,
+				workspaceId: args.workspaceId,
 				authorName,
 				chatId: storedChatId,
 				noteId: storedNoteId,
@@ -405,6 +471,7 @@ export const saveMessage = mutation({
 				chatId: storedChatId,
 				noteId: existingChat.noteId ?? storedNoteId,
 				authorName: existingChat.authorName ?? authorName,
+				workspaceId: args.workspaceId,
 				title: nextTitle,
 				preview: normalizedPreview,
 				model: args.model ?? existingChat.model,
@@ -466,6 +533,7 @@ export const saveMessage = mutation({
 
 export const updateTitle = mutation({
 	args: {
+		workspaceId: v.id("workspaces"),
 		chatId: v.string(),
 		title: v.string(),
 	},
@@ -474,9 +542,11 @@ export const updateTitle = mutation({
 	}),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 		const chat = await getOwnedChatById(
 			ctx,
 			ownerTokenIdentifier,
+			args.workspaceId,
 			clampWhitespace(args.chatId),
 		);
 
@@ -507,15 +577,18 @@ export const updateTitle = mutation({
 
 export const setModel = mutation({
 	args: {
+		workspaceId: v.id("workspaces"),
 		chatId: v.string(),
 		model: v.string(),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 		const chat = await getOwnedChatById(
 			ctx,
 			ownerTokenIdentifier,
+			args.workspaceId,
 			clampWhitespace(args.chatId),
 		);
 
@@ -534,12 +607,19 @@ export const setModel = mutation({
 
 export const moveToTrash = mutation({
 	args: {
+		workspaceId: v.id("workspaces"),
 		chatId: v.string(),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const chat = await getOwnedChatById(ctx, ownerTokenIdentifier, args.chatId);
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
+		const chat = await getOwnedChatById(
+			ctx,
+			ownerTokenIdentifier,
+			args.workspaceId,
+			args.chatId,
+		);
 
 		if (!chat) {
 			return null;
@@ -557,12 +637,19 @@ export const moveToTrash = mutation({
 
 export const restore = mutation({
 	args: {
+		workspaceId: v.id("workspaces"),
 		chatId: v.string(),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const chat = await getOwnedChatById(ctx, ownerTokenIdentifier, args.chatId);
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
+		const chat = await getOwnedChatById(
+			ctx,
+			ownerTokenIdentifier,
+			args.workspaceId,
+			args.chatId,
+		);
 
 		if (!chat) {
 			return null;
@@ -580,12 +667,19 @@ export const restore = mutation({
 
 export const remove = mutation({
 	args: {
+		workspaceId: v.id("workspaces"),
 		chatId: v.string(),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const chat = await getOwnedChatById(ctx, ownerTokenIdentifier, args.chatId);
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
+		const chat = await getOwnedChatById(
+			ctx,
+			ownerTokenIdentifier,
+			args.workspaceId,
+			args.chatId,
+		);
 
 		if (!chat) {
 			return null;
@@ -611,19 +705,76 @@ export const remove = mutation({
 });
 
 export const removeAll = mutation({
-	args: {},
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
 	returns: removeAllChatsResultValidator,
-	handler: async (ctx) => {
+	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		const result = await deleteChatBatch(ctx, ownerTokenIdentifier);
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
+		const chats = await ctx.db
+			.query("chats")
+			.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_updatedAt", (q) =>
+				q
+					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+					.eq("workspaceId", args.workspaceId),
+			)
+			.take(REMOVE_ALL_CHATS_BATCH_SIZE);
 
-		if (result.hasMore) {
-			await ctx.scheduler.runAfter(0, internal.chats.removeAllForOwner, {
+		await Promise.all(
+			chats.map((chat) =>
+				ctx.scheduler.runAfter(0, internal.chats.removeMessagesAndDeleteChat, {
+					chatId: chat._id,
+				}),
+			),
+		);
+
+		if (chats.length === REMOVE_ALL_CHATS_BATCH_SIZE) {
+			await ctx.scheduler.runAfter(0, internal.chats.removeAllForWorkspace, {
 				ownerTokenIdentifier,
+				workspaceId: args.workspaceId,
 			});
 		}
 
-		return result;
+		return {
+			deletedCount: chats.length,
+			hasMore: chats.length === REMOVE_ALL_CHATS_BATCH_SIZE,
+		};
+	},
+});
+
+export const removeAllForWorkspace = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const chats = await ctx.db
+			.query("chats")
+			.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_updatedAt", (q) =>
+				q
+					.eq("ownerTokenIdentifier", args.ownerTokenIdentifier)
+					.eq("workspaceId", args.workspaceId),
+			)
+			.take(REMOVE_ALL_CHATS_BATCH_SIZE);
+
+		await Promise.all(
+			chats.map((chat) =>
+				ctx.scheduler.runAfter(0, internal.chats.removeMessagesAndDeleteChat, {
+					chatId: chat._id,
+				}),
+			),
+		);
+
+		if (chats.length === REMOVE_ALL_CHATS_BATCH_SIZE) {
+			await ctx.scheduler.runAfter(0, internal.chats.removeAllForWorkspace, {
+				ownerTokenIdentifier: args.ownerTokenIdentifier,
+				workspaceId: args.workspaceId,
+			});
+		}
+
+		return null;
 	},
 });
 

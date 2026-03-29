@@ -2,6 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ActiveWorkspaceProvider } from "../src/hooks/use-active-workspace";
 
 const convexTokenMock = vi.fn();
 const sendMessageMock = vi.fn();
@@ -202,18 +203,29 @@ describe("ChatPage", () => {
 			error: undefined,
 			status: "ready",
 		});
-		useQueryMock.mockReturnValue([
-			{
-				_id: "meeting-notes",
-				title: "Meeting notes",
-				searchableText: "Team sync",
-			},
-			{
-				_id: "guidelines",
-				title: "Brand guidelines",
-				searchableText: "Voice and tone",
-			},
-		]);
+		useQueryMock.mockImplementation((_query, args) => {
+			if (
+				args &&
+				typeof args === "object" &&
+				"workspaceId" in args &&
+				args.workspaceId === "workspace-1"
+			) {
+				return [
+					{
+						_id: "meeting-notes",
+						title: "Meeting notes",
+						searchableText: "Team sync",
+					},
+					{
+						_id: "guidelines",
+						title: "Brand guidelines",
+						searchableText: "Voice and tone",
+					},
+				];
+			}
+
+			return [];
+		});
 	});
 
 	afterEach(() => {
@@ -225,16 +237,18 @@ describe("ChatPage", () => {
 		const { ChatPage } = await import("../src/components/chat/chat-page");
 
 		render(
-			<ChatPage
-				chatId="chat-1"
-				initialMessages={[]}
-				onChatPersisted={vi.fn()}
-				chats={[]}
-				isChatsLoading={false}
-				activeChatId={null}
-				onOpenChat={vi.fn()}
-				onChatRemoved={vi.fn()}
-			/>,
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={null}
+					onOpenChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+				/>
+			</ActiveWorkspaceProvider>,
 		);
 
 		await user.type(
@@ -243,10 +257,12 @@ describe("ChatPage", () => {
 		);
 		await user.click(screen.getByLabelText("Web Search"));
 		await user.click(screen.getByLabelText("Apps and Integrations"));
-		await user.click(screen.getByRole("button", { name: "Meeting notes" }));
-		await user.click(
-			screen.getByRole("button", { name: "Brand guidelines Voice and tone" }),
-		);
+		const meetingNotesButtons = screen.getAllByRole("button", {
+			name: "Meeting notes",
+		});
+		expect(meetingNotesButtons[0]).toBeDefined();
+		await user.click(meetingNotesButtons[0]);
+		await user.click(screen.getByRole("button", { name: "Brand guidelines" }));
 		await user.click(screen.getByRole("button", { name: "Send" }));
 
 		expect(sendMessageMock).toHaveBeenCalledTimes(1);
@@ -257,8 +273,9 @@ describe("ChatPage", () => {
 					model: "gpt-5.4",
 					webSearchEnabled: true,
 					appsEnabled: false,
-					mentions: ["meeting-notes"],
-					selectedSourceIds: ["guidelines"],
+					mentions: ["meeting-notes", "guidelines"],
+					selectedSourceIds: [],
+					workspaceId: "workspace-1",
 					convexToken: "convex-token",
 				},
 			},

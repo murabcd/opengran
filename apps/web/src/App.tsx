@@ -84,6 +84,10 @@ import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { NoteTemplateSelect } from "@/components/templates/note-template-select";
 import { OpenGranMark } from "@/components/ui/open-gran-mark";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
+import {
+	ActiveWorkspaceProvider,
+	useActiveWorkspaceId,
+} from "@/hooks/use-active-workspace";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
 import {
@@ -115,6 +119,7 @@ const SETTINGS_PAGE_BY_SLUG = {
 	appearance: "Appearance",
 	workspace: "Workspace",
 	calendar: "Calendar",
+	connections: "Connections",
 	"data-controls": "Data controls",
 } as const satisfies Record<string, SettingsPage>;
 
@@ -123,6 +128,7 @@ const SETTINGS_SLUG_BY_PAGE: Record<SettingsPage, string> = {
 	Appearance: "appearance",
 	Workspace: "workspace",
 	Calendar: "calendar",
+	Connections: "connections",
 	"Data controls": "data-controls",
 };
 
@@ -1577,6 +1583,16 @@ const useAppShellState = ({
 	const [isSigningOut, startSignOut] = React.useTransition();
 	const [activeWorkspaceId, setActiveWorkspaceId] =
 		React.useState<Id<"workspaces"> | null>(() => workspaces[0]?._id ?? null);
+	const resolvedActiveWorkspaceId = React.useMemo(() => {
+		if (
+			activeWorkspaceId &&
+			workspaces.some((workspace) => workspace._id === activeWorkspaceId)
+		) {
+			return activeWorkspaceId;
+		}
+
+		return workspaces[0]?._id ?? null;
+	}, [activeWorkspaceId, workspaces]);
 	const [currentChatId, setCurrentChatId] = React.useState<string | null>(
 		() => {
 			if (typeof window === "undefined") {
@@ -1644,13 +1660,29 @@ const useAppShellState = ({
 	const listUpcomingGoogleEvents = useAction(
 		api.calendar.listUpcomingGoogleEvents,
 	);
-	const chats = useQuery(api.chats.list, {});
-	const notes = useQuery(api.notes.list, {});
-	const sharedNotes = useQuery(api.notes.listShared, {});
+	const chats = useQuery(
+		api.chats.list,
+		resolvedActiveWorkspaceId
+			? { workspaceId: resolvedActiveWorkspaceId }
+			: "skip",
+	);
+	const notes = useQuery(
+		api.notes.list,
+		resolvedActiveWorkspaceId
+			? { workspaceId: resolvedActiveWorkspaceId }
+			: "skip",
+	);
+	const sharedNotes = useQuery(
+		api.notes.listShared,
+		resolvedActiveWorkspaceId
+			? { workspaceId: resolvedActiveWorkspaceId }
+			: "skip",
+	);
 	const selectedChatMessages = useQuery(
 		api.chats.getMessages,
-		currentView === "chat" && currentChatId
+		currentView === "chat" && currentChatId && resolvedActiveWorkspaceId
 			? {
+					workspaceId: resolvedActiveWorkspaceId,
 					chatId: currentChatId,
 				}
 			: "skip",
@@ -1678,8 +1710,10 @@ const useAppShellState = ({
 		api.notes.get,
 		currentView === "note" &&
 			!hasInvalidCurrentNoteRoute &&
-			resolvedCurrentNoteId
+			resolvedCurrentNoteId &&
+			resolvedActiveWorkspaceId
 			? {
+					workspaceId: resolvedActiveWorkspaceId,
 					id: resolvedCurrentNoteId,
 				}
 			: "skip",
@@ -1920,7 +1954,12 @@ const useAppShellState = ({
 			creatingNoteRef.current = true;
 			const shouldStartCapture = options?.autoStartCapture === true;
 
-			void createNote()
+			if (!resolvedActiveWorkspaceId) {
+				creatingNoteRef.current = false;
+				return;
+			}
+
+			void createNote({ workspaceId: resolvedActiveWorkspaceId })
 				.then((noteId) => {
 					setCurrentNoteTitle("New note");
 					openNote(noteId, {
@@ -1934,7 +1973,7 @@ const useAppShellState = ({
 					creatingNoteRef.current = false;
 				});
 		},
-		[createNote, openNote],
+		[createNote, openNote, resolvedActiveWorkspaceId],
 	);
 
 	const handleQuickNote = React.useCallback(() => {
@@ -2084,7 +2123,7 @@ const useAppShellState = ({
 	);
 
 	return {
-		activeWorkspaceId,
+		activeWorkspaceId: resolvedActiveWorkspaceId,
 		chats,
 		chatComposerId,
 		currentChatId,
@@ -2183,82 +2222,89 @@ function AppShell({
 	});
 
 	return (
-		<SidebarProvider className="h-svh overflow-hidden">
-			<AppSidebar
-				workspaces={controller.workspaces}
-				activeWorkspaceId={controller.activeWorkspaceId}
-				currentView={controller.currentView}
-				user={controller.user}
-				notes={controller.notes}
-				onWorkspaceSelect={controller.setActiveWorkspaceId}
-				onWorkspaceCreate={controller.handleWorkspaceCreate}
-				onViewChange={controller.handleViewChange}
-				settingsOpen={controller.settingsOpen}
-				settingsPage={controller.settingsPage}
-				onSettingsOpenChange={controller.handleSettingsOpenChange}
-				onSignOut={controller.handleSignOut}
-				signingOut={controller.isSigningOut}
-				desktopSafeTop={controller.isDesktopMac}
-				currentNoteId={controller.currentNoteId}
-				currentNoteTitle={controller.currentNoteTitle}
-				onNoteSelect={controller.openNote}
-				onNoteTitleChange={controller.setCurrentNoteTitle}
-				onNoteTrashed={controller.handleNoteTrashed}
-			/>
-			<AppShellInset reserveRightSidebar={controller.currentView === "note"}>
-				<AppShellHeader
-					isDesktopMac={controller.isDesktopMac}
-					breadcrumbSectionLabel={controller.breadcrumbSectionLabel}
-					breadcrumbDetailLabel={controller.breadcrumbDetailLabel}
-					onBreadcrumbSectionClick={controller.handleBreadcrumbSectionClick}
+		<ActiveWorkspaceProvider workspaceId={controller.activeWorkspaceId}>
+			<SidebarProvider className="h-svh overflow-hidden">
+				<AppSidebar
+					workspaces={controller.workspaces}
+					activeWorkspaceId={controller.activeWorkspaceId}
 					currentView={controller.currentView}
-					currentNoteId={controller.currentNoteId}
-					currentNoteTitle={controller.currentNoteTitle}
-					currentNoteTemplateSlug={controller.currentNoteTemplateSlug}
-					currentNoteEditorActions={controller.currentNoteEditorActions}
-					onCreateNote={controller.handleQuickNote}
-					onNoteTitleChange={controller.setCurrentNoteTitle}
-					onNoteTrashed={controller.handleNoteTrashed}
-					onNewChat={controller.handleNewChat}
-				/>
-				<AppShellContent
-					currentView={controller.currentView}
-					isResolvingNoteRoute={controller.isResolvingCurrentNoteRoute}
-					currentDate={controller.currentDate}
-					currentDayOfMonth={controller.currentDayOfMonth}
-					currentMonthLabel={controller.currentMonthLabel}
-					currentWeekdayLabel={controller.currentWeekdayLabel}
-					upcomingCalendarEvents={controller.upcomingCalendarEvents}
-					upcomingCalendarStatus={controller.upcomingCalendarStatus}
-					isLoadingUpcomingCalendarEvents={
-						controller.isLoadingUpcomingCalendarEvents
-					}
+					user={controller.user}
 					notes={controller.notes}
-					sharedNotes={controller.sharedNotes}
+					onWorkspaceSelect={controller.setActiveWorkspaceId}
+					onWorkspaceCreate={controller.handleWorkspaceCreate}
+					onViewChange={controller.handleViewChange}
+					settingsOpen={controller.settingsOpen}
+					settingsPage={controller.settingsPage}
+					onSettingsOpenChange={controller.handleSettingsOpenChange}
+					onSignOut={controller.handleSignOut}
+					signingOut={controller.isSigningOut}
+					desktopSafeTop={controller.isDesktopMac}
 					currentNoteId={controller.currentNoteId}
 					currentNoteTitle={controller.currentNoteTitle}
-					userName={controller.user.name}
-					onOpenNote={controller.openNote}
-					onNoteTrashed={controller.handleNoteTrashed}
-					onCreateNote={controller.handleQuickNote}
-					onOpenCalendarSettings={controller.handleOpenCalendarSettings}
-					chatComposerId={controller.chatComposerId}
-					initialChatMessages={controller.initialChatMessages}
-					chats={controller.chats}
-					currentChatId={controller.currentChatId}
-					onChatPersisted={controller.handleChatPersisted}
-					onOpenChat={controller.handleOpenChat}
-					onChatRemoved={controller.handleChatRemoved}
+					onNoteSelect={controller.openNote}
 					onNoteTitleChange={controller.setCurrentNoteTitle}
-					onNoteEditorActionsChange={controller.setCurrentNoteEditorActions}
-					onAutoStartNoteCaptureHandled={
-						controller.handleAutoStartNoteCaptureHandled
-					}
-					shouldAutoStartNoteCapture={controller.shouldAutoStartNoteCapture}
-					onGoHome={() => controller.handleViewChange("home")}
+					onNoteTrashed={controller.handleNoteTrashed}
 				/>
-			</AppShellInset>
-		</SidebarProvider>
+				<AppShellInset reserveRightSidebar={controller.currentView === "note"}>
+					<AppShellHeader
+						isDesktopMac={controller.isDesktopMac}
+						breadcrumbSectionLabel={controller.breadcrumbSectionLabel}
+						breadcrumbDetailLabel={controller.breadcrumbDetailLabel}
+						onBreadcrumbSectionClick={controller.handleBreadcrumbSectionClick}
+						currentView={controller.currentView}
+						currentNoteId={controller.currentNoteId}
+						currentNoteTitle={controller.currentNoteTitle}
+						currentNoteTemplateSlug={controller.currentNoteTemplateSlug}
+						currentNoteEditorActions={controller.currentNoteEditorActions}
+						onCreateNote={controller.handleQuickNote}
+						onNoteTitleChange={controller.setCurrentNoteTitle}
+						onNoteTrashed={controller.handleNoteTrashed}
+						onNewChat={controller.handleNewChat}
+					/>
+					<AppShellContent
+						currentView={controller.currentView}
+						isResolvingNoteRoute={controller.isResolvingCurrentNoteRoute}
+						currentDate={controller.currentDate}
+						currentDayOfMonth={controller.currentDayOfMonth}
+						currentMonthLabel={controller.currentMonthLabel}
+						currentWeekdayLabel={controller.currentWeekdayLabel}
+						upcomingCalendarEvents={controller.upcomingCalendarEvents}
+						upcomingCalendarStatus={controller.upcomingCalendarStatus}
+						isLoadingUpcomingCalendarEvents={
+							controller.isLoadingUpcomingCalendarEvents
+						}
+						notes={controller.notes}
+						sharedNotes={controller.sharedNotes}
+						currentNoteId={controller.currentNoteId}
+						currentNoteTitle={controller.currentNoteTitle}
+						userName={controller.user.name}
+						onOpenNote={controller.openNote}
+						onNoteTrashed={controller.handleNoteTrashed}
+						onCreateNote={controller.handleQuickNote}
+						onOpenCalendarSettings={controller.handleOpenCalendarSettings}
+						chatComposerId={controller.chatComposerId}
+						initialChatMessages={controller.initialChatMessages}
+						chats={controller.chats}
+						currentChatId={controller.currentChatId}
+						activeWorkspace={
+							controller.workspaces.find(
+								(workspace) => workspace._id === controller.activeWorkspaceId,
+							) ?? null
+						}
+						onChatPersisted={controller.handleChatPersisted}
+						onOpenChat={controller.handleOpenChat}
+						onChatRemoved={controller.handleChatRemoved}
+						onNoteTitleChange={controller.setCurrentNoteTitle}
+						onNoteEditorActionsChange={controller.setCurrentNoteEditorActions}
+						onAutoStartNoteCaptureHandled={
+							controller.handleAutoStartNoteCaptureHandled
+						}
+						shouldAutoStartNoteCapture={controller.shouldAutoStartNoteCapture}
+						onGoHome={() => controller.handleViewChange("home")}
+					/>
+				</AppShellInset>
+			</SidebarProvider>
+		</ActiveWorkspaceProvider>
 	);
 }
 
@@ -2291,6 +2337,7 @@ function AppShellHeader({
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 	onNewChat: () => void;
 }) {
+	const activeWorkspaceId = useActiveWorkspaceId();
 	const breadcrumbRenameInitialTitleRef = React.useRef(
 		currentNoteTitle || "New note",
 	);
@@ -2304,7 +2351,7 @@ function AppShellHeader({
 	const [isRenamingNote, setIsRenamingNote] = React.useState(false);
 	const renameNote = useMutation(api.notes.rename).withOptimisticUpdate(
 		(localStore, args) => {
-			optimisticRenameNote(localStore, args.id, args.title);
+			optimisticRenameNote(localStore, args.workspaceId, args.id, args.title);
 		},
 	);
 	const canRenameCurrentNote = currentView === "note" && currentNoteId !== null;
@@ -2319,7 +2366,12 @@ function AppShellHeader({
 	}, [currentNoteTitle, titleEditOpen]);
 
 	const commitBreadcrumbRename = React.useCallback(async () => {
-		if (!canRenameCurrentNote || !currentNoteId || isRenamingNote) {
+		if (
+			!canRenameCurrentNote ||
+			!currentNoteId ||
+			!activeWorkspaceId ||
+			isRenamingNote
+		) {
 			return;
 		}
 
@@ -2337,6 +2389,7 @@ function AppShellHeader({
 
 		try {
 			await renameNote({
+				workspaceId: activeWorkspaceId,
 				id: currentNoteId,
 				title: nextTitle,
 			});
@@ -2352,6 +2405,7 @@ function AppShellHeader({
 			setIsRenamingNote(false);
 		}
 	}, [
+		activeWorkspaceId,
 		canRenameCurrentNote,
 		currentNoteId,
 		isRenamingNote,
@@ -2623,6 +2677,7 @@ function AppShellContent({
 	initialChatMessages,
 	chats,
 	currentChatId,
+	activeWorkspace,
 	onChatPersisted,
 	onOpenChat,
 	onChatRemoved,
@@ -2654,6 +2709,7 @@ function AppShellContent({
 	initialChatMessages: UIMessage[];
 	chats: Array<Doc<"chats">> | undefined;
 	currentChatId: string | null;
+	activeWorkspace: WorkspaceRecord | null;
 	onChatPersisted?: (chatId: string) => void;
 	onOpenChat: (chatId: string) => void;
 	onChatRemoved: (chatId: string) => void;
@@ -2740,6 +2796,7 @@ function AppShellContent({
 			activeChatId={currentChatId}
 			onOpenChat={onOpenChat}
 			onChatRemoved={onChatRemoved}
+			activeWorkspace={activeWorkspace}
 		/>
 	);
 }

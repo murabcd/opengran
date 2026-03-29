@@ -56,7 +56,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
+import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { api } from "../../../../../convex/_generated/api";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 
 const templateIcons = {
 	"one-to-one": UsersRound,
@@ -257,6 +259,7 @@ const useTemplateEditorState = ({
 
 const useTemplateDraftEditor = ({
 	activeTemplate,
+	activeWorkspaceId,
 	onOpenChange,
 	saveTemplates,
 	selectTemplate,
@@ -265,6 +268,7 @@ const useTemplateDraftEditor = ({
 	updateTemplates,
 }: {
 	activeTemplate: TemplateSlug | null;
+	activeWorkspaceId: Id<"workspaces"> | null;
 	onOpenChange: (open: boolean) => void;
 	saveTemplates: ReturnType<typeof useMutation<typeof api.templates.saveAll>>;
 	selectTemplate: (slug: TemplateSlug | null) => void;
@@ -394,7 +398,12 @@ const useTemplateDraftEditor = ({
 		setIsSaving(true);
 
 		try {
+			if (!activeWorkspaceId) {
+				return;
+			}
+
 			const savedTemplates = await saveTemplates({
+				workspaceId: activeWorkspaceId,
 				templates: templates.map((template) => ({
 					slug: template.slug,
 					name: template.name,
@@ -623,7 +632,11 @@ function TemplatesEditor({
 }
 
 export function TemplatesDialog({ open, onOpenChange }: TemplatesDialogProps) {
-	const templateData = useQuery(api.templates.list);
+	const activeWorkspaceId = useActiveWorkspaceId();
+	const templateData = useQuery(
+		api.templates.list,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const saveTemplates = useMutation(api.templates.saveAll);
 	const { activeTemplate, templates, selectTemplate, updateTemplates } =
 		useTemplateEditorState({
@@ -632,6 +645,7 @@ export function TemplatesDialog({ open, onOpenChange }: TemplatesDialogProps) {
 		});
 	const editor = useTemplateDraftEditor({
 		activeTemplate,
+		activeWorkspaceId,
 		onOpenChange,
 		saveTemplates,
 		selectTemplate,

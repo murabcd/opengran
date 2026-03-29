@@ -2,28 +2,34 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { openai } from "@ai-sdk/openai";
 import {
 	consumeStream,
-	convertToModelMessages,
 	createIdGenerator,
 	generateText,
-	streamText,
+	pipeAgentUIStreamToResponse,
+	stepCountIs,
+	ToolLoopAgent,
+	tool,
 	type UIMessage,
 	validateUIMessages,
 } from "ai";
 import { ConvexHttpClient } from "convex/browser";
+import { z } from "zod";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import {
 	buildChatSystemPrompt,
 	CHAT_TITLE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
-import { fallbackChatModel, resolveChatModel } from "../src/lib/ai/models";
+import { findChatModel, getChatModel } from "../src/lib/ai/models";
+import { getTrackerIssue, searchTrackerIssues } from "./tracker";
 
 type ChatRequestBody = {
 	id?: string;
+	workspaceId?: string | null;
 	message?: UIMessage;
 	messages?: UIMessage[];
 	model?: string;
 	webSearchEnabled?: boolean;
+	appsEnabled?: boolean;
 	mentions?: string[];
 	selectedSourceIds?: string[];
 	convexToken?: string | null;
@@ -37,7 +43,9 @@ type ChatRequestBody = {
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
 const MAX_NOTE_CONTEXT_LENGTH = 16000;
-const CHAT_TITLE_MODEL = resolveChatModel("gpt-5.4-nano").model;
+const APP_SOURCE_PREFIX = "app:";
+const WORKSPACE_SOURCE_PREFIX = "workspace:";
+const CHAT_TITLE_MODEL = getChatModel("gpt-5.4-nano").model;
 const generateMessageId = createIdGenerator({
 	prefix: "msg",
 	size: 16,
@@ -57,32 +65,64 @@ const getReferencedNoteIds = ({
 	mentions,
 	selectedSourceIds,
 }: Pick<ChatRequestBody, "mentions" | "selectedSourceIds">): Id<"notes">[] =>
-	[...(mentions ?? []), ...(selectedSourceIds ?? [])]
+	[
+		...(mentions ?? []),
+		...((selectedSourceIds ?? []).filter(
+			(value) =>
+				!value.startsWith(APP_SOURCE_PREFIX) &&
+				!value.startsWith(WORKSPACE_SOURCE_PREFIX),
+		) as string[]),
+	]
 		.filter(
 			(value, index, values): value is string =>
 				Boolean(value) && values.indexOf(value) === index,
 		)
 		.map((value) => value as Id<"notes">);
 
+const getSelectedAppSourceIds = ({
+	selectedSourceIds,
+}: Pick<ChatRequestBody, "selectedSourceIds">) =>
+	(selectedSourceIds ?? []).filter((value) =>
+		value.startsWith(APP_SOURCE_PREFIX),
+	);
+
+const hasWorkspaceSourceSelected = ({
+	selectedSourceIds,
+}: Pick<ChatRequestBody, "selectedSourceIds">) =>
+	(selectedSourceIds ?? []).some((value) =>
+		value.startsWith(WORKSPACE_SOURCE_PREFIX),
+	);
+
 const getNotesContext = async ({
 	convexToken,
 	mentions,
 	selectedSourceIds,
-}: Pick<ChatRequestBody, "convexToken" | "mentions" | "selectedSourceIds">) => {
-	if (!convexToken) {
+	workspaceId,
+}: Pick<
+	ChatRequestBody,
+	"convexToken" | "mentions" | "selectedSourceIds" | "workspaceId"
+>) => {
+	if (!convexToken || !workspaceId) {
 		return "";
 	}
 
 	const noteIds = getReferencedNoteIds({ mentions, selectedSourceIds });
-
-	if (noteIds.length === 0) {
-		return "";
-	}
-
 	const client = new ConvexHttpClient(getConvexUrl(), { auth: convexToken });
-	const notes = await client.query(api.notes.getChatContext, {
-		ids: noteIds,
-	});
+	const shouldUseWorkspaceScope =
+		noteIds.length === 0 &&
+		((selectedSourceIds ?? []).length === 0 ||
+			hasWorkspaceSourceSelected({ selectedSourceIds }));
+	const notes =
+		noteIds.length > 0
+			? await client.query(api.notes.getChatContext, {
+					workspaceId: workspaceId as Id<"workspaces">,
+					ids: noteIds,
+				})
+			: shouldUseWorkspaceScope
+				? await client.query(api.notes.getWorkspaceChatContext, {
+						workspaceId: workspaceId as Id<"workspaces">,
+					})
+				: [];
 
 	if (notes.length === 0) {
 		return "";
@@ -97,6 +137,31 @@ const getNotesContext = async ({
 			].join("\n"),
 		),
 	].join("\n\n");
+};
+
+const getSelectedAppConnections = async ({
+	convexToken,
+	selectedSourceIds,
+}: Pick<ChatRequestBody, "convexToken" | "selectedSourceIds">) => {
+	if (!convexToken) {
+		return [];
+	}
+
+	const allSelectedSourceIds = selectedSourceIds ?? [];
+	const sourceIds = getSelectedAppSourceIds({ selectedSourceIds });
+	const client = new ConvexHttpClient(getConvexUrl(), { auth: convexToken });
+
+	if (allSelectedSourceIds.length === 0) {
+		return await client.query(api.appConnections.getAllForChat, {});
+	}
+
+	if (sourceIds.length === 0) {
+		return [];
+	}
+
+	return await client.query(api.appConnections.getSelectedForChat, {
+		sourceIds,
+	});
 };
 
 const clampWhitespace = (value: string) => value.replace(/\s+/g, " ").trim();
@@ -249,11 +314,14 @@ const getInlineNoteContext = ({
 const getStoredNoteContext = async ({
 	client,
 	noteId,
+	workspaceId,
 }: {
 	client: ConvexHttpClient;
 	noteId: Id<"notes">;
+	workspaceId: Id<"workspaces">;
 }) => {
 	const notes = await client.query(api.notes.getChatContext, {
+		workspaceId,
 		ids: [noteId],
 	});
 	const note = notes[0];
@@ -287,16 +355,28 @@ export const handleChatRequest = async (
 		message,
 		messages = [],
 		model,
+		workspaceId,
 		webSearchEnabled = false,
+		appsEnabled = true,
 		mentions,
 		selectedSourceIds,
 		convexToken,
 		noteContext,
 	} = await readJsonBody(request);
 
+	const resolvedWorkspaceId =
+		(workspaceId as Id<"workspaces"> | null | undefined) ?? null;
+
 	if (!Array.isArray(messages)) {
 		sendJson(response, 400, {
 			error: "Invalid chat payload.",
+		});
+		return;
+	}
+
+	if (convexToken && !resolvedWorkspaceId) {
+		sendJson(response, 400, {
+			error: "workspaceId is required.",
 		});
 		return;
 	}
@@ -306,22 +386,45 @@ export const handleChatRequest = async (
 			? new ConvexHttpClient(getConvexUrl(), { auth: convexToken })
 			: null;
 	const storedChat =
-		convexClient && id
+		convexClient && id && resolvedWorkspaceId
 			? await convexClient
-					.query(api.chats.getSession, { chatId: id })
+					.query(api.chats.getSession, {
+						workspaceId: resolvedWorkspaceId,
+						chatId: id,
+					})
 					.catch(() => null)
 			: null;
-	const resolvedModel = resolveChatModel(model ?? storedChat?.model);
+	const requestedModel = model ?? storedChat?.model ?? null;
+
+	if (!requestedModel) {
+		sendJson(response, 400, {
+			error: "model is required.",
+		});
+		return;
+	}
+
+	const resolvedModel = findChatModel(requestedModel);
+
+	if (!resolvedModel) {
+		sendJson(response, 400, {
+			error: `Unsupported model: ${requestedModel}.`,
+		});
+		return;
+	}
+
 	const resolvedNoteId =
 		(noteContext?.noteId as Id<"notes"> | null | undefined) ??
 		storedChat?.noteId ??
 		null;
 	const chatMessages = await validateUIMessages({
 		messages:
-			message && convexClient && id
+			message && convexClient && id && resolvedWorkspaceId
 				? [
 						...fromStoredMessages(
-							await convexClient.query(api.chats.getMessages, { chatId: id }),
+							await convexClient.query(api.chats.getMessages, {
+								workspaceId: resolvedWorkspaceId,
+								chatId: id,
+							}),
 						),
 						message,
 					]
@@ -341,14 +444,15 @@ export const handleChatRequest = async (
 		? generateChatTitle(lastUserMessage)
 		: null;
 
-	if (convexClient && id && lastUserMessage) {
+	if (convexClient && id && resolvedWorkspaceId && lastUserMessage) {
 		try {
 			await convexClient.mutation(api.chats.saveMessage, {
+				workspaceId: resolvedWorkspaceId,
 				chatId: id,
 				noteId: resolvedNoteId ?? undefined,
 				title: storedChat ? undefined : "New chat",
 				preview: getChatPreviewFromMessage(lastUserMessage),
-				model: resolvedModel?.model ?? fallbackChatModel.model,
+				model: resolvedModel.model,
 				message: toStoredMessage(lastUserMessage),
 			});
 		} catch (error) {
@@ -356,10 +460,11 @@ export const handleChatRequest = async (
 		}
 	}
 
-	if (convexClient && id && titlePromise) {
+	if (convexClient && id && resolvedWorkspaceId && titlePromise) {
 		void titlePromise
 			.then(async (title) => {
 				await convexClient.mutation(api.chats.updateTitle, {
+					workspaceId: resolvedWorkspaceId,
 					chatId: id,
 					title,
 				});
@@ -373,12 +478,14 @@ export const handleChatRequest = async (
 		convexToken,
 		mentions,
 		selectedSourceIds,
+		workspaceId,
 	});
 	const attachedNoteContext =
-		convexClient && resolvedNoteId
+		convexClient && resolvedNoteId && resolvedWorkspaceId
 			? await getStoredNoteContext({
 					client: convexClient,
 					noteId: resolvedNoteId,
+					workspaceId: resolvedWorkspaceId,
 				}).catch(() =>
 					getInlineNoteContext({
 						title: noteContext?.title,
@@ -389,17 +496,50 @@ export const handleChatRequest = async (
 					title: noteContext?.title,
 					text: noteContext?.text,
 				});
-	const systemPrompt = buildChatSystemPrompt({
+	const selectedAppConnections = appsEnabled
+		? await getSelectedAppConnections({
+				convexToken,
+				selectedSourceIds,
+			})
+		: [];
+	const trackerConnection =
+		selectedAppConnections.find(
+			(connection) => connection.provider === "yandex-tracker",
+		) ?? null;
+	const trackerTools = trackerConnection
+		? {
+				yandex_tracker_search: tool({
+					description:
+						"Search the selected Yandex Tracker connection for project history, integrations, tickets, tasks, queues, comments, assignees, and status. Use this before saying context is unavailable when the request could plausibly be answered from Tracker.",
+					inputSchema: z.object({
+						query: z.string().min(1),
+						limit: z.number().int().min(1).max(10).optional(),
+					}),
+					execute: async ({ query, limit }) =>
+						await searchTrackerIssues(trackerConnection, query, limit ?? 5),
+				}),
+				yandex_tracker_get_issue: tool({
+					description:
+						"Fetch a specific Yandex Tracker issue by key when the user mentions a ticket like PROJ-123 or clearly refers to a known issue key.",
+					inputSchema: z.object({
+						issueKey: z.string().min(1),
+					}),
+					execute: async ({ issueKey }) =>
+						await getTrackerIssue(trackerConnection, issueKey),
+				}),
+			}
+		: {};
+	const systemPrompt = `${buildChatSystemPrompt({
 		notesContext,
 		attachedNoteContext,
 		webSearchEnabled,
-	});
-
-	const result = streamText({
-		model: openai(resolvedModel?.model ?? fallbackChatModel.model),
-		system: systemPrompt,
-		messages: await convertToModelMessages(chatMessages),
-		tools: webSearchEnabled
+	})}${
+		trackerConnection
+			? `\n\nThe selected app source for this chat is Yandex Tracker (${trackerConnection.displayName}). Treat it as the preferred source for project history, integrations, tickets, tasks, comments, assignees, and status. If the user's request could be answered from Tracker, search Tracker first before saying the context is unavailable.`
+			: ""
+	}`;
+	const enabledTools = {
+		...(webSearchEnabled
 			? {
 					web_search: openai.tools.webSearch({
 						searchContextSize: "medium",
@@ -409,24 +549,36 @@ export const handleChatRequest = async (
 						},
 					}),
 				}
-			: undefined,
+			: {}),
+		...trackerTools,
+	};
+
+	const agent = new ToolLoopAgent({
+		model: openai(resolvedModel.model),
+		instructions: systemPrompt,
+		tools: Object.keys(enabledTools).length > 0 ? enabledTools : undefined,
+		stopWhen: Object.keys(enabledTools).length > 0 ? stepCountIs(5) : undefined,
 	});
 
-	result.pipeUIMessageStreamToResponse(response, {
+	await pipeAgentUIStreamToResponse({
+		response,
+		agent,
+		uiMessages: chatMessages,
 		originalMessages: chatMessages,
 		generateMessageId,
 		consumeSseStream: consumeStream,
 		onFinish: async ({ responseMessage }) => {
-			if (!convexClient || !id) {
+			if (!convexClient || !id || !resolvedWorkspaceId) {
 				return;
 			}
 
 			try {
 				await convexClient.mutation(api.chats.saveMessage, {
+					workspaceId: resolvedWorkspaceId,
 					chatId: id,
 					noteId: resolvedNoteId ?? undefined,
 					preview: getChatPreviewFromMessage(responseMessage),
-					model: resolvedModel?.model ?? fallbackChatModel.model,
+					model: resolvedModel.model,
 					message: toStoredMessage(responseMessage),
 				});
 			} catch (error) {

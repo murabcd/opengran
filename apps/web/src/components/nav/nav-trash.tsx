@@ -44,6 +44,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { getChatId } from "@/lib/chat";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
@@ -89,29 +90,41 @@ export function NavTrash({
 }
 
 function TrashPopoverContent() {
+	const activeWorkspaceId = useActiveWorkspaceId();
 	const [search, setSearch] = React.useState("");
 	const [deleteNoteId, setDeleteNoteId] = React.useState<Id<"notes"> | null>(
 		null,
 	);
 	const [deleteChatId, setDeleteChatId] = React.useState<string | null>(null);
-	const archivedNotes = useQuery(api.notes.listArchived, {});
-	const archivedChats = useQuery(api.chats.listArchived, {});
+	const archivedNotes = useQuery(
+		api.notes.listArchived,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
+	const archivedChats = useQuery(
+		api.chats.listArchived,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const restore = useMutation(api.notes.restore).withOptimisticUpdate(
 		(localStore, args) => {
-			const archived = localStore.getQuery(api.notes.listArchived, {});
+			const archived = localStore.getQuery(api.notes.listArchived, {
+				workspaceId: args.workspaceId,
+			});
 			const note = archived?.find((item) => item._id === args.id) ?? null;
 
 			if (archived !== undefined) {
 				localStore.setQuery(
 					api.notes.listArchived,
-					{},
+					{ workspaceId: args.workspaceId },
 					archived.filter((item) => item._id !== args.id),
 				);
 			}
 
 			if (note) {
-				const active = localStore.getQuery(api.notes.list, {}) ?? [];
-				localStore.setQuery(api.notes.list, {}, [
+				const active =
+					localStore.getQuery(api.notes.list, {
+						workspaceId: args.workspaceId,
+					}) ?? [];
+				localStore.setQuery(api.notes.list, { workspaceId: args.workspaceId }, [
 					{
 						...note,
 						isArchived: false,
@@ -124,11 +137,13 @@ function TrashPopoverContent() {
 	);
 	const remove = useMutation(api.notes.remove).withOptimisticUpdate(
 		(localStore, args) => {
-			const archived = localStore.getQuery(api.notes.listArchived, {});
+			const archived = localStore.getQuery(api.notes.listArchived, {
+				workspaceId: args.workspaceId,
+			});
 			if (archived !== undefined) {
 				localStore.setQuery(
 					api.notes.listArchived,
-					{},
+					{ workspaceId: args.workspaceId },
 					archived.filter((item) => item._id !== args.id),
 				);
 			}
@@ -136,21 +151,26 @@ function TrashPopoverContent() {
 	);
 	const restoreChat = useMutation(api.chats.restore).withOptimisticUpdate(
 		(localStore, args) => {
-			const archived = localStore.getQuery(api.chats.listArchived, {});
+			const archived = localStore.getQuery(api.chats.listArchived, {
+				workspaceId: args.workspaceId,
+			});
 			const chat =
 				archived?.find((item) => getChatId(item) === args.chatId) ?? null;
 
 			if (archived !== undefined) {
 				localStore.setQuery(
 					api.chats.listArchived,
-					{},
+					{ workspaceId: args.workspaceId },
 					archived.filter((item) => getChatId(item) !== args.chatId),
 				);
 			}
 
 			if (chat) {
-				const active = localStore.getQuery(api.chats.list, {}) ?? [];
-				localStore.setQuery(api.chats.list, {}, [
+				const active =
+					localStore.getQuery(api.chats.list, {
+						workspaceId: args.workspaceId,
+					}) ?? [];
+				localStore.setQuery(api.chats.list, { workspaceId: args.workspaceId }, [
 					{
 						...chat,
 						isArchived: false,
@@ -163,11 +183,13 @@ function TrashPopoverContent() {
 	);
 	const removeChat = useMutation(api.chats.remove).withOptimisticUpdate(
 		(localStore, args) => {
-			const archived = localStore.getQuery(api.chats.listArchived, {});
+			const archived = localStore.getQuery(api.chats.listArchived, {
+				workspaceId: args.workspaceId,
+			});
 			if (archived !== undefined) {
 				localStore.setQuery(
 					api.chats.listArchived,
-					{},
+					{ workspaceId: args.workspaceId },
 					archived.filter((item) => getChatId(item) !== args.chatId),
 				);
 			}
@@ -216,7 +238,11 @@ function TrashPopoverContent() {
 
 	const handleRestore = React.useCallback(
 		(noteId: Id<"notes">) => {
-			void restore({ id: noteId })
+			if (!activeWorkspaceId) {
+				return;
+			}
+
+			void restore({ workspaceId: activeWorkspaceId, id: noteId })
 				.then(() => {
 					toast.success("Note restored");
 				})
@@ -225,11 +251,15 @@ function TrashPopoverContent() {
 					toast.error("Failed to restore note");
 				});
 		},
-		[restore],
+		[activeWorkspaceId, restore],
 	);
 	const handleRestoreChat = React.useCallback(
 		(chatId: string) => {
-			void restoreChat({ chatId })
+			if (!activeWorkspaceId) {
+				return;
+			}
+
+			void restoreChat({ workspaceId: activeWorkspaceId, chatId })
 				.then(() => {
 					toast.success("Chat restored");
 				})
@@ -238,7 +268,7 @@ function TrashPopoverContent() {
 					toast.error("Failed to restore chat");
 				});
 		},
-		[restoreChat],
+		[activeWorkspaceId, restoreChat],
 	);
 
 	const handleDelete = React.useCallback(() => {
@@ -246,7 +276,11 @@ function TrashPopoverContent() {
 			return;
 		}
 
-		void remove({ id: deleteNoteId })
+		if (!activeWorkspaceId) {
+			return;
+		}
+
+		void remove({ workspaceId: activeWorkspaceId, id: deleteNoteId })
 			.then(() => {
 				setDeleteNoteId(null);
 				toast.success("Note deleted permanently");
@@ -255,13 +289,17 @@ function TrashPopoverContent() {
 				console.error("Failed to delete note", error);
 				toast.error("Failed to delete note");
 			});
-	}, [deleteNoteId, remove]);
+	}, [activeWorkspaceId, deleteNoteId, remove]);
 	const handleDeleteChat = React.useCallback(() => {
 		if (!deleteChatId) {
 			return;
 		}
 
-		void removeChat({ chatId: deleteChatId })
+		if (!activeWorkspaceId) {
+			return;
+		}
+
+		void removeChat({ workspaceId: activeWorkspaceId, chatId: deleteChatId })
 			.then(() => {
 				setDeleteChatId(null);
 				toast.success("Chat deleted permanently");
@@ -270,7 +308,7 @@ function TrashPopoverContent() {
 				console.error("Failed to delete chat", error);
 				toast.error("Failed to delete chat");
 			});
-	}, [deleteChatId, removeChat]);
+	}, [activeWorkspaceId, deleteChatId, removeChat]);
 
 	return (
 		<>
@@ -341,7 +379,7 @@ function TrashSearchInput({
 				<Input
 					value={search}
 					onChange={onSearchChange}
-					className="h-8 bg-secondary pr-2 pl-8 focus-visible:ring-transparent"
+					className="h-8 bg-secondary pr-2 pl-8 focus-visible:border-input focus-visible:ring-0"
 					placeholder="Search notes..."
 				/>
 			</div>

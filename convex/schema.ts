@@ -21,6 +21,18 @@ const transcriptRefinementStatusValidator = v.union(
 	v.literal("failed"),
 );
 
+const appConnectionProviderValidator = v.literal("yandex-tracker");
+
+const appConnectionStatusValidator = v.union(
+	v.literal("connected"),
+	v.literal("disconnected"),
+);
+
+const appConnectionOrgTypeValidator = v.union(
+	v.literal("x-org-id"),
+	v.literal("x-cloud-org-id"),
+);
+
 export default defineSchema({
 	onboardingStates: defineTable({
 		ownerTokenIdentifier: v.string(),
@@ -31,6 +43,7 @@ export default defineSchema({
 	}).index("by_ownerTokenIdentifier", ["ownerTokenIdentifier"]),
 	templates: defineTable({
 		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
 		slug: v.string(),
 		name: v.string(),
 		meetingContext: v.string(),
@@ -44,6 +57,11 @@ export default defineSchema({
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_createdAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"createdAt",
+		])
 		.index("by_ownerTokenIdentifier_and_createdAt", [
 			"ownerTokenIdentifier",
 			"createdAt",
@@ -72,6 +90,7 @@ export default defineSchema({
 		]),
 	notes: defineTable({
 		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
 		authorName: v.optional(v.string()),
 		isStarred: v.optional(v.boolean()),
 		title: v.string(),
@@ -86,6 +105,24 @@ export default defineSchema({
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_updatedAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"updatedAt",
+		])
+		.index("by_owner_ws_arch_upd", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"isArchived",
+			"updatedAt",
+		])
+		.index("by_owner_ws_vis_arch_upd", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"visibility",
+			"isArchived",
+			"updatedAt",
+		])
 		.index("by_ownerTokenIdentifier_and_updatedAt", [
 			"ownerTokenIdentifier",
 			"updatedAt",
@@ -104,6 +141,7 @@ export default defineSchema({
 		.index("by_shareId", ["shareId"]),
 	chats: defineTable({
 		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
 		authorName: v.optional(v.string()),
 		chatId: v.string(),
 		noteId: v.optional(v.id("notes")),
@@ -116,6 +154,35 @@ export default defineSchema({
 		updatedAt: v.number(),
 		lastMessageAt: v.number(),
 	})
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_updatedAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"updatedAt",
+		])
+		.index("by_owner_ws_chat_arch_upd", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"isArchived",
+			"updatedAt",
+		])
+		.index("by_owner_ws_note_chat_arch_upd", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"noteId",
+			"isArchived",
+			"updatedAt",
+		])
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_chatId", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"chatId",
+		])
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_noteId_and_chatId", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"noteId",
+			"chatId",
+		])
 		.index("by_ownerTokenIdentifier_and_updatedAt", [
 			"ownerTokenIdentifier",
 			"updatedAt",
@@ -156,6 +223,30 @@ export default defineSchema({
 	})
 		.index("by_chatId_and_createdAt", ["chatId", "createdAt"])
 		.index("by_chatId_and_messageId", ["chatId", "messageId"]),
+	appConnections: defineTable({
+		ownerTokenIdentifier: v.string(),
+		provider: appConnectionProviderValidator,
+		status: appConnectionStatusValidator,
+		displayName: v.string(),
+		orgType: appConnectionOrgTypeValidator,
+		orgId: v.string(),
+		token: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_ownerTokenIdentifier_and_updatedAt", [
+			"ownerTokenIdentifier",
+			"updatedAt",
+		])
+		.index("by_ownerTokenIdentifier_and_provider", [
+			"ownerTokenIdentifier",
+			"provider",
+		])
+		.index("by_ownerTokenIdentifier_and_status_and_updatedAt", [
+			"ownerTokenIdentifier",
+			"status",
+			"updatedAt",
+		]),
 	transcriptSessions: defineTable({
 		ownerTokenIdentifier: v.string(),
 		noteId: v.id("notes"),

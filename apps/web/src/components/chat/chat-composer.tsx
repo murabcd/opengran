@@ -1,4 +1,9 @@
 import {
+	Avatar,
+	AvatarFallback,
+	AvatarImage,
+} from "@workspace/ui/components/avatar";
+import {
 	Command,
 	CommandEmpty,
 	CommandGroup,
@@ -44,6 +49,7 @@ import {
 	Book,
 	Check,
 	CirclePlus,
+	FileText,
 	Globe,
 	Grid3x3,
 	type LucideIcon,
@@ -52,6 +58,8 @@ import {
 } from "lucide-react";
 import type { KeyboardEventHandler } from "react";
 import { chatModels } from "@/lib/ai/models";
+import { getAvatarSrc } from "@/lib/avatar";
+import type { WorkspaceRecord } from "@/lib/workspaces";
 
 type ContextPage = {
 	id: string;
@@ -64,6 +72,13 @@ type WorkspaceSource = {
 	id: string;
 	title: string;
 	preview: string;
+};
+
+type AppSource = {
+	id: string;
+	title: string;
+	preview: string;
+	provider: "yandex-tracker";
 };
 
 type ChatComposerProps = {
@@ -99,6 +114,9 @@ type ChatComposerProps = {
 	onSourceSearchTermChange: (value: string) => void;
 	selectedSourceIds: string[];
 	workspaceSources: WorkspaceSource[];
+	workspaceSourceId: string | null;
+	activeWorkspace: WorkspaceRecord | null;
+	appSources: AppSource[];
 	onToggleSource: (sourceId: string) => void;
 	onClearSelectedSources: () => void;
 };
@@ -136,6 +154,9 @@ export function ChatComposer({
 	onSourceSearchTermChange,
 	selectedSourceIds,
 	workspaceSources,
+	workspaceSourceId,
+	activeWorkspace,
+	appSources,
 	onToggleSource,
 	onClearSelectedSources,
 }: ChatComposerProps) {
@@ -143,10 +164,9 @@ export function ChatComposer({
 		workspaceSources,
 		sourceSearchTerm,
 	);
-	const hasWorkspaceScopes = selectedSourceIds.length > 0;
 	const scopesLabel =
 		selectedSourceIds.length === 0
-			? "All Sources"
+			? "All sources"
 			: selectedSourceIds.length === 1
 				? "1 scope"
 				: `${selectedSourceIds.length} scopes`;
@@ -156,7 +176,7 @@ export function ChatComposer({
 			<label htmlFor="chat-prompt" className="sr-only">
 				Prompt
 			</label>
-			<InputGroup className="min-h-[176px] max-h-[32rem] overflow-hidden rounded-xl border-border bg-card shadow-sm [--radius:1rem]">
+			<InputGroup className="min-h-[176px] max-h-[32rem] overflow-hidden rounded-xl border-border bg-card bg-clip-padding shadow-sm has-disabled:bg-card has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30 [--radius:1rem]">
 				<InputGroupAddon align="block-start" className="px-4 pt-4 pb-0">
 					<Popover
 						open={mentionPopoverOpen}
@@ -251,7 +271,7 @@ export function ChatComposer({
 					onChange={(event) => onDraftChange(event.target.value)}
 					onKeyDown={onDraftKeyDown}
 					placeholder="Ask, search, or make anything..."
-					className="min-h-[92px] max-h-[24rem] overflow-y-auto px-4 pt-2"
+					className="min-h-[92px] max-h-[24rem] overflow-y-auto px-4 pt-2 text-base placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
 				/>
 
 				<InputGroupAddon align="block-end" className="gap-1 px-4 pb-4">
@@ -265,7 +285,6 @@ export function ChatComposer({
 						open={sourcesOpen}
 						onOpenChange={onSourcesOpenChange}
 						scopesLabel={scopesLabel}
-						hasWorkspaceScopes={hasWorkspaceScopes}
 						webSearchEnabled={webSearchEnabled}
 						onWebSearchEnabledChange={onWebSearchEnabledChange}
 						appsEnabled={appsEnabled}
@@ -274,6 +293,9 @@ export function ChatComposer({
 						sourceSearchTerm={sourceSearchTerm}
 						onSourceSearchTermChange={onSourceSearchTermChange}
 						filteredWorkspaceSources={filteredWorkspaceSources}
+						workspaceSourceId={workspaceSourceId}
+						activeWorkspace={activeWorkspace}
+						appSources={appSources}
 						isNotesLoading={isNotesLoading}
 						onToggleSource={onToggleSource}
 						onClearSelectedSources={onClearSelectedSources}
@@ -352,7 +374,6 @@ function ScopePicker({
 	open,
 	onOpenChange,
 	scopesLabel,
-	hasWorkspaceScopes,
 	webSearchEnabled,
 	onWebSearchEnabledChange,
 	appsEnabled,
@@ -361,6 +382,9 @@ function ScopePicker({
 	sourceSearchTerm,
 	onSourceSearchTermChange,
 	filteredWorkspaceSources,
+	workspaceSourceId,
+	activeWorkspace,
+	appSources,
 	isNotesLoading,
 	onToggleSource,
 	onClearSelectedSources,
@@ -368,7 +392,6 @@ function ScopePicker({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	scopesLabel: string;
-	hasWorkspaceScopes: boolean;
 	webSearchEnabled: boolean;
 	onWebSearchEnabledChange: (value: boolean) => void;
 	appsEnabled: boolean;
@@ -377,22 +400,53 @@ function ScopePicker({
 	sourceSearchTerm: string;
 	onSourceSearchTermChange: (value: string) => void;
 	filteredWorkspaceSources: WorkspaceSource[];
+	workspaceSourceId: string | null;
+	activeWorkspace: WorkspaceRecord | null;
+	appSources: AppSource[];
 	isNotesLoading: boolean;
 	onToggleSource: (sourceId: string) => void;
 	onClearSelectedSources: () => void;
 }) {
+	const workspaceSourceSelected = workspaceSourceId
+		? selectedSourceIds.includes(workspaceSourceId)
+		: false;
+	const selectedWorkspaceNoteCount = selectedSourceIds.filter(
+		(sourceId) =>
+			!sourceId.startsWith("app:") && !sourceId.startsWith("workspace:"),
+	).length;
+	const hasWorkspaceScopes =
+		workspaceSourceSelected || selectedWorkspaceNoteCount > 0;
+	const isSearchingWorkspaceNotes = sourceSearchTerm.trim().length > 0;
+	const activeWorkspaceAvatarSrc = activeWorkspace
+		? (activeWorkspace.iconUrl ??
+			getAvatarSrc({
+				name: activeWorkspace.name,
+			}))
+		: null;
+	const activeWorkspaceInitials = activeWorkspace
+		? activeWorkspace.name
+				.split(" ")
+				.map((part) => part[0])
+				.join("")
+				.slice(0, 2)
+				.toUpperCase()
+		: "WG";
+
 	return (
 		<DropdownMenu open={open} onOpenChange={onOpenChange}>
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<DropdownMenuTrigger asChild>
-						<InputGroupButton size="sm" className="rounded-full">
+						<InputGroupButton
+							size="sm"
+							className="max-w-[180px] justify-start rounded-full"
+						>
 							<Globe />
 							<span className="max-w-[160px] truncate">{scopesLabel}</span>
 						</InputGroupButton>
 					</DropdownMenuTrigger>
 				</TooltipTrigger>
-				<TooltipContent>Select search scope</TooltipContent>
+				<TooltipContent>Select scope</TooltipContent>
 			</Tooltip>
 			<DropdownMenuContent
 				side="top"
@@ -441,79 +495,173 @@ function ScopePicker({
 							}
 						}}
 					>
-						<CirclePlus /> All Sources I can access
+						<CirclePlus /> All sources i can access
 					</DropdownMenuCheckboxItem>
 					<DropdownMenuSub>
 						<DropdownMenuSubTrigger
 							className={hasWorkspaceScopes ? "[&>svg:last-child]:ml-2!" : ""}
+							onClick={() => {
+								if (workspaceSourceId) {
+									onToggleSource(workspaceSourceId);
+								}
+							}}
 						>
-							<span className="flex size-4 items-center justify-center text-muted-foreground">
-								<OpenGranMark className="size-4" />
-							</span>
-							OpenGran
+							{activeWorkspace ? (
+								<Avatar className="size-4 rounded-sm">
+									<AvatarImage
+										src={activeWorkspaceAvatarSrc ?? undefined}
+										alt={activeWorkspace.name}
+									/>
+									<AvatarFallback className="rounded-sm text-[8px]">
+										{activeWorkspaceInitials}
+									</AvatarFallback>
+								</Avatar>
+							) : (
+								<span className="flex size-4 items-center justify-center text-muted-foreground">
+									<OpenGranMark className="size-4" />
+								</span>
+							)}
+							{activeWorkspace?.name ?? "Workspace"}
 							{hasWorkspaceScopes ? (
 								<span className="ml-auto flex items-center gap-2">
-									<span className="text-xs text-muted-foreground tabular-nums">
-										{selectedSourceIds.length === 1
-											? "1 scope"
-											: `${selectedSourceIds.length} scopes`}
-									</span>
+									{!workspaceSourceSelected ? (
+										<span className="text-xs text-muted-foreground tabular-nums">
+											{selectedWorkspaceNoteCount === 1
+												? "1 scope"
+												: `${selectedWorkspaceNoteCount} scopes`}
+										</span>
+									) : null}
 									<Check className="size-4 text-muted-foreground" />
 								</span>
 							) : null}
 						</DropdownMenuSubTrigger>
 						<DropdownMenuSubContent className="w-72 p-0 [--radius:1rem]">
 							<Command>
-								<CommandInput
-									placeholder="Select a workspace or note"
-									value={sourceSearchTerm}
-									onValueChange={onSourceSearchTermChange}
-								/>
+								<div className="[&_[data-slot=input-group]]:rounded-sm!">
+									<CommandInput
+										placeholder="Select a note"
+										value={sourceSearchTerm}
+										onValueChange={onSourceSearchTermChange}
+									/>
+								</div>
 								<CommandList>
-									{isNotesLoading ? (
+									<CommandGroup>
+										<CommandItem
+											value={activeWorkspace?.name ?? "workspace"}
+											onSelect={() => {
+												if (workspaceSourceId) {
+													onToggleSource(workspaceSourceId);
+												}
+											}}
+											className="relative w-full gap-2 pr-8"
+										>
+											{activeWorkspace ? (
+												<Avatar className="size-4 rounded-sm">
+													<AvatarImage
+														src={activeWorkspaceAvatarSrc ?? undefined}
+														alt={activeWorkspace.name}
+													/>
+													<AvatarFallback className="rounded-sm text-[8px]">
+														{activeWorkspaceInitials}
+													</AvatarFallback>
+												</Avatar>
+											) : (
+												<span className="flex size-4 items-center justify-center text-muted-foreground">
+													<OpenGranMark className="size-4" />
+												</span>
+											)}
+											<div className="min-w-0 flex-1">
+												<div className="truncate">
+													{activeWorkspace?.name ?? "Workspace"}
+												</div>
+											</div>
+											{workspaceSourceSelected ? (
+												<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
+													<Check className="size-4" />
+												</span>
+											) : null}
+										</CommandItem>
+									</CommandGroup>
+									{isSearchingWorkspaceNotes && isNotesLoading ? (
 										<CommandGroup heading="Notes">
 											<ChatNoteListSkeleton />
 										</CommandGroup>
 									) : null}
-									<CommandEmpty>No sources found.</CommandEmpty>
-									<CommandGroup heading="Notes">
-										{filteredWorkspaceSources.map((source) => {
-											const selected = selectedSourceIds.includes(source.id);
+									{isSearchingWorkspaceNotes ? (
+										<CommandEmpty>No notes found.</CommandEmpty>
+									) : (
+										<div className="px-3 py-2 text-xs text-muted-foreground">
+											Type to find notes in this workspace.
+										</div>
+									)}
+									{isSearchingWorkspaceNotes ? (
+										<CommandGroup heading="Notes">
+											{filteredWorkspaceSources.map((source) => {
+												const selected = selectedSourceIds.includes(source.id);
 
-											return (
-												<CommandItem
-													key={source.id}
-													value={`${source.id} ${source.title}`}
-													onSelect={() => onToggleSource(source.id)}
-													className="gap-2"
-												>
-													<Grid3x3 className="size-4" />
-													<div className="min-w-0">
-														<div className="truncate">{source.title}</div>
-														{source.preview ? (
-															<div className="truncate text-xs text-muted-foreground">
-																{source.preview}
-															</div>
+												return (
+													<CommandItem
+														key={source.id}
+														value={`${source.id} ${source.title}`}
+														onSelect={() => onToggleSource(source.id)}
+														className="relative w-full gap-2 pr-8"
+													>
+														<FileText className="size-4" />
+														<div className="min-w-0 flex-1">
+															<div className="truncate">{source.title}</div>
+															{source.preview ? (
+																<div className="truncate text-xs text-muted-foreground">
+																	{source.preview}
+																</div>
+															) : null}
+														</div>
+														{selected ? (
+															<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
+																<Check className="size-4" />
+															</span>
 														) : null}
-													</div>
-													{selected ? (
-														<Check className="ml-auto size-4" />
-													) : null}
-												</CommandItem>
-											);
-										})}
-									</CommandGroup>
+													</CommandItem>
+												);
+											})}
+										</CommandGroup>
+									) : null}
 								</CommandList>
 							</Command>
 						</DropdownMenuSubContent>
 					</DropdownMenuSub>
+					{appSources.map((source) => {
+						const selected = selectedSourceIds.includes(source.id);
+
+						return (
+							<DropdownMenuCheckboxItem
+								key={source.id}
+								checked={selected}
+								className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
+								onCheckedChange={() => onToggleSource(source.id)}
+							>
+								{source.provider === "yandex-tracker" ? (
+									<Icons.yandexTrackerLogo className="size-4 text-blue-500" />
+								) : (
+									<Grid3x3 className="size-4" />
+								)}
+								<div className="min-w-0">
+									<div className="truncate">{source.title}</div>
+								</div>
+							</DropdownMenuCheckboxItem>
+						);
+					})}
 					<DropdownMenuItem>
 						<Book /> Help Center
 					</DropdownMenuItem>
 				</DropdownMenuGroup>
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
-					<DropdownMenuItem>
+					<DropdownMenuItem
+						onSelect={() => {
+							window.history.pushState(null, "", "/settings/connections");
+							window.dispatchEvent(new PopStateEvent("popstate"));
+						}}
+					>
 						<Plus /> Connect Apps
 					</DropdownMenuItem>
 					<DropdownMenuLabel className="text-xs text-muted-foreground">

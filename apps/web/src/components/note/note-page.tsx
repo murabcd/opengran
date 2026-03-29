@@ -7,6 +7,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
+import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import {
 	createNoteEditorExtensions,
 	EMPTY_DOCUMENT,
@@ -221,6 +222,7 @@ const useNotePageController = ({
 	onTitleChange?: (title: string) => void;
 	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
 }) => {
+	const activeWorkspaceId = useActiveWorkspaceId();
 	const [title, setTitle] = React.useState("");
 	const [content, setContent] = React.useState(EMPTY_DOCUMENT_STRING);
 	const [searchableText, setSearchableText] = React.useState("");
@@ -271,8 +273,9 @@ const useNotePageController = ({
 	} | null>(null);
 	const note = useQuery(
 		api.notes.get,
-		noteId
+		noteId && activeWorkspaceId
 			? {
+					workspaceId: activeWorkspaceId,
 					id: noteId,
 				}
 			: "skip",
@@ -286,18 +289,27 @@ const useNotePageController = ({
 			...currentNote,
 			templateSlug: nextTemplateSlug,
 		});
-		const currentNote = localStore.getQuery(api.notes.get, { id: args.id });
+		const currentNote = localStore.getQuery(api.notes.get, {
+			workspaceId: args.workspaceId,
+			id: args.id,
+		});
 		if (currentNote !== undefined) {
 			localStore.setQuery(
 				api.notes.get,
-				{ id: args.id },
+				{ workspaceId: args.workspaceId, id: args.id },
 				currentNote ? patchNote(currentNote) : currentNote,
 			);
 		}
 
-		const latestNote = localStore.getQuery(api.notes.getLatest, {});
+		const latestNote = localStore.getQuery(api.notes.getLatest, {
+			workspaceId: args.workspaceId,
+		});
 		if (latestNote?._id === args.id) {
-			localStore.setQuery(api.notes.getLatest, {}, patchNote(latestNote));
+			localStore.setQuery(
+				api.notes.getLatest,
+				{ workspaceId: args.workspaceId },
+				patchNote(latestNote),
+			);
 		}
 
 		const noteLists = [
@@ -307,11 +319,13 @@ const useNotePageController = ({
 		] as const;
 
 		for (const noteQuery of noteLists) {
-			const notes = localStore.getQuery(noteQuery, {});
+			const notes = localStore.getQuery(noteQuery, {
+				workspaceId: args.workspaceId,
+			});
 			if (notes !== undefined) {
 				localStore.setQuery(
 					noteQuery,
-					{},
+					{ workspaceId: args.workspaceId },
 					notes.map((item) => (item._id === args.id ? patchNote(item) : item)),
 				);
 			}
@@ -336,7 +350,12 @@ const useNotePageController = ({
 			saveInFlightRef.current = true;
 
 			try {
+				if (!activeWorkspaceId) {
+					return;
+				}
+
 				await saveNote({
+					workspaceId: activeWorkspaceId,
 					id: nextNoteId,
 					...payload,
 				});
@@ -357,7 +376,7 @@ const useNotePageController = ({
 				}
 			}
 		},
-		[saveNote],
+		[activeWorkspaceId, saveNote],
 	);
 
 	const editor = useEditor({
@@ -694,7 +713,12 @@ const useNotePageController = ({
 			});
 
 			try {
+				if (!activeWorkspaceId) {
+					return false;
+				}
+
 				await setNoteTemplate({
+					workspaceId: activeWorkspaceId,
 					id: nextNoteIdRef.current ?? noteId,
 					templateSlug: template.slug,
 				});
@@ -838,6 +862,7 @@ const useNotePageController = ({
 			} catch (error) {
 				try {
 					await setNoteTemplate({
+						workspaceId: activeWorkspaceId,
 						id: nextNoteIdRef.current ?? noteId,
 						templateSlug: previousTemplateSlug,
 					});
@@ -858,7 +883,14 @@ const useNotePageController = ({
 				});
 			}
 		},
-		[content, editor, noteId, requestStructuredNote, setNoteTemplate],
+		[
+			activeWorkspaceId,
+			content,
+			editor,
+			noteId,
+			requestStructuredNote,
+			setNoteTemplate,
+		],
 	);
 
 	React.useEffect(() => {
@@ -935,6 +967,10 @@ const useNotePageController = ({
 			}
 
 			try {
+				if (!activeWorkspaceId) {
+					return;
+				}
+
 				const enhancedNote = await requestStructuredNote({
 					title,
 					rawNotes: searchableText,
@@ -950,6 +986,7 @@ const useNotePageController = ({
 				setContent(nextContent);
 				setSearchableText(nextSearchableText);
 				await setNoteTemplate({
+					workspaceId: activeWorkspaceId,
 					id: nextNoteIdRef.current ?? noteId,
 					templateSlug: "enhanced",
 				});
@@ -960,6 +997,7 @@ const useNotePageController = ({
 			}
 		},
 		[
+			activeWorkspaceId,
 			noteId,
 			editor,
 			requestStructuredNote,

@@ -23,7 +23,11 @@ type ToolSource = {
 	title: string;
 };
 
-const tryParseJson = (value: string): unknown => {
+const tryParseJson = (value: unknown): unknown => {
+	if (typeof value !== "string") {
+		return value;
+	}
+
 	try {
 		return JSON.parse(value) as unknown;
 	} catch {
@@ -39,7 +43,11 @@ const collectToolSources = (message: UIMessage): ToolSource[] => {
 			return;
 		}
 
-		if (toolName !== "web_search") {
+		if (
+			toolName !== "web_search" &&
+			toolName !== "yandex_tracker_search" &&
+			toolName !== "yandex_tracker_get_issue"
+		) {
 			return;
 		}
 
@@ -57,15 +65,18 @@ const collectToolSources = (message: UIMessage): ToolSource[] => {
 				continue;
 			}
 
-			const type =
-				"type" in source ? (source as { type?: unknown }).type : undefined;
 			const url =
 				"url" in source ? (source as { url?: unknown }).url : undefined;
+			const title =
+				"title" in source ? (source as { title?: unknown }).title : undefined;
 
-			if (type === "url" && typeof url === "string" && url) {
+			if (typeof url === "string" && url) {
 				sources.push({
 					href: url,
-					title: new URL(url).hostname.replace(/^www\./, ""),
+					title:
+						typeof title === "string" && title.trim()
+							? title
+							: new URL(url).hostname.replace(/^www\./, ""),
 				});
 			}
 		}
@@ -78,7 +89,11 @@ const collectToolSources = (message: UIMessage): ToolSource[] => {
 
 		const toolName = part.type.slice("tool-".length);
 
-		if (!("output" in part) || typeof part.output !== "string") {
+		if (
+			!("output" in part) ||
+			!("state" in part) ||
+			part.state !== "output-available"
+		) {
 			continue;
 		}
 

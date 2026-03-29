@@ -38,6 +38,7 @@ import {
 	FieldLabel,
 	FieldTitle,
 } from "@workspace/ui/components/field";
+import { Icons } from "@workspace/ui/components/icons";
 import { Input } from "@workspace/ui/components/input";
 import {
 	Select,
@@ -56,12 +57,13 @@ import {
 	SidebarProvider,
 } from "@workspace/ui/components/sidebar";
 import { useTheme } from "@workspace/ui/components/theme-provider";
-import { useMutation } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import {
 	CalendarDays,
 	Database,
 	FolderKanban,
 	ImageUp,
+	Link2,
 	LoaderCircle,
 	Moon,
 	Paintbrush,
@@ -70,6 +72,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { authClient } from "@/lib/auth-client";
 import { getAvatarSrc } from "@/lib/avatar";
 import type { WorkspaceRecord } from "@/lib/workspaces";
@@ -87,6 +90,7 @@ export type SettingsPage =
 	| "Appearance"
 	| "Workspace"
 	| "Calendar"
+	| "Connections"
 	| "Data controls";
 
 type SettingsDialogProps = {
@@ -104,6 +108,7 @@ const settingsNav = [
 	{ name: "Appearance", icon: Paintbrush },
 	{ name: "Workspace", icon: FolderKanban },
 	{ name: "Calendar", icon: CalendarDays },
+	{ name: "Connections", icon: Link2 },
 	{ name: "Data controls", icon: Database },
 ] as const;
 
@@ -113,6 +118,9 @@ const GOOGLE_CALENDAR_SCOPES = [
 	"profile",
 	"https://www.googleapis.com/auth/calendar.readonly",
 ] as const;
+
+const withoutTrailingPeriod = (message: string) =>
+	message.trimEnd().replace(/\.+$/u, "");
 
 type LinkedAccount = {
 	id: string;
@@ -136,6 +144,14 @@ type DataControlsState = {
 	isDeletingAllChats: boolean;
 };
 
+type YandexTrackerOrgType = "x-org-id" | "x-cloud-org-id";
+
+type YandexTrackerConnectionFormState = {
+	orgType: YandexTrackerOrgType;
+	orgId: string;
+	token: string;
+};
+
 const getWorkspaceFormState = (
 	workspace: WorkspaceRecord | null,
 ): WorkspaceFormState => ({
@@ -152,6 +168,13 @@ const initialDataControlsState: DataControlsState = {
 	showDeleteAllChatsDialog: false,
 	isDeletingAllChats: false,
 };
+
+const initialYandexTrackerConnectionFormState: YandexTrackerConnectionFormState =
+	{
+		orgType: "x-org-id",
+		orgId: "",
+		token: "",
+	};
 
 export function SettingsDialog({
 	open,
@@ -263,6 +286,8 @@ export function SettingsDialog({
 								/>
 							) : activePage === "Calendar" ? (
 								<CalendarSettings />
+							) : activePage === "Connections" ? (
+								<ConnectionsSettings />
 							) : activePage === "Data controls" ? (
 								<DataControlsSettings
 									canDeleteData={Boolean(session?.user)}
@@ -415,7 +440,7 @@ function CalendarSettings() {
 			if (!url) {
 				if (linkedWithoutRedirect) {
 					await loadAccounts();
-					toast.success("Google account linked.");
+					toast.success("Google account linked");
 					return;
 				}
 
@@ -431,7 +456,7 @@ function CalendarSettings() {
 			console.error("Failed to connect Google Calendar", error);
 			toast.error(
 				error instanceof Error
-					? error.message
+					? withoutTrailingPeriod(error.message)
 					: "Failed to connect Google Calendar",
 			);
 		} finally {
@@ -442,7 +467,14 @@ function CalendarSettings() {
 	return (
 		<div className="py-4">
 			<div className="flex items-center justify-between gap-4">
-				<FieldLabel className="text-sm font-medium">Google Calendar</FieldLabel>
+				<div className="flex min-w-0 items-center gap-3">
+					<Icons.googleLogo className="size-5 shrink-0" />
+					<div className="min-w-0">
+						<FieldLabel className="text-sm font-medium">
+							Google Calendar
+						</FieldLabel>
+					</div>
+				</div>
 				<Button
 					type="button"
 					variant={googleAccount ? "outline" : "default"}
@@ -459,6 +491,196 @@ function CalendarSettings() {
 						: "Connect"}
 				</Button>
 			</div>
+		</div>
+	);
+}
+
+function ConnectionsSettings() {
+	const yandexTrackerConnection = useQuery(
+		api.appConnections.getYandexTracker,
+		{},
+	);
+	const connectYandexTracker = useAction(
+		api.appConnectionActions.connectYandexTracker,
+	);
+	const [isYandexTrackerDialogOpen, setIsYandexTrackerDialogOpen] =
+		useState(false);
+	const [formState, setFormState] = useState<YandexTrackerConnectionFormState>(
+		initialYandexTrackerConnectionFormState,
+	);
+	const [isSavingYandexTrackerConnection, setIsSavingYandexTrackerConnection] =
+		useState(false);
+
+	const handleYandexTrackerDialogOpenChange = (open: boolean) => {
+		setIsYandexTrackerDialogOpen(open);
+
+		if (open) {
+			setFormState({
+				orgType: yandexTrackerConnection?.orgType ?? "x-org-id",
+				orgId: yandexTrackerConnection?.orgId ?? "",
+				token: "",
+			});
+		} else {
+			setFormState(initialYandexTrackerConnectionFormState);
+		}
+	};
+
+	const handleConnectYandexTracker = async () => {
+		if (!formState.orgId.trim() || !formState.token.trim()) {
+			return;
+		}
+
+		setIsSavingYandexTrackerConnection(true);
+
+		try {
+			await connectYandexTracker({
+				orgType: formState.orgType,
+				orgId: formState.orgId.trim(),
+				token: formState.token.trim(),
+			});
+			toast.success("Yandex Tracker connected");
+			handleYandexTrackerDialogOpenChange(false);
+		} catch (error) {
+			console.error("Failed to connect Yandex Tracker", error);
+			toast.error(
+				error instanceof Error
+					? withoutTrailingPeriod(error.message)
+					: "Failed to connect Yandex Tracker",
+			);
+		} finally {
+			setIsSavingYandexTrackerConnection(false);
+		}
+	};
+
+	const isYandexTrackerFormValid =
+		formState.orgId.trim().length > 0 && formState.token.trim().length > 0;
+
+	return (
+		<div className="py-4">
+			<div className="flex items-center justify-between gap-4">
+				<div className="flex min-w-0 items-center gap-3">
+					<Icons.yandexTrackerLogo className="size-5 shrink-0 text-blue-500" />
+					<div className="min-w-0">
+						<FieldLabel className="text-sm font-medium">
+							Yandex Tracker
+						</FieldLabel>
+					</div>
+				</div>
+				<Button
+					type="button"
+					variant="outline"
+					onClick={() => setIsYandexTrackerDialogOpen(true)}
+				>
+					{yandexTrackerConnection ? "Reconnect" : "Connect"}
+				</Button>
+			</div>
+			<Dialog
+				open={isYandexTrackerDialogOpen}
+				onOpenChange={handleYandexTrackerDialogOpenChange}
+			>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Connect Yandex Tracker</DialogTitle>
+						<DialogDescription>
+							Enter the credentials OpenGran should use for your Tracker
+							connection.
+						</DialogDescription>
+					</DialogHeader>
+					<FieldGroup className="gap-4">
+						<Field>
+							<FieldContent>
+								<FieldLabel>Organization type</FieldLabel>
+							</FieldContent>
+							<Select
+								value={formState.orgType}
+								onValueChange={(value) =>
+									setFormState((currentState) => ({
+										...currentState,
+										orgType: value as YandexTrackerOrgType,
+									}))
+								}
+							>
+								<SelectTrigger
+									size="sm"
+									className="w-full cursor-pointer justify-between"
+									aria-label="Select Yandex Tracker organization type"
+								>
+									<span>
+										{formState.orgType === "x-org-id"
+											? "Yandex 360"
+											: "Yandex Cloud"}
+									</span>
+								</SelectTrigger>
+								<SelectContent align="end">
+									<SelectItem value="x-org-id">Yandex 360</SelectItem>
+									<SelectItem value="x-cloud-org-id">Yandex Cloud</SelectItem>
+								</SelectContent>
+							</Select>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="yandex-tracker-org-id">
+								Organization ID
+							</FieldLabel>
+							<Input
+								id="yandex-tracker-org-id"
+								value={formState.orgId}
+								onChange={(event) =>
+									setFormState((currentState) => ({
+										...currentState,
+										orgId: event.target.value,
+									}))
+								}
+								placeholder="1234567"
+							/>
+						</Field>
+						<Field>
+							<FieldLabel htmlFor="yandex-tracker-token">
+								OAuth token
+							</FieldLabel>
+							<Input
+								id="yandex-tracker-token"
+								type="password"
+								value={formState.token}
+								onChange={(event) =>
+									setFormState((currentState) => ({
+										...currentState,
+										token: event.target.value,
+									}))
+								}
+								placeholder="y0_AgAAAA..."
+							/>
+						</Field>
+					</FieldGroup>
+					<div className="flex justify-end gap-2 pt-2">
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={() => handleYandexTrackerDialogOpenChange(false)}
+							disabled={isSavingYandexTrackerConnection}
+						>
+							Cancel
+						</Button>
+						<Button
+							type="button"
+							onClick={() => {
+								void handleConnectYandexTracker();
+							}}
+							disabled={
+								!isYandexTrackerFormValid || isSavingYandexTrackerConnection
+							}
+						>
+							{isSavingYandexTrackerConnection ? (
+								<>
+									<LoaderCircle className="animate-spin" />
+									Connecting
+								</>
+							) : (
+								"Connect"
+							)}
+						</Button>
+					</div>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }
@@ -555,7 +777,7 @@ function WorkspaceSettings({
 			console.error("Failed to upload workspace icon", error);
 			toast.error(
 				error instanceof Error
-					? error.message
+					? withoutTrailingPeriod(error.message)
 					: "Failed to upload workspace icon",
 			);
 		} finally {
@@ -584,7 +806,9 @@ function WorkspaceSettings({
 		} catch (error) {
 			console.error("Failed to update workspace", error);
 			toast.error(
-				error instanceof Error ? error.message : "Failed to update workspace",
+				error instanceof Error
+					? withoutTrailingPeriod(error.message)
+					: "Failed to update workspace",
 			);
 		} finally {
 			setIsSaving(false);
@@ -683,6 +907,7 @@ function DataControlsSettings({
 	canDeleteData: boolean;
 	onClose: () => void;
 }) {
+	const activeWorkspaceId = useActiveWorkspaceId();
 	const [state, setState] = useState<DataControlsState>(
 		initialDataControlsState,
 	);
@@ -742,7 +967,11 @@ function DataControlsSettings({
 		}));
 
 		try {
-			const result = await removeAllNotes({});
+			if (!activeWorkspaceId) {
+				return;
+			}
+
+			const result = await removeAllNotes({ workspaceId: activeWorkspaceId });
 			setState((currentState) => ({
 				...currentState,
 				showDeleteAllNotesDialog: false,
@@ -774,7 +1003,11 @@ function DataControlsSettings({
 		}));
 
 		try {
-			const result = await removeAllChats({});
+			if (!activeWorkspaceId) {
+				return;
+			}
+
+			const result = await removeAllChats({ workspaceId: activeWorkspaceId });
 			setState((currentState) => ({
 				...currentState,
 				showDeleteAllChatsDialog: false,
@@ -806,7 +1039,12 @@ function DataControlsSettings({
 					title="Delete account"
 					buttonLabel={isDeletingAccount ? "Deleting..." : "Delete"}
 					dialogOpen={showDeleteAccountDialog}
-					onDialogOpenChange={setShowDeleteAccountDialog}
+					onDialogOpenChange={(open) => {
+						setState((currentState) => ({
+							...currentState,
+							showDeleteAccountDialog: open,
+						}));
+					}}
 					onConfirm={handleDeleteAccount}
 					confirmDisabled={isDeletingAccount}
 					buttonDisabled={isDeletingAccount || !canDeleteData}
@@ -816,7 +1054,12 @@ function DataControlsSettings({
 					title="Delete all notes"
 					buttonLabel={isDeletingAllNotes ? "Deleting..." : "Delete"}
 					dialogOpen={showDeleteAllNotesDialog}
-					onDialogOpenChange={setShowDeleteAllNotesDialog}
+					onDialogOpenChange={(open) => {
+						setState((currentState) => ({
+							...currentState,
+							showDeleteAllNotesDialog: open,
+						}));
+					}}
 					onConfirm={handleDeleteAllNotes}
 					confirmDisabled={isDeletingAllNotes}
 					buttonDisabled={isDeletingAllNotes || !canDeleteData}
@@ -826,7 +1069,12 @@ function DataControlsSettings({
 					title="Delete all chats"
 					buttonLabel={isDeletingAllChats ? "Deleting..." : "Delete"}
 					dialogOpen={showDeleteAllChatsDialog}
-					onDialogOpenChange={setShowDeleteAllChatsDialog}
+					onDialogOpenChange={(open) => {
+						setState((currentState) => ({
+							...currentState,
+							showDeleteAllChatsDialog: open,
+						}));
+					}}
 					onConfirm={handleDeleteAllChats}
 					confirmDisabled={isDeletingAllChats}
 					buttonDisabled={isDeletingAllChats || !canDeleteData}

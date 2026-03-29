@@ -42,9 +42,10 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
+import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
-import { resolveChatModel } from "@/lib/ai/models";
+import { getChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import type {
 	LiveTranscriptState,
@@ -58,7 +59,7 @@ import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { SpeechInput } from "../ai-elements/speech-input";
 
 type NoteChatPresentation = "inline" | "floating" | "sidebar";
-const NOTE_CHAT_MODEL = resolveChatModel("gpt-5.4-mini");
+const NOTE_CHAT_MODEL = getChatModel("gpt-5.4-mini");
 const NOTE_CHAT_FLOATING_WIDTH = "min(28rem, calc(100vw - 2rem))";
 
 type NoteChatSummary = Pick<
@@ -177,22 +178,36 @@ const useNoteComposerController = ({
 	const { containerRef: chatViewportRef } = useStickyScrollToBottom();
 	const previousSpeechListeningRef = React.useRef(false);
 	const noteId = (noteContext.noteId as Id<"notes"> | null) ?? null;
+	const activeWorkspaceId = useActiveWorkspaceId();
 	const previousChatIdRef = React.useRef(currentChatId);
 	const previousNoteIdRef = React.useRef(noteId);
 	const noteChats = useQuery(
 		api.chats.listForNote,
-		noteId
+		noteId && activeWorkspaceId
 			? {
+					workspaceId: activeWorkspaceId,
 					noteId,
 				}
 			: "skip",
 	);
-	const storedMessages = useQuery(api.chats.getMessages, {
-		chatId: currentChatId,
-	});
-	const currentChatSession = useQuery(api.chats.getSession, {
-		chatId: currentChatId,
-	});
+	const storedMessages = useQuery(
+		api.chats.getMessages,
+		activeWorkspaceId
+			? {
+					workspaceId: activeWorkspaceId,
+					chatId: currentChatId,
+				}
+			: "skip",
+	);
+	const currentChatSession = useQuery(
+		api.chats.getSession,
+		activeWorkspaceId
+			? {
+					workspaceId: activeWorkspaceId,
+					chatId: currentChatId,
+				}
+			: "skip",
+	);
 	const transcriptSession = useNoteTranscriptSession({
 		autoStartTranscription,
 		noteId,
@@ -219,15 +234,17 @@ const useNoteComposerController = ({
 								...body,
 								id,
 								message: messages[messages.length - 1],
+								workspaceId: activeWorkspaceId,
 							}
 						: {
 								...body,
 								id,
 								messages,
+								workspaceId: activeWorkspaceId,
 							},
 				}),
 			}),
-		[],
+		[activeWorkspaceId],
 	);
 
 	const initialMessages = React.useMemo(
