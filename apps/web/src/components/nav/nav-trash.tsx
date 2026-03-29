@@ -75,7 +75,7 @@ export function NavTrash({
 						</SidebarMenuButton>
 					</PopoverTrigger>
 					<PopoverContent
-						className="h-[420px] max-h-[70vh] w-[min(420px,calc(100vw-2rem))] gap-0 overflow-hidden p-0"
+						className="h-[420px] max-h-[70vh] w-[min(380px,calc(100vw-2rem))] gap-0 overflow-hidden p-0"
 						side={isMobile ? "bottom" : "right"}
 						align="end"
 						alignOffset={-24}
