@@ -1,7 +1,4 @@
 import {
-	SidebarGroup,
-	SidebarGroupContent,
-	SidebarGroupLabel,
 	SidebarMenu,
 	SidebarMenuAction,
 	SidebarMenuButton,
@@ -10,6 +7,7 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { FileText, MoreHorizontal } from "lucide-react";
 import * as React from "react";
+import { SidebarCollapsibleGroup } from "@/components/nav/sidebar-collapsible-group";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
@@ -50,54 +48,58 @@ export function NavNotes({
 	return (
 		<>
 			{starredNotes.length > 0 ? (
-				<SidebarGroup className="group-data-[collapsible=icon]:hidden">
-					<SidebarGroupLabel>Starred</SidebarGroupLabel>
-					<SidebarGroupContent>
-						<SidebarNotesList
-							notes={starredNotes}
-							currentNoteId={currentNoteId}
-							currentNoteTitle={currentNoteTitle}
-							onNoteSelect={onNoteSelect}
-							onNoteTitleChange={onNoteTitleChange}
-							onNoteTrashed={onNoteTrashed}
-						/>
-					</SidebarGroupContent>
-				</SidebarGroup>
-			) : null}
-			<SidebarGroup className="group-data-[collapsible=icon]:hidden">
-				<SidebarGroupLabel>Notes</SidebarGroupLabel>
-				{isNotesPending ? <NavNotesSkeleton /> : null}
-				{notes && notes.length === 0 ? (
-					<div className="px-2 text-xs text-muted-foreground/50">
-						No notes yet
-					</div>
-				) : null}
-				<SidebarGroupContent className={isNotesPending ? "hidden" : undefined}>
+				<SidebarCollapsibleGroup
+					title="Starred"
+					className="group-data-[collapsible=icon]:hidden"
+				>
 					<SidebarNotesList
-						notes={visibleNotes}
+						notes={starredNotes}
 						currentNoteId={currentNoteId}
 						currentNoteTitle={currentNoteTitle}
 						onNoteSelect={onNoteSelect}
 						onNoteTitleChange={onNoteTitleChange}
 						onNoteTrashed={onNoteTrashed}
 					/>
-					{hasMoreNotes ? (
-						<SidebarMenu>
-							<SidebarMenuItem>
-								<SidebarMenuButton
-									className="text-sidebar-foreground/70 hover:bg-transparent hover:text-inherit"
-									onClick={() => setShowAllNotes((prev) => !prev)}
-								>
-									<MoreHorizontal />
-									<span className="text-xs">
-										{showAllNotes ? "Show less" : "Show more"}
-									</span>
-								</SidebarMenuButton>
-							</SidebarMenuItem>
-						</SidebarMenu>
-					) : null}
-				</SidebarGroupContent>
-			</SidebarGroup>
+				</SidebarCollapsibleGroup>
+			) : null}
+			<SidebarCollapsibleGroup
+				title="Notes"
+				className="group-data-[collapsible=icon]:hidden"
+			>
+				{isNotesPending ? <NavNotesSkeleton /> : null}
+				{notes && notes.length === 0 ? (
+					<div className="px-2 text-xs text-muted-foreground/50">
+						No notes yet
+					</div>
+				) : null}
+				{isNotesPending ? null : (
+					<>
+						<SidebarNotesList
+							notes={visibleNotes}
+							currentNoteId={currentNoteId}
+							currentNoteTitle={currentNoteTitle}
+							onNoteSelect={onNoteSelect}
+							onNoteTitleChange={onNoteTitleChange}
+							onNoteTrashed={onNoteTrashed}
+						/>
+						{hasMoreNotes ? (
+							<SidebarMenu>
+								<SidebarMenuItem>
+									<SidebarMenuButton
+										className="text-sidebar-foreground/70 hover:bg-transparent hover:text-inherit"
+										onClick={() => setShowAllNotes((prev) => !prev)}
+									>
+										<MoreHorizontal />
+										<span className="text-xs">
+											{showAllNotes ? "Show less" : "Show more"}
+										</span>
+									</SidebarMenuButton>
+								</SidebarMenuItem>
+							</SidebarMenu>
+						) : null}
+					</>
+				)}
+			</SidebarCollapsibleGroup>
 		</>
 	);
 }

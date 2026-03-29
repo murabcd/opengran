@@ -1,13 +1,13 @@
 import { Kbd } from "@workspace/ui/components/kbd";
 import {
 	SidebarGroup,
-	SidebarGroupLabel,
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from "@workspace/ui/components/sidebar";
 import type { LucideIcon } from "lucide-react";
 import * as React from "react";
+import { SidebarCollapsibleGroup } from "@/components/nav/sidebar-collapsible-group";
 
 type NavItem = {
 	title: string;
@@ -80,32 +80,37 @@ export function NavMain({
 					</SidebarMenuItem>
 				) : null}
 			</SidebarMenu>
-			<SidebarGroupLabel className="mt-6">Platform</SidebarGroupLabel>
-			<SidebarMenu>
-				{viewItems.map((item) => (
-					<SidebarMenuItem key={item.title}>
-						<SidebarMenuButton
-							asChild
-							tooltip={item.title}
-							isActive={item.isActive}
-						>
-							<button
-								type="button"
-								onClick={() => {
-									if (item.action !== "view" || !item.view) {
-										return;
-									}
-									onViewChange(item.view);
-								}}
-								className="flex w-full items-center gap-2"
+			<SidebarCollapsibleGroup
+				title="Platform"
+				className="p-0"
+				labelClassName="mt-6"
+			>
+				<SidebarMenu>
+					{viewItems.map((item) => (
+						<SidebarMenuItem key={item.title}>
+							<SidebarMenuButton
+								asChild
+								tooltip={item.title}
+								isActive={item.isActive}
 							>
-								{item.icon && <item.icon />}
-								<span>{item.title}</span>
-							</button>
-						</SidebarMenuButton>
-					</SidebarMenuItem>
-				))}
-			</SidebarMenu>
+								<button
+									type="button"
+									onClick={() => {
+										if (item.action !== "view" || !item.view) {
+											return;
+										}
+										onViewChange(item.view);
+									}}
+									className="flex w-full items-center gap-2"
+								>
+									{item.icon && <item.icon />}
+									<span>{item.title}</span>
+								</button>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					))}
+				</SidebarMenu>
+			</SidebarCollapsibleGroup>
 		</SidebarGroup>
 	);
 }
