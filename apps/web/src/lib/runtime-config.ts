@@ -1,8 +1,6 @@
 type AppRuntimeConfig = {
 	convexUrl: string;
 	convexSiteUrl: string;
-	hasOpenAIApiKey: boolean;
-	isConfigured: boolean;
 	isDesktop: boolean;
 };
 
@@ -34,10 +32,8 @@ export async function loadRuntimeConfig(): Promise<AppRuntimeConfig> {
 	}
 
 	return {
-		convexUrl: getEnv("VITE_CONVEX_URL", "CONVEX_URL"),
-		convexSiteUrl: getEnv("VITE_CONVEX_SITE_URL", "CONVEX_SITE_URL"),
-		hasOpenAIApiKey: true,
-		isConfigured: true,
+		convexUrl: getEnv("VITE_CONVEX_URL"),
+		convexSiteUrl: getEnv("VITE_CONVEX_SITE_URL"),
 		isDesktop: false,
 	};
 }

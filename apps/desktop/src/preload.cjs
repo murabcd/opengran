@@ -138,6 +138,4 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 		ipcRenderer.invoke("app:clear-transcript-draft", noteKey),
 	saveTextFile: (defaultFileName, content) =>
 		ipcRenderer.invoke("app:save-text-file", defaultFileName, content),
-	saveRuntimeConfig: (config) =>
-		ipcRenderer.invoke("app:save-runtime-config", config),
 });

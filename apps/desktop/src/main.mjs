@@ -30,11 +30,7 @@ import WebSocket from "ws";
 import { getDesktopAuthClient } from "./auth-client.mjs";
 import { loadRootEnv } from "./env.mjs";
 import { startLocalServer } from "./local-server.mjs";
-import {
-	getRuntimeConfig,
-	hydrateRuntimeConfig,
-	saveRuntimeConfig,
-} from "./runtime-config.mjs";
+import { getRuntimeConfig, hydrateRuntimeConfig } from "./runtime-config.mjs";
 
 const { autoUpdater } = electronUpdater;
 
@@ -4148,14 +4144,6 @@ ipcMain.handle("app:write-clipboard-text", async (_event, value) => {
 
 	clipboard.writeText(value);
 	return { ok: true };
-});
-
-ipcMain.handle("app:save-runtime-config", async (_event, value) => {
-	if (!value || typeof value !== "object") {
-		throw new Error("Runtime config payload must be an object.");
-	}
-
-	return await saveRuntimeConfig(value);
 });
 
 ipcMain.handle("app:load-transcript-draft", async (_event, noteKey) => {

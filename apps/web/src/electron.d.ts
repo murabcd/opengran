@@ -156,8 +156,6 @@ declare global {
 			getRuntimeConfig: () => Promise<{
 				convexUrl: string;
 				convexSiteUrl: string;
-				hasOpenAIApiKey: boolean;
-				isConfigured: boolean;
 			}>;
 			authFetch: (request: {
 				path: string;
@@ -332,16 +330,6 @@ declare global {
 				ok: boolean;
 				canceled: boolean;
 				filePath?: string;
-			}>;
-			saveRuntimeConfig: (config: {
-				convexUrl?: string;
-				convexSiteUrl?: string;
-				openAIApiKey?: string;
-			}) => Promise<{
-				convexUrl: string;
-				convexSiteUrl: string;
-				hasOpenAIApiKey: boolean;
-				isConfigured: boolean;
 			}>;
 		};
 	}

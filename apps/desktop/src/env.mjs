@@ -1,7 +1,17 @@
 import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const rootEnvPath = fileURLToPath(new URL("../../../.env", import.meta.url));
+const envFileName =
+	process.env.OPENGRAN_ENV_MODE?.trim() === "production"
+		? ".env"
+		: ".env.local";
+
+const envPaths = [
+	resolve(process.cwd(), "../..", envFileName),
+	resolve(process.cwd(), envFileName),
+	resolve(fileURLToPath(new URL("../../..", import.meta.url)), envFileName),
+];
 
 const parseEnvLine = (line) => {
 	const trimmed = line.trim();
@@ -29,18 +39,29 @@ const parseEnvLine = (line) => {
 };
 
 export const loadRootEnv = () => {
-	if (!existsSync(rootEnvPath)) {
-		return;
-	}
+	const loadedKeys = new Set();
 
-	const rawEnv = readFileSync(rootEnvPath, "utf8");
-
-	for (const line of rawEnv.split(/\r?\n/)) {
-		const entry = parseEnvLine(line);
-		if (!entry || process.env[entry.key]) {
+	for (const envPath of new Set(envPaths)) {
+		if (!existsSync(envPath)) {
 			continue;
 		}
 
-		process.env[entry.key] = entry.value;
+		const rawEnv = readFileSync(envPath, "utf8");
+
+		for (const line of rawEnv.split(/\r?\n/)) {
+			const entry = parseEnvLine(line);
+			if (!entry) {
+				continue;
+			}
+
+			// Keep explicit shell env vars authoritative, but let `.env.local`
+			// override values loaded earlier from `.env`.
+			if (process.env[entry.key] && !loadedKeys.has(entry.key)) {
+				continue;
+			}
+
+			process.env[entry.key] = entry.value;
+			loadedKeys.add(entry.key);
+		}
 	}
 };
