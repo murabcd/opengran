@@ -7,7 +7,7 @@ type NoteTitleEditInputProps = {
 	onValueChange: (value: string) => void;
 	onCommit: () => void;
 	onCancel: () => void;
-	autoFocus?: boolean;
+	focusOnMount?: boolean;
 	commitOnBlur?: boolean;
 	className?: string;
 	inputRef?: React.RefObject<HTMLInputElement | null>;
@@ -18,7 +18,7 @@ export function NoteTitleEditInput({
 	onValueChange,
 	onCommit,
 	onCancel,
-	autoFocus = false,
+	focusOnMount = false,
 	commitOnBlur = true,
 	className,
 	inputRef,
@@ -27,7 +27,7 @@ export function NoteTitleEditInput({
 	const ref = inputRef ?? fallbackRef;
 
 	React.useEffect(() => {
-		if (!autoFocus) {
+		if (!focusOnMount) {
 			return;
 		}
 
@@ -42,7 +42,7 @@ export function NoteTitleEditInput({
 		});
 
 		return () => cancelAnimationFrame(frame);
-	}, [autoFocus, ref]);
+	}, [focusOnMount, ref]);
 
 	return (
 		<Input

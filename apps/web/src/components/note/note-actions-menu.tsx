@@ -485,7 +485,7 @@ export function NoteActionsMenu({
 		>
 			<div className="flex items-center gap-2">
 				<NoteTitleEditInput
-					autoFocus
+					focusOnMount
 					commitOnBlur={false}
 					inputRef={renameInputRef}
 					value={renameValue}
@@ -515,7 +515,7 @@ export function NoteActionsMenu({
 						<FileText className="text-muted-foreground size-5" />
 					</div>
 					<NoteTitleEditInput
-						autoFocus
+						focusOnMount
 						commitOnBlur={false}
 						className="h-9 rounded-lg px-3 text-sm"
 						inputRef={renameInputRef}

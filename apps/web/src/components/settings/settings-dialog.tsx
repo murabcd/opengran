@@ -68,7 +68,7 @@ import {
 	Paintbrush,
 	UserRound,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { authClient } from "@/lib/auth-client";
@@ -157,6 +157,50 @@ type YandexCalendarConnectionFormState = {
 	password: string;
 };
 
+type CalendarSettingsState = {
+	accounts: LinkedAccount[];
+	isLoadingAccounts: boolean;
+	isConnectingGoogle: boolean;
+	isSavingCalendarPreferences: boolean;
+	isYandexCalendarDialogOpen: boolean;
+	isSavingYandexCalendarConnection: boolean;
+	yandexCalendarFormState: YandexCalendarConnectionFormState;
+};
+
+type CalendarSettingsAction =
+	| {
+			type: "setAccounts";
+			accounts: LinkedAccount[];
+	  }
+	| {
+			type: "setIsLoadingAccounts";
+			value: boolean;
+	  }
+	| {
+			type: "setIsConnectingGoogle";
+			value: boolean;
+	  }
+	| {
+			type: "setIsSavingCalendarPreferences";
+			value: boolean;
+	  }
+	| {
+			type: "setIsYandexCalendarDialogOpen";
+			value: boolean;
+	  }
+	| {
+			type: "setIsSavingYandexCalendarConnection";
+			value: boolean;
+	  }
+	| {
+			type: "setYandexCalendarFormState";
+			value: YandexCalendarConnectionFormState;
+	  }
+	| {
+			type: "patchYandexCalendarFormState";
+			value: Partial<YandexCalendarConnectionFormState>;
+	  };
+
 const getWorkspaceFormState = (
 	workspace: WorkspaceRecord | null,
 ): WorkspaceFormState => ({
@@ -186,6 +230,46 @@ const initialYandexCalendarConnectionFormState: YandexCalendarConnectionFormStat
 		email: "",
 		password: "",
 	};
+
+const initialCalendarSettingsState: CalendarSettingsState = {
+	accounts: [],
+	isLoadingAccounts: false,
+	isConnectingGoogle: false,
+	isSavingCalendarPreferences: false,
+	isYandexCalendarDialogOpen: false,
+	isSavingYandexCalendarConnection: false,
+	yandexCalendarFormState: initialYandexCalendarConnectionFormState,
+};
+
+const calendarSettingsReducer = (
+	state: CalendarSettingsState,
+	action: CalendarSettingsAction,
+): CalendarSettingsState => {
+	switch (action.type) {
+		case "setAccounts":
+			return { ...state, accounts: action.accounts };
+		case "setIsLoadingAccounts":
+			return { ...state, isLoadingAccounts: action.value };
+		case "setIsConnectingGoogle":
+			return { ...state, isConnectingGoogle: action.value };
+		case "setIsSavingCalendarPreferences":
+			return { ...state, isSavingCalendarPreferences: action.value };
+		case "setIsYandexCalendarDialogOpen":
+			return { ...state, isYandexCalendarDialogOpen: action.value };
+		case "setIsSavingYandexCalendarConnection":
+			return { ...state, isSavingYandexCalendarConnection: action.value };
+		case "setYandexCalendarFormState":
+			return { ...state, yandexCalendarFormState: action.value };
+		case "patchYandexCalendarFormState":
+			return {
+				...state,
+				yandexCalendarFormState: {
+					...state.yandexCalendarFormState,
+					...action.value,
+				},
+			};
+	}
+};
 
 export function SettingsDialog({
 	open,
@@ -370,7 +454,18 @@ function AppearanceSettings() {
 function CalendarSettings() {
 	const { data: session } = authClient.useSession();
 	const calendarPreferences = useQuery(api.calendarPreferences.get, {});
-	const updateCalendarPreferences = useMutation(api.calendarPreferences.update);
+	const updateCalendarPreferences = useMutation(
+		api.calendarPreferences.update,
+	).withOptimisticUpdate((localStore, args) => {
+		localStore.setQuery(
+			api.calendarPreferences.get,
+			{},
+			{
+				showGoogleCalendar: args.showGoogleCalendar,
+				showYandexCalendar: args.showYandexCalendar,
+			},
+		);
+	});
 	const yandexCalendarConnection = useQuery(
 		api.appConnections.getYandexCalendar,
 		{},
@@ -378,41 +473,42 @@ function CalendarSettings() {
 	const connectYandexCalendar = useAction(
 		api.appConnectionActions.connectYandexCalendar,
 	);
-	const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
-	const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
-	const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
-	const [isSavingCalendarPreferences, setIsSavingCalendarPreferences] =
-		useState(false);
-	const [isYandexCalendarDialogOpen, setIsYandexCalendarDialogOpen] =
-		useState(false);
-	const [
+	const [state, dispatch] = useReducer(
+		calendarSettingsReducer,
+		initialCalendarSettingsState,
+	);
+	const {
+		accounts,
+		isConnectingGoogle,
+		isLoadingAccounts,
+		isSavingCalendarPreferences,
 		isSavingYandexCalendarConnection,
-		setIsSavingYandexCalendarConnection,
-	] = useState(false);
-	const [yandexCalendarFormState, setYandexCalendarFormState] =
-		useState<YandexCalendarConnectionFormState>(
-			initialYandexCalendarConnectionFormState,
-		);
+		isYandexCalendarDialogOpen,
+		yandexCalendarFormState,
+	} = state;
 
 	const loadAccounts = useCallback(async () => {
 		if (!session?.user) {
-			setAccounts([]);
+			dispatch({ type: "setAccounts", accounts: [] });
 			return;
 		}
 
-		setIsLoadingAccounts(true);
+		dispatch({ type: "setIsLoadingAccounts", value: true });
 
 		try {
 			const result = await authClient.$fetch("/list-accounts", {
 				method: "GET",
 				throw: true,
 			});
-			setAccounts(Array.isArray(result) ? (result as LinkedAccount[]) : []);
+			dispatch({
+				type: "setAccounts",
+				accounts: Array.isArray(result) ? (result as LinkedAccount[]) : [],
+			});
 		} catch (error) {
 			console.error("Failed to load linked accounts", error);
 			toast.error("Failed to load linked calendar accounts");
 		} finally {
-			setIsLoadingAccounts(false);
+			dispatch({ type: "setIsLoadingAccounts", value: false });
 		}
 	}, [session?.user]);
 
@@ -438,21 +534,27 @@ function CalendarSettings() {
 		) ?? false;
 
 	const handleYandexCalendarDialogOpenChange = (open: boolean) => {
-		setIsYandexCalendarDialogOpen(open);
+		dispatch({ type: "setIsYandexCalendarDialogOpen", value: open });
 
 		if (open) {
-			setYandexCalendarFormState({
-				email: yandexCalendarConnection?.email ?? session?.user?.email ?? "",
-				password: "",
+			dispatch({
+				type: "setYandexCalendarFormState",
+				value: {
+					email: yandexCalendarConnection?.email ?? session?.user?.email ?? "",
+					password: "",
+				},
 			});
 			return;
 		}
 
-		setYandexCalendarFormState(initialYandexCalendarConnectionFormState);
+		dispatch({
+			type: "setYandexCalendarFormState",
+			value: initialYandexCalendarConnectionFormState,
+		});
 	};
 
 	const handleConnectGoogleCalendar = async () => {
-		setIsConnectingGoogle(true);
+		dispatch({ type: "setIsConnectingGoogle", value: true });
 
 		try {
 			const callbackURL = window.openGranDesktop
@@ -504,7 +606,7 @@ function CalendarSettings() {
 					: "Failed to connect Google Calendar",
 			);
 		} finally {
-			setIsConnectingGoogle(false);
+			dispatch({ type: "setIsConnectingGoogle", value: false });
 		}
 	};
 
@@ -516,7 +618,7 @@ function CalendarSettings() {
 			return;
 		}
 
-		setIsSavingYandexCalendarConnection(true);
+		dispatch({ type: "setIsSavingYandexCalendarConnection", value: true });
 
 		try {
 			await connectYandexCalendar({
@@ -533,7 +635,7 @@ function CalendarSettings() {
 					: "Failed to connect Yandex Calendar",
 			);
 		} finally {
-			setIsSavingYandexCalendarConnection(false);
+			dispatch({ type: "setIsSavingYandexCalendarConnection", value: false });
 		}
 	};
 
@@ -545,7 +647,7 @@ function CalendarSettings() {
 		showGoogleCalendar: boolean;
 		showYandexCalendar: boolean;
 	}) => {
-		setIsSavingCalendarPreferences(true);
+		dispatch({ type: "setIsSavingCalendarPreferences", value: true });
 
 		try {
 			await updateCalendarPreferences(nextPreferences);
@@ -553,7 +655,7 @@ function CalendarSettings() {
 			console.error("Failed to update calendar preferences", error);
 			toast.error("Failed to update calendar visibility");
 		} finally {
-			setIsSavingCalendarPreferences(false);
+			dispatch({ type: "setIsSavingCalendarPreferences", value: false });
 		}
 	};
 
@@ -662,10 +764,10 @@ function CalendarSettings() {
 								type="email"
 								value={yandexCalendarFormState.email}
 								onChange={(event) =>
-									setYandexCalendarFormState((currentState) => ({
-										...currentState,
-										email: event.target.value,
-									}))
+									dispatch({
+										type: "patchYandexCalendarFormState",
+										value: { email: event.target.value },
+									})
 								}
 								placeholder="name@yandex.ru"
 							/>
@@ -682,10 +784,10 @@ function CalendarSettings() {
 								type="password"
 								value={yandexCalendarFormState.password}
 								onChange={(event) =>
-									setYandexCalendarFormState((currentState) => ({
-										...currentState,
-										password: event.target.value,
-									}))
+									dispatch({
+										type: "patchYandexCalendarFormState",
+										value: { password: event.target.value },
+									})
 								}
 								placeholder="Paste your Yandex app password"
 							/>

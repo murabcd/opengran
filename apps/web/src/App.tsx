@@ -1680,6 +1680,26 @@ const useAppShellState = ({
 	const upcomingCalendarLoadKey = session?.user?.email
 		? `${isConvexAuthenticated ? "authenticated" : "unauthenticated"}:${session.user.email}`
 		: "anonymous";
+	const calendarPreferences = useQuery(
+		api.calendarPreferences.get,
+		isConvexAuthenticated ? {} : "skip",
+	);
+	const yandexCalendarConnection = useQuery(
+		api.appConnections.getYandexCalendar,
+		isConvexAuthenticated ? {} : "skip",
+	);
+	const calendarVisibilityKey = calendarPreferences
+		? `${calendarPreferences.showGoogleCalendar}:${calendarPreferences.showYandexCalendar}`
+		: "loading";
+	const yandexCalendarConnectionKey = yandexCalendarConnection
+		? [
+				yandexCalendarConnection.sourceId,
+				yandexCalendarConnection.status,
+				yandexCalendarConnection.email,
+				yandexCalendarConnection.serverAddress,
+				yandexCalendarConnection.calendarHomePath,
+			].join(":")
+		: "none";
 	const createNote = useMutation(api.notes.create);
 	const createWorkspace = useMutation(api.workspaces.create);
 	const listUpcomingGoogleEvents = useAction(
@@ -1791,15 +1811,26 @@ const useAppShellState = ({
 	);
 
 	React.useEffect(() => {
+		void calendarVisibilityKey;
+		void yandexCalendarConnectionKey;
+
 		if (upcomingCalendarLoadKey === "anonymous") {
 			void refreshUpcomingCalendarEvents(currentDayKey);
 			return;
 		}
 
 		void refreshUpcomingCalendarEvents(currentDayKey);
-	}, [currentDayKey, upcomingCalendarLoadKey]);
+	}, [
+		calendarVisibilityKey,
+		currentDayKey,
+		upcomingCalendarLoadKey,
+		yandexCalendarConnectionKey,
+	]);
 
 	React.useEffect(() => {
+		void calendarVisibilityKey;
+		void yandexCalendarConnectionKey;
+
 		if (upcomingCalendarLoadKey === "anonymous") {
 			return;
 		}
@@ -1810,7 +1841,12 @@ const useAppShellState = ({
 
 		window.addEventListener("focus", handleFocus);
 		return () => window.removeEventListener("focus", handleFocus);
-	}, [currentDayKey, upcomingCalendarLoadKey]);
+	}, [
+		calendarVisibilityKey,
+		currentDayKey,
+		upcomingCalendarLoadKey,
+		yandexCalendarConnectionKey,
+	]);
 
 	React.useEffect(() => {
 		if (workspaces.some((workspace) => workspace._id === activeWorkspaceId)) {
@@ -2592,7 +2628,7 @@ function AppShellHeader({
 											>
 												<div className="flex items-center gap-2">
 													<NoteTitleEditInput
-														autoFocus
+														focusOnMount
 														commitOnBlur={false}
 														value={titleValue}
 														onValueChange={(value) => {

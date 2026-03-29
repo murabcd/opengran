@@ -193,5 +193,3 @@ export const getTrackerIssue = async (
 		],
 	};
 };
-
-export type { YandexTrackerConnection };
