@@ -556,7 +556,7 @@ export function NoteActionsMenu({
 			<DropdownMenuContent
 				align={align}
 				side={side}
-				className="w-56 overflow-hidden rounded-lg p-0"
+				className="w-56 overflow-hidden rounded-lg p-1"
 				onCloseAutoFocus={(event) => {
 					if (preventMenuCloseAutoFocusRef.current) {
 						event.preventDefault();
