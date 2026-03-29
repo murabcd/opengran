@@ -783,7 +783,7 @@ function WorkspaceSettings({
 
 			setFormState((currentState) => ({
 				...currentState,
-				iconStorageId: result.storageId,
+				iconStorageId: result.storageId ?? null,
 				iconPreviewUrl: URL.createObjectURL(file),
 			}));
 		} catch (error) {

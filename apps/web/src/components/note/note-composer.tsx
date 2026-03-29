@@ -749,7 +749,7 @@ function NoteChatMessages({
 }: {
 	chatError: Error | undefined;
 	chatMessages: UIMessage[];
-	chatViewportRef: React.RefObject<HTMLDivElement | null>;
+	chatViewportRef: React.Ref<HTMLDivElement>;
 	disableAddToNote: boolean;
 	disablePadding: boolean;
 	isChatLoading: boolean;
