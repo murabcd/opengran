@@ -26,6 +26,7 @@ import {
 import { NavUser } from "@/components/sidebar/nav-user";
 import { TemplatesDialog } from "@/components/templates/templates-dialog";
 import { WorkspaceSwitcher } from "@/components/workspaces/workspace-switcher";
+import { getChatId } from "@/lib/chat";
 import type { WorkspaceRecord } from "@/lib/workspaces";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
@@ -60,6 +61,7 @@ export function AppSidebar({
 	activeWorkspaceId,
 	currentView,
 	user,
+	chats,
 	notes,
 	onWorkspaceSelect,
 	onWorkspaceCreate,
@@ -72,6 +74,7 @@ export function AppSidebar({
 	desktopSafeTop = false,
 	currentNoteId,
 	currentNoteTitle,
+	onChatSelect,
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
@@ -85,6 +88,7 @@ export function AppSidebar({
 		email: string;
 		avatar: string;
 	};
+	chats: Array<Doc<"chats">> | undefined;
 	notes: Array<Doc<"notes">> | undefined;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
 	onWorkspaceCreate: (input: { name: string }) => Promise<WorkspaceRecord>;
@@ -97,6 +101,7 @@ export function AppSidebar({
 	desktopSafeTop?: boolean;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
+	onChatSelect: (chatId: string) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
@@ -118,18 +123,25 @@ export function AppSidebar({
 			})),
 		[currentView],
 	);
-	const searchItems = React.useMemo<SearchCommandItem[]>(
-		() =>
-			(notes ?? []).map((note) => ({
-				id: note._id,
-				title:
-					note._id === currentNoteId && currentNoteTitle?.trim()
-						? currentNoteTitle
-						: note.title || "New note",
-				icon: FileText,
-			})),
-		[notes, currentNoteId, currentNoteTitle],
-	);
+	const searchItems: SearchCommandItem[] = [
+		...(notes ?? []).map((note) => ({
+			id: note._id,
+			title:
+				note._id === currentNoteId && currentNoteTitle?.trim()
+					? currentNoteTitle
+					: note.title || "New note",
+			kind: "note" as const,
+			icon: FileText,
+			preview: note.searchableText.trim() || undefined,
+		})),
+		...(chats ?? []).map((chat) => ({
+			id: getChatId(chat),
+			title: chat.title || "New chat",
+			kind: "chat" as const,
+			icon: MessageCircle,
+			preview: chat.authorName?.trim() || undefined,
+		})),
+	];
 
 	return (
 		<>
@@ -181,6 +193,16 @@ export function AppSidebar({
 				onOpenChange={setSearchOpen}
 				items={searchItems}
 				onSelectItem={(itemId) => {
+					const selectedItem = searchItems.find((item) => item.id === itemId);
+					if (!selectedItem) {
+						return;
+					}
+
+					if (selectedItem.kind === "chat") {
+						onChatSelect(itemId);
+						return;
+					}
+
 					onNoteSelect(itemId as Id<"notes">);
 				}}
 			/>

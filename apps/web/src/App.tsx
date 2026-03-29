@@ -2347,6 +2347,7 @@ function AppShell({
 					activeWorkspaceId={controller.activeWorkspaceId}
 					currentView={controller.currentView}
 					user={controller.user}
+					chats={controller.chats}
 					notes={controller.notes}
 					onWorkspaceSelect={controller.setActiveWorkspaceId}
 					onWorkspaceCreate={controller.handleWorkspaceCreate}
@@ -2359,6 +2360,7 @@ function AppShell({
 					desktopSafeTop={controller.isDesktopMac}
 					currentNoteId={controller.currentNoteId}
 					currentNoteTitle={controller.currentNoteTitle}
+					onChatSelect={controller.handleOpenChat}
 					onNoteSelect={controller.openNote}
 					onNoteTitleChange={controller.setCurrentNoteTitle}
 					onNoteTrashed={controller.handleNoteTrashed}
@@ -3038,7 +3040,7 @@ function HomeView({
 													return (
 														<div
 															key={`${event.id}:${event.startAt}`}
-															className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
+															className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-muted/40"
 														>
 															<div
 																className={cn(

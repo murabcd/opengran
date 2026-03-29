@@ -15,7 +15,9 @@ import type { LucideIcon } from "lucide-react";
 export interface SearchCommandItem {
 	id: string;
 	title: string;
+	kind: "note" | "chat";
 	icon: LucideIcon;
+	preview?: string;
 }
 
 interface SearchCommandProps {
@@ -31,17 +33,23 @@ export function SearchCommand({
 	items,
 	onSelectItem,
 }: SearchCommandProps) {
+	const noteItems = items.filter((item) => item.kind === "note");
+	const chatItems = items.filter((item) => item.kind === "chat");
+
 	return (
 		<CommandDialog
 			open={open}
 			onOpenChange={onOpenChange}
-			title="Search notes"
-			description="Search for a note..."
+			title="Search"
+			description="Search notes and chats..."
 			className="top-1/2 max-w-[calc(100%-2rem)] -translate-y-1/2 rounded-lg sm:max-w-lg"
 		>
 			<Command className="**:[[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 **:[[cmdk-input-wrapper]_svg]:size-5 **:[[cmdk-input]]:h-12 **:[[cmdk-item]]:px-2 **:[[cmdk-item]]:py-2 **:[[cmdk-item]_svg]:size-5">
 				<div className="relative min-w-0">
-					<CommandInput placeholder="Search notes..." className="pr-14" />
+					<CommandInput
+						placeholder="Search notes and chats..."
+						className="pr-14"
+					/>
 					<button
 						type="button"
 						onClick={() => onOpenChange(false)}
@@ -52,23 +60,52 @@ export function SearchCommand({
 					</button>
 				</div>
 				<CommandList>
-					<CommandEmpty>No notes found.</CommandEmpty>
-					<CommandGroup>
-						{items.map((item) => (
-							<CommandItem
-								key={item.id}
-								value={`${item.id} ${item.title}`}
-								onSelect={() => {
-									onOpenChange(false);
-									onSelectItem(item.id);
-								}}
-								className="cursor-pointer"
-							>
-								<item.icon className="size-4" />
-								<span className="min-w-0 flex-1 truncate">{item.title}</span>
-							</CommandItem>
-						))}
-					</CommandGroup>
+					<CommandEmpty>No results found.</CommandEmpty>
+					{noteItems.length > 0 ? (
+						<CommandGroup heading="Notes">
+							{noteItems.map((item) => (
+								<CommandItem
+									key={item.id}
+									value={`${item.kind} ${item.id} ${item.title} ${item.preview ?? ""}`}
+									onSelect={() => {
+										onOpenChange(false);
+										onSelectItem(item.id);
+									}}
+									className="cursor-pointer"
+								>
+									<item.icon className="size-4" />
+									<div className="min-w-0 flex-1">
+										<div className="truncate">{item.title}</div>
+										{item.kind === "note" && item.preview ? (
+											<div className="truncate text-xs text-muted-foreground">
+												{item.preview}
+											</div>
+										) : null}
+									</div>
+								</CommandItem>
+							))}
+						</CommandGroup>
+					) : null}
+					{chatItems.length > 0 ? (
+						<CommandGroup heading="Chats">
+							{chatItems.map((item) => (
+								<CommandItem
+									key={item.id}
+									value={`${item.kind} ${item.id} ${item.title} ${item.preview ?? ""}`}
+									onSelect={() => {
+										onOpenChange(false);
+										onSelectItem(item.id);
+									}}
+									className="cursor-pointer"
+								>
+									<item.icon className="size-4" />
+									<div className="min-w-0 flex-1">
+										<div className="truncate">{item.title}</div>
+									</div>
+								</CommandItem>
+							))}
+						</CommandGroup>
+					) : null}
 				</CommandList>
 			</Command>
 		</CommandDialog>
