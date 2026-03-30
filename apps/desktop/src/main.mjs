@@ -160,6 +160,8 @@ let mainWindow = null;
 let localServer = null;
 let tray = null;
 let isQuitting = false;
+let isBypassingQuitConfirmation = false;
+let isPromptingForQuitConfirmation = false;
 let traySettings = defaultTraySettings;
 let desktopPermissionsState = defaultDesktopPermissionsState;
 let trayCalendarState = createInitialTrayCalendarState();
@@ -240,6 +242,14 @@ const ensureDockVisible = () => {
 	}
 
 	app.dock?.show();
+};
+
+const ensureDockHidden = () => {
+	if (process.platform !== "darwin") {
+		return;
+	}
+
+	app.dock?.hide();
 };
 
 const getConvexUrl = () => {
@@ -1123,6 +1133,7 @@ const ensureUpdateWindow = async () => {
 
 		if (action === "install") {
 			resolveUpdateWindowAction(action);
+			isBypassingQuitConfirmation = true;
 			isQuitting = true;
 			autoUpdater.quitAndInstall();
 		}
@@ -4207,6 +4218,7 @@ const createMainWindow = async (targetUrl) => {
 
 		event.preventDefault();
 		mainWindow.hide();
+		ensureDockHidden();
 	});
 
 	mainWindow.on("closed", () => {
@@ -4714,8 +4726,50 @@ ipcMain.handle(
 );
 
 const quitCompletely = () => {
+	isBypassingQuitConfirmation = true;
 	isQuitting = true;
 	app.quit();
+};
+
+const promptToConfirmQuitCompletely = async () => {
+	if (isPromptingForQuitConfirmation) {
+		return false;
+	}
+
+	isPromptingForQuitConfirmation = true;
+
+	try {
+		const parentWindow =
+			mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
+				? mainWindow
+				: undefined;
+		const dialogOptions = {
+			type: "question",
+			buttons: ["Cancel", "Quit"],
+			defaultId: 1,
+			cancelId: 0,
+			noLink: true,
+			title: `Quit ${app.getName()}?`,
+			message: `Quit ${app.getName()}?`,
+			detail: "Notifications for upcoming meetings will stop",
+			icon: nativeImage.createFromPath(dockIconPath),
+		};
+		const { response } = parentWindow
+			? await dialog.showMessageBox(parentWindow, dialogOptions)
+			: await dialog.showMessageBox(dialogOptions);
+
+		return response === 1;
+	} finally {
+		isPromptingForQuitConfirmation = false;
+	}
+};
+
+const confirmAndQuitCompletely = async () => {
+	if (!(await promptToConfirmQuitCompletely())) {
+		return;
+	}
+
+	quitCompletely();
 };
 
 const promptToInstallDownloadedUpdate = async (version) => {
@@ -4937,17 +4991,19 @@ const handleCheckForUpdates = async () => {
 
 const handleTrayQuit = async () => {
 	if (!traySettings.keepOpenInMenuBar) {
-		quitCompletely();
+		await confirmAndQuitCompletely();
 		return;
 	}
 
 	if (mainWindow) {
 		mainWindow.hide();
+		ensureDockHidden();
 		return;
 	}
 
 	await createMainWindow();
 	mainWindow.hide();
+	ensureDockHidden();
 };
 
 const buildTrayMenu = () =>
@@ -5014,7 +5070,7 @@ const buildTrayMenu = () =>
 				{
 					label: "Quit completely",
 					click: () => {
-						quitCompletely();
+						void confirmAndQuitCompletely();
 					},
 				},
 			],
@@ -5054,7 +5110,7 @@ const createTray = () => {
 const singleInstanceLock = app.requestSingleInstanceLock();
 
 if (!singleInstanceLock) {
-	app.quit();
+	quitCompletely();
 } else {
 	app.on("second-instance", (_event, _argv) => {
 		void showMainWindow();
@@ -5103,7 +5159,13 @@ if (!singleInstanceLock) {
 		}
 	});
 
-	app.on("before-quit", () => {
+	app.on("before-quit", (event) => {
+		if (process.platform === "darwin" && !isBypassingQuitConfirmation) {
+			event.preventDefault();
+			void confirmAndQuitCompletely();
+			return;
+		}
+
 		isQuitting = true;
 		void stopDesktopRealtimeTransport("you");
 		void stopDesktopRealtimeTransport("them");
