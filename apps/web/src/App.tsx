@@ -2839,6 +2839,21 @@ function AppShellContent({
 	shouldAutoStartNoteCapture: boolean;
 	onGoHome: () => void;
 }) {
+	const noteViewScrollRef = React.useRef<HTMLDivElement | null>(null);
+	const noteScrollResetKey =
+		currentView === "note" ? (currentNoteId ?? "new") : null;
+
+	React.useEffect(() => {
+		if (noteScrollResetKey === null) {
+			return;
+		}
+
+		noteViewScrollRef.current?.scrollTo({
+			top: 0,
+			behavior: "auto",
+		});
+	}, [noteScrollResetKey]);
+
 	if (currentView === "notFound") {
 		return <NotFoundView onGoHome={onGoHome} />;
 	}
@@ -2892,7 +2907,10 @@ function AppShellContent({
 
 	if (currentView === "note") {
 		return (
-			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+			<div
+				ref={noteViewScrollRef}
+				className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+			>
 				<NotePage
 					autoStartTranscription={shouldAutoStartNoteCapture}
 					noteId={currentNoteId}
