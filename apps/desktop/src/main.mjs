@@ -117,6 +117,7 @@ const createInitialMeetingDetectionState = () => ({
 	candidateStartedAt: null,
 	confidence: 0,
 	dismissedUntil: null,
+	hasBrowserMeetingSignal: false,
 	hasMeetingSignal: false,
 	isMicrophoneActive: false,
 	isSuppressed: false,
@@ -937,14 +938,17 @@ const updateMeetingWidgetWindowSize = (size) => {
 };
 
 const syncMeetingDetectionState = (patch) => {
+	const hasBrowserMeetingSignal =
+		patch?.hasBrowserMeetingSignal ?? hasFreshBrowserMeetingSignal();
+	const isMicrophoneActive = Boolean(
+		patch?.isMicrophoneActive ?? latestMeetingDetectionState.isMicrophoneActive,
+	);
+
 	latestMeetingDetectionState = {
 		...latestMeetingDetectionState,
 		...patch,
-		hasMeetingSignal:
-			Boolean(
-				patch?.isMicrophoneActive ??
-					latestMeetingDetectionState.isMicrophoneActive,
-			) || hasFreshBrowserMeetingSignal(),
+		hasBrowserMeetingSignal,
+		hasMeetingSignal: isMicrophoneActive || hasBrowserMeetingSignal,
 	};
 
 	broadcastToDesktopWindows({
@@ -1030,6 +1034,7 @@ const autoHideMeetingWidgetPrompt = () => {
 		syncMeetingDetectionState({
 			candidateStartedAt: null,
 			confidence: 0,
+			hasBrowserMeetingSignal: hasBrowserSignal,
 			isSuppressed: isMeetingDetectionSuppressed(),
 			sourceName: null,
 			status: "idle",
@@ -1039,6 +1044,7 @@ const autoHideMeetingWidgetPrompt = () => {
 
 	syncMeetingDetectionState({
 		confidence: hasBrowserSignal ? 0.68 : 0.35,
+		hasBrowserMeetingSignal: hasBrowserSignal,
 		isSuppressed: false,
 		sourceName: getCurrentBrowserMeetingSourceName(),
 		status: "monitoring",
@@ -1783,6 +1789,7 @@ const reevaluateMeetingDetection = () => {
 		syncMeetingDetectionState({
 			candidateStartedAt: null,
 			confidence: 0,
+			hasBrowserMeetingSignal: hasBrowserSignal,
 			isSuppressed,
 			sourceName: null,
 			status: "idle",
@@ -1792,6 +1799,7 @@ const reevaluateMeetingDetection = () => {
 
 	syncMeetingDetectionState({
 		confidence,
+		hasBrowserMeetingSignal: hasBrowserSignal,
 		isSuppressed: false,
 		sourceName,
 		status: "monitoring",
@@ -1818,6 +1826,7 @@ const reevaluateMeetingDetection = () => {
 		syncMeetingDetectionState({
 			candidateStartedAt: Date.now(),
 			confidence: promptConfidence,
+			hasBrowserMeetingSignal: hasFreshBrowserMeetingSignal(),
 			isSuppressed: false,
 			sourceName: getCurrentBrowserMeetingSourceName(),
 			status: "prompting",

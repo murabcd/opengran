@@ -88,7 +88,7 @@ describe("useNoteTranscriptSession", () => {
 		expect(result.current.isSpeechListening).toBe(false);
 	});
 
-	it("stops an auto-started desktop capture when the meeting signal disappears", async () => {
+	it("stops an auto-started desktop capture when the browser meeting signal disappears", async () => {
 		let meetingDetectionListener:
 			| ((state: DesktopMeetingDetectionState) => void)
 			| null = null;
@@ -136,8 +136,9 @@ describe("useNoteTranscriptSession", () => {
 			candidateStartedAt: null,
 			confidence: 0,
 			dismissedUntil: null,
-			hasMeetingSignal: false,
-			isMicrophoneActive: false,
+			hasBrowserMeetingSignal: false,
+			hasMeetingSignal: true,
+			isMicrophoneActive: true,
 			isSuppressed: true,
 			sourceName: null,
 			status: "idle",

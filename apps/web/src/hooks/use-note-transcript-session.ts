@@ -157,7 +157,7 @@ export const useNoteTranscriptSession = ({
 			if (
 				!shouldStopWhenMeetingEndsRef.current ||
 				!isSpeechListening ||
-				state.hasMeetingSignal
+				state.hasBrowserMeetingSignal
 			) {
 				return;
 			}

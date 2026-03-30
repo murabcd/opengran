@@ -7,7 +7,7 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["alarms", "storage", "tabs"],
+  "permissions": ["alarms", "storage", "tabs", "webNavigation"],
   "host_permissions": [
     "http://127.0.0.1/*",
     "https://meet.google.com/*",

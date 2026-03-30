@@ -1,3 +1,10 @@
+import {
+	getMeetingSignalPayload,
+	getTrackedMeetingTabIds,
+	isSupportedMeetingUrl,
+	supportedMeetingQueryPatterns,
+} from "./meeting-tabs.js";
+
 const bridgePorts = Array.from(
 	{ length: 20 },
 	(_value, index) => 42831 + index,
@@ -7,40 +14,11 @@ const bridgeSignalPath = "/api/browser-meeting-signal";
 const heartbeatAlarmName = "opengran-meeting-heartbeat";
 const heartbeatPeriodMinutes = 0.5;
 
-const providerMatchers = [
-	{
-		id: "google-meet",
-		sourceName: "Google Meet",
-		match: ({ hostname }) => hostname === "meet.google.com",
-	},
-	{
-		id: "yandex-telemost",
-		sourceName: "Yandex Telemost",
-		match: ({ hostname }) =>
-			hostname === "telemost.yandex.ru" ||
-			hostname === "telemost.360.yandex.ru",
-	},
-	{
-		id: "zoom",
-		sourceName: "Zoom",
-		match: ({ hostname, pathname }) =>
-			hostname.endsWith(".zoom.us") &&
-			(pathname.startsWith("/j/") ||
-				pathname.startsWith("/wc/") ||
-				pathname.startsWith("/s/")),
-	},
-	{
-		id: "microsoft-teams",
-		sourceName: "Microsoft Teams",
-		match: ({ hostname, pathname }) =>
-			(hostname === "teams.microsoft.com" ||
-				hostname.endsWith(".teams.microsoft.com")) &&
-			(pathname.includes("/meet") || pathname.includes("/l/meetup-join")),
-	},
-];
-
 let cachedBridgePort = null;
-let lastPayloadFingerprint = null;
+let lastDeliveredPayloadFingerprint = null;
+let lastTrackedMeetingTabIds = new Set();
+let isMeetingSignalSyncInFlight = false;
+let hasPendingMeetingSignalSync = false;
 
 const timeout = (durationMs) =>
 	new Promise((resolvePromise) => {
@@ -123,76 +101,57 @@ const fingerprintPayload = (payload) =>
 		payload.tabTitle ?? null,
 	]);
 
-const detectMeetingFromTab = (tab) => {
-	if (!tab || typeof tab.url !== "string") {
-		return null;
-	}
-
-	let parsedUrl = null;
-	try {
-		parsedUrl = new URL(tab.url);
-	} catch {
-		return null;
-	}
-
-	if (parsedUrl.protocol !== "https:") {
-		return null;
-	}
-
-	const title =
-		typeof tab.title === "string" && tab.title.trim() ? tab.title.trim() : null;
-	const context = {
-		hostname: parsedUrl.hostname.toLowerCase(),
-		pathname: parsedUrl.pathname,
-		search: parsedUrl.search,
-		title,
-	};
-
-	const provider = providerMatchers.find((matcher) => matcher.match(context));
-	if (!provider) {
-		return null;
-	}
-
-	return {
-		active: true,
-		detectedAt: Date.now(),
-		providerId: provider.id,
-		sourceName: provider.sourceName,
-		tabId: tab.id ?? null,
-		tabTitle: title,
-		url: parsedUrl.toString(),
-		urlHost: parsedUrl.hostname.toLowerCase(),
-	};
-};
-
-const emitActiveTabSignal = async () => {
-	const [tab] = await chrome.tabs.query({
-		active: true,
-		lastFocusedWindow: true,
+const syncMeetingSignalOnce = async () => {
+	const tabs = await chrome.tabs.query({
+		url: supportedMeetingQueryPatterns,
 	});
-
-	const payload = detectMeetingFromTab(tab) ?? {
-		active: false,
-		detectedAt: Date.now(),
-		providerId: null,
-		sourceName: null,
-		tabId: tab?.id ?? null,
-		tabTitle:
-			typeof tab?.title === "string" && tab.title.trim()
-				? tab.title.trim()
-				: null,
-		url: typeof tab?.url === "string" ? tab.url : null,
-		urlHost: null,
-	};
+	const payload = getMeetingSignalPayload(tabs);
+	lastTrackedMeetingTabIds = getTrackedMeetingTabIds(tabs);
 
 	const fingerprint = fingerprintPayload(payload);
-	if (fingerprint === lastPayloadFingerprint) {
+	if (fingerprint === lastDeliveredPayloadFingerprint) {
 		return;
 	}
 
-	lastPayloadFingerprint = fingerprint;
-	await postBridgeSignal(payload);
+	const didPost = await postBridgeSignal(payload);
+	if (didPost) {
+		lastDeliveredPayloadFingerprint = fingerprint;
+	}
 };
+
+const requestMeetingSignalSync = () => {
+	hasPendingMeetingSignalSync = true;
+	if (isMeetingSignalSyncInFlight) {
+		return;
+	}
+
+	isMeetingSignalSyncInFlight = true;
+	void (async () => {
+		try {
+			while (hasPendingMeetingSignalSync) {
+				hasPendingMeetingSignalSync = false;
+				await syncMeetingSignalOnce();
+			}
+		} finally {
+			isMeetingSignalSyncInFlight = false;
+			if (hasPendingMeetingSignalSync) {
+				requestMeetingSignalSync();
+			}
+		}
+	})();
+};
+
+const shouldSyncForTab = (tab) =>
+	typeof tab?.id === "number"
+		? lastTrackedMeetingTabIds.has(tab.id) || isSupportedMeetingUrl(tab.url)
+		: false;
+
+const shouldSyncForNavigation = (details) =>
+	details.frameId === 0 &&
+	(typeof details.tabId === "number"
+		? lastTrackedMeetingTabIds.has(details.tabId) ||
+			isSupportedMeetingUrl(details.url)
+		: false);
 
 const scheduleHeartbeat = () => {
 	chrome.alarms.create(heartbeatAlarmName, {
@@ -202,23 +161,19 @@ const scheduleHeartbeat = () => {
 
 chrome.runtime.onInstalled.addListener(() => {
 	scheduleHeartbeat();
-	void emitActiveTabSignal();
+	requestMeetingSignalSync();
 });
 
 chrome.runtime.onStartup.addListener(() => {
 	scheduleHeartbeat();
-	void emitActiveTabSignal();
+	requestMeetingSignalSync();
 });
 
 chrome.tabs.onActivated.addListener(() => {
-	void emitActiveTabSignal();
+	requestMeetingSignalSync();
 });
 
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
-	if (!tab.active) {
-		return;
-	}
-
 	if (
 		!("url" in changeInfo) &&
 		!("title" in changeInfo) &&
@@ -227,11 +182,39 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 		return;
 	}
 
-	void emitActiveTabSignal();
+	if (!shouldSyncForTab(tab)) {
+		return;
+	}
+
+	requestMeetingSignalSync();
+});
+
+chrome.tabs.onRemoved.addListener(() => {
+	requestMeetingSignalSync();
 });
 
 chrome.windows.onFocusChanged.addListener(() => {
-	void emitActiveTabSignal();
+	requestMeetingSignalSync();
+});
+
+chrome.tabs.onReplaced.addListener(() => {
+	requestMeetingSignalSync();
+});
+
+chrome.webNavigation.onCommitted.addListener((details) => {
+	if (!shouldSyncForNavigation(details)) {
+		return;
+	}
+
+	requestMeetingSignalSync();
+});
+
+chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+	if (!shouldSyncForNavigation(details)) {
+		return;
+	}
+
+	requestMeetingSignalSync();
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -239,5 +222,5 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 		return;
 	}
 
-	void emitActiveTabSignal();
+	requestMeetingSignalSync();
 });

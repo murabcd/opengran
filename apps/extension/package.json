@@ -11,7 +11,7 @@
     "check": "biome check src scripts package.json manifest.json README.md",
     "check:fix": "biome check --write src scripts package.json manifest.json README.md",
     "format": "biome format --write src scripts package.json manifest.json README.md",
-    "test": "node -e \"process.exit(0)\"",
+    "test": "bun test",
     "typecheck": "node -e \"process.exit(0)\""
   }
 }
