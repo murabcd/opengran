@@ -130,6 +130,8 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 	},
 	writeClipboardText: (value) =>
 		ipcRenderer.invoke("app:write-clipboard-text", value),
+	writeClipboardRichText: (payload) =>
+		ipcRenderer.invoke("app:write-clipboard-rich-text", payload),
 	loadTranscriptDraft: (noteKey) =>
 		ipcRenderer.invoke("app:load-transcript-draft", noteKey),
 	saveTranscriptDraft: (noteKey, draft) =>

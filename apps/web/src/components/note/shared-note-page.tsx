@@ -90,7 +90,7 @@ export function SharedNotePage({
 	return (
 		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
 			<div className="flex w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
-				<div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-between gap-6">
+				<div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-between gap-6">
 					<div className="flex-1 pt-4 md:pt-8">
 						<div className="flex flex-col gap-5">
 							<Input
@@ -98,27 +98,14 @@ export function SharedNotePage({
 								readOnly
 								placeholder="New note"
 								aria-label="Note title"
-								className="h-auto border-0 !bg-transparent px-0 py-0 text-3xl font-normal shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
+								className="note-title h-auto border-0 !bg-transparent px-0 py-0 text-3xl font-semibold leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
 							/>
 
 							<EditorContent
 								editor={editor}
 								className={cn(
-									"min-h-[320px] text-foreground",
+									"min-h-[320px] text-base text-foreground",
 									"[&_.ProseMirror]:min-h-[320px]",
-									"[&_.ProseMirror_h1]:mb-4 [&_.ProseMirror_h1]:text-3xl [&_.ProseMirror_h1]:font-semibold",
-									"[&_.ProseMirror_h2]:mb-4 [&_.ProseMirror_h2]:text-2xl [&_.ProseMirror_h2]:font-semibold",
-									"[&_.ProseMirror_h3]:mb-3 [&_.ProseMirror_h3]:text-xl [&_.ProseMirror_h3]:font-semibold",
-									"[&_.ProseMirror_p]:mb-3 [&_.ProseMirror_p]:mt-0",
-									"[&_.ProseMirror_ul]:mb-3 [&_.ProseMirror_ul]:pl-6",
-									"[&_.ProseMirror_ol]:mb-3 [&_.ProseMirror_ol]:pl-6",
-									"[&_.ProseMirror_li]:mb-1",
-									"[&_.ProseMirror_blockquote]:my-4 [&_.ProseMirror_blockquote]:border-l [&_.ProseMirror_blockquote]:border-border [&_.ProseMirror_blockquote]:pl-4 [&_.ProseMirror_blockquote]:text-muted-foreground",
-									"[&_.ProseMirror_pre]:my-4 [&_.ProseMirror_pre]:overflow-x-auto [&_.ProseMirror_pre]:rounded-lg [&_.ProseMirror_pre]:border [&_.ProseMirror_pre]:border-border/70 [&_.ProseMirror_pre]:bg-muted/50 [&_.ProseMirror_pre]:p-4",
-									"[&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:bg-muted/60 [&_.ProseMirror_code]:px-1 [&_.ProseMirror_code]:py-0.5 [&_.ProseMirror_code]:font-mono [&_.ProseMirror_code]:text-[0.9em]",
-									"[&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_pre_code]:p-0",
-									"[&_.ProseMirror_hr]:my-6 [&_.ProseMirror_hr]:border-border",
-									"[&_.ProseMirror_a]:text-primary [&_.ProseMirror_a]:underline [&_.ProseMirror_a]:underline-offset-2",
 								)}
 							/>
 						</div>

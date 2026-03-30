@@ -1,18 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
 import Placeholder from "@tiptap/extension-placeholder";
-import {
-	defaultMarkdownParser,
-	MarkdownParser,
-	MarkdownSerializer,
-	type MarkdownSerializerState,
-	type ParseSpec,
-} from "@tiptap/pm/markdown";
-import type {
-	Mark as ProseMirrorMark,
-	Node as ProseMirrorNode,
-	Schema,
-} from "@tiptap/pm/model";
-import { Slice } from "@tiptap/pm/model";
+import { Markdown, MarkdownManager } from "@tiptap/markdown";
+import type { Node as ProseMirrorNode, Schema } from "@tiptap/pm/model";
+import { Node as PMNode, Slice } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 
@@ -24,345 +14,224 @@ export const EMPTY_DOCUMENT: JSONContent = {
 export const EMPTY_DOCUMENT_STRING = JSON.stringify(EMPTY_DOCUMENT);
 
 const PLACEHOLDER_TEXT = "Write notes...";
+const BULLET_SYMBOL_PATTERN = /^(\s*)[•◦▪‣·]\s+/u;
+const MARKDOWN_LIST_PATTERN = /^\s*(?:[-+*]|\d+\.)\s+/;
+const MARKDOWN_HEADING_PATTERN = /^\s{0,3}#{1,6}\s+/;
 
-const markdownParserBySchema = new WeakMap<Schema, MarkdownParser>();
-const markdownSerializerBySchema = new WeakMap<Schema, MarkdownSerializer>();
+const markdownManagerBySchema = new WeakMap<Schema, MarkdownManager>();
 
-const createMarkdownParser = (schema: Schema) => {
-	defaultMarkdownParser.tokenizer.enable("strikethrough");
+const isTextNode = (
+	node: JSONContent | undefined,
+): node is JSONContent & {
+	type: "text";
+	text: string;
+} => node?.type === "text" && typeof node.text === "string";
 
-	const tokens: Record<string, ParseSpec> = {};
-
-	if (schema.nodes.blockquote) {
-		tokens.blockquote = { block: "blockquote" };
+const getParagraphTextMetadata = (node: JSONContent) => {
+	if (node.type !== "paragraph" || !node.content?.length) {
+		return null;
 	}
 
-	if (schema.nodes.paragraph) {
-		tokens.paragraph = { block: "paragraph" };
-	}
+	let text = "";
+	let sawBold = false;
+	let sawPlain = false;
 
-	if (schema.nodes.listItem) {
-		tokens.list_item = { block: "listItem" };
-	}
-
-	if (schema.nodes.bulletList) {
-		tokens.bullet_list = { block: "bulletList" };
-	}
-
-	if (schema.nodes.orderedList) {
-		tokens.ordered_list = {
-			block: "orderedList",
-			getAttrs: (token) => {
-				const start = Number(token.attrGet("start") ?? 1);
-				return start > 1 ? { start } : {};
-			},
-		};
-	}
-
-	if (schema.nodes.heading) {
-		tokens.heading = {
-			block: "heading",
-			getAttrs: (token) => ({
-				level: Number(token.tag.slice(1)) || 1,
-			}),
-		};
-	}
-
-	if (schema.nodes.codeBlock) {
-		tokens.code_block = { block: "codeBlock", noCloseToken: true };
-		tokens.fence = {
-			block: "codeBlock",
-			getAttrs: (token) => ({
-				language: token.info?.trim() || null,
-			}),
-			noCloseToken: true,
-		};
-	}
-
-	if (schema.nodes.horizontalRule) {
-		tokens.hr = { node: "horizontalRule" };
-	}
-
-	if (schema.nodes.hardBreak) {
-		tokens.hardbreak = { node: "hardBreak" };
-	}
-
-	if (schema.marks.italic) {
-		tokens.em = { mark: "italic" };
-	}
-
-	if (schema.marks.bold) {
-		tokens.strong = { mark: "bold" };
-	}
-
-	if (schema.marks.link) {
-		tokens.link = {
-			mark: "link",
-			getAttrs: (token) => ({
-				href: token.attrGet("href"),
-				title: token.attrGet("title") || null,
-			}),
-		};
-	}
-
-	if (schema.marks.code) {
-		tokens.code_inline = { mark: "code", noCloseToken: true };
-	}
-
-	if (schema.marks.strike) {
-		tokens.s = { mark: "strike" };
-	}
-
-	return new MarkdownParser(schema, defaultMarkdownParser.tokenizer, tokens);
-};
-
-const backticksFor = (node: ProseMirrorNode, side: number) => {
-	const ticks = /`+/g;
-	let length = 0;
-
-	if (node.isText) {
-		let match = ticks.exec(node.text ?? "");
-
-		while (match !== null) {
-			length = Math.max(length, match[0].length);
-			match = ticks.exec(node.text ?? "");
+	for (const child of node.content) {
+		if (!isTextNode(child)) {
+			return null;
 		}
+
+		text += child.text;
+
+		const marks = child.marks ?? [];
+		if (marks.length === 0) {
+			if (child.text.trim()) {
+				sawPlain = true;
+			}
+			continue;
+		}
+
+		const hasOnlyBoldMark =
+			marks.length === 1 &&
+			marks[0]?.type === "bold" &&
+			child.text.trim().length > 0;
+
+		if (!hasOnlyBoldMark) {
+			return null;
+		}
+
+		sawBold = true;
 	}
 
-	let result = length > 0 && side > 0 ? " `" : "`";
-
-	for (let index = 0; index < length; index += 1) {
-		result += "`";
-	}
-
-	if (length > 0 && side < 0) {
-		result += " ";
-	}
-
-	return result;
+	return {
+		text: text.trim(),
+		isBoldOnly: sawBold && !sawPlain,
+		isPlainOnly: !sawBold && sawPlain,
+	};
 };
 
-const isPlainUrl = (
-	link: ProseMirrorMark,
-	parent: ProseMirrorNode,
-	index: number,
+const shouldPromoteParagraphToHeading = (
+	node: JSONContent,
+	nextNode?: JSONContent,
 ) => {
-	if (link.attrs.title || !/^\w+:/.test(link.attrs.href)) {
+	const metadata = getParagraphTextMetadata(node);
+	if (!metadata) {
 		return false;
 	}
 
-	const content = parent.child(index);
+	const text = metadata.text;
+	if (!text || text.length > 120) {
+		return false;
+	}
+
+	if (metadata.isBoldOnly) {
+		return true;
+	}
+
+	if (!metadata.isPlainOnly) {
+		return false;
+	}
+
 	if (
-		!content.isText ||
-		content.text !== link.attrs.href ||
-		content.marks[content.marks.length - 1] !== link
+		!nextNode ||
+		!["bulletList", "orderedList"].includes(nextNode.type ?? "")
 	) {
 		return false;
 	}
 
-	return (
-		index === parent.childCount - 1 ||
-		!link.isInSet(parent.child(index + 1).marks)
-	);
+	if (/[.!?;:]$/.test(text)) {
+		return false;
+	}
+
+	return text.split(/\s+/).length <= 10;
 };
 
-const createMarkdownSerializer = (schema: Schema) => {
-	const nodes: ConstructorParameters<typeof MarkdownSerializer>[0] = {
-		paragraph(state, node) {
-			state.renderInline(node);
-			state.closeBlock(node);
-		},
-		text(state, node) {
-			state.text(
-				node.text ?? "",
-				!(state as MarkdownSerializerState).inAutolink,
-			);
-		},
-	};
-
-	if (schema.nodes.blockquote) {
-		nodes.blockquote = (state, node) => {
-			state.wrapBlock("> ", null, node, () => state.renderContent(node));
-		};
+const normalizeTopLevelNoteContentNodes = (
+	content?: JSONContent[],
+): JSONContent[] | undefined => {
+	if (!content) {
+		return content;
 	}
 
-	if (schema.nodes.codeBlock) {
-		nodes.codeBlock = (state, node) => {
-			const language = node.attrs.language ? `${node.attrs.language}` : "";
-			const backticks = node.textContent.match(/`{3,}/gm);
-			const fence = backticks ? `${backticks.sort().at(-1)}\`` : "```";
+	return content.map((node, index) => {
+		const nextNode = content[index + 1];
+		if (!shouldPromoteParagraphToHeading(node, nextNode)) {
+			return node;
+		}
 
-			state.write(`${fence}${language}\n`);
-			state.text(node.textContent, false);
-			state.write("\n");
-			state.write(fence);
-			state.closeBlock(node);
-		};
-	}
-
-	if (schema.nodes.heading) {
-		nodes.heading = (state, node) => {
-			state.write(`${state.repeat("#", node.attrs.level)} `);
-			state.renderInline(node, false);
-			state.closeBlock(node);
-		};
-	}
-
-	if (schema.nodes.horizontalRule) {
-		nodes.horizontalRule = (state, node) => {
-			state.write(node.attrs.markup || "---");
-			state.closeBlock(node);
-		};
-	}
-
-	if (schema.nodes.bulletList) {
-		nodes.bulletList = (state, node) => {
-			state.renderList(node, "  ", () => "* ");
-		};
-	}
-
-	if (schema.nodes.orderedList) {
-		nodes.orderedList = (state, node) => {
-			const start = node.attrs.start || 1;
-			const maxWidth = String(start + node.childCount - 1).length;
-			const spacing = state.repeat(" ", maxWidth + 2);
-
-			state.renderList(node, spacing, (index) => {
-				const nextNumber = String(start + index);
-				return `${state.repeat(" ", maxWidth - nextNumber.length)}${nextNumber}. `;
-			});
-		};
-	}
-
-	if (schema.nodes.listItem) {
-		nodes.listItem = (state, node) => {
-			state.renderContent(node);
-		};
-	}
-
-	if (schema.nodes.hardBreak) {
-		nodes.hardBreak = (state, node, parent, index) => {
-			for (
-				let nextIndex = index + 1;
-				nextIndex < parent.childCount;
-				nextIndex += 1
-			) {
-				if (parent.child(nextIndex).type !== node.type) {
-					state.write("\\\n");
-					return;
-				}
-			}
-		};
-	}
-
-	const marks: ConstructorParameters<typeof MarkdownSerializer>[1] = {};
-
-	if (schema.marks.italic) {
-		marks.italic = {
-			open: "*",
-			close: "*",
-			mixable: true,
-			expelEnclosingWhitespace: true,
-		};
-	}
-
-	if (schema.marks.bold) {
-		marks.bold = {
-			open: "**",
-			close: "**",
-			mixable: true,
-			expelEnclosingWhitespace: true,
-		};
-	}
-
-	if (schema.marks.link) {
-		marks.link = {
-			open(state, mark, parent, index) {
-				(state as MarkdownSerializerState).inAutolink = isPlainUrl(
-					mark,
-					parent,
-					index,
-				);
-
-				return (state as MarkdownSerializerState).inAutolink ? "<" : "[";
+		const text = getParagraphTextMetadata(node)?.text ?? "";
+		return {
+			type: "heading",
+			attrs: {
+				level: 2,
 			},
-			close(state, mark, _parent, _index) {
-				const inAutolink = (state as MarkdownSerializerState).inAutolink;
-				(state as MarkdownSerializerState).inAutolink = undefined;
-
-				if (inAutolink) {
-					return ">";
-				}
-
-				const href = mark.attrs.href.replace(/[()"]/g, "\\$&");
-				const title = mark.attrs.title
-					? ` "${String(mark.attrs.title).replace(/"/g, '\\"')}"`
-					: "";
-
-				return `](${href}${title})`;
-			},
-			mixable: true,
-		};
-	}
-
-	if (schema.marks.code) {
-		marks.code = {
-			open: (_state, _mark, parent, index) =>
-				backticksFor(parent.child(index), -1),
-			close: (_state, _mark, parent, index) =>
-				backticksFor(parent.child(index - 1), 1),
-			escape: false,
-		};
-	}
-
-	if (schema.marks.strike) {
-		marks.strike = {
-			open: "~~",
-			close: "~~",
-			mixable: true,
-			expelEnclosingWhitespace: true,
-		};
-	}
-
-	return new MarkdownSerializer(nodes, marks, {
-		strict: false,
+			content: text ? [{ type: "text", text }] : undefined,
+		} satisfies JSONContent;
 	});
 };
 
-const getMarkdownParser = (schema: Schema) => {
-	const existing = markdownParserBySchema.get(schema);
-
-	if (existing) {
-		return existing;
+export const normalizeNoteDocument = (document: JSONContent): JSONContent => {
+	if (document.type !== "doc") {
+		return document;
 	}
 
-	const nextParser = createMarkdownParser(schema);
-	markdownParserBySchema.set(schema, nextParser);
-	return nextParser;
+	return {
+		...document,
+		content: normalizeTopLevelNoteContentNodes(document.content),
+	};
 };
 
-const getMarkdownSerializer = (schema: Schema) => {
-	const existing = markdownSerializerBySchema.get(schema);
+export const normalizePastedPlainText = (text: string) => {
+	const lines = text.replace(/\r/g, "").split("\n");
+	const normalizedLines = lines.map((line) =>
+		line.replace(BULLET_SYMBOL_PATTERN, "$1- "),
+	);
 
-	if (existing) {
-		return existing;
-	}
+	return normalizedLines
+		.map((line, index) => {
+			const trimmed = line.trim();
+			if (
+				!trimmed ||
+				MARKDOWN_HEADING_PATTERN.test(trimmed) ||
+				MARKDOWN_LIST_PATTERN.test(trimmed)
+			) {
+				return line;
+			}
 
-	const nextSerializer = createMarkdownSerializer(schema);
-	markdownSerializerBySchema.set(schema, nextSerializer);
-	return nextSerializer;
+			const nextNonEmptyIndex = normalizedLines.findIndex(
+				(candidate, candidateIndex) =>
+					candidateIndex > index && candidate.trim().length > 0,
+			);
+			if (nextNonEmptyIndex < 0) {
+				return line;
+			}
+
+			const nextLine = normalizedLines[nextNonEmptyIndex]?.trim() ?? "";
+			if (!MARKDOWN_LIST_PATTERN.test(nextLine)) {
+				return line;
+			}
+
+			if (/[.!?;:]$/.test(trimmed) || trimmed.split(/\s+/).length > 10) {
+				return line;
+			}
+
+			return `## ${trimmed}`;
+		})
+		.join("\n");
+};
+
+export const normalizePastedSlice = (slice: Slice, schema: Schema) => {
+	const normalizedDocument = normalizeNoteDocument({
+		type: "doc",
+		content: slice.content.toJSON() as JSONContent[],
+	});
+	const normalizedNode = PMNode.fromJSON(schema, normalizedDocument);
+
+	return new Slice(normalizedNode.content, slice.openStart, slice.openEnd);
 };
 
 export const createNoteEditorExtensions = () => [
 	StarterKit,
+	Markdown.configure({
+		indentation: {
+			style: "space",
+			size: 2,
+		},
+	}),
 	Placeholder.configure({
 		placeholder: PLACEHOLDER_TEXT,
 		emptyEditorClass: "is-editor-empty",
 	}),
 ];
 
-export const parseMarkdownToDocument = (markdown: string, schema: Schema) =>
-	getMarkdownParser(schema).parse(markdown);
+const getMarkdownManager = (schema: Schema) => {
+	const existing = markdownManagerBySchema.get(schema);
+
+	if (existing) {
+		return existing;
+	}
+
+	const nextManager = new MarkdownManager({
+		extensions: createNoteEditorExtensions(),
+		indentation: {
+			style: "space",
+			size: 2,
+		},
+	});
+	markdownManagerBySchema.set(schema, nextManager);
+	return nextManager;
+};
+
+const validateDocument = (document: JSONContent, schema: Schema) =>
+	schema.nodeFromJSON(document).toJSON() as JSONContent;
+
+export const parseMarkdownToDocument = (markdown: string, schema: Schema) => {
+	const normalizedDocument = normalizeNoteDocument(
+		getMarkdownManager(schema).parse(markdown),
+	);
+
+	return PMNode.fromJSON(schema, validateDocument(normalizedDocument, schema));
+};
 
 export const parseStoredNoteContent = (content: string, schema: Schema) => {
 	if (!content.trim()) {
@@ -373,7 +242,7 @@ export const parseStoredNoteContent = (content: string, schema: Schema) => {
 		const parsed = JSON.parse(content) as JSONContent;
 
 		if (parsed && typeof parsed === "object" && parsed.type === "doc") {
-			return parsed;
+			return validateDocument(normalizeNoteDocument(parsed), schema);
 		}
 	} catch {
 		// Fall through to markdown parsing.
@@ -389,7 +258,10 @@ export const parseStoredNoteContent = (content: string, schema: Schema) => {
 export const serializeDocumentToMarkdown = (
 	document: ProseMirrorNode,
 	schema: Schema,
-) => getMarkdownSerializer(schema).serialize(document).trim();
+) =>
+	getMarkdownManager(schema)
+		.serialize(document.toJSON() as JSONContent)
+		.trim();
 
 export const looksLikeMarkdown = (value: string) =>
 	[
@@ -411,16 +283,25 @@ export const handleMarkdownPaste = (
 ) => {
 	const html = event.clipboardData?.getData("text/html") ?? "";
 	const text = event.clipboardData?.getData("text/plain") ?? "";
+	const normalizedText = normalizePastedPlainText(text);
 
-	if (html.trim() || !text.trim() || !looksLikeMarkdown(text)) {
+	if (
+		html.trim() ||
+		!normalizedText.trim() ||
+		!looksLikeMarkdown(normalizedText)
+	) {
 		return false;
 	}
 
 	try {
-		const document = parseMarkdownToDocument(text, view.state.schema);
+		const document = parseMarkdownToDocument(normalizedText, view.state.schema);
 		const slice = new Slice(document.content, 0, 0);
 
-		view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView());
+		view.dispatch(
+			view.state.tr
+				.replaceSelection(normalizePastedSlice(slice, view.state.schema))
+				.scrollIntoView(),
+		);
 		return true;
 	} catch {
 		return false;

@@ -4673,6 +4673,23 @@ ipcMain.handle("app:write-clipboard-text", async (_event, value) => {
 	return { ok: true };
 });
 
+ipcMain.handle("app:write-clipboard-rich-text", async (_event, payload) => {
+	if (
+		!payload ||
+		typeof payload !== "object" ||
+		typeof payload.html !== "string" ||
+		typeof payload.text !== "string"
+	) {
+		throw new Error("Clipboard payload must include html and text strings.");
+	}
+
+	clipboard.write({
+		html: payload.html,
+		text: payload.text,
+	});
+	return { ok: true };
+});
+
 ipcMain.handle("app:load-transcript-draft", async (_event, noteKey) => {
 	if (typeof noteKey !== "string" || !noteKey.trim()) {
 		throw new Error("Transcript draft key must be a non-empty string.");

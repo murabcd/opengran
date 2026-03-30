@@ -276,6 +276,12 @@ declare global {
 			writeClipboardText: (value: string) => Promise<{
 				ok: boolean;
 			}>;
+			writeClipboardRichText: (payload: {
+				html: string;
+				text: string;
+			}) => Promise<{
+				ok: boolean;
+			}>;
 			loadTranscriptDraft: (noteKey: string) => Promise<{
 				draft: {
 					version: number;

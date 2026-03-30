@@ -18,27 +18,175 @@ body {
 	overscroll-behavior-y: none;
 }
 
-.note-tiptap {
-	caret-color: #f2ebde;
+:root {
+	--note-selection-background: rgb(180 198 255 / 38%);
 }
 
-.note-tiptap .ProseMirror {
+.dark {
+	--note-selection-background: rgb(110 130 220 / 32%);
+}
+
+.note-tiptap {
+	caret-color: currentColor;
+}
+
+.note-tiptap.ProseMirror {
 	position: relative;
 	white-space: pre-wrap;
 	word-wrap: break-word;
 	color: inherit;
+	font-family: var(--font-sans);
+	font-size: 1rem;
+	line-height: 1.6;
 }
 
-.note-tiptap .ProseMirror:focus {
+.note-tiptap.ProseMirror:focus {
 	outline: none;
 }
 
-.note-tiptap .ProseMirror p {
-	margin: 0;
+:where(.note-tiptap.ProseMirror, .note-streamdown) > :first-child {
+	margin-top: 0;
 }
 
-.note-tiptap ::selection {
-	background: rgb(240 234 223 / 18%);
+:where(.note-tiptap.ProseMirror, .note-streamdown) > :last-child {
+	margin-bottom: 0;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(p) {
+	margin: 0 0 0.5rem;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown)
+	:where(h1, h2, h3, h4, h5, h6) {
+	margin: 1rem 0 0.5rem;
+	font-weight: 700;
+	letter-spacing: -0.025em;
+	line-height: 1.25;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(h1) {
+	font-size: 1.875rem;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(h2) {
+	font-size: 1.5rem;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(h3) {
+	font-size: 1.25rem;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(h4) {
+	font-size: 1.125rem;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(h5) {
+	font-size: 1.125rem;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(h6) {
+	font-size: 1rem;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(ul, ol) {
+	margin: 0 0 0.75rem;
+	padding-left: 2rem;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(ul) {
+	list-style: disc;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(ol) {
+	list-style: decimal;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown)
+	:where(ul ul, ul ol, ol ul, ol ol) {
+	margin-top: 0.25rem;
+	margin-bottom: 0.25rem;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(li) {
+	margin: 0.125rem 0;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(blockquote) {
+	margin: 1rem 0;
+	border-left: 1px solid var(--border);
+	padding-left: 1rem;
+	color: var(--muted-foreground);
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(code) {
+	border: 1px solid var(--border);
+	border-radius: 0.375rem;
+	background-color: var(--muted);
+	padding: 0.125rem 0.375rem;
+	font-family:
+		"SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono",
+		"Courier New", monospace;
+	font-size: 0.9em;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(pre) {
+	margin: 1rem 0;
+	overflow-x: auto;
+	border: 1px solid var(--border);
+	border-radius: 0.75rem;
+	background-color: var(--muted);
+	padding: 1rem;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(pre code) {
+	border: 0;
+	background: transparent;
+	padding: 0;
+	font-size: 0.95rem;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(hr) {
+	margin: 1.25rem 0;
+	border: 0;
+	border-top: 1px solid var(--border);
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(a) {
+	color: var(--primary);
+	text-decoration: underline;
+	text-underline-offset: 0.15em;
+}
+
+:where(.note-tiptap.ProseMirror, .note-streamdown) :where(strong) {
+	font-weight: 600;
+}
+
+.note-tiptap.ProseMirror ul[data-type="taskList"] {
+	list-style: none;
+	padding-left: 0.25rem;
+}
+
+.note-tiptap.ProseMirror ul[data-type="taskList"] li {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.625rem;
+}
+
+.note-tiptap.ProseMirror ul[data-type="taskList"] li > label {
+	margin-top: 0.2rem;
+	flex: 0 0 auto;
+	user-select: none;
+}
+
+.note-tiptap.ProseMirror ul[data-type="taskList"] li > div {
+	flex: 1 1 auto;
+}
+
+:where(.note-title, .note-tiptap, .note-streamdown)::selection,
+:where(.note-title, .note-tiptap, .note-streamdown) *::selection {
+	background: var(--note-selection-background);
+	color: inherit;
+	-webkit-text-fill-color: currentColor;
 }
 
 .note-tiptap p.is-editor-empty:first-child::before {
@@ -51,31 +199,9 @@ body {
 
 .note-streamdown {
 	color: inherit;
-}
-
-.note-streamdown :where(p) {
-	margin: 0 0 0.75rem;
-}
-
-.note-streamdown :where(ul, ol) {
-	margin: 0 0 0.75rem;
-	padding-left: 1.5rem;
-}
-
-.note-streamdown :where(li) {
-	margin-bottom: 0.25rem;
-}
-
-.note-streamdown :where(h1, h2, h3, h4, h5, h6) {
-	margin: 0 0 0.75rem;
-	font-weight: 600;
-}
-
-.note-streamdown :where(blockquote) {
-	border-left: 1px solid hsl(var(--border));
-	color: hsl(var(--muted-foreground));
-	margin: 1rem 0;
-	padding-left: 1rem;
+	font-family: var(--font-sans);
+	font-size: 1rem;
+	line-height: 1.6;
 }
 
 .onboarding-confetti-canvas {

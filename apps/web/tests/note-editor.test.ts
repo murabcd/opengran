@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	createNoteEditorExtensions,
 	looksLikeMarkdown,
+	normalizePastedPlainText,
 	parseStoredNoteContent,
 	serializeDocumentToMarkdown,
 } from "../src/lib/note-editor";
@@ -54,6 +55,92 @@ describe("note editor markdown bridge", () => {
 		);
 	});
 
+	it("upgrades legacy bold-paragraph section titles into headings", () => {
+		const parsed = parseStoredNoteContent(
+			JSON.stringify({
+				type: "doc",
+				content: [
+					{
+						type: "paragraph",
+						content: [
+							{
+								type: "text",
+								text: "Context",
+								marks: [{ type: "bold" }],
+							},
+						],
+					},
+					{
+						type: "bulletList",
+						content: [
+							{
+								type: "listItem",
+								content: [
+									{
+										type: "paragraph",
+										content: [{ type: "text", text: "First item" }],
+									},
+								],
+							},
+						],
+					},
+				],
+			}),
+			schema,
+		);
+
+		expect(parsed.content?.[0]).toMatchObject({
+			type: "heading",
+			attrs: { level: 2 },
+			content: [{ type: "text", text: "Context" }],
+		});
+	});
+
+	it("does not promote nested list paragraphs into headings", () => {
+		const parsed = parseStoredNoteContent(
+			JSON.stringify({
+				type: "doc",
+				content: [
+					{
+						type: "bulletList",
+						content: [
+							{
+								type: "listItem",
+								content: [
+									{
+										type: "paragraph",
+										content: [{ type: "text", text: "Parent item" }],
+									},
+									{
+										type: "bulletList",
+										content: [
+											{
+												type: "listItem",
+												content: [
+													{
+														type: "paragraph",
+														content: [{ type: "text", text: "Nested item" }],
+													},
+												],
+											},
+										],
+									},
+								],
+							},
+						],
+					},
+				],
+			}),
+			schema,
+		);
+
+		expect(parsed.content?.[0]?.type).toBe("bulletList");
+		expect(parsed.content?.[0]?.content?.[0]?.content?.[0]).toMatchObject({
+			type: "paragraph",
+			content: [{ type: "text", text: "Parent item" }],
+		});
+	});
+
 	it("serializes tiptap documents back to markdown", () => {
 		const document = schema.nodeFromJSON({
 			type: "doc",
@@ -98,5 +185,13 @@ describe("note editor markdown bridge", () => {
 		expect(looksLikeMarkdown("Plain note sentence with no formatting")).toBe(
 			false,
 		);
+	});
+
+	it("normalizes rich-looking plain text before markdown parsing", () => {
+		expect(
+			normalizePastedPlainText(
+				"Context product\n• First point\n• Second point",
+			),
+		).toBe("## Context product\n- First point\n- Second point");
 	});
 });
