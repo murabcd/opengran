@@ -207,11 +207,13 @@ const useNoteComposerController = ({
 				}
 			: "skip",
 	);
+	const userPreferences = useQuery(api.userPreferences.get, {});
 	const transcriptSession = useNoteTranscriptSession({
 		autoStartTranscription,
 		noteId,
 		onAutoStartTranscriptionHandled,
 		onEnhanceTranscript,
+		transcriptionLanguage: userPreferences?.transcriptionLanguage ?? null,
 	});
 
 	const transport = React.useMemo(
@@ -313,6 +315,7 @@ const useNoteComposerController = ({
 	const hasMessage = message.trim().length > 0;
 	const canGenerateNotes =
 		transcriptSession.hasPendingGenerateTranscript &&
+		!transcriptSession.hasGeneratedLatestTranscript &&
 		!transcriptSession.isSpeechListening &&
 		!isTranscriptOpen &&
 		!transcriptSession.isRefiningTranscript;
@@ -668,6 +671,7 @@ const useNoteComposerController = ({
 		setReactionsByMessageId,
 		shouldShowInlinePanel,
 		textareaRef,
+		transcriptionLanguage: userPreferences?.transcriptionLanguage ?? null,
 		onSystemAudioRecordingReady: transcriptSession.onSystemAudioRecordingReady,
 		onTranscriptUtterance: transcriptSession.onTranscriptUtterance,
 	};
@@ -684,6 +688,7 @@ function NoteSpeechControls({
 	onRecoveryStatusChange,
 	onTranscriptListeningChange,
 	onTranscriptUtterance,
+	transcriptionLanguage,
 }: {
 	autoStartKey?: string | number | null;
 	captureScopeKey: string;
@@ -700,6 +705,7 @@ function NoteSpeechControls({
 	onRecoveryStatusChange: (status: TranscriptRecoveryStatus) => void;
 	onTranscriptListeningChange: (isListening: boolean) => void;
 	onTranscriptUtterance: (utterance: TranscriptUtterance) => void;
+	transcriptionLanguage?: string | null;
 }) {
 	return (
 		<div className="flex items-center gap-2">
@@ -707,6 +713,7 @@ function NoteSpeechControls({
 				variant="outline"
 				size="icon"
 				autoStartKey={autoStartKey}
+				lang={transcriptionLanguage}
 				scopeKey={captureScopeKey}
 				className="shrink-0 rounded-full"
 				onListeningChange={onTranscriptListeningChange}
@@ -1566,6 +1573,7 @@ function NoteComposerDock({
 			onRecoveryStatusChange={controller.onRecoveryStatusChange}
 			onTranscriptListeningChange={controller.onTranscriptListeningChange}
 			onTranscriptUtterance={controller.onTranscriptUtterance}
+			transcriptionLanguage={controller.transcriptionLanguage}
 		/>
 	);
 

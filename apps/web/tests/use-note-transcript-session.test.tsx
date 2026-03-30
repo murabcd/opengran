@@ -3,6 +3,7 @@ import * as React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const useTranscriptSessionRepositoryMock = vi.fn();
+const stopTranscriptionSessionMock = vi.fn();
 
 vi.mock("../src/hooks/use-sticky-scroll-to-bottom", () => ({
 	useStickyScrollToBottom: () => ({
@@ -20,9 +21,19 @@ vi.mock("../src/lib/transcript-refinement-service", () => ({
 	refineSystemAudioTranscript: vi.fn(),
 }));
 
+vi.mock("../src/lib/transcription-session-manager", () => ({
+	transcriptionSessionManager: {
+		controller: {
+			stop: stopTranscriptionSessionMock,
+		},
+	},
+}));
+
 describe("useNoteTranscriptSession", () => {
 	beforeEach(() => {
 		useTranscriptSessionRepositoryMock.mockReset();
+		stopTranscriptionSessionMock.mockReset();
+		window.openGranDesktop = undefined;
 	});
 
 	it("hydrates the latest stored transcript session in StrictMode", async () => {
@@ -75,5 +86,65 @@ describe("useNoteTranscriptSession", () => {
 
 		expect(result.current.fullTranscript).toContain("Raz, dva, tri");
 		expect(result.current.isSpeechListening).toBe(false);
+	});
+
+	it("stops an auto-started desktop capture when the meeting signal disappears", async () => {
+		let meetingDetectionListener:
+			| ((state: DesktopMeetingDetectionState) => void)
+			| null = null;
+
+		window.openGranDesktop = {
+			onMeetingDetectionState: (listener) => {
+				meetingDetectionListener = listener;
+				return () => {
+					meetingDetectionListener = null;
+				};
+			},
+		} as Window["openGranDesktop"];
+
+		useTranscriptSessionRepositoryMock.mockReturnValue({
+			appendUtterance: vi.fn(),
+			clearDraft: vi.fn(),
+			completeSession: vi.fn(),
+			latestTranscriptSession: null,
+			loadDraft: vi.fn().mockResolvedValue(null),
+			replaceSpeakerUtterances: vi.fn(),
+			saveDraft: vi.fn(),
+			setRefinementStatus: vi.fn(),
+			setSystemAudioSourceMode: vi.fn(),
+			startSession: vi.fn().mockResolvedValue("session-2"),
+		});
+
+		const { useNoteTranscriptSession } = await import(
+			"../src/hooks/use-note-transcript-session"
+		);
+
+		const { result } = renderHook(() =>
+			useNoteTranscriptSession({
+				autoStartTranscription: true,
+				noteId: "note-1" as never,
+			}),
+		);
+
+		result.current.onTranscriptListeningChange(true);
+
+		await waitFor(() => {
+			expect(result.current.isSpeechListening).toBe(true);
+		});
+
+		meetingDetectionListener?.({
+			candidateStartedAt: null,
+			confidence: 0,
+			dismissedUntil: null,
+			hasMeetingSignal: false,
+			isMicrophoneActive: false,
+			isSuppressed: true,
+			sourceName: null,
+			status: "idle",
+		});
+
+		await waitFor(() => {
+			expect(stopTranscriptionSessionMock).toHaveBeenCalledTimes(1);
+		});
 	});
 });

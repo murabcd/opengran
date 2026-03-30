@@ -17,6 +17,7 @@ type TranscriptDraftRecord = Awaited<ReturnType<typeof loadTranscriptDraft>>;
 
 type TranscriptSessionSnapshot = {
 	finalTranscript: string;
+	generatedNoteAt: number | null;
 	refinementError: string | null;
 	refinementStatus: "idle" | "running" | "completed" | "failed";
 	sessionId: Id<"transcriptSessions">;
@@ -51,6 +52,9 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 	const setTranscriptSessionSystemAudioSourceModeMutation = useMutation(
 		api.transcriptSessions.setSystemAudioSourceMode,
 	);
+	const markTranscriptSessionGeneratedMutation = useMutation(
+		api.transcriptSessions.markGenerated,
+	);
 	const replaceTranscriptSpeakerUtterancesMutation = useMutation(
 		api.transcriptSessions.replaceSpeakerUtterances,
 	);
@@ -72,6 +76,8 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 							finalTranscript:
 								latestTranscriptSessionQuery.session.finalTranscript?.trim() ||
 								"",
+							generatedNoteAt:
+								latestTranscriptSessionQuery.session.generatedNoteAt ?? null,
 							refinementError:
 								latestTranscriptSessionQuery.session.refinementError ?? null,
 							refinementStatus:
@@ -199,6 +205,14 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 		[replaceTranscriptSpeakerUtterancesMutation],
 	);
 
+	const markGenerated = React.useCallback(
+		async ({ sessionId }: { sessionId: Id<"transcriptSessions"> }) =>
+			await markTranscriptSessionGeneratedMutation({
+				sessionId,
+			}),
+		[markTranscriptSessionGeneratedMutation],
+	);
+
 	const loadDraft = React.useCallback(
 		async (noteKey: string): Promise<TranscriptDraftRecord> =>
 			await loadTranscriptDraft(noteKey),
@@ -238,6 +252,7 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 			completeSession,
 			latestTranscriptSession,
 			loadDraft,
+			markGenerated,
 			replaceSpeakerUtterances,
 			saveDraft,
 			setRefinementStatus,
@@ -250,6 +265,7 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 			completeSession,
 			latestTranscriptSession,
 			loadDraft,
+			markGenerated,
 			replaceSpeakerUtterances,
 			saveDraft,
 			setRefinementStatus,

@@ -40,6 +40,8 @@ export type LiveTranscriptState = Record<
 	LiveTranscriptEntry
 >;
 
+export const MAX_TRANSCRIPT_REFINEMENT_AUDIO_BYTES = 25 * 1024 * 1024;
+
 const STATIC_TRANSCRIPT_SPEAKER_LABELS: Record<TranscriptLiveSpeaker, string> =
 	{
 		you: "You",

@@ -37,6 +37,14 @@ const appConnectionOrgTypeValidator = v.union(
 );
 
 export default defineSchema({
+	userPreferences: defineTable({
+		ownerTokenIdentifier: v.string(),
+		transcriptionLanguage: v.union(v.string(), v.null()),
+		jobTitle: v.union(v.string(), v.null()),
+		companyName: v.union(v.string(), v.null()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_ownerTokenIdentifier", ["ownerTokenIdentifier"]),
 	calendarPreferences: defineTable({
 		ownerTokenIdentifier: v.string(),
 		showGoogleCalendar: v.boolean(),
@@ -277,6 +285,7 @@ export default defineSchema({
 		startedAt: v.number(),
 		endedAt: v.optional(v.number()),
 		finalTranscript: v.optional(v.string()),
+		generatedNoteAt: v.optional(v.number()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		lastRefinedAt: v.optional(v.number()),

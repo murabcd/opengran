@@ -54,6 +54,11 @@ export const handleRefineTranscriptAudioRequest = async (
 
 	const formData = await createFormDataRequest(request).formData();
 	const audioValue = formData.get("audio");
+	const langValue = formData.get("lang");
+	const language =
+		typeof langValue === "string" && langValue.trim()
+			? langValue.trim().toLowerCase()
+			: null;
 
 	if (!(audioValue instanceof File)) {
 		sendJson(response, 400, {
@@ -85,6 +90,9 @@ export const handleRefineTranscriptAudioRequest = async (
 	openAiFormData.append("model", "gpt-4o-transcribe-diarize");
 	openAiFormData.append("response_format", "diarized_json");
 	openAiFormData.append("chunking_strategy", "auto");
+	if (language) {
+		openAiFormData.append("language", language);
+	}
 
 	const transcriptionResponse = await fetch(
 		"https://api.openai.com/v1/audio/transcriptions",

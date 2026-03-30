@@ -53,6 +53,7 @@ declare global {
 		candidateStartedAt: number | null;
 		confidence: number;
 		dismissedUntil: number | null;
+		hasMeetingSignal: boolean;
 		isMicrophoneActive: boolean;
 		isSuppressed: boolean;
 		sourceName: string | null;

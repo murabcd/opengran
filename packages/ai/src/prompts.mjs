@@ -1,5 +1,27 @@
 const joinPromptSections = (sections) => sections.filter(Boolean).join(" ");
 
+const buildUserProfilePromptSection = ({
+	name = "",
+	jobTitle = "",
+	companyName = "",
+} = {}) => {
+	const profileLines = [
+		name.trim() ? `- Name: ${name.trim()}` : "",
+		jobTitle.trim() ? `- Job title: ${jobTitle.trim()}` : "",
+		companyName.trim() ? `- Company: ${companyName.trim()}` : "",
+	].filter(Boolean);
+
+	if (profileLines.length === 0) {
+		return "";
+	}
+
+	return [
+		"User profile context:",
+		...profileLines,
+		"Use this only as background context to tailor explanations and note assistance. Do not assume facts that are not stated by the user or available in note context.",
+	].join("\n");
+};
+
 export const BASE_CHAT_SYSTEM_PROMPT = joinPromptSections([
 	"You are OpenGran AI, a concise assistant for meeting notes and chat.",
 	"Answer clearly and directly.",
@@ -19,6 +41,7 @@ export const CHAT_TITLE_SYSTEM_PROMPT = joinPromptSections([
 export const buildChatSystemPrompt = ({
 	notesContext = "",
 	attachedNoteContext = "",
+	userProfileContext = {},
 	webSearchEnabled = false,
 } = {}) =>
 	webSearchEnabled
@@ -26,6 +49,7 @@ export const buildChatSystemPrompt = ({
 				BASE_CHAT_SYSTEM_PROMPT,
 				notesContext,
 				attachedNoteContext,
+				buildUserProfilePromptSection(userProfileContext),
 				"Web search is enabled.",
 				"Use web search when the answer would benefit from up-to-date or verifiable information.",
 				"When you use web search, rely on the tool results instead of making up citations.",
@@ -34,6 +58,7 @@ export const buildChatSystemPrompt = ({
 				BASE_CHAT_SYSTEM_PROMPT,
 				notesContext,
 				attachedNoteContext,
+				buildUserProfilePromptSection(userProfileContext),
 			]);
 
 export const ENHANCED_NOTE_SYSTEM_PROMPT = joinPromptSections([

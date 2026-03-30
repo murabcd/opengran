@@ -1,6 +1,7 @@
 import {
 	createDiarizedSpeakerUtterances,
 	createRefinedSpeakerUtterances,
+	MAX_TRANSCRIPT_REFINEMENT_AUDIO_BYTES,
 	type TranscriptUtterance,
 } from "@/lib/transcript";
 import {
@@ -23,6 +24,7 @@ type RefineSystemAudioTranscriptArgs = {
 	blob: Blob;
 	currentUtterances: TranscriptUtterance[];
 	endedAt: number;
+	language?: string | null;
 	startedAt: number;
 };
 
@@ -38,6 +40,7 @@ export const refineSystemAudioTranscript = async ({
 	blob,
 	currentUtterances,
 	endedAt,
+	language,
 	startedAt,
 }: RefineSystemAudioTranscriptArgs): Promise<RefinedSystemAudioTranscript | null> => {
 	const systemTrackUtterances = currentUtterances.filter(
@@ -51,8 +54,15 @@ export const refineSystemAudioTranscript = async ({
 		return null;
 	}
 
+	if (blob.size > MAX_TRANSCRIPT_REFINEMENT_AUDIO_BYTES) {
+		return null;
+	}
+
 	const formData = new FormData();
 	formData.append("audio", blob, "system-audio.webm");
+	if (language) {
+		formData.append("lang", language);
+	}
 	const response = await fetch("/api/refine-transcript-audio", {
 		method: "POST",
 		body: formData,

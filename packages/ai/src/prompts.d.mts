@@ -6,6 +6,11 @@ export declare const APPLY_TEMPLATE_SYSTEM_PROMPT: string;
 export declare function buildChatSystemPrompt(options?: {
 	notesContext?: string;
 	attachedNoteContext?: string;
+	userProfileContext?: {
+		name?: string | null;
+		jobTitle?: string | null;
+		companyName?: string | null;
+	};
 	webSearchEnabled?: boolean;
 }): string;
 

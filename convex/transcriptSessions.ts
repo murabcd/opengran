@@ -44,6 +44,7 @@ const transcriptSessionFields = {
 	startedAt: v.number(),
 	endedAt: v.optional(v.number()),
 	finalTranscript: v.optional(v.string()),
+	generatedNoteAt: v.optional(v.number()),
 	createdAt: v.number(),
 	updatedAt: v.number(),
 	lastRefinedAt: v.optional(v.number()),
@@ -223,6 +224,7 @@ export const startSession = mutation({
 			startedAt: now,
 			endedAt: undefined,
 			finalTranscript: undefined,
+			generatedNoteAt: undefined,
 			createdAt: now,
 			updatedAt: now,
 			lastRefinedAt: undefined,
@@ -346,6 +348,25 @@ export const setSystemAudioSourceMode = mutation({
 
 		await ctx.db.patch(args.sessionId, {
 			systemAudioSourceMode: args.systemAudioSourceMode,
+			updatedAt: now,
+		});
+
+		return null;
+	},
+});
+
+export const markGenerated = mutation({
+	args: {
+		sessionId: v.id("transcriptSessions"),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		await requireOwnedSession(ctx, ownerTokenIdentifier, args.sessionId);
+		const now = Date.now();
+
+		await ctx.db.patch(args.sessionId, {
+			generatedNoteAt: now,
 			updatedAt: now,
 		});
 

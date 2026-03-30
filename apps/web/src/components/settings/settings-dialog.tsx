@@ -42,8 +42,11 @@ import { Label } from "@workspace/ui/components/label";
 import {
 	Select,
 	SelectContent,
+	SelectGroup,
 	SelectItem,
+	SelectLabel,
 	SelectTrigger,
+	SelectValue,
 } from "@workspace/ui/components/select";
 import {
 	Sidebar,
@@ -73,6 +76,13 @@ import { toast } from "sonner";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { authClient } from "@/lib/auth-client";
 import { getAvatarSrc } from "@/lib/avatar";
+import {
+	getTranscriptionLanguageSelectValue,
+	OTHER_TRANSCRIPTION_LANGUAGE_OPTIONS,
+	PRIMARY_TRANSCRIPTION_LANGUAGE_OPTIONS,
+	parseTranscriptionLanguageSelectValue,
+	TRANSCRIPTION_LANGUAGE_OPTIONS,
+} from "@/lib/transcription-languages";
 import type { WorkspaceRecord } from "@/lib/workspaces";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -399,6 +409,32 @@ export function SettingsDialog({
 
 function AppearanceSettings() {
 	const { theme, setTheme } = useTheme();
+	const userPreferences = useQuery(api.userPreferences.get, {});
+	const updateUserPreferences = useMutation(
+		api.userPreferences.update,
+	).withOptimisticUpdate((localStore, args) => {
+		const currentPreferences = localStore.getQuery(api.userPreferences.get, {});
+		localStore.setQuery(
+			api.userPreferences.get,
+			{},
+			{
+				transcriptionLanguage:
+					args.transcriptionLanguage !== undefined
+						? args.transcriptionLanguage
+						: (currentPreferences?.transcriptionLanguage ?? null),
+				jobTitle:
+					args.jobTitle !== undefined
+						? args.jobTitle
+						: (currentPreferences?.jobTitle ?? null),
+				companyName:
+					args.companyName !== undefined
+						? args.companyName
+						: (currentPreferences?.companyName ?? null),
+			},
+		);
+	});
+	const [isSavingLanguagePreference, setIsSavingLanguagePreference] =
+		useState(false);
 
 	const themeOptions = [
 		{
@@ -415,6 +451,24 @@ function AppearanceSettings() {
 		(theme === "system" && document.documentElement.classList.contains("dark"))
 			? "dark"
 			: "light";
+	const transcriptionLanguageValue = getTranscriptionLanguageSelectValue(
+		userPreferences?.transcriptionLanguage,
+	);
+
+	const handleTranscriptionLanguageChange = async (value: string) => {
+		setIsSavingLanguagePreference(true);
+
+		try {
+			await updateUserPreferences({
+				transcriptionLanguage: parseTranscriptionLanguageSelectValue(value),
+			});
+		} catch (error) {
+			console.error("Failed to update transcription language", error);
+			toast.error("Failed to update transcription language");
+		} finally {
+			setIsSavingLanguagePreference(false);
+		}
+	};
 
 	return (
 		<div className="py-4">
@@ -443,6 +497,55 @@ function AppearanceSettings() {
 									<span>{label}</span>
 								</SelectItem>
 							))}
+						</SelectContent>
+					</Select>
+				</Field>
+				<Field
+					orientation="responsive"
+					className="@md/field-group:items-start @md/field-group:has-[>[data-slot=field-content]]:items-start"
+				>
+					<FieldContent>
+						<Label>Transcription language</Label>
+					</FieldContent>
+					<Select
+						value={transcriptionLanguageValue}
+						onValueChange={(value) => {
+							void handleTranscriptionLanguageChange(value);
+						}}
+					>
+						<SelectTrigger
+							size="sm"
+							className="w-full cursor-pointer justify-between @md/field-group:w-56"
+							aria-label="Select transcription language"
+							disabled={isSavingLanguagePreference}
+						>
+							<SelectValue>
+								{TRANSCRIPTION_LANGUAGE_OPTIONS.find(
+									(option) => option.value === transcriptionLanguageValue,
+								)?.label ?? "Auto-detect"}
+							</SelectValue>
+						</SelectTrigger>
+						<SelectContent align="end" className="max-h-80">
+							<SelectGroup>
+								<SelectLabel>Suggested</SelectLabel>
+								{PRIMARY_TRANSCRIPTION_LANGUAGE_OPTIONS.map(
+									({ value, label }) => (
+										<SelectItem key={value} value={value}>
+											<span>{label}</span>
+										</SelectItem>
+									),
+								)}
+							</SelectGroup>
+							<SelectGroup>
+								<SelectLabel>More languages</SelectLabel>
+								{OTHER_TRANSCRIPTION_LANGUAGE_OPTIONS.map(
+									({ value, label }) => (
+										<SelectItem key={value} value={value}>
+											<span>{label}</span>
+										</SelectItem>
+									),
+								)}
+							</SelectGroup>
 						</SelectContent>
 					</Select>
 				</Field>
@@ -1546,11 +1649,38 @@ function ManageAccountForm({
 	onCancel: () => void;
 	onSave: (user: SettingsUser) => void;
 }) {
+	const userPreferences = useQuery(api.userPreferences.get, {});
+	const updateUserPreferences = useMutation(
+		api.userPreferences.update,
+	).withOptimisticUpdate((localStore, args) => {
+		const currentPreferences = localStore.getQuery(api.userPreferences.get, {});
+		localStore.setQuery(
+			api.userPreferences.get,
+			{},
+			{
+				transcriptionLanguage:
+					args.transcriptionLanguage !== undefined
+						? args.transcriptionLanguage
+						: (currentPreferences?.transcriptionLanguage ?? null),
+				jobTitle:
+					args.jobTitle !== undefined
+						? args.jobTitle
+						: (currentPreferences?.jobTitle ?? null),
+				companyName:
+					args.companyName !== undefined
+						? args.companyName
+						: (currentPreferences?.companyName ?? null),
+			},
+		);
+	});
 	const [formState, setFormState] = useState(() => ({
 		name: user.name,
 		avatar: user.avatar,
 		avatarPreview: user.avatar,
+		jobTitle: "",
+		companyName: "",
 	}));
+	const [isSavingPreferences, setIsSavingPreferences] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
@@ -1558,8 +1688,10 @@ function ManageAccountForm({
 			name: user.name,
 			avatar: user.avatar,
 			avatarPreview: user.avatar,
+			jobTitle: userPreferences?.jobTitle ?? "",
+			companyName: userPreferences?.companyName ?? "",
 		});
-	}, [user]);
+	}, [user, userPreferences?.companyName, userPreferences?.jobTitle]);
 
 	const initials = getInitials(formState.name, user.email);
 	const avatarSrc = getAvatarSrc({
@@ -1645,22 +1777,76 @@ function ManageAccountForm({
 					</Label>
 					<Input id="settings-email" value={user.email} disabled />
 				</Field>
+				<Field>
+					<Label
+						htmlFor="settings-job-title"
+						className={SETTINGS_LABEL_CLASSNAME}
+					>
+						Job title
+					</Label>
+					<Input
+						id="settings-job-title"
+						value={formState.jobTitle}
+						onChange={(event) => {
+							const nextJobTitle = event.target.value;
+							setFormState((current) => ({
+								...current,
+								jobTitle: nextJobTitle,
+							}));
+						}}
+						placeholder="Enter your job title"
+					/>
+				</Field>
+				<Field>
+					<Label
+						htmlFor="settings-company-name"
+						className={SETTINGS_LABEL_CLASSNAME}
+					>
+						Company
+					</Label>
+					<Input
+						id="settings-company-name"
+						value={formState.companyName}
+						onChange={(event) => {
+							const nextCompanyName = event.target.value;
+							setFormState((current) => ({
+								...current,
+								companyName: nextCompanyName,
+							}));
+						}}
+						placeholder="Enter your company name"
+					/>
+				</Field>
 			</FieldGroup>
 			<div className="flex justify-end gap-2 pt-6">
 				<Button variant="ghost" onClick={onCancel}>
 					Cancel
 				</Button>
 				<Button
-					onClick={() =>
-						onSave({
-							name: formState.name.trim() || user.name,
-							email: user.email,
-							avatar: formState.avatar,
-						})
-					}
-					disabled={!formState.name.trim()}
+					onClick={async () => {
+						setIsSavingPreferences(true);
+
+						try {
+							await updateUserPreferences({
+								jobTitle: formState.jobTitle.trim() || null,
+								companyName: formState.companyName.trim() || null,
+							});
+
+							onSave({
+								name: formState.name.trim() || user.name,
+								email: user.email,
+								avatar: formState.avatar,
+							});
+						} catch (error) {
+							console.error("Failed to update profile preferences", error);
+							toast.error("Failed to update profile");
+						} finally {
+							setIsSavingPreferences(false);
+						}
+					}}
+					disabled={!formState.name.trim() || isSavingPreferences}
 				>
-					Save
+					{isSavingPreferences ? "Saving..." : "Save"}
 				</Button>
 			</div>
 		</div>

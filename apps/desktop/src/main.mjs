@@ -117,6 +117,7 @@ const createInitialMeetingDetectionState = () => ({
 	candidateStartedAt: null,
 	confidence: 0,
 	dismissedUntil: null,
+	hasMeetingSignal: false,
 	isMicrophoneActive: false,
 	isSuppressed: false,
 	sourceName: null,
@@ -929,6 +930,11 @@ const syncMeetingDetectionState = (patch) => {
 	latestMeetingDetectionState = {
 		...latestMeetingDetectionState,
 		...patch,
+		hasMeetingSignal:
+			Boolean(
+				patch?.isMicrophoneActive ??
+					latestMeetingDetectionState.isMicrophoneActive,
+			) || hasFreshBrowserMeetingSignal(),
 	};
 
 	broadcastToDesktopWindows({

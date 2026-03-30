@@ -526,6 +526,7 @@ const useNotePageController = ({
 	}, [externalTitle, noteId, title]);
 
 	React.useEffect(() => {
+		void title;
 		const element = titleTextareaRef.current;
 		if (!element) {
 			return;
@@ -533,7 +534,7 @@ const useNotePageController = ({
 
 		element.style.height = "auto";
 		element.style.height = `${element.scrollHeight}px`;
-	}, []);
+	}, [title]);
 
 	const copyText = React.useCallback(async () => {
 		if (!editor) {
@@ -980,14 +981,28 @@ const useNotePageController = ({
 				const nextContent = JSON.stringify(nextDocument);
 				const nextSearchableText = structuredNoteToSearchableText(enhancedNote);
 				const nextTitle = enhancedNote.title.trim() || title;
+				const nextNoteId = nextNoteIdRef.current ?? noteId;
+				if (!nextNoteId) {
+					return;
+				}
+				const saveSnapshot = JSON.stringify({
+					title: nextTitle,
+					content: nextContent,
+					searchableText: nextSearchableText,
+				});
 
 				editor.commands.setContent(nextDocument, { emitUpdate: false });
 				setTitle(nextTitle);
 				setContent(nextContent);
 				setSearchableText(nextSearchableText);
+				await flushSave(nextNoteId, saveSnapshot, {
+					title: nextTitle,
+					content: nextContent,
+					searchableText: nextSearchableText,
+				});
 				await setNoteTemplate({
 					workspaceId: activeWorkspaceId,
-					id: nextNoteIdRef.current ?? noteId,
+					id: nextNoteId,
 					templateSlug: "enhanced",
 				});
 				toast.success("Structured notes ready");
@@ -1000,6 +1015,7 @@ const useNotePageController = ({
 			activeWorkspaceId,
 			noteId,
 			editor,
+			flushSave,
 			requestStructuredNote,
 			searchableText,
 			setNoteTemplate,

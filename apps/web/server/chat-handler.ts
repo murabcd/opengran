@@ -496,6 +496,11 @@ export const handleChatRequest = async (
 					title: noteContext?.title,
 					text: noteContext?.text,
 				});
+	const userProfileContext = convexClient
+		? await convexClient
+				.query(api.userPreferences.getAiProfileContext, {})
+				.catch(() => null)
+		: null;
 	const selectedAppConnections = appsEnabled
 		? await getSelectedAppConnections({
 				convexToken,
@@ -532,6 +537,7 @@ export const handleChatRequest = async (
 	const systemPrompt = `${buildChatSystemPrompt({
 		notesContext,
 		attachedNoteContext,
+		userProfileContext: userProfileContext ?? undefined,
 		webSearchEnabled,
 	})}${
 		trackerConnection
