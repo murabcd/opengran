@@ -98,7 +98,7 @@ export function SharedNotePage({
 								readOnly
 								placeholder="New note"
 								aria-label="Note title"
-								className="note-title h-auto border-0 !bg-transparent px-0 py-0 text-3xl font-semibold leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
+								className="note-title h-auto border-0 !bg-transparent px-0 py-0 text-3xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
 							/>
 
 							<EditorContent
