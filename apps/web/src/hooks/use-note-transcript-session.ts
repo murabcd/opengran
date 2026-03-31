@@ -604,6 +604,7 @@ export const useNoteTranscriptSession = ({
 				activeTranscriptSessionId ??
 				lastCompletedTranscriptSessionIdRef.current;
 			const currentUtterances = transcriptUtterancesRef.current;
+			const fallbackTranscript = createTranscriptText(currentUtterances);
 			const systemTrackUtterances = currentUtterances.filter(
 				(utterance) =>
 					utterance.speaker !== "you" &&
@@ -633,6 +634,10 @@ export const useNoteTranscriptSession = ({
 				});
 
 				if (!refinedTranscript) {
+					if (fallbackTranscript) {
+						setPendingGenerateTranscript(fallbackTranscript);
+					}
+
 					await transcriptSessionRepository.setRefinementStatus({
 						sessionId,
 						status: "completed",
