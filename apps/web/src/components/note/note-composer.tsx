@@ -8,6 +8,12 @@ import {
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupTextarea,
+} from "@workspace/ui/components/input-group";
+import {
 	Select,
 	SelectContent,
 	SelectGroup,
@@ -16,7 +22,6 @@ import {
 	SelectTrigger,
 } from "@workspace/ui/components/select";
 import { Sidebar, useSidebar } from "@workspace/ui/components/sidebar";
-import { Textarea } from "@workspace/ui/components/textarea";
 import {
 	Tooltip,
 	TooltipContent,
@@ -64,13 +69,10 @@ import { SpeechInput } from "../ai-elements/speech-input";
 type NoteChatPresentation = "inline" | "floating" | "sidebar";
 const NOTE_CHAT_MODEL = getChatModel("gpt-5.4-mini");
 const NOTE_CHAT_FLOATING_WIDTH = "min(28rem, calc(100vw - 2rem))";
-const POPOVER_FOOTER_SHELL_CLASS =
-	"w-full overflow-clip rounded-xl border border-border bg-card bg-clip-padding p-2.5 shadow-sm [--radius:1rem] transition-colors outline-none has-disabled:bg-card has-disabled:opacity-100 has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-3 has-[[data-slot=input-group-control]:focus-visible]:ring-ring/50 dark:bg-input/30 dark:has-disabled:bg-input/30";
-const POPOVER_FOOTER_LAYOUT_CLASS =
-	"grid [grid-template-areas:'header_header_header'_'leading_primary_trailing'_'._footer_.'] [grid-template-columns:auto_1fr_auto] [grid-template-rows:auto_1fr_auto]";
-const INLINE_POPOVER_FOOTER_CONTAINER_CLASS = "px-6 pb-4";
-const INLINE_TRANSCRIPT_CONSENT_CLASS =
-	"pointer-events-none absolute right-10 bottom-20 left-10 z-20";
+const INLINE_POPOVER_FOOTER_CONTAINER_CLASS = "px-6 pt-2 pb-4";
+const INLINE_POPOVER_DEFAULT_HEIGHT = 384;
+const INLINE_POPOVER_MIN_HEIGHT = 360;
+const INLINE_POPOVER_MAX_HEIGHT = 680;
 
 type NoteChatSummary = Pick<
 	Doc<"chats">,
@@ -178,6 +180,9 @@ const useNoteComposerController = ({
 		createDraftChatId(),
 	);
 	const [isPreparingRequest, setIsPreparingRequest] = React.useState(false);
+	const [inlinePanelHeight, setInlinePanelHeight] = React.useState(
+		INLINE_POPOVER_DEFAULT_HEIGHT,
+	);
 	const [reactionsByMessageId, setReactionsByMessageId] = React.useState<
 		Record<string, "like" | "dislike" | undefined>
 	>({});
@@ -307,6 +312,68 @@ const useNoteComposerController = ({
 		textareaRef.current.style.height = "auto";
 		textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
 	}, []);
+
+	const getInlinePanelMaxHeight = React.useCallback(() => {
+		if (typeof window === "undefined") {
+			return INLINE_POPOVER_MAX_HEIGHT;
+		}
+
+		return Math.max(
+			INLINE_POPOVER_MIN_HEIGHT,
+			Math.min(INLINE_POPOVER_MAX_HEIGHT, window.innerHeight - 112),
+		);
+	}, []);
+
+	const clampInlinePanelHeight = React.useCallback(
+		(nextHeight: number) => {
+			return Math.min(
+				getInlinePanelMaxHeight(),
+				Math.max(INLINE_POPOVER_MIN_HEIGHT, nextHeight),
+			);
+		},
+		[getInlinePanelMaxHeight],
+	);
+
+	React.useEffect(() => {
+		const handleWindowResize = () => {
+			setInlinePanelHeight((currentHeight) =>
+				clampInlinePanelHeight(currentHeight),
+			);
+		};
+
+		window.addEventListener("resize", handleWindowResize);
+		return () => {
+			window.removeEventListener("resize", handleWindowResize);
+		};
+	}, [clampInlinePanelHeight]);
+
+	const handleInlinePanelResizeStart = React.useCallback(
+		(event: React.PointerEvent<HTMLDivElement>) => {
+			if (event.button !== 0) {
+				return;
+			}
+
+			event.preventDefault();
+			const startY = event.clientY;
+			const startHeight =
+				inlinePanelRef.current?.getBoundingClientRect().height ??
+				inlinePanelHeight;
+
+			const handlePointerMove = (moveEvent: PointerEvent) => {
+				const nextHeight = startHeight + (startY - moveEvent.clientY);
+				setInlinePanelHeight(clampInlinePanelHeight(nextHeight));
+			};
+
+			const handlePointerUp = () => {
+				window.removeEventListener("pointermove", handlePointerMove);
+				window.removeEventListener("pointerup", handlePointerUp);
+			};
+
+			window.addEventListener("pointermove", handlePointerMove);
+			window.addEventListener("pointerup", handlePointerUp, { once: true });
+		},
+		[clampInlinePanelHeight, inlinePanelHeight],
+	);
 
 	const isChatOpen = panelMode === "chat";
 	const isTranscriptOpen = panelMode === "transcript";
@@ -644,6 +711,7 @@ const useNoteComposerController = ({
 		handleGenerateNotes: transcriptSession.handleGenerateNotes,
 		handleHideChat,
 		handleKeyDown,
+		getInlinePanelMaxHeight,
 		handleSelectChat,
 		handleSelectInlinePresentation,
 		handleSelectRightPresentation,
@@ -653,6 +721,7 @@ const useNoteComposerController = ({
 		systemAudioStatus: transcriptSession.systemAudioStatus,
 		recoveryStatus: transcriptSession.recoveryStatus,
 		inlinePanelRef,
+		inlinePanelHeight,
 		isChatLoading,
 		isChatOpen,
 		isGeneratingNotes: transcriptSession.isGeneratingNotes,
@@ -683,6 +752,7 @@ const useNoteComposerController = ({
 		transcriptionLanguage: userPreferences?.transcriptionLanguage ?? null,
 		onSystemAudioRecordingReady: transcriptSession.onSystemAudioRecordingReady,
 		onTranscriptUtterance: transcriptSession.onTranscriptUtterance,
+		handleInlinePanelResizeStart,
 	};
 };
 
@@ -719,12 +789,12 @@ function NoteSpeechControls({
 	return (
 		<div className="flex items-center gap-1">
 			<SpeechInput
-				variant="ghost"
+				variant="outline"
 				size="icon-sm"
 				autoStartKey={autoStartKey}
 				lang={transcriptionLanguage}
 				scopeKey={captureScopeKey}
-				className="shrink-0 rounded-full border-0 bg-transparent text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+				className="shrink-0 rounded-full border-input/50 !bg-transparent text-muted-foreground shadow-none hover:!bg-muted hover:text-foreground"
 				onListeningChange={onTranscriptListeningChange}
 				onLiveTranscriptChange={onLiveTranscriptChange}
 				onSystemAudioRecordingReady={onSystemAudioRecordingReady}
@@ -737,7 +807,7 @@ function NoteSpeechControls({
 				type="button"
 				variant="ghost"
 				size="icon-sm"
-				className="shrink-0 rounded-full border-0 bg-transparent text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+				className="shrink-0 rounded-full bg-transparent text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
 				aria-label="Expand speech controls"
 				onClick={onToggleTranscript}
 			>
@@ -1121,43 +1191,6 @@ function NoteChatHeader({
 	);
 }
 
-function InlinePopoverFooterShell({
-	className,
-	leading,
-	primary,
-	trailing,
-}: {
-	className?: string;
-	leading?: React.ReactNode;
-	primary?: React.ReactNode;
-	trailing?: React.ReactNode;
-}) {
-	return (
-		<div
-			className={cn(
-				POPOVER_FOOTER_SHELL_CLASS,
-				POPOVER_FOOTER_LAYOUT_CLASS,
-				className,
-			)}
-		>
-			<div className="flex items-center" style={{ gridArea: "leading" }}>
-				{leading}
-			</div>
-
-			<div
-				className="flex min-h-14 items-center overflow-x-hidden -my-2.5 px-1.5"
-				style={{ gridArea: "primary" }}
-			>
-				{primary}
-			</div>
-
-			<div className="flex items-center gap-2" style={{ gridArea: "trailing" }}>
-				{trailing}
-			</div>
-		</div>
-	);
-}
-
 function InlinePopoverFooterContainer({
 	children,
 }: {
@@ -1192,58 +1225,63 @@ function ChatInlinePopoverFooter({
 	textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
 	return (
-		<InlinePopoverFooterShell
-			leading={speechControls}
-			primary={
-				<div className="max-h-52 min-w-0 flex-1 overflow-auto">
-					<Textarea
-						data-slot="input-group-control"
-						ref={textareaRef}
-						value={message}
-						onChange={handleTextareaChange}
-						onFocus={activateInlineOnFocus ? handleComposerFocus : undefined}
-						onKeyDown={handleKeyDown}
-						placeholder={composerPlaceholder}
-						className="min-h-0 resize-none rounded-none border-0 !bg-transparent p-0 text-base placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0 dark:!bg-transparent"
-						rows={1}
-					/>
-				</div>
-			}
-			trailing={
-				<div className="ms-auto flex items-center gap-1.5">
-					<Button
-						type="submit"
-						variant="default"
-						size="icon-sm"
-						className="rounded-full"
-						aria-label="Send message"
-						disabled={!hasMessage || isChatLoading}
-					>
-						<ArrowUp className="size-4" />
-					</Button>
-				</div>
-			}
-		/>
+		<InputGroup className="min-h-[96px] overflow-hidden rounded-xl border-border bg-card bg-clip-padding shadow-sm has-disabled:bg-card has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30 [--radius:1rem]">
+			<InputGroupTextarea
+				data-slot="input-group-control"
+				ref={textareaRef}
+				value={message}
+				onChange={handleTextareaChange}
+				onFocus={activateInlineOnFocus ? handleComposerFocus : undefined}
+				onKeyDown={handleKeyDown}
+				placeholder={composerPlaceholder}
+				className="min-h-[40px] max-h-52 overflow-y-auto px-4 pt-2 pb-0 text-base placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+				rows={1}
+			/>
+			<InputGroupAddon align="block-end" className="gap-1 px-4 pb-2.5">
+				{speechControls}
+				<InputGroupButton
+					type="submit"
+					variant="default"
+					size="icon-sm"
+					className="ml-auto rounded-full"
+					aria-label="Send message"
+					disabled={!hasMessage || isChatLoading}
+				>
+					<ArrowUp className="size-4" />
+				</InputGroupButton>
+			</InputGroupAddon>
+		</InputGroup>
 	);
 }
 
 function TranscriptInlinePopoverFooter({
+	isSpeechListening,
 	speechControls,
 }: {
+	isSpeechListening: boolean;
 	speechControls: React.ReactNode;
 }) {
 	return (
-		<>
-			<div className={INLINE_TRANSCRIPT_CONSENT_CLASS}>
-				<div className="rounded-md bg-muted px-3 py-1.5 text-center text-xs text-muted-foreground">
-					Always get consent when transcribing others.
-				</div>
-			</div>
+		<InlinePopoverFooterContainer>
+			<div className="relative">
+				{isSpeechListening ? (
+					<div className="pointer-events-none absolute inset-x-4 bottom-full z-10 mb-2 rounded-lg bg-muted/70 px-4 py-1 text-center text-[11px] leading-4 text-muted-foreground/90">
+						Always get consent when transcribing others.
+					</div>
+				) : null}
 
-			<InlinePopoverFooterContainer>
-				<InlinePopoverFooterShell leading={speechControls} />
-			</InlinePopoverFooterContainer>
-		</>
+				<InputGroup className="min-h-[96px] overflow-hidden rounded-xl border-border bg-card bg-clip-padding shadow-sm has-disabled:bg-card has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30 [--radius:1rem]">
+					<div
+						aria-hidden="true"
+						className="h-[46px] w-full shrink-0 px-4 pt-2 pb-0"
+					/>
+					<InputGroupAddon align="block-end" className="gap-1 px-4 pb-2.5">
+						{speechControls}
+						<div aria-hidden="true" className="ml-auto size-8 shrink-0" />
+					</InputGroupAddon>
+				</InputGroup>
+			</div>
+		</InlinePopoverFooterContainer>
 	);
 }
 
@@ -1419,7 +1457,7 @@ function TranscriptPanelNoticeStack({
 					{controller.transcriptRefinementError}
 				</div>
 			) : null}
-			{shouldRenderInlineComposer ? null : (
+			{shouldRenderInlineComposer || !controller.isSpeechListening ? null : (
 				<div className="rounded-md bg-muted px-3 py-1.5 text-center text-xs text-muted-foreground">
 					Always get consent when transcribing others.
 				</div>
@@ -1506,6 +1544,7 @@ function NoteComposerTranscriptPanelContent({
 
 			{shouldRenderInlineComposer ? (
 				<TranscriptInlinePopoverFooter
+					isSpeechListening={controller.isSpeechListening}
 					speechControls={
 						<NoteComposerSpeechControls controller={controller} />
 					}
@@ -1575,7 +1614,20 @@ function NoteComposerPanels({
 				className="absolute inset-x-0 -bottom-4 z-20"
 			>
 				<div className="relative flex items-end gap-3">
-					<Card className="pointer-events-auto relative -mx-6 h-96 max-h-[calc(100dvh-6rem)] w-[calc(100%+3rem)] gap-0 py-0">
+					<Card
+						className="pointer-events-auto relative -mx-6 max-h-[calc(100dvh-6rem)] min-h-[20rem] w-[calc(100%+3rem)] gap-0 overflow-hidden py-0"
+						style={{
+							height: controller.inlinePanelHeight,
+							maxHeight: controller.getInlinePanelMaxHeight(),
+							minHeight: INLINE_POPOVER_MIN_HEIGHT,
+						}}
+					>
+						<div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-5 items-start justify-center">
+							<div
+								className="pointer-events-auto mt-1 h-1.5 w-16 cursor-row-resize rounded-full bg-border/80 transition-colors hover:bg-border"
+								onPointerDown={controller.handleInlinePanelResizeStart}
+							/>
+						</div>
 						{panelContent}
 					</Card>
 				</div>

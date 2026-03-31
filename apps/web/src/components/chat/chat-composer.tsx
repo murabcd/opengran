@@ -170,111 +170,126 @@ export function ChatComposer({
 			: selectedSourceIds.length === 1
 				? "1 scope"
 				: `${selectedSourceIds.length} scopes`;
+	const mentionPicker = (
+		<Popover
+			open={mentionPopoverOpen}
+			onOpenChange={onMentionPopoverOpenChange}
+		>
+			<Tooltip>
+				<TooltipTrigger
+					asChild
+					onFocusCapture={(event) => event.stopPropagation()}
+				>
+					<PopoverTrigger asChild>
+						<InputGroupButton
+							variant="outline"
+							size="icon-sm"
+							className="rounded-full transition-transform"
+						>
+							<AtSign />
+							<span className="sr-only">Mention a page</span>
+						</InputGroupButton>
+					</PopoverTrigger>
+				</TooltipTrigger>
+				<TooltipContent>Add context</TooltipContent>
+			</Tooltip>
+
+			<PopoverContent className="p-0 [--radius:1.2rem]" align="start">
+				<Command>
+					<CommandInput
+						placeholder="Search notes..."
+						value={documentSearchTerm}
+						onValueChange={onDocumentSearchTermChange}
+					/>
+					<CommandList>
+						{isNotesLoading ? (
+							<CommandGroup heading="Notes">
+								<ChatNoteListSkeleton />
+							</CommandGroup>
+						) : null}
+						<CommandEmpty>{emptyStateMessage}</CommandEmpty>
+						{mentionableDocuments.length > 0 ? (
+							<CommandGroup
+								heading={shouldSearchDocuments ? "Search results" : "Notes"}
+							>
+								{mentionableDocuments.map((document) => (
+									<CommandItem
+										key={document.id}
+										value={`${document.id} ${document.title}`}
+										onSelect={() => onAddMention(document.id)}
+									>
+										<document.icon />
+										<span className="truncate">{document.title}</span>
+									</CommandItem>
+								))}
+							</CommandGroup>
+						) : null}
+					</CommandList>
+				</Command>
+			</PopoverContent>
+		</Popover>
+	);
+	const showTopAddon = !hasMessages || mentions.length > 0;
 
 	return (
 		<div className={`mx-auto w-full max-w-xl ${hasMessages ? "mt-auto" : ""}`}>
 			<label htmlFor="chat-prompt" className="sr-only">
 				Prompt
 			</label>
-			<InputGroup className="min-h-[176px] max-h-[32rem] overflow-hidden rounded-xl border-border bg-card bg-clip-padding shadow-sm has-disabled:bg-card has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30 [--radius:1rem]">
-				<InputGroupAddon align="block-start" className="px-4 pt-4 pb-0">
-					<Popover
-						open={mentionPopoverOpen}
-						onOpenChange={onMentionPopoverOpenChange}
+			<InputGroup
+				className={`${hasMessages ? "min-h-[96px]" : "min-h-[148px]"} max-h-[32rem] overflow-hidden rounded-xl border-border bg-card bg-clip-padding shadow-sm has-disabled:bg-card has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30 [--radius:1rem]`}
+			>
+				{showTopAddon ? (
+					<InputGroupAddon
+						align="block-start"
+						className={`px-4 pb-0 ${hasMessages ? "pt-2.5" : "pt-4"}`}
 					>
-						<Tooltip>
-							<TooltipTrigger
-								asChild
-								onFocusCapture={(event) => event.stopPropagation()}
-							>
-								<PopoverTrigger asChild>
-									<InputGroupButton
-										variant="outline"
-										size="icon-sm"
-										className="rounded-full transition-transform"
-									>
-										<AtSign />
-										<span className="sr-only">Mention a page</span>
-									</InputGroupButton>
-								</PopoverTrigger>
-							</TooltipTrigger>
-							<TooltipContent>Add context</TooltipContent>
-						</Tooltip>
+						{!hasMessages ? mentionPicker : null}
+						{mentions.length > 0 ? (
+							<div className="no-scrollbar -m-1.5 flex gap-1 overflow-y-auto p-1.5">
+								{mentions.map((mentionId) => {
+									const document = contextPages.find(
+										(page) => page.id === mentionId,
+									);
 
-						<PopoverContent className="p-0 [--radius:1.2rem]" align="start">
-							<Command>
-								<CommandInput
-									placeholder="Search notes..."
-									value={documentSearchTerm}
-									onValueChange={onDocumentSearchTermChange}
-								/>
-								<CommandList>
-									{isNotesLoading ? (
-										<CommandGroup heading="Notes">
-											<ChatNoteListSkeleton />
-										</CommandGroup>
-									) : null}
-									<CommandEmpty>{emptyStateMessage}</CommandEmpty>
-									{mentionableDocuments.length > 0 ? (
-										<CommandGroup
-											heading={
-												shouldSearchDocuments ? "Search results" : "Notes"
-											}
+									if (!document) {
+										return null;
+									}
+
+									return (
+										<InputGroupButton
+											key={mentionId}
+											size="sm"
+											variant="secondary"
+											className="rounded-full pl-2!"
+											onClick={() => onRemoveMention(mentionId)}
 										>
-											{mentionableDocuments.map((document) => (
-												<CommandItem
-													key={document.id}
-													value={`${document.id} ${document.title}`}
-													onSelect={() => onAddMention(document.id)}
-												>
-													<document.icon />
-													<span className="truncate">{document.title}</span>
-												</CommandItem>
-											))}
-										</CommandGroup>
-									) : null}
-								</CommandList>
-							</Command>
-						</PopoverContent>
-					</Popover>
-
-					<div className="no-scrollbar -m-1.5 flex gap-1 overflow-y-auto p-1.5">
-						{mentions.map((mentionId) => {
-							const document = contextPages.find(
-								(page) => page.id === mentionId,
-							);
-
-							if (!document) {
-								return null;
-							}
-
-							return (
-								<InputGroupButton
-									key={mentionId}
-									size="sm"
-									variant="secondary"
-									className="rounded-full pl-2!"
-									onClick={() => onRemoveMention(mentionId)}
-								>
-									<document.icon />
-									{document.title}
-									<X />
-								</InputGroupButton>
-							);
-						})}
-					</div>
-				</InputGroupAddon>
+											<document.icon />
+											{document.title}
+											<X />
+										</InputGroupButton>
+									);
+								})}
+							</div>
+						) : null}
+					</InputGroupAddon>
+				) : null}
 
 				<InputGroupTextarea
 					id="chat-prompt"
 					value={draft}
 					onChange={(event) => onDraftChange(event.target.value)}
 					onKeyDown={onDraftKeyDown}
+					rows={hasMessages ? 1 : 3}
 					placeholder="Ask, search, or make anything..."
-					className="min-h-[92px] max-h-[24rem] overflow-y-auto px-4 pt-2 text-base placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+					className={`${hasMessages ? "min-h-[40px] pt-2 pb-0" : "min-h-[64px] pt-2"} max-h-[24rem] overflow-y-auto px-4 text-base placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0`}
 				/>
 
-				<InputGroupAddon align="block-end" className="gap-1 px-4 pb-4">
+				<InputGroupAddon
+					align="block-end"
+					className={`gap-1 px-4 ${hasMessages ? "pb-2.5" : "pb-4"}`}
+				>
+					{hasMessages ? mentionPicker : null}
 					<ModelPicker
 						open={modelPopoverOpen}
 						onOpenChange={onModelPopoverOpenChange}
