@@ -239,8 +239,74 @@ describe("NoteComposer", () => {
 			true,
 		);
 		expect(
+			screen.queryByRole("button", { name: "Add attachments" }),
+		).toBeNull();
+		expect(
 			screen.queryByRole("button", { name: "Audio visualization" }),
 		).toBeNull();
+	});
+
+	it("keeps the full chat title accessible from the selector trigger", async () => {
+		const fullTitle = "New chat for the quarterly planning table follow-up";
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 4;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: fullTitle,
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: fullTitle,
+				};
+			}
+
+			if (index === 3) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+
+		const selector = await screen.findByRole("combobox", {
+			name: "Select note chat",
+		});
+
+		expect(selector.getAttribute("title")).toBe(fullTitle);
 	});
 
 	it("closes the inline transcript panel on outside press without changing listening state", async () => {
@@ -310,6 +376,11 @@ describe("NoteComposer", () => {
 			expect(screen.getByText("Live transcript")).toBeDefined();
 		});
 
+		expect(screen.getByTestId("speech-input")).toBeDefined();
+		expect(
+			screen.getByRole("button", { name: "Expand speech controls" }),
+		).toBeDefined();
+
 		fireEvent.pointerDown(document.body);
 
 		await waitFor(() => {
@@ -317,6 +388,298 @@ describe("NoteComposer", () => {
 		});
 
 		expect(onTranscriptListeningChange).not.toHaveBeenCalled();
-		expect(screen.getByTestId("speech-input")).toBeDefined();
+		expect(screen.getAllByTestId("speech-input").length).toBeGreaterThan(0);
+	});
+
+	it("shows only speech controls in the inline transcript panel", async () => {
+		useNoteTranscriptSessionMock.mockReturnValue({
+			autoStartKey: null,
+			captureScopeKey: "note:note-1",
+			fullTranscript: "hello",
+			handleGenerateNotes: vi.fn(),
+			isGeneratingNotes: false,
+			isRefiningTranscript: false,
+			isSpeechListening: true,
+			liveTranscriptEntries: [],
+			onLiveTranscriptChange: vi.fn(),
+			onRecoveryStatusChange: vi.fn(),
+			onSystemAudioRecordingReady: vi.fn(),
+			onSystemAudioStatusChange: vi.fn(),
+			onTranscriptListeningChange: vi.fn(),
+			onTranscriptUtterance: vi.fn(),
+			orderedTranscriptUtterances: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
+			recoveryStatus: {
+				attempt: 0,
+				maxAttempts: 0,
+				message: null,
+				state: "idle",
+			},
+			systemAudioStatus: {
+				sourceMode: "display-media",
+				state: "ready",
+			},
+			transcriptRefinementError: null,
+			transcriptViewportRef: {
+				current: null,
+			},
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.click(
+			screen.getAllByRole("button", {
+				name: "Expand speech controls",
+			})[0],
+		);
+
+		await waitFor(() => {
+			expect(screen.getByText("Live transcript")).toBeDefined();
+		});
+
+		expect(screen.queryByPlaceholderText("Ask anything")).toBeNull();
+		expect(screen.queryByPlaceholderText("Continue chat")).toBeNull();
+		expect(
+			screen.getByRole("button", { name: "Expand speech controls" }),
+		).toBeDefined();
+	});
+
+	it("shows inline chat without speech controls", async () => {
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 4;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("combobox", { name: "Select note chat" }),
+			).toBeDefined();
+		});
+
+		expect(screen.getByPlaceholderText("Continue chat")).toBeDefined();
+		expect(
+			screen.queryByRole("button", { name: "Expand speech controls" }),
+		).toBeNull();
+	});
+
+	it("moves the inline chat composer text to the left when speech controls are hidden", async () => {
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 4;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+
+		const composerInput = await screen.findByPlaceholderText("Continue chat");
+		const composerFooter = composerInput.closest("form")?.parentElement;
+		const reservedSpeechSpacer = [...(composerFooter?.children ?? [])].find(
+			(element) =>
+				element instanceof HTMLDivElement &&
+				element.className.includes("w-[60px]"),
+		);
+
+		expect(composerFooter?.className).toContain("px-6 pb-4");
+		expect(reservedSpeechSpacer).toBeUndefined();
+	});
+
+	it("keeps the inline transcript controls pinned to the dock position", async () => {
+		useNoteTranscriptSessionMock.mockReturnValue({
+			autoStartKey: null,
+			captureScopeKey: "note:note-1",
+			fullTranscript: "hello",
+			handleGenerateNotes: vi.fn(),
+			isGeneratingNotes: false,
+			isRefiningTranscript: false,
+			isSpeechListening: true,
+			liveTranscriptEntries: [],
+			onLiveTranscriptChange: vi.fn(),
+			onRecoveryStatusChange: vi.fn(),
+			onSystemAudioRecordingReady: vi.fn(),
+			onSystemAudioStatusChange: vi.fn(),
+			onTranscriptListeningChange: vi.fn(),
+			onTranscriptUtterance: vi.fn(),
+			orderedTranscriptUtterances: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
+			recoveryStatus: {
+				attempt: 0,
+				maxAttempts: 0,
+				message: null,
+				state: "idle",
+			},
+			systemAudioStatus: {
+				sourceMode: "display-media",
+				state: "ready",
+			},
+			transcriptRefinementError: null,
+			transcriptViewportRef: {
+				current: null,
+			},
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.click(
+			screen.getAllByRole("button", {
+				name: "Expand speech controls",
+			})[0],
+		);
+
+		const inlineExpand = await screen.findByRole("button", {
+			name: "Expand speech controls",
+		});
+		const consentText = await screen.findByText(
+			"Always get consent when transcribing others.",
+		);
+		const controlsGroup = inlineExpand.closest("div");
+		const leadingArea = controlsGroup?.parentElement;
+		const footerSurface = leadingArea?.parentElement;
+		const footerSurfaceWrapper = footerSurface?.parentElement;
+
+		expect(controlsGroup?.className).toContain("flex");
+		expect(controlsGroup?.className).toContain("gap-1");
+		expect(leadingArea?.className).toContain("flex");
+		expect(leadingArea?.className).toContain("items-center");
+		expect(consentText).toBeDefined();
+		expect(footerSurface?.className).toContain("w-full");
+		expect(footerSurface?.className).toContain("border");
+		expect(footerSurface?.className).toContain("bg-card");
+		expect(footerSurface?.className).toContain("grid");
+		expect(footerSurfaceWrapper).not.toBeNull();
+		expect(footerSurfaceWrapper?.className).toContain("px-6");
+		expect(footerSurfaceWrapper?.className).toContain("pb-4");
 	});
 });

@@ -412,7 +412,7 @@ export function ChatPage({
 					) : null}
 
 					{controller.hasMessages ? (
-						<div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col pb-4">
+						<div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col pb-2">
 							<ChatMessages
 								messages={controller.messages}
 								error={controller.error}
