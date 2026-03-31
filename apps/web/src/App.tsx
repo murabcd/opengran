@@ -3276,6 +3276,9 @@ function HomeView({
 					) : (
 						<Empty className="max-w-xl">
 							<EmptyHeader>
+								<EmptyMedia variant="icon">
+									<FileText className="size-4" />
+								</EmptyMedia>
 								<EmptyTitle>Take your first note</EmptyTitle>
 								<EmptyDescription>
 									Your meeting notes will appear here
@@ -3312,22 +3315,36 @@ function SharedView({
 			<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
 				<section className="mx-auto w-full max-w-xl space-y-6">
 					<h1 className="text-lg md:text-xl">Shared with others</h1>
+					<Card className="overflow-hidden rounded-xl border-border py-0 shadow-sm">
+						<CardContent className="flex items-start justify-between gap-4 p-5">
+							<div>
+								<p className="text-5xl leading-none tracking-tight tabular-nums">
+									{sharedNotes?.length ?? 0}
+								</p>
+							</div>
+						</CardContent>
+					</Card>
 				</section>
-				<section className="flex justify-center py-8">
+				<section className="flex justify-center py-4">
 					{sharedNotes === undefined ? (
 						<SharedNotesSkeleton />
 					) : sharedNotes.length > 0 ? (
-						<SharedNotesList
-							notes={sharedNotes}
-							activeNoteId={currentNoteId}
-							activeNoteTitle={currentNoteTitle}
-							currentUser={currentUser}
-							onOpenNote={onOpenNote}
-							onNoteTrashed={onNoteTrashed}
-						/>
+						<div className="w-full max-w-xl">
+							<SharedNotesList
+								notes={sharedNotes}
+								activeNoteId={currentNoteId}
+								activeNoteTitle={currentNoteTitle}
+								currentUser={currentUser}
+								onOpenNote={onOpenNote}
+								onNoteTrashed={onNoteTrashed}
+							/>
+						</div>
 					) : (
 						<Empty className="max-w-xl">
 							<EmptyHeader>
+								<EmptyMedia variant="icon">
+									<FileText className="size-4" />
+								</EmptyMedia>
 								<EmptyTitle>No shared notes yet</EmptyTitle>
 								<EmptyDescription>
 									When you share a note with someone else, it will show up here

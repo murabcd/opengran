@@ -8,6 +8,7 @@ import {
 	Empty,
 	EmptyDescription,
 	EmptyHeader,
+	EmptyMedia,
 	EmptyTitle,
 } from "@workspace/ui/components/empty";
 import { Skeleton } from "@workspace/ui/components/skeleton";
@@ -154,6 +155,9 @@ export function ChatHistoryList({
 			) : (
 				<Empty className="max-w-xl">
 					<EmptyHeader>
+						<EmptyMedia variant="icon">
+							<MessageCircle className="size-4" />
+						</EmptyMedia>
 						<EmptyTitle>No chats yet</EmptyTitle>
 						<EmptyDescription>
 							Start a conversation and it will show up here
