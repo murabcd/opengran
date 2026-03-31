@@ -17,6 +17,31 @@ afterEach(() => {
 });
 
 describe("ChatMessages", () => {
+	it("renders user messages with a fully rounded bubble", async () => {
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "user-1",
+						role: "user",
+						parts: [
+							{
+								type: "text",
+								text: "Round this bubble",
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		expect(
+			screen.getByText("Round this bubble").parentElement?.className,
+		).toContain("rounded-3xl");
+	});
+
 	it("renders sources from structured tool output parts", async () => {
 		const user = userEvent.setup();
 		const { ChatMessages } = await import("../src/components/chat/messages");

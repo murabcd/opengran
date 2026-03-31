@@ -198,7 +198,7 @@ export function ChatMessages({
 										className={cn(
 											"flex flex-col gap-4 text-sm leading-6",
 											message.role === "user" &&
-												"rounded-tl-xl rounded-tr-xl rounded-bl-xl bg-secondary px-3 py-2 text-secondary-foreground",
+												"rounded-3xl bg-secondary px-3 py-2 text-secondary-foreground",
 										)}
 									>
 										{isStreamingAssistantMessage && isEmpty ? (
