@@ -5,6 +5,7 @@ import { internalMutation, internalQuery, query } from "./_generated/server";
 
 const yandexTrackerProviderValidator = v.literal("yandex-tracker");
 const yandexCalendarProviderValidator = v.literal("yandex-calendar");
+const jiraProviderValidator = v.literal("jira");
 const appConnectionStatusValidator = v.union(
 	v.literal("connected"),
 	v.literal("disconnected"),
@@ -33,6 +34,15 @@ const yandexCalendarConnectionSettingsValidator = v.object({
 	calendarHomePath: v.string(),
 });
 
+const jiraConnectionSettingsValidator = v.object({
+	sourceId: v.string(),
+	provider: jiraProviderValidator,
+	status: appConnectionStatusValidator,
+	displayName: v.string(),
+	baseUrl: v.string(),
+	email: v.string(),
+});
+
 const yandexCalendarCredentialsValidator = v.union(
 	v.object({
 		provider: yandexCalendarProviderValidator,
@@ -49,10 +59,10 @@ const appConnectionSourceValidator = v.object({
 	id: v.string(),
 	title: v.string(),
 	preview: v.string(),
-	provider: yandexTrackerProviderValidator,
+	provider: v.union(yandexTrackerProviderValidator, jiraProviderValidator),
 });
 
-const chatToolConnectionValidator = v.object({
+const yandexTrackerChatToolConnectionValidator = v.object({
 	sourceId: v.string(),
 	provider: yandexTrackerProviderValidator,
 	displayName: v.string(),
@@ -60,6 +70,20 @@ const chatToolConnectionValidator = v.object({
 	orgId: v.string(),
 	token: v.string(),
 });
+
+const jiraChatToolConnectionValidator = v.object({
+	sourceId: v.string(),
+	provider: jiraProviderValidator,
+	displayName: v.string(),
+	baseUrl: v.string(),
+	email: v.string(),
+	token: v.string(),
+});
+
+const chatToolConnectionValidator = v.union(
+	yandexTrackerChatToolConnectionValidator,
+	jiraChatToolConnectionValidator,
+);
 
 const APP_SOURCE_PREFIX = "app:";
 
@@ -82,6 +106,40 @@ type YandexCalendarConnectionSettings = {
 	calendarHomePath: string;
 };
 
+type JiraConnectionSettings = {
+	sourceId: string;
+	provider: "jira";
+	status: "connected" | "disconnected";
+	displayName: string;
+	baseUrl: string;
+	email: string;
+};
+
+type AppConnectionSource = {
+	id: string;
+	title: string;
+	preview: string;
+	provider: "jira" | "yandex-tracker";
+};
+
+type ChatToolConnection =
+	| {
+			sourceId: string;
+			provider: "yandex-tracker";
+			displayName: string;
+			orgType: "x-org-id" | "x-cloud-org-id";
+			orgId: string;
+			token: string;
+	  }
+	| {
+			sourceId: string;
+			provider: "jira";
+			displayName: string;
+			baseUrl: string;
+			email: string;
+			token: string;
+	  };
+
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
 
@@ -100,12 +158,31 @@ const toAppSourceId = (id: Id<"appConnections">) => `${APP_SOURCE_PREFIX}${id}`;
 const getProviderPreview = (connection: Doc<"appConnections">) =>
 	connection.provider === "yandex-calendar"
 		? connection.email ?? "Yandex Calendar"
+		: connection.provider === "jira"
+			? getJiraPreview(connection)
 		: `${connection.orgType === "x-org-id" ? "Yandex 360" : "Yandex Cloud"} • Org ${connection.orgId}`;
+
+const getJiraPreview = (connection: Doc<"appConnections">) => {
+	if (!connection.baseUrl) {
+		return connection.email ?? "Jira";
+	}
+
+	try {
+		const hostname = new URL(connection.baseUrl).hostname;
+		return connection.email
+			? `${hostname} • ${connection.email}`
+			: hostname;
+	} catch {
+		return connection.email
+			? `${connection.baseUrl} • ${connection.email}`
+			: connection.baseUrl;
+	}
+};
 
 const getOwnedConnection = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
-	provider: "yandex-calendar" | "yandex-tracker",
+	provider: "jira" | "yandex-calendar" | "yandex-tracker",
 ) =>
 	await ctx.db
 		.query("appConnections")
@@ -124,6 +201,58 @@ const getOwnedYandexCalendarConnection = async (
 	ownerTokenIdentifier: string,
 ) => await getOwnedConnection(ctx, ownerTokenIdentifier, "yandex-calendar");
 
+const getOwnedJiraConnection = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+) => await getOwnedConnection(ctx, ownerTokenIdentifier, "jira");
+
+const toChatToolConnection = (
+	connection: Doc<"appConnections"> | null,
+	ownerTokenIdentifier: string,
+): ChatToolConnection | null => {
+	if (
+		!connection ||
+		connection.ownerTokenIdentifier !== ownerTokenIdentifier ||
+		connection.status !== "connected"
+	) {
+		return null;
+	}
+
+	if (
+		connection.provider === "yandex-tracker" &&
+		connection.orgType &&
+		connection.orgId &&
+		connection.token
+	) {
+		return {
+			sourceId: toAppSourceId(connection._id),
+			provider: "yandex-tracker",
+			displayName: connection.displayName,
+			orgType: connection.orgType,
+			orgId: connection.orgId,
+			token: connection.token,
+		};
+	}
+
+	if (
+		connection.provider === "jira" &&
+		connection.baseUrl &&
+		connection.email &&
+		connection.token
+	) {
+		return {
+			sourceId: toAppSourceId(connection._id),
+			provider: "jira",
+			displayName: connection.displayName,
+			baseUrl: connection.baseUrl,
+			email: connection.email,
+			token: connection.token,
+		};
+	}
+
+	return null;
+};
+
 const normalizeConnectionId = (
 	ctx: QueryCtx | MutationCtx,
 	sourceId: string,
@@ -141,7 +270,7 @@ const normalizeConnectionId = (
 export const listSources = query({
 	args: {},
 	returns: v.array(appConnectionSourceValidator),
-	handler: async (ctx) => {
+	handler: async (ctx): Promise<AppConnectionSource[]> => {
 		const identity = await requireIdentity(ctx);
 		const connections = await ctx.db
 			.query("appConnections")
@@ -153,14 +282,25 @@ export const listSources = query({
 			.order("desc")
 			.take(20);
 
-		return connections
-			.filter((connection) => connection.provider === "yandex-tracker")
-			.map((connection) => ({
+		const sources: AppConnectionSource[] = [];
+
+		for (const connection of connections) {
+			if (
+				connection.provider !== "yandex-tracker" &&
+				connection.provider !== "jira"
+			) {
+				continue;
+			}
+
+			sources.push({
 				id: toAppSourceId(connection._id),
 				title: connection.displayName,
 				preview: getProviderPreview(connection),
-				provider: "yandex-tracker" as const,
-			}));
+				provider: connection.provider,
+			});
+		}
+
+		return sources;
 	},
 });
 
@@ -224,12 +364,37 @@ export const getYandexCalendar = query({
 	},
 });
 
+export const getJira = query({
+	args: {},
+	returns: v.union(jiraConnectionSettingsValidator, v.null()),
+	handler: async (ctx) => {
+		const identity = await requireIdentity(ctx);
+		const connection = await getOwnedJiraConnection(
+			ctx,
+			identity.tokenIdentifier,
+		);
+
+		if (!connection || !connection.baseUrl || !connection.email) {
+			return null;
+		}
+
+		return {
+			sourceId: toAppSourceId(connection._id),
+			provider: "jira" as const,
+			status: connection.status,
+			displayName: connection.displayName,
+			baseUrl: connection.baseUrl,
+			email: connection.email,
+		};
+	},
+});
+
 export const getSelectedForChat = query({
 	args: {
 		sourceIds: v.array(v.string()),
 	},
 	returns: v.array(chatToolConnectionValidator),
-	handler: async (ctx, args) => {
+	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
 		const identity = await requireIdentity(ctx);
 		const normalizedIds = args.sourceIds
 			.map((sourceId) => normalizeConnectionId(ctx, sourceId))
@@ -245,37 +410,20 @@ export const getSelectedForChat = query({
 			normalizedIds.map((id) => ctx.db.get(id)),
 		);
 
-		return connections.flatMap((connection) => {
-			if (
-				!connection ||
-				connection.ownerTokenIdentifier !== identity.tokenIdentifier ||
-				connection.status !== "connected" ||
-				connection.provider !== "yandex-tracker" ||
-				!connection.orgType ||
-				!connection.orgId ||
-				!connection.token
-			) {
-				return [];
-			}
-
-			return [
-				{
-					sourceId: toAppSourceId(connection._id),
-					provider: "yandex-tracker" as const,
-					displayName: connection.displayName,
-					orgType: connection.orgType,
-					orgId: connection.orgId,
-					token: connection.token,
-				},
-			];
-		});
+		return connections
+			.map((connection) =>
+				toChatToolConnection(connection, identity.tokenIdentifier),
+			)
+			.filter((connection): connection is ChatToolConnection =>
+				Boolean(connection),
+			);
 	},
 });
 
 export const getAllForChat = query({
 	args: {},
 	returns: v.array(chatToolConnectionValidator),
-	handler: async (ctx) => {
+	handler: async (ctx): Promise<ChatToolConnection[]> => {
 		const identity = await requireIdentity(ctx);
 		const connections = await ctx.db
 			.query("appConnections")
@@ -287,27 +435,13 @@ export const getAllForChat = query({
 			.order("desc")
 			.take(20);
 
-		return connections.flatMap((connection) => {
-			if (
-				connection.provider !== "yandex-tracker" ||
-				!connection.orgType ||
-				!connection.orgId ||
-				!connection.token
-			) {
-				return [];
-			}
-
-			return [
-				{
-					sourceId: toAppSourceId(connection._id),
-					provider: "yandex-tracker" as const,
-					displayName: connection.displayName,
-					orgType: connection.orgType,
-					orgId: connection.orgId,
-					token: connection.token,
-				},
-			];
-		});
+		return connections
+			.map((connection) =>
+				toChatToolConnection(connection, identity.tokenIdentifier),
+			)
+			.filter((connection): connection is ChatToolConnection =>
+				Boolean(connection),
+			);
 	},
 });
 
@@ -470,6 +604,67 @@ export const upsertYandexCalendar = internalMutation({
 			email,
 			serverAddress,
 			calendarHomePath,
+		};
+	},
+});
+
+export const upsertJira = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		baseUrl: v.string(),
+		email: v.string(),
+		token: v.string(),
+	},
+	returns: jiraConnectionSettingsValidator,
+	handler: async (ctx, args): Promise<JiraConnectionSettings> => {
+		const now = Date.now();
+		const baseUrl = args.baseUrl.trim();
+		const email = args.email.trim().toLowerCase();
+		const token = args.token.trim();
+		const existingConnection = await getOwnedJiraConnection(
+			ctx,
+			args.ownerTokenIdentifier,
+		);
+
+		if (existingConnection) {
+			await ctx.db.patch(existingConnection._id, {
+				status: "connected",
+				displayName: "Jira",
+				baseUrl,
+				email,
+				token,
+				updatedAt: now,
+			});
+
+			return {
+				sourceId: toAppSourceId(existingConnection._id),
+				provider: "jira" as const,
+				status: "connected" as const,
+				displayName: "Jira",
+				baseUrl,
+				email,
+			};
+		}
+
+		const id = await ctx.db.insert("appConnections", {
+			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			provider: "jira",
+			status: "connected",
+			displayName: "Jira",
+			baseUrl,
+			email,
+			token,
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		return {
+			sourceId: toAppSourceId(id),
+			provider: "jira" as const,
+			status: "connected" as const,
+			displayName: "Jira",
+			baseUrl,
+			email,
 		};
 	},
 });

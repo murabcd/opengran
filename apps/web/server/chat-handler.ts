@@ -20,6 +20,7 @@ import {
 	CHAT_TITLE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
 import { findChatModel, getChatModel } from "../src/lib/ai/models";
+import { getJiraIssue, searchJiraIssues } from "./jira";
 import { getTrackerIssue, searchTrackerIssues } from "./tracker";
 
 type ChatRequestBody = {
@@ -511,6 +512,10 @@ export const handleChatRequest = async (
 		selectedAppConnections.find(
 			(connection) => connection.provider === "yandex-tracker",
 		) ?? null;
+	const jiraConnection =
+		selectedAppConnections.find(
+			(connection) => connection.provider === "jira",
+		) ?? null;
 	const trackerTools = trackerConnection
 		? {
 				yandex_tracker_search: tool({
@@ -534,6 +539,29 @@ export const handleChatRequest = async (
 				}),
 			}
 		: {};
+	const jiraTools = jiraConnection
+		? {
+				jira_search: tool({
+					description:
+						"Search the selected Jira connection for project history, tickets, tasks, comments, assignees, status, and technical context when the request could plausibly be answered from Jira.",
+					inputSchema: z.object({
+						query: z.string().min(1),
+						limit: z.number().int().min(1).max(10).optional(),
+					}),
+					execute: async ({ query, limit }) =>
+						await searchJiraIssues(jiraConnection, query, limit ?? 5),
+				}),
+				jira_get_issue: tool({
+					description:
+						"Fetch a specific Jira issue by key when the user mentions a ticket like PROJ-123 or clearly refers to a known issue key.",
+					inputSchema: z.object({
+						issueKey: z.string().min(1),
+					}),
+					execute: async ({ issueKey }) =>
+						await getJiraIssue(jiraConnection, issueKey),
+				}),
+			}
+		: {};
 	const systemPrompt = `${buildChatSystemPrompt({
 		notesContext,
 		attachedNoteContext,
@@ -542,6 +570,10 @@ export const handleChatRequest = async (
 	})}${
 		trackerConnection
 			? `\n\nThe selected app source for this chat is Yandex Tracker (${trackerConnection.displayName}). Treat it as the preferred source for project history, integrations, tickets, tasks, comments, assignees, and status. If the user's request could be answered from Tracker, search Tracker first before saying the context is unavailable.`
+			: ""
+	}${
+		jiraConnection
+			? `\n\nThe selected app source for this chat is Jira (${jiraConnection.displayName}). Treat it as the preferred source for project history, tickets, tasks, comments, assignees, and status. If the user's request could be answered from Jira, search Jira first before saying the context is unavailable.`
 			: ""
 	}`;
 	const enabledTools = {
@@ -557,6 +589,7 @@ export const handleChatRequest = async (
 				}
 			: {}),
 		...trackerTools,
+		...jiraTools,
 	};
 
 	const agent = new ToolLoopAgent({

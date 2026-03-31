@@ -57,7 +57,9 @@ const collectToolSources = (message: UIMessage): ToolSource[] => {
 		if (
 			toolName !== "web_search" &&
 			toolName !== "yandex_tracker_search" &&
-			toolName !== "yandex_tracker_get_issue"
+			toolName !== "yandex_tracker_get_issue" &&
+			toolName !== "jira_search" &&
+			toolName !== "jira_get_issue"
 		) {
 			return;
 		}

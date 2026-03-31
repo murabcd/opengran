@@ -33,6 +33,15 @@ const yandexCalendarConnectionResultValidator = v.object({
 	calendarHomePath: v.string(),
 });
 
+const jiraConnectionResultValidator = v.object({
+	sourceId: v.string(),
+	provider: v.literal("jira"),
+	status: v.union(v.literal("connected"), v.literal("disconnected")),
+	displayName: v.string(),
+	baseUrl: v.string(),
+	email: v.string(),
+});
+
 type YandexTrackerConnectionResult = {
 	sourceId: string;
 	provider: "yandex-tracker";
@@ -52,8 +61,41 @@ type YandexCalendarConnectionResult = {
 	calendarHomePath: string;
 };
 
+type JiraConnectionResult = {
+	sourceId: string;
+	provider: "jira";
+	status: "connected" | "disconnected";
+	displayName: string;
+	baseUrl: string;
+	email: string;
+};
+
 const TRACKER_API_BASE_URL =
 	process.env.TRACKER_API_BASE_URL ?? "https://api.tracker.yandex.net";
+
+const normalizeJiraBaseUrl = (value: string) => {
+	const trimmedValue = value.trim();
+
+	let url: URL;
+
+	try {
+		url = new URL(trimmedValue);
+	} catch {
+		throw new ConvexError({
+			code: "INVALID_CONNECTION_DETAILS",
+			message: "Jira base URL must be a valid URL.",
+		});
+	}
+
+	url.pathname = url.pathname.replace(/\/+$/, "");
+	url.search = "";
+	url.hash = "";
+
+	return url.toString().replace(/\/$/, "");
+};
+
+const getJiraAuthHeader = (email: string, token: string) =>
+	`Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`;
 
 const getTrackerHeaderName = (
 	orgType: "x-org-id" | "x-cloud-org-id",
@@ -162,5 +204,51 @@ export const connectYandexCalendar = action({
 						: "Failed to connect Yandex Calendar.",
 			});
 		}
+	},
+});
+
+export const connectJira = action({
+	args: {
+		baseUrl: v.string(),
+		email: v.string(),
+		token: v.string(),
+	},
+	returns: jiraConnectionResultValidator,
+	handler: async (ctx, args): Promise<JiraConnectionResult> => {
+		const identity = await requireIdentity(ctx);
+		const baseUrl = normalizeJiraBaseUrl(args.baseUrl);
+		const email = args.email.trim().toLowerCase();
+		const token = args.token.trim();
+
+		if (!email || !token) {
+			throw new ConvexError({
+				code: "INVALID_CONNECTION_DETAILS",
+				message: "Jira email and API token are required.",
+			});
+		}
+
+		const response = await fetch(`${baseUrl}/rest/api/3/myself`, {
+			headers: {
+				Authorization: getJiraAuthHeader(email, token),
+				Accept: "application/json",
+			},
+		});
+
+		if (!response.ok) {
+			const responseText = await response.text().catch(() => "");
+			throw new ConvexError({
+				code: "JIRA_CONNECTION_FAILED",
+				message: responseText.trim()
+					? `Failed to connect Jira: ${responseText.trim()}`
+					: `Failed to connect Jira (${response.status}).`,
+			});
+		}
+
+		return await ctx.runMutation(internal.appConnections.upsertJira, {
+			ownerTokenIdentifier: identity.tokenIdentifier,
+			baseUrl,
+			email,
+			token,
+		});
 	},
 });

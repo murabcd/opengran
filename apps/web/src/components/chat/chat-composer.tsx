@@ -78,7 +78,7 @@ type AppSource = {
 	id: string;
 	title: string;
 	preview: string;
-	provider: "yandex-tracker";
+	provider: "jira" | "yandex-tracker";
 };
 
 type ChatComposerProps = {
@@ -675,11 +675,6 @@ function WorkspaceScopeMenu({
 											<FileText className="size-4" />
 											<div className="min-w-0 flex-1">
 												<div className="truncate">{source.title}</div>
-												{source.preview ? (
-													<div className="truncate text-xs text-muted-foreground">
-														{source.preview}
-													</div>
-												) : null}
 											</div>
 											{selected ? (
 												<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
@@ -749,6 +744,8 @@ function AppSourceItems({
 			>
 				{source.provider === "yandex-tracker" ? (
 					<Icons.yandexTrackerLogo className="size-4 text-blue-500" />
+				) : source.provider === "jira" ? (
+					<Icons.jiraLogo className="size-4" />
 				) : (
 					<Grid3x3 className="size-4" />
 				)}

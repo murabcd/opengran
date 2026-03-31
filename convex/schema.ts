@@ -24,6 +24,7 @@ const transcriptRefinementStatusValidator = v.union(
 const appConnectionProviderValidator = v.union(
 	v.literal("yandex-tracker"),
 	v.literal("yandex-calendar"),
+	v.literal("jira"),
 );
 
 const appConnectionStatusValidator = v.union(
@@ -251,6 +252,7 @@ export default defineSchema({
 		token: v.optional(v.string()),
 		email: v.optional(v.string()),
 		password: v.optional(v.string()),
+		baseUrl: v.optional(v.string()),
 		serverAddress: v.optional(v.string()),
 		calendarHomePath: v.optional(v.string()),
 		createdAt: v.number(),

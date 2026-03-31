@@ -162,6 +162,12 @@ type YandexTrackerConnectionFormState = {
 	token: string;
 };
 
+type JiraConnectionFormState = {
+	baseUrl: string;
+	email: string;
+	token: string;
+};
+
 type YandexCalendarConnectionFormState = {
 	email: string;
 	password: string;
@@ -201,6 +207,49 @@ type CalendarSettingsAction =
 			value: Partial<YandexCalendarConnectionFormState>;
 	  };
 
+type ConnectionsSettingsState = {
+	isYandexTrackerDialogOpen: boolean;
+	isJiraDialogOpen: boolean;
+	isSavingYandexTrackerConnection: boolean;
+	isSavingJiraConnection: boolean;
+	yandexTrackerFormState: YandexTrackerConnectionFormState;
+	jiraFormState: JiraConnectionFormState;
+};
+
+type ConnectionsSettingsAction =
+	| {
+			type: "setIsYandexTrackerDialogOpen";
+			value: boolean;
+	  }
+	| {
+			type: "setIsJiraDialogOpen";
+			value: boolean;
+	  }
+	| {
+			type: "setIsSavingYandexTrackerConnection";
+			value: boolean;
+	  }
+	| {
+			type: "setIsSavingJiraConnection";
+			value: boolean;
+	  }
+	| {
+			type: "setYandexTrackerFormState";
+			value: YandexTrackerConnectionFormState;
+	  }
+	| {
+			type: "patchYandexTrackerFormState";
+			value: Partial<YandexTrackerConnectionFormState>;
+	  }
+	| {
+			type: "setJiraFormState";
+			value: JiraConnectionFormState;
+	  }
+	| {
+			type: "patchJiraFormState";
+			value: Partial<JiraConnectionFormState>;
+	  };
+
 const getWorkspaceFormState = (
 	workspace: WorkspaceRecord | null,
 ): WorkspaceFormState => ({
@@ -231,12 +280,27 @@ const initialYandexCalendarConnectionFormState: YandexCalendarConnectionFormStat
 		password: "",
 	};
 
+const initialJiraConnectionFormState: JiraConnectionFormState = {
+	baseUrl: "",
+	email: "",
+	token: "",
+};
+
 const initialCalendarSettingsState: CalendarSettingsState = {
 	isConnectingGoogle: false,
 	isSavingCalendarPreferences: false,
 	isYandexCalendarDialogOpen: false,
 	isSavingYandexCalendarConnection: false,
 	yandexCalendarFormState: initialYandexCalendarConnectionFormState,
+};
+
+const initialConnectionsSettingsState: ConnectionsSettingsState = {
+	isYandexTrackerDialogOpen: false,
+	isJiraDialogOpen: false,
+	isSavingYandexTrackerConnection: false,
+	isSavingJiraConnection: false,
+	yandexTrackerFormState: initialYandexTrackerConnectionFormState,
+	jiraFormState: initialJiraConnectionFormState,
 };
 
 const calendarSettingsReducer = (
@@ -259,6 +323,42 @@ const calendarSettingsReducer = (
 				...state,
 				yandexCalendarFormState: {
 					...state.yandexCalendarFormState,
+					...action.value,
+				},
+			};
+	}
+};
+
+const connectionsSettingsReducer = (
+	state: ConnectionsSettingsState,
+	action: ConnectionsSettingsAction,
+): ConnectionsSettingsState => {
+	switch (action.type) {
+		case "setIsYandexTrackerDialogOpen":
+			return { ...state, isYandexTrackerDialogOpen: action.value };
+		case "setIsJiraDialogOpen":
+			return { ...state, isJiraDialogOpen: action.value };
+		case "setIsSavingYandexTrackerConnection":
+			return { ...state, isSavingYandexTrackerConnection: action.value };
+		case "setIsSavingJiraConnection":
+			return { ...state, isSavingJiraConnection: action.value };
+		case "setYandexTrackerFormState":
+			return { ...state, yandexTrackerFormState: action.value };
+		case "patchYandexTrackerFormState":
+			return {
+				...state,
+				yandexTrackerFormState: {
+					...state.yandexTrackerFormState,
+					...action.value,
+				},
+			};
+		case "setJiraFormState":
+			return { ...state, jiraFormState: action.value };
+		case "patchJiraFormState":
+			return {
+				...state,
+				jiraFormState: {
+					...state.jiraFormState,
 					...action.value,
 				},
 			};
@@ -985,47 +1085,64 @@ function YandexCalendarDialog({
 }
 
 function ConnectionsSettings() {
+	const { data: session } = authClient.useSession();
 	const yandexTrackerConnection = useQuery(
 		api.appConnections.getYandexTracker,
 		{},
 	);
+	const jiraConnection = useQuery(api.appConnections.getJira, {});
 	const connectYandexTracker = useAction(
 		api.appConnectionActions.connectYandexTracker,
 	);
-	const [isYandexTrackerDialogOpen, setIsYandexTrackerDialogOpen] =
-		useState(false);
-	const [formState, setFormState] = useState<YandexTrackerConnectionFormState>(
-		initialYandexTrackerConnectionFormState,
+	const connectJira = useAction(api.appConnectionActions.connectJira);
+	const [state, dispatch] = useReducer(
+		connectionsSettingsReducer,
+		initialConnectionsSettingsState,
 	);
-	const [isSavingYandexTrackerConnection, setIsSavingYandexTrackerConnection] =
-		useState(false);
+	const {
+		isYandexTrackerDialogOpen,
+		isJiraDialogOpen,
+		isSavingYandexTrackerConnection,
+		isSavingJiraConnection,
+		yandexTrackerFormState,
+		jiraFormState,
+	} = state;
 
 	const handleYandexTrackerDialogOpenChange = (open: boolean) => {
-		setIsYandexTrackerDialogOpen(open);
+		dispatch({ type: "setIsYandexTrackerDialogOpen", value: open });
 
 		if (open) {
-			setFormState({
-				orgType: yandexTrackerConnection?.orgType ?? "x-org-id",
-				orgId: yandexTrackerConnection?.orgId ?? "",
-				token: "",
+			dispatch({
+				type: "setYandexTrackerFormState",
+				value: {
+					orgType: yandexTrackerConnection?.orgType ?? "x-org-id",
+					orgId: yandexTrackerConnection?.orgId ?? "",
+					token: "",
+				},
 			});
 		} else {
-			setFormState(initialYandexTrackerConnectionFormState);
+			dispatch({
+				type: "setYandexTrackerFormState",
+				value: initialYandexTrackerConnectionFormState,
+			});
 		}
 	};
 
 	const handleConnectYandexTracker = async () => {
-		if (!formState.orgId.trim() || !formState.token.trim()) {
+		if (
+			!yandexTrackerFormState.orgId.trim() ||
+			!yandexTrackerFormState.token.trim()
+		) {
 			return;
 		}
 
-		setIsSavingYandexTrackerConnection(true);
+		dispatch({ type: "setIsSavingYandexTrackerConnection", value: true });
 
 		try {
 			await connectYandexTracker({
-				orgType: formState.orgType,
-				orgId: formState.orgId.trim(),
-				token: formState.token.trim(),
+				orgType: yandexTrackerFormState.orgType,
+				orgId: yandexTrackerFormState.orgId.trim(),
+				token: yandexTrackerFormState.token.trim(),
 			});
 			toast.success("Yandex Tracker connected");
 			handleYandexTrackerDialogOpenChange(false);
@@ -1037,33 +1154,109 @@ function ConnectionsSettings() {
 					: "Failed to connect Yandex Tracker",
 			);
 		} finally {
-			setIsSavingYandexTrackerConnection(false);
+			dispatch({ type: "setIsSavingYandexTrackerConnection", value: false });
 		}
 	};
 
 	const isYandexTrackerFormValid =
-		formState.orgId.trim().length > 0 && formState.token.trim().length > 0;
+		yandexTrackerFormState.orgId.trim().length > 0 &&
+		yandexTrackerFormState.token.trim().length > 0;
+
+	const handleJiraDialogOpenChange = (open: boolean) => {
+		dispatch({ type: "setIsJiraDialogOpen", value: open });
+
+		if (open) {
+			dispatch({
+				type: "setJiraFormState",
+				value: {
+					baseUrl: jiraConnection?.baseUrl ?? "",
+					email: jiraConnection?.email ?? session?.user?.email ?? "",
+					token: "",
+				},
+			});
+		} else {
+			dispatch({
+				type: "setJiraFormState",
+				value: initialJiraConnectionFormState,
+			});
+		}
+	};
+
+	const handleConnectJira = async () => {
+		if (
+			!jiraFormState.baseUrl.trim() ||
+			!jiraFormState.email.trim() ||
+			!jiraFormState.token.trim()
+		) {
+			return;
+		}
+
+		dispatch({ type: "setIsSavingJiraConnection", value: true });
+
+		try {
+			await connectJira({
+				baseUrl: jiraFormState.baseUrl.trim(),
+				email: jiraFormState.email.trim(),
+				token: jiraFormState.token.trim(),
+			});
+			toast.success("Jira connected");
+			handleJiraDialogOpenChange(false);
+		} catch (error) {
+			console.error("Failed to connect Jira", error);
+			toast.error(
+				error instanceof Error
+					? withoutTrailingPeriod(error.message)
+					: "Failed to connect Jira",
+			);
+		} finally {
+			dispatch({ type: "setIsSavingJiraConnection", value: false });
+		}
+	};
+
+	const isJiraFormValid =
+		jiraFormState.baseUrl.trim().length > 0 &&
+		jiraFormState.email.trim().length > 0 &&
+		jiraFormState.token.trim().length > 0;
 
 	return (
 		<div className="py-4">
 			<Field>
 				<Label className={SETTINGS_LABEL_CLASSNAME}>Tools</Label>
-				<div className="flex items-center justify-between gap-4">
-					<div className="flex min-w-0 items-center gap-3">
-						<Icons.yandexTrackerLogo className="size-5 shrink-0 text-blue-500" />
-						<div className="min-w-0">
-							<Label className="text-sm font-medium text-foreground">
-								Yandex Tracker
-							</Label>
+				<div className="space-y-3">
+					<div className="flex items-center justify-between gap-4">
+						<div className="flex min-w-0 items-center gap-3">
+							<Icons.yandexTrackerLogo className="size-5 shrink-0 text-blue-500" />
+							<div className="min-w-0">
+								<Label className="text-sm font-medium text-foreground">
+									Yandex Tracker
+								</Label>
+							</div>
 						</div>
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => handleYandexTrackerDialogOpenChange(true)}
+						>
+							{yandexTrackerConnection ? "Reconnect" : "Connect"}
+						</Button>
 					</div>
-					<Button
-						type="button"
-						variant="outline"
-						onClick={() => setIsYandexTrackerDialogOpen(true)}
-					>
-						{yandexTrackerConnection ? "Reconnect" : "Connect"}
-					</Button>
+					<div className="flex items-center justify-between gap-4">
+						<div className="flex min-w-0 items-center gap-3">
+							<Icons.jiraLogo className="size-5 shrink-0" />
+							<div className="min-w-0">
+								<Label className="text-sm font-medium text-foreground">
+									Jira
+								</Label>
+							</div>
+						</div>
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => handleJiraDialogOpenChange(true)}
+						>
+							{jiraConnection ? "Reconnect" : "Connect"}
+						</Button>
+					</div>
 				</div>
 			</Field>
 			<Dialog
@@ -1086,12 +1279,14 @@ function ConnectionsSettings() {
 								</Label>
 							</FieldContent>
 							<Select
-								value={formState.orgType}
+								value={yandexTrackerFormState.orgType}
 								onValueChange={(value) =>
-									setFormState((currentState) => ({
-										...currentState,
-										orgType: value as YandexTrackerOrgType,
-									}))
+									dispatch({
+										type: "patchYandexTrackerFormState",
+										value: {
+											orgType: value as YandexTrackerOrgType,
+										},
+									})
 								}
 							>
 								<SelectTrigger
@@ -1100,7 +1295,7 @@ function ConnectionsSettings() {
 									aria-label="Select Yandex Tracker organization type"
 								>
 									<span>
-										{formState.orgType === "x-org-id"
+										{yandexTrackerFormState.orgType === "x-org-id"
 											? "Yandex 360"
 											: "Yandex Cloud"}
 									</span>
@@ -1120,12 +1315,12 @@ function ConnectionsSettings() {
 							</Label>
 							<Input
 								id="yandex-tracker-org-id"
-								value={formState.orgId}
+								value={yandexTrackerFormState.orgId}
 								onChange={(event) =>
-									setFormState((currentState) => ({
-										...currentState,
-										orgId: event.target.value,
-									}))
+									dispatch({
+										type: "patchYandexTrackerFormState",
+										value: { orgId: event.target.value },
+									})
 								}
 								placeholder="1234567"
 							/>
@@ -1140,12 +1335,12 @@ function ConnectionsSettings() {
 							<Input
 								id="yandex-tracker-token"
 								type="password"
-								value={formState.token}
+								value={yandexTrackerFormState.token}
 								onChange={(event) =>
-									setFormState((currentState) => ({
-										...currentState,
-										token: event.target.value,
-									}))
+									dispatch({
+										type: "patchYandexTrackerFormState",
+										value: { token: event.target.value },
+									})
 								}
 								placeholder="y0_AgAAAA..."
 							/>
@@ -1170,6 +1365,98 @@ function ConnectionsSettings() {
 							}
 						>
 							{isSavingYandexTrackerConnection ? (
+								<>
+									<LoaderCircle className="animate-spin" />
+									Connecting
+								</>
+							) : (
+								"Connect"
+							)}
+						</Button>
+					</div>
+				</DialogContent>
+			</Dialog>
+			<Dialog open={isJiraDialogOpen} onOpenChange={handleJiraDialogOpenChange}>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Connect Jira</DialogTitle>
+						<DialogDescription>
+							Enter the credentials OpenGran should use for your Jira
+							connection.
+						</DialogDescription>
+					</DialogHeader>
+					<FieldGroup className="gap-4">
+						<Field>
+							<Label
+								htmlFor="jira-base-url"
+								className={SETTINGS_LABEL_CLASSNAME}
+							>
+								Jira URL
+							</Label>
+							<Input
+								id="jira-base-url"
+								value={jiraFormState.baseUrl}
+								onChange={(event) =>
+									dispatch({
+										type: "patchJiraFormState",
+										value: { baseUrl: event.target.value },
+									})
+								}
+								placeholder="https://your-team.atlassian.net"
+							/>
+						</Field>
+						<Field>
+							<Label htmlFor="jira-email" className={SETTINGS_LABEL_CLASSNAME}>
+								Email
+							</Label>
+							<Input
+								id="jira-email"
+								type="email"
+								value={jiraFormState.email}
+								onChange={(event) =>
+									dispatch({
+										type: "patchJiraFormState",
+										value: { email: event.target.value },
+									})
+								}
+								placeholder="name@company.com"
+							/>
+						</Field>
+						<Field>
+							<Label htmlFor="jira-token" className={SETTINGS_LABEL_CLASSNAME}>
+								API token
+							</Label>
+							<Input
+								id="jira-token"
+								type="password"
+								value={jiraFormState.token}
+								onChange={(event) =>
+									dispatch({
+										type: "patchJiraFormState",
+										value: { token: event.target.value },
+									})
+								}
+								placeholder="ATATT..."
+							/>
+						</Field>
+					</FieldGroup>
+					<div className="flex justify-end gap-2 pt-2">
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={() => handleJiraDialogOpenChange(false)}
+							disabled={isSavingJiraConnection}
+						>
+							Cancel
+						</Button>
+						<Button
+							type="button"
+							onClick={() => {
+								void handleConnectJira();
+							}}
+							disabled={!isJiraFormValid || isSavingJiraConnection}
+						>
+							{isSavingJiraConnection ? (
 								<>
 									<LoaderCircle className="animate-spin" />
 									Connecting
