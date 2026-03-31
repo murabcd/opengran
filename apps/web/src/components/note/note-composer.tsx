@@ -191,7 +191,6 @@ const useNoteComposerController = ({
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 	const { containerRef: chatViewportRef } = useStickyScrollToBottom();
 	const previousSpeechListeningRef = React.useRef(false);
-	const shouldOpenChatOnComposerFocusRef = React.useRef(false);
 	const shouldFocusInlineChatRef = React.useRef(false);
 	const noteId = (noteContext.noteId as Id<"notes"> | null) ?? null;
 	const activeWorkspaceId = useActiveWorkspaceId();
@@ -714,16 +713,13 @@ const useNoteComposerController = ({
 		setPanelMode(null);
 	};
 
-	const handleComposerPointerDown = React.useCallback(() => {
-		shouldOpenChatOnComposerFocusRef.current = true;
-	}, []);
+	const handleComposerPointerDown = React.useCallback(() => {}, []);
 
 	const handleComposerFocus = React.useCallback(() => {
-		if (!shouldOpenChatOnComposerFocusRef.current || !latestNoteChat) {
+		if (!latestNoteChat) {
 			return;
 		}
 
-		shouldOpenChatOnComposerFocusRef.current = false;
 		if (isChatLoading) {
 			stop();
 		}

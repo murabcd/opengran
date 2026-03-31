@@ -593,7 +593,8 @@ describe("NoteComposer", () => {
 				element.className.includes("w-[60px]"),
 		);
 
-		expect(composerFooter?.className).toContain("px-6 pb-4");
+		expect(composerFooter?.className).toContain("px-6");
+		expect(composerFooter?.className).toContain("pb-4");
 		expect(reservedSpeechSpacer).toBeUndefined();
 	});
 
@@ -668,6 +669,7 @@ describe("NoteComposer", () => {
 		const leadingArea = controlsGroup?.parentElement;
 		const footerSurface = leadingArea?.parentElement;
 		const footerSurfaceWrapper = footerSurface?.parentElement;
+		const footerSpacingContainer = footerSurfaceWrapper?.parentElement;
 
 		expect(controlsGroup?.className).toContain("flex");
 		expect(controlsGroup?.className).toContain("gap-1");
@@ -677,9 +679,9 @@ describe("NoteComposer", () => {
 		expect(footerSurface?.className).toContain("w-full");
 		expect(footerSurface?.className).toContain("border");
 		expect(footerSurface?.className).toContain("bg-card");
-		expect(footerSurface?.className).toContain("grid");
-		expect(footerSurfaceWrapper).not.toBeNull();
-		expect(footerSurfaceWrapper?.className).toContain("px-6");
-		expect(footerSurfaceWrapper?.className).toContain("pb-4");
+		expect(footerSurface?.className).toContain("overflow-hidden");
+		expect(footerSpacingContainer).not.toBeNull();
+		expect(footerSpacingContainer?.className).toContain("px-6");
+		expect(footerSpacingContainer?.className).toContain("pb-4");
 	});
 });
