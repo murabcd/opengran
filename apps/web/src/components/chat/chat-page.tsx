@@ -472,7 +472,7 @@ export function ChatPage({
 							</div>
 						) : (
 							<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
-								<div className="flex flex-1 flex-col gap-6 py-8">
+								<div className="flex flex-1 flex-col gap-6 pb-8">
 									<div className="w-full">
 										<h1 className="text-lg md:text-xl">Ask anything</h1>
 									</div>
