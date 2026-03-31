@@ -207,6 +207,7 @@ export function ChatMessages({
 											</div>
 										) : (
 											<Streamdown
+												className="note-streamdown"
 												isAnimating={isStreamingAssistantMessage}
 												caret="block"
 												controls={false}

@@ -3,7 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("streamdown", () => ({
-	Streamdown: ({ children }: { children: string }) => <div>{children}</div>,
+	Streamdown: ({
+		children,
+		className,
+	}: {
+		children: string;
+		className?: string;
+	}) => <div className={className}>{children}</div>,
 }));
 
 vi.mock("../src/hooks/use-sticky-scroll-to-bottom", () => ({
@@ -121,5 +127,30 @@ describe("ChatMessages", () => {
 				.getByRole("link", { name: "Introducing GPT-5" })
 				.getAttribute("href"),
 		).toBe("https://openai.com/index/introducing-gpt-5");
+	});
+
+	it("applies note typography styles to assistant markdown", async () => {
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		const { container } = render(
+			<ChatMessages
+				messages={[
+					{
+						id: "assistant-3",
+						role: "assistant",
+						parts: [
+							{
+								type: "text",
+								text: "- First\n- Second",
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		expect(container.querySelector(".note-streamdown")?.textContent).toBe(
+			"- First\n- Second",
+		);
 	});
 });
