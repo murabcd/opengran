@@ -26,8 +26,7 @@ type ParsedTemplateStream = {
 	};
 	headingOrder: string[];
 	missingHeadings: string[];
-	unknownHeadings: string[];
-	duplicateHeadings: string[];
+	extraHeadings: string[];
 };
 
 const stripMarkdownDecoration = (text: string) =>
@@ -61,14 +60,9 @@ export const parseTemplateStreamToStructuredNote = ({
 		title,
 		items: [] as string[],
 	}));
-	const sectionIndexes = new Map(
-		sections.map((section, index) => [section.title.toLowerCase(), index]),
-	);
-	const seenHeadings = new Set<string>();
 	const overview: string[] = [];
 	const headingOrder: string[] = [];
-	const unknownHeadings: string[] = [];
-	const duplicateHeadings: string[] = [];
+	const extraHeadings: string[] = [];
 	let currentTarget: TemplateParseTarget = {
 		type: "overview",
 	};
@@ -83,23 +77,21 @@ export const parseTemplateStreamToStructuredNote = ({
 		const headingMatch = line.match(/^#{1,6}\s+(.+)$/);
 		if (headingMatch) {
 			const headingTitle = stripMarkdownDecoration(headingMatch[1]);
-			const normalizedHeadingTitle = headingTitle.toLowerCase();
-			const sectionIndex = sectionIndexes.get(normalizedHeadingTitle);
+			const sectionIndex = headingOrder.length;
 
-			if (sectionIndex === undefined) {
-				unknownHeadings.push(headingTitle);
+			if (sectionIndex >= sections.length) {
+				extraHeadings.push(headingTitle);
 				currentTarget = {
 					type: "ignore",
 				};
 				continue;
 			}
 
-			headingOrder.push(normalizedHeadingTitle);
-			if (seenHeadings.has(normalizedHeadingTitle)) {
-				duplicateHeadings.push(headingTitle);
-			} else {
-				seenHeadings.add(normalizedHeadingTitle);
-			}
+			sections[sectionIndex] = {
+				...sections[sectionIndex],
+				title: headingTitle,
+			};
+			headingOrder.push(headingTitle);
 			currentTarget = {
 				type: "section",
 				index: sectionIndex,
@@ -122,9 +114,7 @@ export const parseTemplateStreamToStructuredNote = ({
 		}
 	}
 
-	const missingHeadings = sectionTitles.filter(
-		(title) => !seenHeadings.has(title.toLowerCase()),
-	);
+	const missingHeadings = sectionTitles.slice(headingOrder.length);
 
 	return {
 		note: {
@@ -133,8 +123,7 @@ export const parseTemplateStreamToStructuredNote = ({
 		},
 		headingOrder,
 		missingHeadings,
-		unknownHeadings,
-		duplicateHeadings,
+		extraHeadings,
 	};
 };
 
@@ -145,28 +134,17 @@ export const validateTemplateStream = ({
 	template: NoteTemplateShape;
 	parsed: ParsedTemplateStream;
 }) => {
-	if (parsed.unknownHeadings.length > 0) {
-		return `Unexpected section headings in template rewrite: ${parsed.unknownHeadings.join(", ")}.`;
-	}
-
-	if (parsed.duplicateHeadings.length > 0) {
-		return `Duplicate section headings in template rewrite: ${parsed.duplicateHeadings.join(", ")}.`;
+	if (parsed.extraHeadings.length > 0) {
+		return `Template rewrite returned extra sections: ${parsed.extraHeadings.join(", ")}.`;
 	}
 
 	if (parsed.missingHeadings.length > 0) {
 		return `Missing template sections in template rewrite: ${parsed.missingHeadings.join(", ")}.`;
 	}
 
-	const expectedHeadingOrder = getTemplateSectionTitles(template).map((title) =>
-		title.toLowerCase(),
-	);
-	const hasOrderMismatch =
-		parsed.headingOrder.length !== expectedHeadingOrder.length ||
-		parsed.headingOrder.some(
-			(title, index) => title !== expectedHeadingOrder[index],
-		);
-
-	if (hasOrderMismatch) {
+	if (
+		parsed.headingOrder.length !== getTemplateSectionTitles(template).length
+	) {
 		return "Template rewrite returned sections out of order.";
 	}
 
