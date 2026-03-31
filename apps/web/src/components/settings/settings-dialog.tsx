@@ -1950,9 +1950,9 @@ function DataControlAction({
 			<AlertDialog open={dialogOpen} onOpenChange={onDialogOpenChange}>
 				<AlertDialogTrigger asChild>
 					<Button
-						variant="outline"
+						variant="ghost"
 						size="sm"
-						className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:hover:bg-destructive/20"
+						className="shrink-0 bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
 						disabled={buttonDisabled}
 					>
 						{buttonLabel}

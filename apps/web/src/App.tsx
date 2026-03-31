@@ -153,13 +153,24 @@ const HOME_NOTE_SKELETON_IDS = [
 	"home-note-skeleton-2",
 	"home-note-skeleton-3",
 ] as const;
-const WELCOME_FIREWORK_COLORS = [
-	"#ffd44d",
-	"#4cd964",
-	"#ff9f43",
-	"#7bed9f",
-	"#a3e635",
+const WELCOME_FIREWORK_COLOR_VARIABLES = [
+	"--chart-1",
+	"--chart-2",
+	"--chart-3",
+	"--chart-4",
+	"--chart-5",
 ] as const;
+
+function getThemeFireworkColors() {
+	if (typeof window === "undefined") {
+		return ["#afabff", "#8f88ff", "#7166ff", "#564dff", "#4138d9"];
+	}
+
+	const styles = window.getComputedStyle(document.documentElement);
+	return WELCOME_FIREWORK_COLOR_VARIABLES.map((variableName) =>
+		styles.getPropertyValue(variableName).trim(),
+	).filter(Boolean);
+}
 const DESKTOP_PERMISSION_LABELS: Record<DesktopPermissionId, string> = {
 	microphone: "Transcribe me",
 	systemAudio: "Transcribe others",
@@ -1341,7 +1352,7 @@ function WelcomeCelebrationScreen({
 				const originY = 0.15 + Math.random() * 0.25;
 				fire({
 					angle: 60,
-					colors: [...WELCOME_FIREWORK_COLORS],
+					colors: getThemeFireworkColors(),
 					disableForReducedMotion: true,
 					gravity: 0.95,
 					origin: { x: 0.1 + Math.random() * 0.25, y: originY },
@@ -1352,7 +1363,7 @@ function WelcomeCelebrationScreen({
 				});
 				fire({
 					angle: 120,
-					colors: [...WELCOME_FIREWORK_COLORS],
+					colors: getThemeFireworkColors(),
 					disableForReducedMotion: true,
 					gravity: 0.95,
 					origin: { x: 0.65 + Math.random() * 0.2, y: originY + 0.05 },
@@ -1362,7 +1373,7 @@ function WelcomeCelebrationScreen({
 					startVelocity: 52,
 				});
 				fire({
-					colors: [...WELCOME_FIREWORK_COLORS],
+					colors: getThemeFireworkColors(),
 					disableForReducedMotion: true,
 					gravity: 1.1,
 					origin: { x: 0.35 + Math.random() * 0.3, y: originY - 0.05 },
@@ -1438,7 +1449,7 @@ const getDesktopPermissionTone = (state: DesktopPermissionState) => {
 	}
 
 	if (state === "blocked") {
-		return "border-amber-200 bg-amber-50 text-amber-700";
+		return "border-[var(--warning-border)] bg-[var(--warning-soft)] text-[var(--warning-foreground)]";
 	}
 
 	return "border-border bg-muted/40 text-muted-foreground";
@@ -1577,7 +1588,7 @@ function DesktopPermissionsOnboardingScreen({
 					})}
 				</div>
 				{error ? (
-					<div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+					<div className="flex items-start gap-3 rounded-lg border border-[var(--warning-border)] bg-[var(--warning-soft)] px-4 py-3 text-sm text-[var(--warning-foreground)]">
 						<TriangleAlert className="mt-0.5 size-4 shrink-0" />
 						<p>{error}</p>
 					</div>
@@ -2709,7 +2720,7 @@ function AppShellBreadcrumbs({
 										align="start"
 										side="bottom"
 										sideOffset={6}
-										className="w-[340px] rounded-2xl border-sidebar-border/70 bg-sidebar p-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.45)] ring-1 ring-white/8"
+										className="w-[340px] rounded-2xl border-sidebar-border/70 bg-sidebar p-1.5 shadow-2xl ring-1 ring-border/60"
 									>
 										<div className="flex items-center gap-2">
 											<NoteTitleEditInput
@@ -3143,7 +3154,7 @@ function HomeView({
 										</div>
 										<div className="flex items-center gap-2 pt-1 text-base leading-none">
 											<span>{currentMonthLabel}</span>
-											<span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+											<span className="h-1.5 w-1.5 rounded-full bg-[var(--status-live)]" />
 										</div>
 										<p className="text-base leading-none text-muted-foreground">
 											{currentWeekdayLabel}
@@ -3179,8 +3190,8 @@ function HomeView({
 														>
 															<div
 																className={cn(
-																	"h-8 w-1 shrink-0 rounded-full bg-[#8f88ff]",
-																	isLive && "bg-green-500",
+																	"h-8 w-1 shrink-0 rounded-full bg-[var(--status-planned)]",
+																	isLive && "bg-[var(--status-live)]",
 																)}
 															/>
 															<div className="min-w-0 flex-1">
@@ -3192,7 +3203,7 @@ function HomeView({
 																		<p
 																			className={cn(
 																				"mt-0.5 text-xs text-muted-foreground",
-																				isLive && "text-green-500",
+																				isLive && "text-[var(--status-live)]",
 																			)}
 																		>
 																			{formatUpcomingEventMeta(

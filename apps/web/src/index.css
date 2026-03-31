@@ -19,11 +19,11 @@ body {
 }
 
 :root {
-	--note-selection-background: rgb(180 198 255 / 38%);
+	--note-selection-background: oklch(0.809 0.105 251.813 / 32%);
 }
 
 .dark {
-	--note-selection-background: rgb(110 130 220 / 32%);
+	--note-selection-background: oklch(0.488 0.243 264.376 / 28%);
 }
 
 .note-tiptap {
@@ -190,7 +190,7 @@ body {
 }
 
 .note-tiptap p.is-editor-empty:first-child::before {
-	color: #7b776f;
+	color: var(--muted-foreground);
 	content: attr(data-placeholder);
 	float: left;
 	height: 0;
