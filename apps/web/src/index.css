@@ -36,8 +36,8 @@ body {
 	word-wrap: break-word;
 	color: inherit;
 	font-family: var(--font-sans);
-	font-size: 0.9375rem;
-	line-height: 1.6;
+	font-size: 0.875rem;
+	line-height: 1.7142857143;
 }
 
 .note-tiptap.ProseMirror:focus {
@@ -58,7 +58,7 @@ body {
 
 :where(.note-tiptap.ProseMirror, .note-streamdown)
 	:where(h1, h2, h3, h4, h5, h6) {
-	margin: 1rem 0 0.5rem;
+	margin: 1.25rem 0 0.5rem;
 	font-weight: 500;
 	letter-spacing: -0.025em;
 	line-height: 1.25;
@@ -69,7 +69,7 @@ body {
 }
 
 :where(.note-tiptap.ProseMirror, .note-streamdown) :where(h2) {
-	font-size: 1.25rem;
+	font-size: 1.125rem;
 }
 
 :where(.note-tiptap.ProseMirror, .note-streamdown) :where(h3) {
@@ -200,8 +200,8 @@ body {
 .note-streamdown {
 	color: inherit;
 	font-family: var(--font-sans);
-	font-size: 0.9375rem;
-	line-height: 1.6;
+	font-size: 0.875rem;
+	line-height: 1.7142857143;
 }
 
 .onboarding-confetti-canvas {

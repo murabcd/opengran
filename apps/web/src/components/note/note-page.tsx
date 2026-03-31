@@ -1029,9 +1029,9 @@ export function NotePage({
 	return (
 		<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
 			<div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
-				<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-2xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
+				<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
 					<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
-						<div className="flex flex-col gap-5">
+						<div className="flex flex-col gap-6">
 							<Textarea
 								ref={controller.titleTextareaRef}
 								value={controller.title}
@@ -1039,7 +1039,7 @@ export function NotePage({
 								placeholder="New note"
 								aria-label="Note title"
 								rows={1}
-								className="note-title min-h-0 resize-none overflow-hidden rounded-none border-0 !bg-transparent px-0 py-0 text-3xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
+								className="note-title min-h-0 resize-none overflow-hidden rounded-none border-0 !bg-transparent px-0 py-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
 							/>
 
 							<EditorContent

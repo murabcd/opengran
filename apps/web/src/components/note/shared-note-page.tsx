@@ -90,15 +90,15 @@ export function SharedNotePage({
 	return (
 		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
 			<div className="flex w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
-				<div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-between gap-6">
+				<div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-between gap-6">
 					<div className="flex-1 pt-4 md:pt-8">
-						<div className="flex flex-col gap-5">
+						<div className="flex flex-col gap-6">
 							<Input
 								value={note.title}
 								readOnly
 								placeholder="New note"
 								aria-label="Note title"
-								className="note-title h-auto border-0 !bg-transparent px-0 py-0 text-3xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-4xl"
+								className="note-title h-auto border-0 !bg-transparent px-0 py-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
 							/>
 
 							<EditorContent
