@@ -16,6 +16,7 @@ import { FileText } from "lucide-react";
 import * as React from "react";
 import { ChatMessages } from "@/components/chat/messages";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
+import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { defaultChatModel, findChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
@@ -396,86 +397,101 @@ export function ChatPage({
 		onChatRemoved,
 		activeWorkspace,
 	});
+	const { containerRef } = useStickyScrollToBottom();
+	const composer = (
+		<ChatComposer
+			hasMessages={controller.hasMessages}
+			draft={controller.draft}
+			onDraftChange={controller.setDraft}
+			onDraftKeyDown={controller.handleDraftKeyDown}
+			onSubmit={controller.handleSubmit}
+			isLoading={controller.isLoading}
+			selectedModel={controller.selectedModel}
+			modelPopoverOpen={controller.modelPopoverOpen}
+			onModelPopoverOpenChange={controller.setModelPopoverOpen}
+			onSelectedModelChange={controller.setSelectedModel}
+			mentionPopoverOpen={controller.mentionPopoverOpen}
+			onMentionPopoverOpenChange={controller.setMentionPopoverOpen}
+			documentSearchTerm={controller.documentSearchTerm}
+			onDocumentSearchTermChange={controller.setDocumentSearchTerm}
+			mentions={controller.mentions}
+			contextPages={controller.contextPages}
+			mentionableDocuments={controller.mentionableDocuments}
+			isNotesLoading={controller.isNotesLoading}
+			emptyStateMessage={
+				controller.shouldSearchDocuments
+					? "No notes found."
+					: "No notes available."
+			}
+			shouldSearchDocuments={controller.shouldSearchDocuments}
+			onAddMention={controller.onAddMention}
+			onRemoveMention={controller.onRemoveMention}
+			sourcesOpen={controller.sourcesOpen}
+			onSourcesOpenChange={controller.setSourcesOpen}
+			webSearchEnabled={controller.webSearchEnabled}
+			onWebSearchEnabledChange={controller.setWebSearchEnabled}
+			appsEnabled={controller.appsEnabled}
+			onAppsEnabledChange={controller.setAppsEnabled}
+			sourceSearchTerm={controller.sourceSearchTerm}
+			onSourceSearchTermChange={controller.setSourceSearchTerm}
+			selectedSourceIds={controller.selectedSourceIds}
+			workspaceSources={controller.workspaceSources}
+			workspaceSourceId={controller.workspaceSourceId}
+			activeWorkspace={controller.activeWorkspace}
+			appSources={controller.appSources}
+			onToggleSource={controller.onToggleSource}
+			onClearSelectedSources={controller.handleClearSelectedSources}
+		/>
+	);
 
 	return (
 		<>
-			<div className="flex min-h-0 flex-1 justify-center px-4 pb-6 md:px-6">
-				<div
-					className={`flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4 ${
-						controller.hasMessages ? "min-h-0" : "gap-6"
-					}`}
-				>
-					{!controller.hasMessages ? (
-						<div className="mx-auto w-full max-w-xl">
-							<h1 className="text-lg md:text-xl">Ask anything</h1>
-						</div>
-					) : null}
+			<div
+				ref={controller.hasMessages ? containerRef : undefined}
+				className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+			>
+				<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
+					<div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
+						{controller.hasMessages ? (
+							<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
+								<div className="flex-1 pt-8 pb-28 md:pb-32">
+									<ChatMessages
+										messages={controller.messages}
+										error={controller.error}
+										isLoading={controller.isLoading}
+									/>
+								</div>
 
-					{controller.hasMessages ? (
-						<div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col pb-2">
-							<ChatMessages
-								messages={controller.messages}
-								error={controller.error}
-								isLoading={controller.isLoading}
-							/>
-						</div>
-					) : null}
+								<div className="sticky bottom-0 z-10 mt-auto h-0">
+									<div className="pointer-events-none absolute inset-x-0 bottom-0 -mx-4 bg-background pb-6 md:-mx-6">
+										<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
+											{composer}
+										</div>
+									</div>
+								</div>
+							</div>
+						) : (
+							<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
+								<div className="flex flex-1 flex-col gap-6 py-8">
+									<div className="w-full">
+										<h1 className="text-lg md:text-xl">Ask anything</h1>
+									</div>
 
-					<ChatComposer
-						hasMessages={controller.hasMessages}
-						draft={controller.draft}
-						onDraftChange={controller.setDraft}
-						onDraftKeyDown={controller.handleDraftKeyDown}
-						onSubmit={controller.handleSubmit}
-						isLoading={controller.isLoading}
-						selectedModel={controller.selectedModel}
-						modelPopoverOpen={controller.modelPopoverOpen}
-						onModelPopoverOpenChange={controller.setModelPopoverOpen}
-						onSelectedModelChange={controller.setSelectedModel}
-						mentionPopoverOpen={controller.mentionPopoverOpen}
-						onMentionPopoverOpenChange={controller.setMentionPopoverOpen}
-						documentSearchTerm={controller.documentSearchTerm}
-						onDocumentSearchTermChange={controller.setDocumentSearchTerm}
-						mentions={controller.mentions}
-						contextPages={controller.contextPages}
-						mentionableDocuments={controller.mentionableDocuments}
-						isNotesLoading={controller.isNotesLoading}
-						emptyStateMessage={
-							controller.shouldSearchDocuments
-								? "No notes found."
-								: "No notes available."
-						}
-						shouldSearchDocuments={controller.shouldSearchDocuments}
-						onAddMention={controller.onAddMention}
-						onRemoveMention={controller.onRemoveMention}
-						sourcesOpen={controller.sourcesOpen}
-						onSourcesOpenChange={controller.setSourcesOpen}
-						webSearchEnabled={controller.webSearchEnabled}
-						onWebSearchEnabledChange={controller.setWebSearchEnabled}
-						appsEnabled={controller.appsEnabled}
-						onAppsEnabledChange={controller.setAppsEnabled}
-						sourceSearchTerm={controller.sourceSearchTerm}
-						onSourceSearchTermChange={controller.setSourceSearchTerm}
-						selectedSourceIds={controller.selectedSourceIds}
-						workspaceSources={controller.workspaceSources}
-						workspaceSourceId={controller.workspaceSourceId}
-						activeWorkspace={controller.activeWorkspace}
-						appSources={controller.appSources}
-						onToggleSource={controller.onToggleSource}
-						onClearSelectedSources={controller.handleClearSelectedSources}
-					/>
+									{composer}
 
-					{!controller.hasMessages ? (
-						<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-							<ChatHistoryList
-								chats={chats}
-								isChatsLoading={isChatsLoading}
-								activeChatId={activeChatId}
-								onOpenChat={onOpenChat}
-								onMoveToTrash={controller.setConfirmTrashChatId}
-							/>
-						</div>
-					) : null}
+									<div className="min-h-0 flex-1">
+										<ChatHistoryList
+											chats={chats}
+											isChatsLoading={isChatsLoading}
+											activeChatId={activeChatId}
+											onOpenChat={onOpenChat}
+											onMoveToTrash={controller.setConfirmTrashChatId}
+										/>
+									</div>
+								</div>
+							</div>
+						)}
+					</div>
 				</div>
 			</div>
 
