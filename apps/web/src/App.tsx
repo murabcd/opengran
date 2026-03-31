@@ -212,11 +212,23 @@ const upcomingEventTimeFormatter = new Intl.DateTimeFormat(undefined, {
 	hour: "numeric",
 	minute: "2-digit",
 });
+const noteCreatedTimeFormatter = new Intl.DateTimeFormat(undefined, {
+	hour: "numeric",
+	minute: "2-digit",
+});
 
 const isSameCalendarDay = (left: Date, right: Date) =>
 	left.getFullYear() === right.getFullYear() &&
 	left.getMonth() === right.getMonth() &&
 	left.getDate() === right.getDate();
+
+const getNoteAuthorDisplayName = (note: Doc<"notes">, currentUser: AppUser) =>
+	note.authorName?.trim() || currentUser.name;
+
+const formatNoteCreatedTime = (note: Doc<"notes">) =>
+	noteCreatedTimeFormatter.format(
+		new Date(note.createdAt || note._creationTime),
+	);
 
 const getCurrentDayWindow = (currentDate: Date) => {
 	const timeMin = new Date(currentDate);
@@ -2397,7 +2409,7 @@ function AppShell({
 						sharedNotes={controller.sharedNotes}
 						currentNoteId={controller.currentNoteId}
 						currentNoteTitle={controller.currentNoteTitle}
-						userName={controller.user.name}
+						user={controller.user}
 						onOpenNote={controller.openNote}
 						onNoteTrashed={controller.handleNoteTrashed}
 						onCreateNote={controller.handleQuickNote}
@@ -2892,7 +2904,7 @@ function AppShellContent({
 	sharedNotes,
 	currentNoteId,
 	currentNoteTitle,
-	userName,
+	user,
 	onOpenNote,
 	onNoteTrashed,
 	onCreateNote,
@@ -2924,7 +2936,7 @@ function AppShellContent({
 	sharedNotes: Array<Doc<"notes">> | undefined;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle: string;
-	userName: string;
+	user: AppUser;
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 	onCreateNote: () => void;
@@ -2984,7 +2996,7 @@ function AppShellContent({
 					notes={notes}
 					currentNoteId={currentNoteId}
 					currentNoteTitle={currentNoteTitle}
-					currentUserName={userName}
+					currentUser={user}
 					onOpenNote={onOpenNote}
 					onNoteTrashed={onNoteTrashed}
 					onCreateNote={onCreateNote}
@@ -3001,7 +3013,7 @@ function AppShellContent({
 					sharedNotes={sharedNotes}
 					currentNoteId={currentNoteId}
 					currentNoteTitle={currentNoteTitle}
-					currentUserName={userName}
+					currentUser={user}
 					onOpenNote={onOpenNote}
 					onNoteTrashed={onNoteTrashed}
 				/>
@@ -3075,7 +3087,7 @@ function HomeView({
 	notes,
 	currentNoteId,
 	currentNoteTitle,
-	currentUserName,
+	currentUser,
 	onOpenNote,
 	onNoteTrashed,
 	onCreateNote,
@@ -3091,7 +3103,7 @@ function HomeView({
 	notes: Array<Doc<"notes">> | undefined;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle: string;
-	currentUserName: string;
+	currentUser: AppUser;
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 	onCreateNote: () => void;
@@ -3257,7 +3269,7 @@ function HomeView({
 							notes={notes}
 							activeNoteId={currentNoteId}
 							activeNoteTitle={currentNoteTitle}
-							currentUserName={currentUserName}
+							currentUser={currentUser}
 							onOpenNote={onOpenNote}
 							onNoteTrashed={onNoteTrashed}
 						/>
@@ -3284,14 +3296,14 @@ function SharedView({
 	sharedNotes,
 	currentNoteId,
 	currentNoteTitle,
-	currentUserName,
+	currentUser,
 	onOpenNote,
 	onNoteTrashed,
 }: {
 	sharedNotes: Array<Doc<"notes">> | undefined;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle: string;
-	currentUserName: string;
+	currentUser: AppUser;
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
@@ -3309,7 +3321,7 @@ function SharedView({
 							notes={sharedNotes}
 							activeNoteId={currentNoteId}
 							activeNoteTitle={currentNoteTitle}
-							currentUserName={currentUserName}
+							currentUser={currentUser}
 							onOpenNote={onOpenNote}
 							onNoteTrashed={onNoteTrashed}
 						/>
@@ -3420,14 +3432,14 @@ function SharedNotesList({
 	notes,
 	activeNoteId,
 	activeNoteTitle,
-	currentUserName,
+	currentUser,
 	onOpenNote,
 	onNoteTrashed,
 }: {
 	notes: Array<Doc<"notes">>;
 	activeNoteId: Id<"notes"> | null;
 	activeNoteTitle: string;
-	currentUserName: string;
+	currentUser: AppUser;
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
@@ -3463,10 +3475,11 @@ function SharedNotesList({
 									isActive && activeNoteTitle.trim()
 										? activeNoteTitle
 										: note.title || "New note";
-								const preview =
-									note.searchableText.trim() ||
-									note.authorName?.trim() ||
-									currentUserName;
+								const authorDisplayName = getNoteAuthorDisplayName(
+									note,
+									currentUser,
+								);
+								const createdTime = formatNoteCreatedTime(note);
 
 								return (
 									<div
@@ -3488,8 +3501,15 @@ function SharedNotesList({
 												<div className="truncate text-sm font-medium">
 													{title}
 												</div>
-												<div className="truncate text-xs text-muted-foreground">
-													{preview}
+												<div className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+													<span className="truncate">{authorDisplayName}</span>
+													<span aria-hidden="true">·</span>
+													<time
+														dateTime={new Date(note.createdAt).toISOString()}
+														className="shrink-0 tabular-nums"
+													>
+														{createdTime}
+													</time>
 												</div>
 											</div>
 										</button>
@@ -3523,14 +3543,14 @@ function HomeNotesList({
 	notes,
 	activeNoteId,
 	activeNoteTitle,
-	currentUserName,
+	currentUser,
 	onOpenNote,
 	onNoteTrashed,
 }: {
 	notes: Array<Doc<"notes">>;
 	activeNoteId: Id<"notes"> | null;
 	activeNoteTitle: string;
-	currentUserName: string;
+	currentUser: AppUser;
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
@@ -3566,10 +3586,11 @@ function HomeNotesList({
 									isActive && activeNoteTitle.trim()
 										? activeNoteTitle
 										: note.title || "New note";
-								const preview =
-									note.searchableText.trim() ||
-									note.authorName?.trim() ||
-									currentUserName;
+								const authorDisplayName = getNoteAuthorDisplayName(
+									note,
+									currentUser,
+								);
+								const createdTime = formatNoteCreatedTime(note);
 
 								return (
 									<div
@@ -3591,8 +3612,15 @@ function HomeNotesList({
 												<div className="truncate text-sm font-medium">
 													{title}
 												</div>
-												<div className="truncate text-xs text-muted-foreground">
-													{preview}
+												<div className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+													<span className="truncate">{authorDisplayName}</span>
+													<span aria-hidden="true">·</span>
+													<time
+														dateTime={new Date(note.createdAt).toISOString()}
+														className="shrink-0 tabular-nums"
+													>
+														{createdTime}
+													</time>
 												</div>
 											</div>
 										</button>

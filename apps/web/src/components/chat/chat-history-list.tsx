@@ -32,6 +32,11 @@ type GroupedChats = {
 	older: Array<Doc<"chats">>;
 };
 
+const chatCreatedTimeFormatter = new Intl.DateTimeFormat(undefined, {
+	hour: "numeric",
+	minute: "2-digit",
+});
+
 export function ChatHistoryList({
 	chats,
 	isChatsLoading,
@@ -72,6 +77,9 @@ export function ChatHistoryList({
 									{section.chats.map((chat) => {
 										const storedChatId = getChatId(chat);
 										const preview = chat.authorName?.trim() || "Unknown user";
+										const createdTime = chatCreatedTimeFormatter.format(
+											new Date(chat.createdAt || chat._creationTime),
+										);
 
 										return (
 											<div
@@ -95,8 +103,17 @@ export function ChatHistoryList({
 														<div className="truncate text-sm font-medium">
 															{chat.title || "New chat"}
 														</div>
-														<div className="truncate text-xs text-muted-foreground">
-															{preview}
+														<div className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+															<span className="truncate">{preview}</span>
+															<span aria-hidden="true">·</span>
+															<time
+																dateTime={new Date(
+																	chat.createdAt || chat._creationTime,
+																).toISOString()}
+																className="shrink-0 tabular-nums"
+															>
+																{createdTime}
+															</time>
 														</div>
 													</div>
 												</button>
