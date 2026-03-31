@@ -191,6 +191,8 @@ const useNoteComposerController = ({
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 	const { containerRef: chatViewportRef } = useStickyScrollToBottom();
 	const previousSpeechListeningRef = React.useRef(false);
+	const shouldOpenChatOnComposerFocusRef = React.useRef(false);
+	const shouldFocusInlineChatRef = React.useRef(false);
 	const noteId = (noteContext.noteId as Id<"notes"> | null) ?? null;
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const previousChatIdRef = React.useRef(currentChatId);
@@ -505,6 +507,37 @@ const useNoteComposerController = ({
 	}, [isRightSidebarOpen, panelMode, presentationMode]);
 
 	React.useEffect(() => {
+		if (
+			panelMode !== "chat" ||
+			!shouldShowInlinePanel ||
+			!shouldFocusInlineChatRef.current
+		) {
+			return;
+		}
+
+		const focusTextarea = () => {
+			if (!textareaRef.current) {
+				return;
+			}
+
+			textareaRef.current.focus({ preventScroll: true });
+			const cursorPosition = textareaRef.current.value.length;
+			textareaRef.current.setSelectionRange(cursorPosition, cursorPosition);
+		};
+
+		const immediateTimeoutId = window.setTimeout(focusTextarea, 0);
+		const delayedTimeoutId = window.setTimeout(() => {
+			focusTextarea();
+			shouldFocusInlineChatRef.current = false;
+		}, 50);
+
+		return () => {
+			window.clearTimeout(immediateTimeoutId);
+			window.clearTimeout(delayedTimeoutId);
+		};
+	}, [panelMode, shouldShowInlinePanel]);
+
+	React.useEffect(() => {
 		if (!panelMode || !shouldShowInlinePanel) {
 			return;
 		}
@@ -665,6 +698,7 @@ const useNoteComposerController = ({
 	const handleSelectInlinePresentation = () => {
 		setPresentationMode("inline");
 		closeRightSidebar();
+		shouldFocusInlineChatRef.current = true;
 		setPanelMode("chat");
 	};
 
@@ -679,11 +713,16 @@ const useNoteComposerController = ({
 		setPanelMode(null);
 	};
 
+	const handleComposerPointerDown = React.useCallback(() => {
+		shouldOpenChatOnComposerFocusRef.current = true;
+	}, []);
+
 	const handleComposerFocus = React.useCallback(() => {
-		if (!latestNoteChat) {
+		if (!shouldOpenChatOnComposerFocusRef.current || !latestNoteChat) {
 			return;
 		}
 
+		shouldOpenChatOnComposerFocusRef.current = false;
 		if (isChatLoading) {
 			stop();
 		}
@@ -691,6 +730,7 @@ const useNoteComposerController = ({
 		closeRightSidebar();
 		setPresentationMode("inline");
 		setCurrentChatId(latestNoteChat.chatId);
+		shouldFocusInlineChatRef.current = true;
 		setPanelMode("chat");
 	}, [closeRightSidebar, isChatLoading, latestNoteChat, stop]);
 
@@ -708,6 +748,7 @@ const useNoteComposerController = ({
 		fullTranscript: transcriptSession.fullTranscript,
 		groupedNoteChats,
 		handleComposerFocus,
+		handleComposerPointerDown,
 		handleGenerateNotes: transcriptSession.handleGenerateNotes,
 		handleHideChat,
 		handleKeyDown,
@@ -1205,6 +1246,7 @@ function ChatInlinePopoverFooter({
 	activateInlineOnFocus = false,
 	composerPlaceholder,
 	handleComposerFocus,
+	handleComposerPointerDown,
 	handleKeyDown,
 	handleTextareaChange,
 	hasMessage,
@@ -1216,6 +1258,7 @@ function ChatInlinePopoverFooter({
 	activateInlineOnFocus?: boolean;
 	composerPlaceholder: string;
 	handleComposerFocus: () => void;
+	handleComposerPointerDown: () => void;
 	handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 	handleTextareaChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
 	hasMessage: boolean;
@@ -1231,6 +1274,9 @@ function ChatInlinePopoverFooter({
 				ref={textareaRef}
 				value={message}
 				onChange={handleTextareaChange}
+				onPointerDown={
+					activateInlineOnFocus ? handleComposerPointerDown : undefined
+				}
 				onFocus={activateInlineOnFocus ? handleComposerFocus : undefined}
 				onKeyDown={handleKeyDown}
 				placeholder={composerPlaceholder}
@@ -1368,6 +1414,7 @@ function ChatComposerForm({
 				activateInlineOnFocus={activateInlineOnFocus}
 				composerPlaceholder={controller.composerPlaceholder}
 				handleComposerFocus={controller.handleComposerFocus}
+				handleComposerPointerDown={controller.handleComposerPointerDown}
 				handleKeyDown={controller.handleKeyDown}
 				handleTextareaChange={controller.handleTextareaChange}
 				hasMessage={controller.hasMessage}
