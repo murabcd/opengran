@@ -21,6 +21,9 @@ const SIDEBAR_NOTE_SKELETON_IDS = [
 
 export function NavNotes({
 	notes,
+	title = "Notes",
+	emptyMessage = "No notes yet",
+	showStarred = true,
 	currentNoteId,
 	currentNoteTitle,
 	onNoteSelect,
@@ -28,6 +31,9 @@ export function NavNotes({
 	onNoteTrashed,
 }: {
 	notes: Array<Doc<"notes">> | undefined;
+	title?: string;
+	emptyMessage?: string;
+	showStarred?: boolean;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	onNoteSelect: (noteId: Id<"notes">) => void;
@@ -47,7 +53,7 @@ export function NavNotes({
 
 	return (
 		<>
-			{starredNotes.length > 0 ? (
+			{showStarred && starredNotes.length > 0 ? (
 				<SidebarCollapsibleGroup
 					title="Starred"
 					className="group-data-[collapsible=icon]:hidden"
@@ -63,13 +69,13 @@ export function NavNotes({
 				</SidebarCollapsibleGroup>
 			) : null}
 			<SidebarCollapsibleGroup
-				title="Notes"
+				title={title}
 				className="group-data-[collapsible=icon]:hidden"
 			>
 				{isNotesPending ? <NavNotesSkeleton /> : null}
 				{notes && notes.length === 0 ? (
 					<div className="px-2 text-xs text-muted-foreground/50">
-						No notes yet
+						{emptyMessage}
 					</div>
 				) : null}
 				{isNotesPending ? null : (

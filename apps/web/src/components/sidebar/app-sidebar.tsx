@@ -63,6 +63,7 @@ export function AppSidebar({
 	user,
 	chats,
 	notes,
+	sharedNotes,
 	onWorkspaceSelect,
 	onWorkspaceCreate,
 	onViewChange,
@@ -90,6 +91,7 @@ export function AppSidebar({
 	};
 	chats: Array<Doc<"chats">> | undefined;
 	notes: Array<Doc<"notes">> | undefined;
+	sharedNotes: Array<Doc<"notes">> | undefined;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
 	onWorkspaceCreate: (input: { name: string }) => Promise<WorkspaceRecord>;
 	onViewChange: (view: "home" | "chat" | "shared" | "note") => void;
@@ -168,6 +170,22 @@ export function AppSidebar({
 					</div>
 				</SidebarHeader>
 				<SidebarContent>
+					{currentView === "shared" ||
+					currentView === "note" ||
+					sharedNotes === undefined ||
+					(sharedNotes?.length ?? 0) > 0 ? (
+						<NavNotes
+							notes={sharedNotes}
+							title="Shared"
+							emptyMessage="No shared notes yet"
+							showStarred={false}
+							currentNoteId={currentView === "note" ? currentNoteId : null}
+							currentNoteTitle={currentNoteTitle}
+							onNoteSelect={onNoteSelect}
+							onNoteTitleChange={onNoteTitleChange}
+							onNoteTrashed={onNoteTrashed}
+						/>
+					) : null}
 					<NavNotes
 						notes={notes}
 						currentNoteId={currentView === "note" ? currentNoteId : null}

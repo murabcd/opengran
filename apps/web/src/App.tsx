@@ -2361,6 +2361,7 @@ function AppShell({
 					user={controller.user}
 					chats={controller.chats}
 					notes={controller.notes}
+					sharedNotes={controller.sharedNotes}
 					onWorkspaceSelect={controller.setActiveWorkspaceId}
 					onWorkspaceCreate={controller.handleWorkspaceCreate}
 					onViewChange={controller.handleViewChange}
