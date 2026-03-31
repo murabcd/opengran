@@ -463,7 +463,7 @@ export function ChatPage({
 								</div>
 
 								<div className="sticky bottom-0 z-10 mt-auto h-0">
-									<div className="pointer-events-none absolute inset-x-0 bottom-0 -mx-4 bg-background pb-6 md:-mx-6">
+									<div className="pointer-events-none absolute inset-x-0 bottom-0 -mx-4 bg-background pt-2 pb-6 md:-mx-6">
 										<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
 											{composer}
 										</div>
