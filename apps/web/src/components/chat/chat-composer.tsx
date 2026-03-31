@@ -282,7 +282,7 @@ export function ChatComposer({
 					onKeyDown={onDraftKeyDown}
 					rows={hasMessages ? 1 : 3}
 					placeholder="Ask, search, or make anything..."
-					className={`${hasMessages ? "min-h-[40px] pt-2 pb-0" : "min-h-[64px] pt-2"} max-h-[24rem] overflow-y-auto px-4 text-base placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0`}
+					className={`${hasMessages ? "min-h-[40px] pt-2 pb-0" : "min-h-[64px] pt-2"} max-h-[24rem] overflow-y-auto px-4 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0`}
 				/>
 
 				<InputGroupAddon

@@ -1281,7 +1281,7 @@ function ChatInlinePopoverFooter({
 				onFocus={activateInlineOnFocus ? handleComposerFocus : undefined}
 				onKeyDown={handleKeyDown}
 				placeholder={composerPlaceholder}
-				className="min-h-[40px] max-h-52 overflow-y-auto px-4 pt-2 pb-0 text-base placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+				className="min-h-[40px] max-h-52 overflow-y-auto px-4 pt-2 pb-0 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
 				rows={1}
 			/>
 			<InputGroupAddon align="block-end" className="gap-1 px-4 pb-2.5">
