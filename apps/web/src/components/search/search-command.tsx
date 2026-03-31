@@ -74,14 +74,7 @@ export function SearchCommand({
 									className="cursor-pointer"
 								>
 									<item.icon className="size-4" />
-									<div className="min-w-0 flex-1">
-										<div className="truncate">{item.title}</div>
-										{item.kind === "note" && item.preview ? (
-											<div className="truncate text-xs text-muted-foreground">
-												{item.preview}
-											</div>
-										) : null}
-									</div>
+									<div className="min-w-0 flex-1 truncate">{item.title}</div>
 								</CommandItem>
 							))}
 						</CommandGroup>
@@ -99,9 +92,7 @@ export function SearchCommand({
 									className="cursor-pointer"
 								>
 									<item.icon className="size-4" />
-									<div className="min-w-0 flex-1">
-										<div className="truncate">{item.title}</div>
-									</div>
+									<div className="min-w-0 flex-1 truncate">{item.title}</div>
 								</CommandItem>
 							))}
 						</CommandGroup>
