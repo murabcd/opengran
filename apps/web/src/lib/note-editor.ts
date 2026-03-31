@@ -130,7 +130,7 @@ const normalizeTopLevelNoteContentNodes = (
 	});
 };
 
-export const normalizeNoteDocument = (document: JSONContent): JSONContent => {
+const normalizeNoteDocument = (document: JSONContent): JSONContent => {
 	if (document.type !== "doc") {
 		return document;
 	}

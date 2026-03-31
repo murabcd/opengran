@@ -2428,6 +2428,22 @@ function AppShell({
 	);
 }
 
+type AppShellHeaderProps = {
+	isDesktopMac: boolean;
+	breadcrumbSectionLabel: string;
+	breadcrumbDetailLabel: string | null;
+	onBreadcrumbSectionClick: () => void;
+	currentView: AppView;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle: string;
+	currentNoteTemplateSlug: string | null;
+	currentNoteEditorActions: NoteEditorActions | null;
+	onCreateNote: () => void;
+	onNoteTitleChange: (title: string) => void;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
+	onNewChat: () => void;
+};
+
 function AppShellHeader({
 	isDesktopMac,
 	breadcrumbSectionLabel,
@@ -2442,21 +2458,7 @@ function AppShellHeader({
 	onNoteTitleChange,
 	onNoteTrashed,
 	onNewChat,
-}: {
-	isDesktopMac: boolean;
-	breadcrumbSectionLabel: string;
-	breadcrumbDetailLabel: string | null;
-	onBreadcrumbSectionClick: () => void;
-	currentView: AppView;
-	currentNoteId: Id<"notes"> | null;
-	currentNoteTitle: string;
-	currentNoteTemplateSlug: string | null;
-	currentNoteEditorActions: NoteEditorActions | null;
-	onCreateNote: () => void;
-	onNoteTitleChange: (title: string) => void;
-	onNoteTrashed: (noteId: Id<"notes">) => void;
-	onNewChat: () => void;
-}) {
+}: AppShellHeaderProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const breadcrumbRenameInitialTitleRef = React.useRef(
 		currentNoteTitle || "New note",
@@ -2583,194 +2585,296 @@ function AppShellHeader({
 					orientation="vertical"
 					className="mr-2 data-[orientation=vertical]:h-4"
 				/>
-				<Breadcrumb className="min-w-0 flex-1">
-					<BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
-						{breadcrumbDetailLabel ? (
-							<>
-								<BreadcrumbItem className="hidden shrink-0 md:inline-flex">
-									<BreadcrumbLink asChild>
-										<button
-											type="button"
-											className="cursor-pointer truncate"
-											onClick={onBreadcrumbSectionClick}
-										>
-											{breadcrumbSectionLabel}
-										</button>
-									</BreadcrumbLink>
-								</BreadcrumbItem>
-								<BreadcrumbSeparator className="hidden shrink-0 md:block" />
-								<BreadcrumbItem className="min-w-0 flex-1 overflow-hidden">
-									{canRenameCurrentNote ? (
-										<Popover
-											open={titleEditOpen}
-											onOpenChange={handleBreadcrumbTitleEditOpenChange}
-										>
-											<Tooltip>
-												<TooltipTrigger asChild>
-													<PopoverAnchor asChild>
-														<button
-															type="button"
-															aria-current="page"
-															className="line-clamp-1 cursor-pointer rounded px-1 py-0.5 -mx-1 -my-0.5 text-left"
-															onClick={openBreadcrumbTitleEditor}
-														>
-															<BreadcrumbPage className="block truncate">
-																{breadcrumbDetailLabel}
-															</BreadcrumbPage>
-														</button>
-													</PopoverAnchor>
-												</TooltipTrigger>
-												<TooltipContent>Rename note</TooltipContent>
-											</Tooltip>
-											<PopoverContent
-												align="start"
-												side="bottom"
-												sideOffset={6}
-												className="w-[340px] rounded-2xl border-sidebar-border/70 bg-sidebar p-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.45)] ring-1 ring-white/8"
-											>
-												<div className="flex items-center gap-2">
-													<NoteTitleEditInput
-														focusOnMount
-														commitOnBlur={false}
-														value={titleValue}
-														onValueChange={(value) => {
-															setTitleValue(value);
-															onNoteTitleChange(value || "New note");
-														}}
-														onCommit={() => {
-															void commitBreadcrumbRename();
-														}}
-														onCancel={() => {
-															setTitleEditOpen(false);
-															onNoteTitleChange(
-																breadcrumbRenameInitialTitleRef.current,
-															);
-															setTitleValue(
-																breadcrumbRenameInitialTitleRef.current,
-															);
-														}}
-													/>
-												</div>
-											</PopoverContent>
-										</Popover>
-									) : (
-										<BreadcrumbPage className="block truncate">
-											{breadcrumbDetailLabel}
-										</BreadcrumbPage>
-									)}
-								</BreadcrumbItem>
-							</>
-						) : (
-							<BreadcrumbItem className="min-w-0 flex-1 overflow-hidden">
-								<BreadcrumbPage className="block truncate">
-									{breadcrumbSectionLabel}
-								</BreadcrumbPage>
-							</BreadcrumbItem>
-						)}
-					</BreadcrumbList>
-				</Breadcrumb>
+				<AppShellBreadcrumbs
+					breadcrumbSectionLabel={breadcrumbSectionLabel}
+					breadcrumbDetailLabel={breadcrumbDetailLabel}
+					onBreadcrumbSectionClick={onBreadcrumbSectionClick}
+					canRenameCurrentNote={canRenameCurrentNote}
+					titleEditOpen={titleEditOpen}
+					onTitleEditOpenChange={handleBreadcrumbTitleEditOpenChange}
+					onOpenTitleEditor={openBreadcrumbTitleEditor}
+					titleValue={titleValue}
+					onTitleValueChange={(value) => {
+						setTitleValue(value);
+						onNoteTitleChange(value || "New note");
+					}}
+					onCommitTitleRename={() => {
+						void commitBreadcrumbRename();
+					}}
+					onCancelTitleRename={() => {
+						setTitleEditOpen(false);
+						onNoteTitleChange(breadcrumbRenameInitialTitleRef.current);
+						setTitleValue(breadcrumbRenameInitialTitleRef.current);
+					}}
+				/>
 			</div>
 			<div
 				data-app-region={isDesktopMac ? "no-drag" : undefined}
 				className="ml-auto shrink-0"
 			>
-				{currentView === "home" ? (
-					<Button variant="outline" onClick={onCreateNote}>
-						<Plus />
-						Quick note
-					</Button>
-				) : currentView === "note" && currentNoteId ? (
-					<div className="flex items-center gap-2">
-						{currentNoteEditorActions?.canShowTemplateSelect ? (
-							<NoteTemplateSelect
-								disabled={!currentNoteEditorActions}
-								selectedSlug={currentNoteTemplateSlug}
-								onTemplateSelect={async (template) =>
-									(await currentNoteEditorActions?.applyTemplate(template)) ??
-									false
-								}
-							/>
-						) : null}
-						<NoteStarButton noteId={currentNoteId} className="size-7" />
-						<NoteActionsMenu
-							noteId={currentNoteId}
-							onMoveToTrash={onNoteTrashed}
-							align="end"
-							showRename={false}
-							itemsBeforeDefaults={
-								currentNoteEditorActions ? (
-									<DropdownMenuItem
-										className="cursor-pointer"
-										disabled={!currentNoteEditorActions.canCopyMarkdown}
-										onSelect={(event) => {
-											event.preventDefault();
-											currentNoteEditorActions.copyMarkdown();
-										}}
-									>
-										<Copy />
-										Copy note content
-									</DropdownMenuItem>
-								) : null
-							}
-							itemsAfterDefaults={
-								currentNoteEditorActions ? (
-									<>
-										<DropdownMenuItem
-											className="cursor-pointer"
-											disabled={!currentNoteEditorActions.canUndo}
-											onSelect={(event) => {
-												event.preventDefault();
-												currentNoteEditorActions.undo();
-											}}
-										>
-											<Undo2 />
-											Undo
-										</DropdownMenuItem>
-										<DropdownMenuItem
-											className="cursor-pointer"
-											disabled={!currentNoteEditorActions.canRedo}
-											onSelect={(event) => {
-												event.preventDefault();
-												currentNoteEditorActions.redo();
-											}}
-										>
-											<Redo2 />
-											Redo
-										</DropdownMenuItem>
-										<DropdownMenuItem
-											className="cursor-pointer"
-											disabled={!currentNoteEditorActions.canCopyMarkdown}
-											onSelect={(event) => {
-												event.preventDefault();
-												currentNoteEditorActions.exportMarkdown();
-											}}
-										>
-											<ArrowDown />
-											Export
-										</DropdownMenuItem>
-									</>
-								) : null
-							}
-						>
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon-sm"
-								className="text-muted-foreground hover:text-foreground"
-								aria-label={`Open actions for ${currentNoteTitle || "note"}`}
-							>
-								<MoreHorizontal className="size-4" />
-							</Button>
-						</NoteActionsMenu>
-					</div>
-				) : currentView === "chat" ? (
-					<Button variant="outline" onClick={onNewChat}>
-						<Plus />
-						New chat
-					</Button>
-				) : null}
+				<AppShellHeaderActions
+					currentView={currentView}
+					currentNoteId={currentNoteId}
+					currentNoteTitle={currentNoteTitle}
+					currentNoteTemplateSlug={currentNoteTemplateSlug}
+					currentNoteEditorActions={currentNoteEditorActions}
+					onCreateNote={onCreateNote}
+					onNoteTrashed={onNoteTrashed}
+					onNewChat={onNewChat}
+				/>
 			</div>
 		</header>
+	);
+}
+
+function AppShellBreadcrumbs({
+	breadcrumbSectionLabel,
+	breadcrumbDetailLabel,
+	onBreadcrumbSectionClick,
+	canRenameCurrentNote,
+	titleEditOpen,
+	onTitleEditOpenChange,
+	onOpenTitleEditor,
+	titleValue,
+	onTitleValueChange,
+	onCommitTitleRename,
+	onCancelTitleRename,
+}: {
+	breadcrumbSectionLabel: string;
+	breadcrumbDetailLabel: string | null;
+	onBreadcrumbSectionClick: () => void;
+	canRenameCurrentNote: boolean;
+	titleEditOpen: boolean;
+	onTitleEditOpenChange: (open: boolean) => void;
+	onOpenTitleEditor: () => void;
+	titleValue: string;
+	onTitleValueChange: (value: string) => void;
+	onCommitTitleRename: () => void;
+	onCancelTitleRename: () => void;
+}) {
+	return (
+		<Breadcrumb className="min-w-0 flex-1">
+			<BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
+				{breadcrumbDetailLabel ? (
+					<>
+						<BreadcrumbItem className="hidden shrink-0 md:inline-flex">
+							<BreadcrumbLink asChild>
+								<button
+									type="button"
+									className="cursor-pointer truncate"
+									onClick={onBreadcrumbSectionClick}
+								>
+									{breadcrumbSectionLabel}
+								</button>
+							</BreadcrumbLink>
+						</BreadcrumbItem>
+						<BreadcrumbSeparator className="hidden shrink-0 md:block" />
+						<BreadcrumbItem className="min-w-0 flex-1 overflow-hidden">
+							{canRenameCurrentNote ? (
+								<Popover
+									open={titleEditOpen}
+									onOpenChange={onTitleEditOpenChange}
+								>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<PopoverAnchor asChild>
+												<button
+													type="button"
+													aria-current="page"
+													className="line-clamp-1 -mx-1 -my-0.5 cursor-pointer rounded px-1 py-0.5 text-left"
+													onClick={onOpenTitleEditor}
+												>
+													<BreadcrumbPage className="block truncate">
+														{breadcrumbDetailLabel}
+													</BreadcrumbPage>
+												</button>
+											</PopoverAnchor>
+										</TooltipTrigger>
+										<TooltipContent>Rename note</TooltipContent>
+									</Tooltip>
+									<PopoverContent
+										align="start"
+										side="bottom"
+										sideOffset={6}
+										className="w-[340px] rounded-2xl border-sidebar-border/70 bg-sidebar p-1.5 shadow-[0_18px_50px_rgba(0,0,0,0.45)] ring-1 ring-white/8"
+									>
+										<div className="flex items-center gap-2">
+											<NoteTitleEditInput
+												focusOnMount
+												commitOnBlur={false}
+												value={titleValue}
+												onValueChange={onTitleValueChange}
+												onCommit={onCommitTitleRename}
+												onCancel={onCancelTitleRename}
+											/>
+										</div>
+									</PopoverContent>
+								</Popover>
+							) : (
+								<BreadcrumbPage className="block truncate">
+									{breadcrumbDetailLabel}
+								</BreadcrumbPage>
+							)}
+						</BreadcrumbItem>
+					</>
+				) : (
+					<BreadcrumbItem className="min-w-0 flex-1 overflow-hidden">
+						<BreadcrumbPage className="block truncate">
+							{breadcrumbSectionLabel}
+						</BreadcrumbPage>
+					</BreadcrumbItem>
+				)}
+			</BreadcrumbList>
+		</Breadcrumb>
+	);
+}
+
+function AppShellHeaderActions({
+	currentView,
+	currentNoteId,
+	currentNoteTitle,
+	currentNoteTemplateSlug,
+	currentNoteEditorActions,
+	onCreateNote,
+	onNoteTrashed,
+	onNewChat,
+}: Pick<
+	AppShellHeaderProps,
+	| "currentView"
+	| "currentNoteId"
+	| "currentNoteTitle"
+	| "currentNoteTemplateSlug"
+	| "currentNoteEditorActions"
+	| "onCreateNote"
+	| "onNoteTrashed"
+	| "onNewChat"
+>) {
+	if (currentView === "home") {
+		return (
+			<Button variant="outline" onClick={onCreateNote}>
+				<Plus />
+				Quick note
+			</Button>
+		);
+	}
+
+	if (currentView === "chat") {
+		return (
+			<Button variant="outline" onClick={onNewChat}>
+				<Plus />
+				New chat
+			</Button>
+		);
+	}
+
+	if (currentView !== "note" || !currentNoteId) {
+		return null;
+	}
+
+	return (
+		<div className="flex items-center gap-2">
+			{currentNoteEditorActions?.canShowTemplateSelect ? (
+				<NoteTemplateSelect
+					disabled={!currentNoteEditorActions}
+					selectedSlug={currentNoteTemplateSlug}
+					onTemplateSelect={async (template) =>
+						(await currentNoteEditorActions?.applyTemplate(template)) ?? false
+					}
+				/>
+			) : null}
+			<NoteStarButton noteId={currentNoteId} className="size-7" />
+			<NoteHeaderActionsMenu
+				noteId={currentNoteId}
+				noteTitle={currentNoteTitle}
+				noteEditorActions={currentNoteEditorActions}
+				onNoteTrashed={onNoteTrashed}
+			/>
+		</div>
+	);
+}
+
+function NoteHeaderActionsMenu({
+	noteId,
+	noteTitle,
+	noteEditorActions,
+	onNoteTrashed,
+}: {
+	noteId: Id<"notes">;
+	noteTitle: string;
+	noteEditorActions: NoteEditorActions | null;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
+}) {
+	return (
+		<NoteActionsMenu
+			noteId={noteId}
+			onMoveToTrash={onNoteTrashed}
+			align="end"
+			showRename={false}
+			itemsBeforeDefaults={
+				noteEditorActions ? (
+					<DropdownMenuItem
+						className="cursor-pointer"
+						disabled={!noteEditorActions.canCopyMarkdown}
+						onSelect={(event) => {
+							event.preventDefault();
+							noteEditorActions.copyMarkdown();
+						}}
+					>
+						<Copy />
+						Copy note content
+					</DropdownMenuItem>
+				) : null
+			}
+			itemsAfterDefaults={
+				noteEditorActions ? (
+					<>
+						<DropdownMenuItem
+							className="cursor-pointer"
+							disabled={!noteEditorActions.canUndo}
+							onSelect={(event) => {
+								event.preventDefault();
+								noteEditorActions.undo();
+							}}
+						>
+							<Undo2 />
+							Undo
+						</DropdownMenuItem>
+						<DropdownMenuItem
+							className="cursor-pointer"
+							disabled={!noteEditorActions.canRedo}
+							onSelect={(event) => {
+								event.preventDefault();
+								noteEditorActions.redo();
+							}}
+						>
+							<Redo2 />
+							Redo
+						</DropdownMenuItem>
+						<DropdownMenuItem
+							className="cursor-pointer"
+							disabled={!noteEditorActions.canCopyMarkdown}
+							onSelect={(event) => {
+								event.preventDefault();
+								noteEditorActions.exportMarkdown();
+							}}
+						>
+							<ArrowDown />
+							Export
+						</DropdownMenuItem>
+					</>
+				) : null
+			}
+		>
+			<Button
+				type="button"
+				variant="ghost"
+				size="icon-sm"
+				className="text-muted-foreground hover:text-foreground"
+				aria-label={`Open actions for ${noteTitle || "note"}`}
+			>
+				<MoreHorizontal className="size-4" />
+			</Button>
+		</NoteActionsMenu>
 	);
 }
 

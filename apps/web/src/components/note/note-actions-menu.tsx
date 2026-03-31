@@ -197,23 +197,7 @@ export function NoteStarButton({
 	);
 }
 
-export function NoteActionsMenu({
-	noteId,
-	onMoveToTrash,
-	children,
-	renameAnchor,
-	renamePopoverAlign = "start",
-	renamePopoverSide = "bottom",
-	renamePopoverSideOffset = 8,
-	renamePopoverClassName,
-	onRenamePreviewChange,
-	onRenamePreviewReset,
-	align = "start",
-	side = "bottom",
-	showRename = true,
-	itemsBeforeDefaults,
-	itemsAfterDefaults,
-}: {
+type NoteActionsMenuProps = {
 	noteId: Id<"notes">;
 	onMoveToTrash?: (noteId: Id<"notes">) => void;
 	children: React.ReactNode;
@@ -229,7 +213,16 @@ export function NoteActionsMenu({
 	showRename?: boolean;
 	itemsBeforeDefaults?: React.ReactNode;
 	itemsAfterDefaults?: React.ReactNode;
-}) {
+};
+
+function useNoteActionsMenu({
+	noteId,
+	onMoveToTrash,
+	onRenamePreviewChange,
+}: Pick<
+	NoteActionsMenuProps,
+	"noteId" | "onMoveToTrash" | "onRenamePreviewChange"
+>) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const preventMenuCloseAutoFocusRef = React.useRef(false);
 	const ignoreInitialRenameInteractOutsideRef = React.useRef(false);
@@ -458,213 +451,188 @@ export function NoteActionsMenu({
 			});
 	}, [activeWorkspaceId, isMovingToTrash, moveToTrash, noteId, onMoveToTrash]);
 
-	const renameEditor = renameAnchor ? (
-		<PopoverContent
-			align={renamePopoverAlign}
-			side={renamePopoverSide}
-			sideOffset={renamePopoverSideOffset}
-			className={cn("w-96 rounded-xl p-2", renamePopoverClassName)}
-			onOpenAutoFocus={(event) => {
-				event.preventDefault();
-				requestAnimationFrame(() => {
-					const input = renameInputRef.current;
-					if (!input) {
-						return;
-					}
+	const handleStartRename = React.useCallback(() => {
+		setMenuOpen(false);
+		preventMenuCloseAutoFocusRef.current = true;
+		ignoreInitialRenameInteractOutsideRef.current = true;
+		setRenameValue(note?.title || "New note");
+		setRenameOpen(true);
+	}, [note?.title]);
 
-					input.focus();
-					input.setSelectionRange(0, input.value.length);
-				});
-			}}
-			onInteractOutside={(event) => {
-				if (ignoreInitialRenameInteractOutsideRef.current) {
-					event.preventDefault();
-					ignoreInitialRenameInteractOutsideRef.current = false;
-				}
-			}}
-		>
-			<div className="flex items-center gap-2">
-				<NoteTitleEditInput
-					focusOnMount
-					commitOnBlur={false}
-					inputRef={renameInputRef}
-					value={renameValue}
-					onValueChange={setRenameValue}
-					onCommit={() => {
-						void handleRename();
-					}}
-					onCancel={() => {
-						setRenameOpen(false);
-						onRenamePreviewReset?.();
-						setRenameValue(note?.title || "New note");
-					}}
-				/>
-			</div>
-		</PopoverContent>
-	) : (
-		<Dialog open={renameOpen} onOpenChange={handleRenameOpenChange}>
-			<DialogContent>
-				<DialogHeader>
-					<DialogTitle>Rename note</DialogTitle>
-					<DialogDescription>
-						Update the note title and press Enter or click Rename to save.
-					</DialogDescription>
-				</DialogHeader>
-				<div className="flex items-center gap-2">
-					<div className="bg-muted/30 flex size-8 items-center justify-center rounded-lg border">
-						<FileText className="text-muted-foreground size-5" />
-					</div>
-					<NoteTitleEditInput
-						focusOnMount
-						commitOnBlur={false}
-						className="h-9 rounded-lg px-3 text-sm"
-						inputRef={renameInputRef}
-						value={renameValue}
-						onValueChange={setRenameValue}
-						onCommit={() => {
-							void handleRename();
-						}}
-						onCancel={() => {
-							setRenameOpen(false);
-							onRenamePreviewReset?.();
-							setRenameValue(note?.title || "New note");
-						}}
-					/>
-				</div>
-				<div className="flex justify-end">
-					<Button
-						onClick={() => {
-							void handleRename();
-						}}
-						disabled={isRenaming}
-					>
-						{isRenaming ? "Renaming..." : "Rename"}
-					</Button>
-				</div>
-			</DialogContent>
-		</Dialog>
-	);
+	const handleRenameCancel = React.useCallback(() => {
+		setRenameOpen(false);
+		setRenameValue(note?.title || "New note");
+	}, [note?.title]);
 
-	const dropdownMenu = (
-		<DropdownMenu
-			open={menuOpen}
-			onOpenChange={(open) => {
-				setMenuOpen(open);
-			}}
-		>
-			<DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-			<DropdownMenuContent
-				align={align}
-				side={side}
-				className="w-56 overflow-hidden rounded-lg p-1"
-				onCloseAutoFocus={(event) => {
-					if (preventMenuCloseAutoFocusRef.current) {
-						event.preventDefault();
-						preventMenuCloseAutoFocusRef.current = false;
-					}
-				}}
-			>
-				{itemsBeforeDefaults}
-				<DropdownMenuSub>
-					<DropdownMenuSubTrigger>
-						<Share2 />
-						Share
-					</DropdownMenuSubTrigger>
-					<DropdownMenuPortal>
-						<DropdownMenuSubContent className="min-w-40">
-							<DropdownMenuItem
-								className="cursor-pointer justify-between"
-								disabled={note === undefined || isUpdatingShare}
-								onClick={() => {
-									void handleSetVisibility("private");
-								}}
-							>
-								<div className="flex items-center gap-2">
-									<Lock />
-									<span>Private</span>
-								</div>
-								{note?.visibility === "private" ? <Check /> : null}
-							</DropdownMenuItem>
-							<DropdownMenuItem
-								className="cursor-pointer justify-between"
-								disabled={note === undefined || isUpdatingShare}
-								onClick={() => {
-									void handleSetVisibility("public");
-								}}
-							>
-								<div className="flex items-center gap-2">
-									<Globe />
-									<span>Public</span>
-								</div>
-								{note?.visibility === "public" ? <Check /> : null}
-							</DropdownMenuItem>
-						</DropdownMenuSubContent>
-					</DropdownMenuPortal>
-				</DropdownMenuSub>
-				{showRename ? (
-					<DropdownMenuItem
-						className="cursor-pointer"
-						disabled={!note}
-						onClick={() => {
-							setMenuOpen(false);
-							preventMenuCloseAutoFocusRef.current = true;
-							ignoreInitialRenameInteractOutsideRef.current = true;
-							setRenameValue(note?.title || "New note");
-							setRenameOpen(true);
-						}}
-					>
-						<Pencil />
-						Rename
-					</DropdownMenuItem>
-				) : null}
-				<DropdownMenuItem
-					className="cursor-pointer"
-					disabled={!note || isUpdatingStar}
-					onClick={() => {
-						void handleToggleStar();
-					}}
-				>
-					{note?.isStarred ? <StarOff /> : <Star />}
-					{note?.isStarred ? "Unstar" : "Star"}
-				</DropdownMenuItem>
-				<DropdownMenuItem
-					className="cursor-pointer"
-					onClick={() => {
-						void handleCopyLink();
-					}}
-				>
-					<Link2 />
-					Copy link
-				</DropdownMenuItem>
-				{itemsAfterDefaults}
-				<DropdownMenuSeparator />
-				<DropdownMenuItem
-					variant="destructive"
-					className="cursor-pointer"
-					onSelect={(event) => {
-						event.preventDefault();
-						setConfirmOpen(true);
-					}}
-				>
-					<Trash2 />
-					Move to trash
-				</DropdownMenuItem>
-			</DropdownMenuContent>
-		</DropdownMenu>
-	);
+	return {
+		confirmOpen,
+		setConfirmOpen,
+		menuOpen,
+		setMenuOpen,
+		renameOpen,
+		renameValue,
+		setRenameValue,
+		renameInputRef,
+		isMovingToTrash,
+		isRenaming,
+		isUpdatingShare,
+		isUpdatingStar,
+		note,
+		preventMenuCloseAutoFocusRef,
+		ignoreInitialRenameInteractOutsideRef,
+		handleToggleStar,
+		handleRenameOpenChange,
+		handleSetVisibility,
+		handleCopyLink,
+		handleMoveToTrash,
+		handleStartRename,
+		handleRenameCancel,
+		handleRename,
+	};
+}
+
+export function NoteActionsMenu({
+	noteId,
+	onMoveToTrash,
+	children,
+	renameAnchor,
+	renamePopoverAlign = "start",
+	renamePopoverSide = "bottom",
+	renamePopoverSideOffset = 8,
+	renamePopoverClassName,
+	onRenamePreviewReset,
+	align = "start",
+	side = "bottom",
+	showRename = true,
+	itemsBeforeDefaults,
+	itemsAfterDefaults,
+	onRenamePreviewChange,
+}: NoteActionsMenuProps) {
+	const {
+		confirmOpen,
+		setConfirmOpen,
+		menuOpen,
+		setMenuOpen,
+		renameOpen,
+		renameValue,
+		setRenameValue,
+		renameInputRef,
+		isMovingToTrash,
+		isRenaming,
+		isUpdatingShare,
+		isUpdatingStar,
+		note,
+		preventMenuCloseAutoFocusRef,
+		ignoreInitialRenameInteractOutsideRef,
+		handleToggleStar,
+		handleRenameOpenChange,
+		handleSetVisibility,
+		handleCopyLink,
+		handleMoveToTrash,
+		handleStartRename,
+		handleRenameCancel,
+		handleRename,
+	} = useNoteActionsMenu({
+		noteId,
+		onMoveToTrash,
+		onRenamePreviewChange,
+	});
 
 	return (
 		<>
 			{renameAnchor ? (
 				<Popover open={renameOpen} onOpenChange={handleRenameOpenChange}>
 					<PopoverAnchor asChild>{renameAnchor}</PopoverAnchor>
-					{dropdownMenu}
-					{showRename ? renameEditor : null}
+					<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+						<DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+						<NoteActionsDropdownContent
+							align={align}
+							side={side}
+							itemsBeforeDefaults={itemsBeforeDefaults}
+							itemsAfterDefaults={itemsAfterDefaults}
+							preventMenuCloseAutoFocusRef={preventMenuCloseAutoFocusRef}
+							note={note}
+							isUpdatingShare={isUpdatingShare}
+							onSetVisibility={handleSetVisibility}
+							showRename={showRename}
+							onStartRename={handleStartRename}
+							isUpdatingStar={isUpdatingStar}
+							onToggleStar={handleToggleStar}
+							onCopyLink={handleCopyLink}
+							onConfirmTrash={() => setConfirmOpen(true)}
+						/>
+					</DropdownMenu>
+					{showRename ? (
+						<NoteRenameEditor
+							renameAnchor={renameAnchor}
+							renameOpen={renameOpen}
+							onRenameOpenChange={handleRenameOpenChange}
+							renamePopoverAlign={renamePopoverAlign}
+							renamePopoverSide={renamePopoverSide}
+							renamePopoverSideOffset={renamePopoverSideOffset}
+							renamePopoverClassName={renamePopoverClassName}
+							renameInputRef={renameInputRef}
+							renameValue={renameValue}
+							onRenameValueChange={setRenameValue}
+							onRename={() => {
+								void handleRename();
+							}}
+							onRenameCancel={() => {
+								handleRenameCancel();
+								onRenamePreviewReset?.();
+							}}
+							ignoreInitialRenameInteractOutsideRef={
+								ignoreInitialRenameInteractOutsideRef
+							}
+							isRenaming={isRenaming}
+						/>
+					) : null}
 				</Popover>
 			) : (
 				<>
-					{dropdownMenu}
-					{showRename ? renameEditor : null}
+					<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+						<DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+						<NoteActionsDropdownContent
+							align={align}
+							side={side}
+							itemsBeforeDefaults={itemsBeforeDefaults}
+							itemsAfterDefaults={itemsAfterDefaults}
+							preventMenuCloseAutoFocusRef={preventMenuCloseAutoFocusRef}
+							note={note}
+							isUpdatingShare={isUpdatingShare}
+							onSetVisibility={handleSetVisibility}
+							showRename={showRename}
+							onStartRename={handleStartRename}
+							isUpdatingStar={isUpdatingStar}
+							onToggleStar={handleToggleStar}
+							onCopyLink={handleCopyLink}
+							onConfirmTrash={() => setConfirmOpen(true)}
+						/>
+					</DropdownMenu>
+					{showRename ? (
+						<NoteRenameEditor
+							renameOpen={renameOpen}
+							onRenameOpenChange={handleRenameOpenChange}
+							renamePopoverAlign={renamePopoverAlign}
+							renamePopoverSide={renamePopoverSide}
+							renamePopoverSideOffset={renamePopoverSideOffset}
+							renamePopoverClassName={renamePopoverClassName}
+							renameInputRef={renameInputRef}
+							renameValue={renameValue}
+							onRenameValueChange={setRenameValue}
+							onRename={() => {
+								void handleRename();
+							}}
+							onRenameCancel={() => {
+								handleRenameCancel();
+								onRenamePreviewReset?.();
+							}}
+							ignoreInitialRenameInteractOutsideRef={
+								ignoreInitialRenameInteractOutsideRef
+							}
+							isRenaming={isRenaming}
+						/>
+					) : null}
 				</>
 			)}
 			<AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -691,5 +659,237 @@ export function NoteActionsMenu({
 				</AlertDialogContent>
 			</AlertDialog>
 		</>
+	);
+}
+
+function NoteRenameEditor({
+	renameAnchor,
+	renameOpen,
+	onRenameOpenChange,
+	renamePopoverAlign,
+	renamePopoverSide,
+	renamePopoverSideOffset,
+	renamePopoverClassName,
+	renameInputRef,
+	renameValue,
+	onRenameValueChange,
+	onRename,
+	onRenameCancel,
+	ignoreInitialRenameInteractOutsideRef,
+	isRenaming,
+}: {
+	renameAnchor?: React.ReactNode;
+	renameOpen: boolean;
+	onRenameOpenChange: (open: boolean) => void;
+	renamePopoverAlign: "start" | "center" | "end";
+	renamePopoverSide: "top" | "right" | "bottom" | "left";
+	renamePopoverSideOffset: number;
+	renamePopoverClassName?: string;
+	renameInputRef: React.RefObject<HTMLInputElement | null>;
+	renameValue: string;
+	onRenameValueChange: (value: string) => void;
+	onRename: () => void;
+	onRenameCancel: () => void;
+	ignoreInitialRenameInteractOutsideRef: React.MutableRefObject<boolean>;
+	isRenaming: boolean;
+}) {
+	if (renameAnchor) {
+		return (
+			<PopoverContent
+				align={renamePopoverAlign}
+				side={renamePopoverSide}
+				sideOffset={renamePopoverSideOffset}
+				className={cn("w-96 rounded-xl p-2", renamePopoverClassName)}
+				onOpenAutoFocus={(event) => {
+					event.preventDefault();
+					requestAnimationFrame(() => {
+						const input = renameInputRef.current;
+						if (!input) {
+							return;
+						}
+
+						input.focus();
+						input.setSelectionRange(0, input.value.length);
+					});
+				}}
+				onInteractOutside={(event) => {
+					if (ignoreInitialRenameInteractOutsideRef.current) {
+						event.preventDefault();
+						ignoreInitialRenameInteractOutsideRef.current = false;
+					}
+				}}
+			>
+				<div className="flex items-center gap-2">
+					<NoteTitleEditInput
+						focusOnMount
+						commitOnBlur={false}
+						inputRef={renameInputRef}
+						value={renameValue}
+						onValueChange={onRenameValueChange}
+						onCommit={onRename}
+						onCancel={onRenameCancel}
+					/>
+				</div>
+			</PopoverContent>
+		);
+	}
+
+	return (
+		<Dialog open={renameOpen} onOpenChange={onRenameOpenChange}>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>Rename note</DialogTitle>
+					<DialogDescription>
+						Update the note title and press Enter or click Rename to save.
+					</DialogDescription>
+				</DialogHeader>
+				<div className="flex items-center gap-2">
+					<div className="bg-muted/30 flex size-8 items-center justify-center rounded-lg border">
+						<FileText className="text-muted-foreground size-5" />
+					</div>
+					<NoteTitleEditInput
+						focusOnMount
+						commitOnBlur={false}
+						className="h-9 rounded-lg px-3 text-sm"
+						inputRef={renameInputRef}
+						value={renameValue}
+						onValueChange={onRenameValueChange}
+						onCommit={onRename}
+						onCancel={onRenameCancel}
+					/>
+				</div>
+				<div className="flex justify-end">
+					<Button onClick={onRename} disabled={isRenaming}>
+						{isRenaming ? "Renaming..." : "Rename"}
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+function NoteActionsDropdownContent({
+	align,
+	side,
+	itemsBeforeDefaults,
+	itemsAfterDefaults,
+	preventMenuCloseAutoFocusRef,
+	note,
+	isUpdatingShare,
+	onSetVisibility,
+	showRename,
+	onStartRename,
+	isUpdatingStar,
+	onToggleStar,
+	onCopyLink,
+	onConfirmTrash,
+}: {
+	align: "start" | "center" | "end";
+	side: "top" | "right" | "bottom" | "left";
+	itemsBeforeDefaults?: React.ReactNode;
+	itemsAfterDefaults?: React.ReactNode;
+	preventMenuCloseAutoFocusRef: React.MutableRefObject<boolean>;
+	note: Doc<"notes"> | null | undefined;
+	isUpdatingShare: boolean;
+	onSetVisibility: (visibility: NoteVisibility) => Promise<void>;
+	showRename: boolean;
+	onStartRename: () => void;
+	isUpdatingStar: boolean;
+	onToggleStar: () => Promise<void>;
+	onCopyLink: () => Promise<void>;
+	onConfirmTrash: () => void;
+}) {
+	return (
+		<DropdownMenuContent
+			align={align}
+			side={side}
+			className="w-56 overflow-hidden rounded-lg p-1"
+			onCloseAutoFocus={(event) => {
+				if (preventMenuCloseAutoFocusRef.current) {
+					event.preventDefault();
+					preventMenuCloseAutoFocusRef.current = false;
+				}
+			}}
+		>
+			{itemsBeforeDefaults}
+			<DropdownMenuSub>
+				<DropdownMenuSubTrigger>
+					<Share2 />
+					Share
+				</DropdownMenuSubTrigger>
+				<DropdownMenuPortal>
+					<DropdownMenuSubContent className="min-w-40">
+						<DropdownMenuItem
+							className="cursor-pointer justify-between"
+							disabled={note === undefined || isUpdatingShare}
+							onClick={() => {
+								void onSetVisibility("private");
+							}}
+						>
+							<div className="flex items-center gap-2">
+								<Lock />
+								<span>Private</span>
+							</div>
+							{note?.visibility === "private" ? <Check /> : null}
+						</DropdownMenuItem>
+						<DropdownMenuItem
+							className="cursor-pointer justify-between"
+							disabled={note === undefined || isUpdatingShare}
+							onClick={() => {
+								void onSetVisibility("public");
+							}}
+						>
+							<div className="flex items-center gap-2">
+								<Globe />
+								<span>Public</span>
+							</div>
+							{note?.visibility === "public" ? <Check /> : null}
+						</DropdownMenuItem>
+					</DropdownMenuSubContent>
+				</DropdownMenuPortal>
+			</DropdownMenuSub>
+			{showRename ? (
+				<DropdownMenuItem
+					className="cursor-pointer"
+					disabled={!note}
+					onClick={onStartRename}
+				>
+					<Pencil />
+					Rename
+				</DropdownMenuItem>
+			) : null}
+			<DropdownMenuItem
+				className="cursor-pointer"
+				disabled={!note || isUpdatingStar}
+				onClick={() => {
+					void onToggleStar();
+				}}
+			>
+				{note?.isStarred ? <StarOff /> : <Star />}
+				{note?.isStarred ? "Unstar" : "Star"}
+			</DropdownMenuItem>
+			<DropdownMenuItem
+				className="cursor-pointer"
+				onClick={() => {
+					void onCopyLink();
+				}}
+			>
+				<Link2 />
+				Copy link
+			</DropdownMenuItem>
+			{itemsAfterDefaults}
+			<DropdownMenuSeparator />
+			<DropdownMenuItem
+				variant="destructive"
+				className="cursor-pointer"
+				onSelect={(event) => {
+					event.preventDefault();
+					onConfirmTrash();
+				}}
+			>
+				<Trash2 />
+				Move to trash
+			</DropdownMenuItem>
+		</DropdownMenuContent>
 	);
 }

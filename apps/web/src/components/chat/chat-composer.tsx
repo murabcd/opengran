@@ -432,20 +432,6 @@ function ScopePicker({
 	const hasWorkspaceScopes =
 		workspaceSourceSelected || selectedWorkspaceNoteCount > 0;
 	const isSearchingWorkspaceNotes = sourceSearchTerm.trim().length > 0;
-	const activeWorkspaceAvatarSrc = activeWorkspace
-		? (activeWorkspace.iconUrl ??
-			getAvatarSrc({
-				name: activeWorkspace.name,
-			}))
-		: null;
-	const activeWorkspaceInitials = activeWorkspace
-		? activeWorkspace.name
-				.split(" ")
-				.map((part) => part[0])
-				.join("")
-				.slice(0, 2)
-				.toUpperCase()
-		: "WG";
 
 	return (
 		<DropdownMenu open={open} onOpenChange={onOpenChange}>
@@ -512,159 +498,25 @@ function ScopePicker({
 					>
 						<CirclePlus /> All sources i can access
 					</DropdownMenuCheckboxItem>
-					<DropdownMenuSub>
-						<DropdownMenuSubTrigger
-							className={hasWorkspaceScopes ? "[&>svg:last-child]:ml-2!" : ""}
-							onClick={() => {
-								if (workspaceSourceId) {
-									onToggleSource(workspaceSourceId);
-								}
-							}}
-						>
-							{activeWorkspace ? (
-								<Avatar className="size-4 rounded-sm">
-									<AvatarImage
-										src={activeWorkspaceAvatarSrc ?? undefined}
-										alt={activeWorkspace.name}
-									/>
-									<AvatarFallback className="rounded-sm text-[8px]">
-										{activeWorkspaceInitials}
-									</AvatarFallback>
-								</Avatar>
-							) : (
-								<span className="flex size-4 items-center justify-center text-muted-foreground">
-									<OpenGranMark className="size-4" />
-								</span>
-							)}
-							{activeWorkspace?.name ?? "Workspace"}
-							{hasWorkspaceScopes ? (
-								<span className="ml-auto flex items-center gap-2">
-									{!workspaceSourceSelected ? (
-										<span className="text-xs text-muted-foreground tabular-nums">
-											{selectedWorkspaceNoteCount === 1
-												? "1 scope"
-												: `${selectedWorkspaceNoteCount} scopes`}
-										</span>
-									) : null}
-									<Check className="size-4 text-muted-foreground" />
-								</span>
-							) : null}
-						</DropdownMenuSubTrigger>
-						<DropdownMenuSubContent className="w-72 p-0 [--radius:1rem]">
-							<Command>
-								<div className="[&_[data-slot=input-group]]:rounded-sm!">
-									<CommandInput
-										placeholder="Select a note"
-										value={sourceSearchTerm}
-										onValueChange={onSourceSearchTermChange}
-									/>
-								</div>
-								<CommandList>
-									<CommandGroup>
-										<CommandItem
-											value={activeWorkspace?.name ?? "workspace"}
-											onSelect={() => {
-												if (workspaceSourceId) {
-													onToggleSource(workspaceSourceId);
-												}
-											}}
-											className="relative w-full gap-2 pr-8"
-										>
-											{activeWorkspace ? (
-												<Avatar className="size-4 rounded-sm">
-													<AvatarImage
-														src={activeWorkspaceAvatarSrc ?? undefined}
-														alt={activeWorkspace.name}
-													/>
-													<AvatarFallback className="rounded-sm text-[8px]">
-														{activeWorkspaceInitials}
-													</AvatarFallback>
-												</Avatar>
-											) : (
-												<span className="flex size-4 items-center justify-center text-muted-foreground">
-													<OpenGranMark className="size-4" />
-												</span>
-											)}
-											<div className="min-w-0 flex-1">
-												<div className="truncate">
-													{activeWorkspace?.name ?? "Workspace"}
-												</div>
-											</div>
-											{workspaceSourceSelected ? (
-												<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
-													<Check className="size-4" />
-												</span>
-											) : null}
-										</CommandItem>
-									</CommandGroup>
-									{isSearchingWorkspaceNotes && isNotesLoading ? (
-										<CommandGroup heading="Notes">
-											<ChatNoteListSkeleton />
-										</CommandGroup>
-									) : null}
-									{isSearchingWorkspaceNotes ? (
-										<CommandEmpty>No notes found.</CommandEmpty>
-									) : (
-										<div className="px-3 py-2 text-xs text-muted-foreground">
-											Type to find notes in this workspace.
-										</div>
-									)}
-									{isSearchingWorkspaceNotes ? (
-										<CommandGroup heading="Notes">
-											{filteredWorkspaceSources.map((source) => {
-												const selected = selectedSourceIds.includes(source.id);
-
-												return (
-													<CommandItem
-														key={source.id}
-														value={`${source.id} ${source.title}`}
-														onSelect={() => onToggleSource(source.id)}
-														className="relative w-full gap-2 pr-8"
-													>
-														<FileText className="size-4" />
-														<div className="min-w-0 flex-1">
-															<div className="truncate">{source.title}</div>
-															{source.preview ? (
-																<div className="truncate text-xs text-muted-foreground">
-																	{source.preview}
-																</div>
-															) : null}
-														</div>
-														{selected ? (
-															<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
-																<Check className="size-4" />
-															</span>
-														) : null}
-													</CommandItem>
-												);
-											})}
-										</CommandGroup>
-									) : null}
-								</CommandList>
-							</Command>
-						</DropdownMenuSubContent>
-					</DropdownMenuSub>
-					{appSources.map((source) => {
-						const selected = selectedSourceIds.includes(source.id);
-
-						return (
-							<DropdownMenuCheckboxItem
-								key={source.id}
-								checked={selected}
-								className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
-								onCheckedChange={() => onToggleSource(source.id)}
-							>
-								{source.provider === "yandex-tracker" ? (
-									<Icons.yandexTrackerLogo className="size-4 text-blue-500" />
-								) : (
-									<Grid3x3 className="size-4" />
-								)}
-								<div className="min-w-0">
-									<div className="truncate">{source.title}</div>
-								</div>
-							</DropdownMenuCheckboxItem>
-						);
-					})}
+					<WorkspaceScopeMenu
+						hasWorkspaceScopes={hasWorkspaceScopes}
+						workspaceSourceId={workspaceSourceId}
+						onToggleSource={onToggleSource}
+						activeWorkspace={activeWorkspace}
+						selectedWorkspaceNoteCount={selectedWorkspaceNoteCount}
+						workspaceSourceSelected={workspaceSourceSelected}
+						sourceSearchTerm={sourceSearchTerm}
+						onSourceSearchTermChange={onSourceSearchTermChange}
+						isSearchingWorkspaceNotes={isSearchingWorkspaceNotes}
+						isNotesLoading={isNotesLoading}
+						filteredWorkspaceSources={filteredWorkspaceSources}
+						selectedSourceIds={selectedSourceIds}
+					/>
+					<AppSourceItems
+						appSources={appSources}
+						selectedSourceIds={selectedSourceIds}
+						onToggleSource={onToggleSource}
+					/>
 					<DropdownMenuItem>
 						<Book /> Help Center
 					</DropdownMenuItem>
@@ -686,6 +538,226 @@ function ScopePicker({
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);
+}
+
+function WorkspaceScopeMenu({
+	hasWorkspaceScopes,
+	workspaceSourceId,
+	onToggleSource,
+	activeWorkspace,
+	selectedWorkspaceNoteCount,
+	workspaceSourceSelected,
+	sourceSearchTerm,
+	onSourceSearchTermChange,
+	isSearchingWorkspaceNotes,
+	isNotesLoading,
+	filteredWorkspaceSources,
+	selectedSourceIds,
+}: {
+	hasWorkspaceScopes: boolean;
+	workspaceSourceId: string | null;
+	onToggleSource: (sourceId: string) => void;
+	activeWorkspace: WorkspaceRecord | null;
+	selectedWorkspaceNoteCount: number;
+	workspaceSourceSelected: boolean;
+	sourceSearchTerm: string;
+	onSourceSearchTermChange: (value: string) => void;
+	isSearchingWorkspaceNotes: boolean;
+	isNotesLoading: boolean;
+	filteredWorkspaceSources: WorkspaceSource[];
+	selectedSourceIds: string[];
+}) {
+	const activeWorkspaceAvatarSrc = activeWorkspace
+		? (activeWorkspace.iconUrl ??
+			getAvatarSrc({
+				name: activeWorkspace.name,
+			}))
+		: null;
+	const activeWorkspaceInitials = activeWorkspace
+		? activeWorkspace.name
+				.split(" ")
+				.map((part) => part[0])
+				.join("")
+				.slice(0, 2)
+				.toUpperCase()
+		: "WG";
+
+	return (
+		<DropdownMenuSub>
+			<DropdownMenuSubTrigger
+				className={hasWorkspaceScopes ? "[&>svg:last-child]:ml-2!" : ""}
+				onClick={() => {
+					if (workspaceSourceId) {
+						onToggleSource(workspaceSourceId);
+					}
+				}}
+			>
+				<WorkspaceScopeAvatar
+					activeWorkspace={activeWorkspace}
+					activeWorkspaceAvatarSrc={activeWorkspaceAvatarSrc}
+					activeWorkspaceInitials={activeWorkspaceInitials}
+				/>
+				{activeWorkspace?.name ?? "Workspace"}
+				{hasWorkspaceScopes ? (
+					<span className="ml-auto flex items-center gap-2">
+						{!workspaceSourceSelected ? (
+							<span className="text-xs text-muted-foreground tabular-nums">
+								{selectedWorkspaceNoteCount === 1
+									? "1 scope"
+									: `${selectedWorkspaceNoteCount} scopes`}
+							</span>
+						) : null}
+						<Check className="size-4 text-muted-foreground" />
+					</span>
+				) : null}
+			</DropdownMenuSubTrigger>
+			<DropdownMenuSubContent className="w-72 p-0 [--radius:1rem]">
+				<Command>
+					<div className="[&_[data-slot=input-group]]:rounded-sm!">
+						<CommandInput
+							placeholder="Select a note"
+							value={sourceSearchTerm}
+							onValueChange={onSourceSearchTermChange}
+						/>
+					</div>
+					<CommandList>
+						<CommandGroup>
+							<CommandItem
+								value={activeWorkspace?.name ?? "workspace"}
+								onSelect={() => {
+									if (workspaceSourceId) {
+										onToggleSource(workspaceSourceId);
+									}
+								}}
+								className="relative w-full gap-2 pr-8"
+							>
+								<WorkspaceScopeAvatar
+									activeWorkspace={activeWorkspace}
+									activeWorkspaceAvatarSrc={activeWorkspaceAvatarSrc}
+									activeWorkspaceInitials={activeWorkspaceInitials}
+								/>
+								<div className="min-w-0 flex-1">
+									<div className="truncate">
+										{activeWorkspace?.name ?? "Workspace"}
+									</div>
+								</div>
+								{workspaceSourceSelected ? (
+									<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
+										<Check className="size-4" />
+									</span>
+								) : null}
+							</CommandItem>
+						</CommandGroup>
+						{isSearchingWorkspaceNotes && isNotesLoading ? (
+							<CommandGroup heading="Notes">
+								<ChatNoteListSkeleton />
+							</CommandGroup>
+						) : null}
+						{isSearchingWorkspaceNotes ? (
+							<CommandEmpty>No notes found.</CommandEmpty>
+						) : (
+							<div className="px-3 py-2 text-xs text-muted-foreground">
+								Type to find notes in this workspace.
+							</div>
+						)}
+						{isSearchingWorkspaceNotes ? (
+							<CommandGroup heading="Notes">
+								{filteredWorkspaceSources.map((source) => {
+									const selected = selectedSourceIds.includes(source.id);
+
+									return (
+										<CommandItem
+											key={source.id}
+											value={`${source.id} ${source.title}`}
+											onSelect={() => onToggleSource(source.id)}
+											className="relative w-full gap-2 pr-8"
+										>
+											<FileText className="size-4" />
+											<div className="min-w-0 flex-1">
+												<div className="truncate">{source.title}</div>
+												{source.preview ? (
+													<div className="truncate text-xs text-muted-foreground">
+														{source.preview}
+													</div>
+												) : null}
+											</div>
+											{selected ? (
+												<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
+													<Check className="size-4" />
+												</span>
+											) : null}
+										</CommandItem>
+									);
+								})}
+							</CommandGroup>
+						) : null}
+					</CommandList>
+				</Command>
+			</DropdownMenuSubContent>
+		</DropdownMenuSub>
+	);
+}
+
+function WorkspaceScopeAvatar({
+	activeWorkspace,
+	activeWorkspaceAvatarSrc,
+	activeWorkspaceInitials,
+}: {
+	activeWorkspace: WorkspaceRecord | null;
+	activeWorkspaceAvatarSrc: string | null;
+	activeWorkspaceInitials: string;
+}) {
+	if (!activeWorkspace) {
+		return (
+			<span className="flex size-4 items-center justify-center text-muted-foreground">
+				<OpenGranMark className="size-4" />
+			</span>
+		);
+	}
+
+	return (
+		<Avatar className="size-4 rounded-sm">
+			<AvatarImage
+				src={activeWorkspaceAvatarSrc ?? undefined}
+				alt={activeWorkspace.name}
+			/>
+			<AvatarFallback className="rounded-sm text-[8px]">
+				{activeWorkspaceInitials}
+			</AvatarFallback>
+		</Avatar>
+	);
+}
+
+function AppSourceItems({
+	appSources,
+	selectedSourceIds,
+	onToggleSource,
+}: {
+	appSources: AppSource[];
+	selectedSourceIds: string[];
+	onToggleSource: (sourceId: string) => void;
+}) {
+	return appSources.map((source) => {
+		const selected = selectedSourceIds.includes(source.id);
+
+		return (
+			<DropdownMenuCheckboxItem
+				key={source.id}
+				checked={selected}
+				className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
+				onCheckedChange={() => onToggleSource(source.id)}
+			>
+				{source.provider === "yandex-tracker" ? (
+					<Icons.yandexTrackerLogo className="size-4 text-blue-500" />
+				) : (
+					<Grid3x3 className="size-4" />
+				)}
+				<div className="min-w-0">
+					<div className="truncate">{source.title}</div>
+				</div>
+			</DropdownMenuCheckboxItem>
+		);
+	});
 }
 
 function ChatNoteListSkeleton() {
