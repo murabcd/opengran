@@ -1,14 +1,10 @@
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 
 const MAX_AUDIO_FILE_SIZE_BYTES = 25 * 1024 * 1024;
-
-type DiarizedTranscriptSegment = {
-	end?: number;
-	speaker?: string;
-	start?: number;
-	text?: string;
-};
+const TRANSCRIPT_REFINEMENT_PROMPT =
+	"Transcribe the audio clearly with punctuation. Preserve names, jargon, and quoted wording when possible.";
 
 const sendJson = (
 	response: ServerResponse,
@@ -41,6 +37,27 @@ const createFormDataRequest = (request: IncomingMessage) =>
 		duplex: "half",
 	});
 
+const logOpenAiResponseMetadata = ({
+	context,
+	requestId,
+	response,
+}: {
+	context: string;
+	requestId: string;
+	response: Response;
+}) => {
+	const openAiRequestId = response.headers.get("x-request-id");
+	const processingMs = response.headers.get("openai-processing-ms");
+
+	console.info("[openai]", {
+		context,
+		openAiRequestId,
+		processingMs,
+		requestId,
+		status: response.status,
+	});
+};
+
 export const handleRefineTranscriptAudioRequest = async (
 	request: IncomingMessage,
 	response: ServerResponse,
@@ -55,10 +72,15 @@ export const handleRefineTranscriptAudioRequest = async (
 	const formData = await createFormDataRequest(request).formData();
 	const audioValue = formData.get("audio");
 	const langValue = formData.get("lang");
+	const promptValue = formData.get("prompt");
 	const language =
-		typeof langValue === "string" && langValue.trim()
-			? langValue.trim().toLowerCase()
+		typeof langValue === "string"
+			? langValue.split("-")[0]?.trim().toLowerCase() || null
 			: null;
+	const prompt =
+		typeof promptValue === "string" && promptValue.trim()
+			? promptValue.trim()
+			: TRANSCRIPT_REFINEMENT_PROMPT;
 
 	if (!(audioValue instanceof File)) {
 		sendJson(response, 400, {
@@ -87,12 +109,12 @@ export const handleRefineTranscriptAudioRequest = async (
 		audioValue,
 		audioValue.name || "system-audio.webm",
 	);
-	openAiFormData.append("model", "gpt-4o-transcribe-diarize");
-	openAiFormData.append("response_format", "diarized_json");
-	openAiFormData.append("chunking_strategy", "auto");
+	openAiFormData.append("model", "gpt-4o-transcribe");
+	openAiFormData.append("prompt", prompt);
 	if (language) {
 		openAiFormData.append("language", language);
 	}
+	const requestId = randomUUID();
 
 	const transcriptionResponse = await fetch(
 		"https://api.openai.com/v1/audio/transcriptions",
@@ -100,15 +122,21 @@ export const handleRefineTranscriptAudioRequest = async (
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+				"X-Client-Request-Id": requestId,
 			},
 			body: openAiFormData,
 		},
 	);
+
+	logOpenAiResponseMetadata({
+		context: "web.audio.transcriptions",
+		requestId,
+		response: transcriptionResponse,
+	});
 	const payload = (await transcriptionResponse.json().catch(() => ({}))) as {
 		error?: {
 			message?: string;
 		};
-		segments?: DiarizedTranscriptSegment[];
 		text?: string;
 	};
 
@@ -126,22 +154,6 @@ export const handleRefineTranscriptAudioRequest = async (
 	}
 
 	sendJson(response, 200, {
-		segments: Array.isArray(payload.segments)
-			? payload.segments
-					.filter(
-						(segment) =>
-							typeof segment.speaker === "string" &&
-							typeof segment.text === "string" &&
-							typeof segment.start === "number" &&
-							typeof segment.end === "number",
-					)
-					.map((segment) => ({
-						speaker: segment.speaker,
-						text: segment.text?.trim() ?? "",
-						start: segment.start,
-						end: segment.end,
-					}))
-			: [],
 		text: payload.text.trim(),
 	});
 };

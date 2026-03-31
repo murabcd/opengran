@@ -7,7 +7,6 @@ import {
 	createTranscriptRecoveryStatus,
 	formatTranscriptUtterance,
 	type LiveTranscriptState,
-	type SystemAudioCaptureSourceMode,
 	type SystemAudioCaptureStatus,
 	shouldSuppressEchoUtterance,
 	type TranscriptRecoveryStatus,
@@ -16,6 +15,7 @@ import {
 import { refineSystemAudioTranscript } from "@/lib/transcript-refinement-service";
 import { createTranscriptText } from "@/lib/transcript-session";
 import { transcriptionSessionManager } from "@/lib/transcription-session-manager";
+import type { SystemAudioRecordingPayload } from "@/lib/transcription-session-types";
 import type { Id } from "../../../../convex/_generated/dataModel";
 
 type UseNoteTranscriptSessionArgs = {
@@ -595,14 +595,10 @@ export const useNoteTranscriptSession = ({
 	const handleSystemAudioRecordingReady = React.useCallback(
 		async ({
 			blob,
+			chunks,
 			endedAt,
 			startedAt,
-		}: {
-			blob: Blob;
-			endedAt: number;
-			sourceMode: SystemAudioCaptureSourceMode;
-			startedAt: number;
-		}) => {
+		}: SystemAudioRecordingPayload) => {
 			const sessionId =
 				activeTranscriptSessionIdRef.current ??
 				activeTranscriptSessionId ??
@@ -629,6 +625,7 @@ export const useNoteTranscriptSession = ({
 				});
 				const refinedTranscript = await refineSystemAudioTranscript({
 					blob,
+					chunks,
 					currentUtterances,
 					endedAt,
 					language: transcriptionLanguage,

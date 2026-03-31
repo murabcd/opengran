@@ -93,7 +93,7 @@ declare global {
 		utterances: Array<{
 			endedAt: number;
 			id: string;
-			speaker: "you" | "them" | `remote:${number}`;
+			speaker: "you" | "them";
 			startedAt: number;
 			text: string;
 		}>;
@@ -120,31 +120,6 @@ declare global {
 		| {
 				type: "session.utterance_committed";
 				utterance: DesktopTranscriptionControllerState["utterances"][number];
-		  };
-
-	type DesktopRealtimeTransportEvent =
-		| {
-				speaker: "you" | "them";
-				type: "committed";
-				itemId: string;
-				previousItemId: string | null;
-		  }
-		| {
-				speaker: "you" | "them";
-				type: "partial";
-				itemId: string;
-				textDelta: string;
-		  }
-		| {
-				speaker: "you" | "them";
-				type: "final";
-				itemId: string;
-				text: string;
-		  }
-		| {
-				speaker: "you" | "them";
-				type: "interrupted";
-				message: string;
 		  };
 
 	interface Window {
@@ -242,19 +217,6 @@ declare global {
 			stopMicrophoneCapture: () => Promise<{
 				ok: boolean;
 			}>;
-			startDesktopRealtimeTransport: (options: {
-				lang?: string;
-				source: "microphone" | "systemAudio";
-				speaker: "you" | "them";
-			}) => Promise<{
-				ok: boolean;
-			}>;
-			stopDesktopRealtimeTransport: (speaker: "you" | "them") => Promise<{
-				ok: boolean;
-			}>;
-			onDesktopRealtimeTransportEvent: (
-				listener: (payload: DesktopRealtimeTransportEvent) => void,
-			) => () => void;
 			onMicrophoneCaptureEvent: (
 				listener: (payload: {
 					type: "chunk" | "error" | "stopped";

@@ -57,11 +57,11 @@ import { getChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import type {
 	LiveTranscriptState,
-	SystemAudioCaptureSourceMode,
 	SystemAudioCaptureStatus,
 	TranscriptRecoveryStatus,
 	TranscriptUtterance,
 } from "@/lib/transcript";
+import type { SystemAudioRecordingPayload } from "@/lib/transcription-session-types";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { SpeechInput } from "../ai-elements/speech-input";
@@ -812,12 +812,7 @@ function NoteSpeechControls({
 	isTranscriptOpen: boolean;
 	onToggleTranscript: () => void;
 	onLiveTranscriptChange: (state: LiveTranscriptState) => void;
-	onSystemAudioRecordingReady: (payload: {
-		blob: Blob;
-		endedAt: number;
-		sourceMode: SystemAudioCaptureSourceMode;
-		startedAt: number;
-	}) => void;
+	onSystemAudioRecordingReady: (payload: SystemAudioRecordingPayload) => void;
 	onSystemAudioStatusChange: (status: SystemAudioCaptureStatus) => void;
 	onRecoveryStatusChange: (status: TranscriptRecoveryStatus) => void;
 	onTranscriptListeningChange: (isListening: boolean) => void;
@@ -1491,8 +1486,8 @@ function TranscriptPanelNoticeStack({
 		>
 			{controller.isRefiningTranscript ? (
 				<div className="mb-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-					Refining remote speakers from the recorded system-audio track.
-					Generate notes will unlock when this pass finishes.
+					Refining the recorded system-audio transcript. Generate notes will
+					unlock when this pass finishes.
 				</div>
 			) : null}
 			{controller.transcriptRefinementError ? (

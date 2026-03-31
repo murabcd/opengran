@@ -30,6 +30,11 @@ export type TranscriptionControllerError = {
 
 export type SystemAudioRecordingPayload = {
 	blob: Blob;
+	chunks?: Array<{
+		blob: Blob;
+		endedAt: number;
+		startedAt: number;
+	}>;
 	endedAt: number;
 	sourceMode: SystemAudioCaptureStatus["sourceMode"];
 	startedAt: number;

@@ -1,12 +1,8 @@
-import type {
-	SystemAudioCaptureSourceMode,
-	TranscriptSpeaker,
-} from "@/lib/transcript";
+import type { TranscriptSpeaker } from "@/lib/transcript";
 import type { TranscriptionLogger } from "@/lib/transcription-logger";
 
 type RealtimeSessionPayload = {
 	clientSecret: string;
-	expiresAt?: number | null;
 };
 
 type OpenAIRealtimeTranscriptionEvent =
@@ -62,64 +58,6 @@ export type RealtimeTranscriptionTransport = {
 	close: () => Promise<void>;
 };
 
-const connectDesktopRealtimeTranscriptionTransport = async ({
-	lang,
-	onEvent,
-	onInterrupted,
-	sourceMode,
-	speaker,
-}: {
-	lang?: string;
-	onEvent: (event: RealtimeTranscriptionTransportEvent) => void;
-	onInterrupted: (message: string) => void;
-	sourceMode?: SystemAudioCaptureSourceMode;
-	speaker: TranscriptSpeaker;
-}): Promise<RealtimeTranscriptionTransport | null> => {
-	if (
-		sourceMode !== "desktop-native" ||
-		(speaker !== "you" && speaker !== "them") ||
-		typeof window === "undefined" ||
-		!window.openGranDesktop?.startDesktopRealtimeTransport ||
-		!window.openGranDesktop?.stopDesktopRealtimeTransport ||
-		!window.openGranDesktop?.onDesktopRealtimeTransportEvent
-	) {
-		return null;
-	}
-
-	const unsubscribe = window.openGranDesktop.onDesktopRealtimeTransportEvent(
-		(event) => {
-			if (event.speaker !== speaker) {
-				return;
-			}
-
-			if (event.type === "interrupted") {
-				onInterrupted(event.message);
-				return;
-			}
-
-			onEvent(event);
-		},
-	);
-
-	try {
-		await window.openGranDesktop.startDesktopRealtimeTransport({
-			lang,
-			source: speaker === "you" ? "microphone" : "systemAudio",
-			speaker,
-		});
-	} catch (error) {
-		unsubscribe();
-		throw error;
-	}
-
-	return {
-		close: async () => {
-			unsubscribe();
-			await window.openGranDesktop?.stopDesktopRealtimeTransport?.(speaker);
-		},
-	};
-};
-
 const createRealtimeSession = async (
 	lang?: string,
 ): Promise<RealtimeSessionPayload> => {
@@ -136,7 +74,6 @@ const createRealtimeSession = async (
 	const payload = (await response.json().catch(() => ({}))) as {
 		clientSecret?: string;
 		error?: string;
-		expiresAt?: number | null;
 	};
 
 	if (!response.ok || !payload.clientSecret) {
@@ -145,7 +82,6 @@ const createRealtimeSession = async (
 
 	return {
 		clientSecret: payload.clientSecret,
-		expiresAt: payload.expiresAt,
 	};
 };
 
@@ -200,7 +136,6 @@ export const connectRealtimeTranscriptionTransport = async ({
 	logger,
 	onEvent,
 	onInterrupted,
-	sourceMode,
 	speaker,
 }: {
 	stream: MediaStream;
@@ -208,21 +143,8 @@ export const connectRealtimeTranscriptionTransport = async ({
 	logger: TranscriptionLogger;
 	onEvent: (event: RealtimeTranscriptionTransportEvent) => void;
 	onInterrupted: (message: string) => void;
-	sourceMode?: SystemAudioCaptureSourceMode;
 	speaker: TranscriptSpeaker;
 }): Promise<RealtimeTranscriptionTransport> => {
-	const desktopTransport = await connectDesktopRealtimeTranscriptionTransport({
-		lang,
-		onEvent,
-		onInterrupted,
-		sourceMode,
-		speaker,
-	});
-
-	if (desktopTransport) {
-		return desktopTransport;
-	}
-
 	const [{ clientSecret }, peerConnection] = await Promise.all([
 		createRealtimeSession(lang),
 		Promise.resolve(new RTCPeerConnection()),

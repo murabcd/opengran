@@ -86,6 +86,7 @@ export type TranscriptionControllerDependencies = {
 
 const MAX_RECOVERY_ATTEMPTS = 3;
 const RECOVERY_BACKOFF_MS = [750, 1_500, 3_000] as const;
+const REALTIME_SESSION_ROLLOVER_MS = 29 * 60 * 1000;
 
 const createSpeakerRuntimeState = (
 	speaker: TranscriptSpeaker,
@@ -233,6 +234,10 @@ export class TranscriptionController {
 
 	private reconnectTimeoutId: number | null = null;
 
+	private rolloverTimeoutId: number | null = null;
+
+	private shouldRestoreSystemAudioOnReconnect = false;
+
 	private lastHandledAutoStartKey: string | number | null = null;
 
 	private lifecycleOperationId = 0;
@@ -356,6 +361,8 @@ export class TranscriptionController {
 
 		const operationId = ++this.lifecycleOperationId;
 		this.clearReconnectTimeout();
+		this.clearRolloverTimeout();
+		this.shouldRestoreSystemAudioOnReconnect = false;
 		this.patchState({
 			isConnecting: false,
 			isListening: false,
@@ -406,6 +413,7 @@ export class TranscriptionController {
 	};
 
 	detachSystemAudio = async () => {
+		this.shouldRestoreSystemAudioOnReconnect = false;
 		await this.stopSpeaker("them");
 
 		this.patchState({
@@ -422,6 +430,29 @@ export class TranscriptionController {
 
 		this.dependencies.clearScheduledTimeout(this.reconnectTimeoutId);
 		this.reconnectTimeoutId = null;
+	};
+
+	private clearRolloverTimeout = () => {
+		if (this.rolloverTimeoutId == null) {
+			return;
+		}
+
+		this.dependencies.clearScheduledTimeout(this.rolloverTimeoutId);
+		this.rolloverTimeoutId = null;
+	};
+
+	private scheduleSessionRollover = () => {
+		this.clearRolloverTimeout();
+
+		this.rolloverTimeoutId = this.dependencies.scheduleTimeout(() => {
+			this.rolloverTimeoutId = null;
+
+			void this.handleTransportInterrupted({
+				message: "Realtime transcription session reached the rollover window.",
+				planned: true,
+				speaker: "you",
+			});
+		}, REALTIME_SESSION_ROLLOVER_MS);
 	};
 
 	private refreshPolicy = async () => {
@@ -467,6 +498,9 @@ export class TranscriptionController {
 		const policy =
 			this.activePolicy ?? (await this.dependencies.resolvePolicy());
 		this.activePolicy = policy;
+		const shouldRestoreSystemAudioOnReconnect =
+			reason === "reconnect" && this.shouldRestoreSystemAudioOnReconnect;
+		this.shouldRestoreSystemAudioOnReconnect = false;
 		this.currentSessionCorrelationId = crypto.randomUUID();
 		const logger = createTranscriptionLogger({
 			scopeKey: this.config.scopeKey,
@@ -529,6 +563,7 @@ export class TranscriptionController {
 				phase: "listening",
 				recoveryStatus: createTranscriptRecoveryStatus(),
 			});
+			this.scheduleSessionRollover();
 
 			logger.info("start.succeeded", {
 				reason,
@@ -537,6 +572,11 @@ export class TranscriptionController {
 			if (policy.systemAudioCapability.shouldAutoBootstrap) {
 				void this.attachSystemAudio({
 					automatic: true,
+					operationId,
+				});
+			} else if (shouldRestoreSystemAudioOnReconnect) {
+				void this.attachSystemAudio({
+					automatic: false,
 					operationId,
 				});
 			}
@@ -619,7 +659,6 @@ export class TranscriptionController {
 					speaker: pendingInput.speaker,
 				});
 			},
-			sourceMode: pendingInput.sourceMode,
 			speaker: pendingInput.speaker,
 			stream: pendingInput.stream,
 		});
@@ -804,12 +843,23 @@ export class TranscriptionController {
 					mimeType: supportedMimeType,
 				})
 			: new MediaRecorder(stream);
-		const recordedChunks: BlobPart[] = [];
+		const recordedChunks: Array<{
+			blob: Blob;
+			endedAt: number;
+			startedAt: number;
+		}> = [];
 		const startedAt = Date.now();
+		let nextChunkStartedAt = startedAt;
 
 		recorder.addEventListener("dataavailable", (event) => {
 			if (event.data.size > 0) {
-				recordedChunks.push(event.data);
+				const endedAt = Date.now();
+				recordedChunks.push({
+					blob: event.data,
+					endedAt,
+					startedAt: nextChunkStartedAt,
+				});
+				nextChunkStartedAt = endedAt;
 			}
 		});
 
@@ -821,9 +871,13 @@ export class TranscriptionController {
 			}
 
 			const payload: SystemAudioRecordingPayload = {
-				blob: new Blob(recordedChunks, {
-					type: recorder.mimeType || supportedMimeType || "audio/webm",
-				}),
+				blob: new Blob(
+					recordedChunks.map((chunk) => chunk.blob),
+					{
+						type: recorder.mimeType || supportedMimeType || "audio/webm",
+					},
+				),
+				chunks: recordedChunks,
 				endedAt: Date.now(),
 				sourceMode,
 				startedAt,
@@ -874,6 +928,7 @@ export class TranscriptionController {
 		preserveUtterances: boolean;
 	}) => {
 		await Promise.all([this.stopSpeaker("you"), this.stopSpeaker("them")]);
+		this.clearRolloverTimeout();
 
 		if (!this.isCurrentOperation(operationId)) {
 			return;
@@ -893,9 +948,11 @@ export class TranscriptionController {
 
 	private handleTransportInterrupted = async ({
 		message,
+		planned = false,
 		speaker,
 	}: {
 		message: string;
+		planned?: boolean;
 		speaker: TranscriptSpeaker;
 	}) => {
 		if (this.getState().phase === "stopping") {
@@ -903,6 +960,7 @@ export class TranscriptionController {
 		}
 
 		if (speaker === "them") {
+			this.shouldRestoreSystemAudioOnReconnect = false;
 			await this.stopSpeaker("them");
 			this.patchState({
 				error: null,
@@ -916,11 +974,41 @@ export class TranscriptionController {
 			return;
 		}
 
+		this.shouldRestoreSystemAudioOnReconnect =
+			Boolean(this.speakers.them.data.transport) &&
+			!this.activePolicy?.systemAudioCapability.shouldAutoBootstrap;
+
 		const operationId = ++this.lifecycleOperationId;
 		await this.cleanupSession({
 			operationId,
 			preserveUtterances: true,
 		});
+
+		if (planned) {
+			this.recoveryAttempt = 0;
+			this.patchState({
+				error: null,
+				isConnecting: true,
+				isListening: false,
+				phase: "reconnecting",
+				recoveryStatus: createTranscriptRecoveryStatus({
+					attempt: 0,
+					maxAttempts: MAX_RECOVERY_ATTEMPTS,
+					message,
+					state: "reconnecting",
+				}),
+			});
+
+			this.reconnectTimeoutId = this.dependencies.scheduleTimeout(() => {
+				this.reconnectTimeoutId = null;
+
+				void this.runStart({
+					preserveUtterances: true,
+					reason: "reconnect",
+				});
+			}, 0);
+			return;
+		}
 
 		const nextAttempt = this.recoveryAttempt + 1;
 		if (nextAttempt > MAX_RECOVERY_ATTEMPTS) {

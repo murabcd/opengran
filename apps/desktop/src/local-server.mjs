@@ -48,6 +48,11 @@ const fallbackChatModel = chatModels[0];
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
 const CHAT_TITLE_MODEL = "gpt-5.4-nano";
+const MAX_AUDIO_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+const REALTIME_TRANSCRIPTION_PROMPT =
+	"Transcribe speech verbatim with punctuation. Preserve names, product terms, and domain-specific vocabulary when possible.";
+const TRANSCRIPT_REFINEMENT_PROMPT =
+	"Transcribe the audio clearly with punctuation. Preserve names, jargon, and quoted wording when possible.";
 const preferredExtensionBridgePorts = Array.from(
 	{ length: 20 },
 	(_value, index) => 42831 + index,
@@ -56,8 +61,6 @@ const generateMessageId = createIdGenerator({
 	prefix: "msg",
 	size: 16,
 });
-const MAX_AUDIO_FILE_SIZE_BYTES = 25 * 1024 * 1024;
-/** @typedef {{ end?: number, speaker?: string, start?: number, text?: string }} DiarizedTranscriptSegment */
 const structuredNoteSchema = z.object({
 	title: z.string().min(1),
 	overview: z.array(z.string()),
@@ -79,6 +82,19 @@ const getConvexUrl = () => {
 	}
 
 	return value;
+};
+
+const logOpenAiResponseMetadata = ({ context, requestId, response }) => {
+	const openAiRequestId = response.headers.get("x-request-id");
+	const processingMs = response.headers.get("openai-processing-ms");
+
+	console.info("[openai]", {
+		context,
+		openAiRequestId,
+		processingMs,
+		requestId,
+		status: response.status,
+	});
 };
 
 const getReferencedNoteIds = ({ mentions, selectedSourceIds }) =>
@@ -230,6 +246,32 @@ const sendJson = (response, statusCode, payload) => {
 	response.statusCode = statusCode;
 	response.setHeader("Content-Type", "application/json");
 	response.end(JSON.stringify(payload));
+};
+
+const getRequestOrigin = (request) => {
+	const originHeader = request.headers.origin;
+	if (typeof originHeader === "string" && originHeader.length > 0) {
+		return originHeader.replace(/\/$/, "");
+	}
+
+	const refererHeader = request.headers.referer;
+	if (typeof refererHeader !== "string" || refererHeader.length === 0) {
+		return null;
+	}
+
+	try {
+		return new URL(refererHeader).origin;
+	} catch {
+		return null;
+	}
+};
+
+const isAuthorizedLocalAppRequest = (request, allowedOrigin) => {
+	if (!allowedOrigin) {
+		return false;
+	}
+
+	return getRequestOrigin(request) === allowedOrigin;
 };
 
 const setExtensionBridgeHeaders = (response) => {
@@ -409,7 +451,8 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 	}
 
 	const { lang } = await readJsonBody(request);
-	const language = lang?.trim().toLowerCase();
+	const language = lang?.split("-")[0]?.trim().toLowerCase();
+	const requestId = crypto.randomUUID();
 
 	const sessionResponse = await fetch(
 		"https://api.openai.com/v1/realtime/client_secrets",
@@ -418,6 +461,7 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 			headers: {
 				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
 				"Content-Type": "application/json",
+				"X-Client-Request-Id": requestId,
 			},
 			body: JSON.stringify({
 				expires_after: {
@@ -439,6 +483,7 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 							},
 							transcription: {
 								model: "gpt-4o-transcribe",
+								prompt: REALTIME_TRANSCRIPTION_PROMPT,
 								...(language ? { language } : {}),
 							},
 						},
@@ -447,6 +492,12 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 			}),
 		},
 	);
+
+	logOpenAiResponseMetadata({
+		context: "desktop.local_server.realtime.client_secret",
+		requestId,
+		response: sessionResponse,
+	});
 
 	const payload = await sessionResponse.json().catch(() => ({}));
 
@@ -459,9 +510,7 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 		return;
 	}
 
-	const clientSecret = payload?.value ?? payload?.client_secret?.value;
-	const expiresAt =
-		payload?.expires_at ?? payload?.client_secret?.expires_at ?? null;
+	const clientSecret = payload?.value;
 
 	if (!clientSecret) {
 		sendJson(response, 500, {
@@ -472,7 +521,6 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 
 	sendJson(response, 200, {
 		clientSecret,
-		expiresAt,
 	});
 };
 
@@ -531,10 +579,15 @@ const handleRefineTranscriptAudioRequest = async (request, response) => {
 	const formData = await createFormDataRequest(request).formData();
 	const audioValue = formData.get("audio");
 	const langValue = formData.get("lang");
+	const promptValue = formData.get("prompt");
 	const language =
-		typeof langValue === "string" && langValue.trim()
-			? langValue.trim().toLowerCase()
+		typeof langValue === "string"
+			? langValue.split("-")[0]?.trim().toLowerCase() || null
 			: null;
+	const prompt =
+		typeof promptValue === "string" && promptValue.trim()
+			? promptValue.trim()
+			: TRANSCRIPT_REFINEMENT_PROMPT;
 
 	if (!(audioValue instanceof File)) {
 		sendJson(response, 400, {
@@ -563,12 +616,12 @@ const handleRefineTranscriptAudioRequest = async (request, response) => {
 		audioValue,
 		audioValue.name || "system-audio.webm",
 	);
-	openAiFormData.append("model", "gpt-4o-transcribe-diarize");
-	openAiFormData.append("response_format", "diarized_json");
-	openAiFormData.append("chunking_strategy", "auto");
+	openAiFormData.append("model", "gpt-4o-transcribe");
+	openAiFormData.append("prompt", prompt);
 	if (language) {
 		openAiFormData.append("language", language);
 	}
+	const requestId = crypto.randomUUID();
 
 	const transcriptionResponse = await fetch(
 		"https://api.openai.com/v1/audio/transcriptions",
@@ -576,12 +629,19 @@ const handleRefineTranscriptAudioRequest = async (request, response) => {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+				"X-Client-Request-Id": requestId,
 			},
 			body: openAiFormData,
 		},
 	);
+
+	logOpenAiResponseMetadata({
+		context: "desktop.local_server.audio.transcriptions",
+		requestId,
+		response: transcriptionResponse,
+	});
 	const payload =
-		/** @type {{ error?: { message?: string }, segments?: DiarizedTranscriptSegment[], text?: string }} */ (
+		/** @type {{ error?: { message?: string }, text?: string }} */ (
 			await transcriptionResponse.json().catch(() => ({}))
 		);
 
@@ -599,22 +659,6 @@ const handleRefineTranscriptAudioRequest = async (request, response) => {
 	}
 
 	sendJson(response, 200, {
-		segments: Array.isArray(payload?.segments)
-			? payload.segments
-					.filter(
-						(segment) =>
-							typeof segment.speaker === "string" &&
-							typeof segment.text === "string" &&
-							typeof segment.start === "number" &&
-							typeof segment.end === "number",
-					)
-					.map((segment) => ({
-						speaker: segment.speaker,
-						text: segment.text.trim(),
-						start: segment.start,
-						end: segment.end,
-					}))
-			: [],
 		text: payload.text.trim(),
 	});
 };
@@ -691,10 +735,12 @@ export const startLocalServer = async ({
 	onAuthCallback,
 	onBrowserMeetingSignal,
 } = {}) => {
+	let localServerOrigin = null;
 	const server = createServer((request, response) => {
 		const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+		const requestPath = requestUrl.pathname;
 
-		if (requestUrl.pathname === "/auth/callback") {
+		if (requestPath === "/auth/callback") {
 			void Promise.resolve(onAuthCallback?.(requestUrl.toString()))
 				.then(() => {
 					response.statusCode = 200;
@@ -724,7 +770,21 @@ export const startLocalServer = async ({
 			return;
 		}
 
-		if (request.url?.split("?")[0] === "/api/chat") {
+		if (
+			requestPath === "/api/chat" ||
+			requestPath === "/api/realtime-transcription-session" ||
+			requestPath === "/api/enhance-note" ||
+			requestPath === "/api/refine-transcript-audio"
+		) {
+			if (!isAuthorizedLocalAppRequest(request, localServerOrigin)) {
+				sendJson(response, 403, {
+					error: "Forbidden",
+				});
+				return;
+			}
+		}
+
+		if (requestPath === "/api/chat") {
 			if (request.method !== "POST") {
 				response.statusCode = 405;
 				response.setHeader("Content-Type", "application/json");
@@ -740,7 +800,7 @@ export const startLocalServer = async ({
 			return;
 		}
 
-		if (request.url?.split("?")[0] === "/api/realtime-transcription-session") {
+		if (requestPath === "/api/realtime-transcription-session") {
 			if (request.method !== "POST") {
 				response.statusCode = 405;
 				response.setHeader("Content-Type", "application/json");
@@ -758,7 +818,7 @@ export const startLocalServer = async ({
 			return;
 		}
 
-		if (request.url?.split("?")[0] === "/api/enhance-note") {
+		if (requestPath === "/api/enhance-note") {
 			if (request.method !== "POST") {
 				response.statusCode = 405;
 				response.setHeader("Content-Type", "application/json");
@@ -774,7 +834,7 @@ export const startLocalServer = async ({
 			return;
 		}
 
-		if (request.url?.split("?")[0] === "/api/refine-transcript-audio") {
+		if (requestPath === "/api/refine-transcript-audio") {
 			if (request.method !== "POST") {
 				response.statusCode = 405;
 				response.setHeader("Content-Type", "application/json");
@@ -889,8 +949,10 @@ export const startLocalServer = async ({
 		throw new Error("Local desktop server did not expose a TCP port.");
 	}
 
+	localServerOrigin = `http://127.0.0.1:${address.port}`;
+
 	return {
-		origin: `http://127.0.0.1:${address.port}`,
+		origin: localServerOrigin,
 		close: () =>
 			new Promise((resolvePromise, rejectPromise) => {
 				server.close((error) => {

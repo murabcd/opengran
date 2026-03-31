@@ -1,5 +1,5 @@
 type TranscriptLiveSpeaker = "you" | "them";
-export type TranscriptSpeaker = TranscriptLiveSpeaker | `remote:${number}`;
+export type TranscriptSpeaker = TranscriptLiveSpeaker;
 
 type SystemAudioCaptureState = "unsupported" | "ready" | "connected";
 export type SystemAudioCaptureSourceMode =
@@ -47,20 +47,8 @@ const STATIC_TRANSCRIPT_SPEAKER_LABELS: Record<TranscriptLiveSpeaker, string> =
 		you: "You",
 		them: "Them",
 	};
-
-const isRemoteTranscriptSpeaker = (
-	speaker: TranscriptSpeaker,
-): speaker is `remote:${number}` => speaker.startsWith("remote:");
-
-const getTranscriptSpeakerLabel = (speaker: TranscriptSpeaker) => {
-	if (!isRemoteTranscriptSpeaker(speaker)) {
-		return STATIC_TRANSCRIPT_SPEAKER_LABELS[speaker];
-	}
-
-	const speakerNumber = Number(speaker.slice("remote:".length));
-
-	return Number.isFinite(speakerNumber) ? `Them ${speakerNumber}` : "Them";
-};
+const getTranscriptSpeakerLabel = (speaker: TranscriptSpeaker) =>
+	STATIC_TRANSCRIPT_SPEAKER_LABELS[speaker];
 
 export const createSystemAudioCaptureStatus = (
 	overrides: Partial<SystemAudioCaptureStatus> = {},
@@ -290,69 +278,4 @@ export const createRefinedSpeakerUtterances = ({
 			endedAt: referenceUtterance.endedAt,
 		}))
 		.filter((utterance) => utterance.text);
-};
-
-type DiarizedTranscriptSegment = {
-	end: number;
-	speaker: string;
-	start: number;
-	text: string;
-};
-
-const clampTimestamp = (value: number, minimum: number, maximum: number) =>
-	Math.min(maximum, Math.max(minimum, value));
-
-export const createDiarizedSpeakerUtterances = ({
-	recordingStartedAt,
-	recordingEndedAt,
-	segments,
-}: {
-	recordingEndedAt: number;
-	recordingStartedAt: number;
-	segments: DiarizedTranscriptSegment[];
-}): TranscriptUtterance[] => {
-	const normalizedSegments = segments
-		.map((segment) => ({
-			...segment,
-			text: segment.text.trim(),
-		}))
-		.filter((segment) => segment.text.length > 0)
-		.sort((left, right) => left.start - right.start);
-
-	if (normalizedSegments.length === 0) {
-		return [];
-	}
-
-	const uniqueSpeakers = [
-		...new Set(normalizedSegments.map((segment) => segment.speaker)),
-	];
-	const speakerMap = new Map<string, TranscriptSpeaker>();
-
-	for (const [index, speaker] of uniqueSpeakers.entries()) {
-		speakerMap.set(
-			speaker,
-			uniqueSpeakers.length === 1 ? "them" : `remote:${index + 1}`,
-		);
-	}
-
-	return normalizedSegments.map((segment, index) => {
-		const startedAt = clampTimestamp(
-			recordingStartedAt + Math.round(segment.start * 1000),
-			recordingStartedAt,
-			recordingEndedAt,
-		);
-		const endedAt = clampTimestamp(
-			Math.max(startedAt, recordingStartedAt + Math.round(segment.end * 1000)),
-			startedAt,
-			recordingEndedAt,
-		);
-
-		return {
-			id: `refined:${speakerMap.get(segment.speaker) ?? "them"}:${startedAt}:${index}`,
-			speaker: speakerMap.get(segment.speaker) ?? "them",
-			text: segment.text,
-			startedAt,
-			endedAt,
-		};
-	});
 };

@@ -9,12 +9,12 @@ import { useTranscriptionControls } from "@/hooks/use-transcription-controls";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
 import type {
 	LiveTranscriptState,
-	SystemAudioCaptureSourceMode,
 	SystemAudioCaptureStatus,
 	TranscriptRecoveryStatus,
 	TranscriptUtterance,
 } from "@/lib/transcript";
 import { transcriptionSessionManager } from "@/lib/transcription-session-manager";
+import type { SystemAudioRecordingPayload } from "@/lib/transcription-session-types";
 
 type SpeechInputProps = ComponentProps<typeof Button> & {
 	autoStartKey?: string | number | null;
@@ -22,12 +22,7 @@ type SpeechInputProps = ComponentProps<typeof Button> & {
 	onListeningChange?: (isListening: boolean) => void;
 	onLiveTranscriptChange?: (state: LiveTranscriptState) => void;
 	onRecoveryStatusChange?: (status: TranscriptRecoveryStatus) => void;
-	onSystemAudioRecordingReady?: (payload: {
-		blob: Blob;
-		endedAt: number;
-		sourceMode: SystemAudioCaptureSourceMode;
-		startedAt: number;
-	}) => void;
+	onSystemAudioRecordingReady?: (payload: SystemAudioRecordingPayload) => void;
 	onSystemAudioStatusChange?: (status: SystemAudioCaptureStatus) => void;
 	onUtterance?: (utterance: TranscriptUtterance) => void;
 	scopeKey?: string | null;

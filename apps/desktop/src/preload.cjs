@@ -1,8 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 const microphoneCaptureEventChannel = "app:microphone-capture-event";
 const systemAudioCaptureEventChannel = "app:system-audio-capture-event";
-const desktopRealtimeTransportEventChannel =
-	"app:desktop-realtime-transport-event";
 const transcriptionSessionStateChannel = "app:transcription-session-state";
 const transcriptionSessionEventChannel = "app:transcription-session-event";
 const meetingDetectionStateChannel = "app:meeting-detection-state";
@@ -91,21 +89,6 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 		ipcRenderer.invoke("app:start-microphone-capture"),
 	stopMicrophoneCapture: () =>
 		ipcRenderer.invoke("app:stop-microphone-capture"),
-	startDesktopRealtimeTransport: (options) =>
-		ipcRenderer.invoke("app:start-desktop-realtime-transport", options),
-	stopDesktopRealtimeTransport: (speaker) =>
-		ipcRenderer.invoke("app:stop-desktop-realtime-transport", speaker),
-	onDesktopRealtimeTransportEvent: (listener) => {
-		const handler = (_event, payload) => {
-			listener(payload);
-		};
-
-		ipcRenderer.on(desktopRealtimeTransportEventChannel, handler);
-
-		return () => {
-			ipcRenderer.removeListener(desktopRealtimeTransportEventChannel, handler);
-		};
-	},
 	onMicrophoneCaptureEvent: (listener) => {
 		const handler = (_event, payload) => {
 			listener(payload);

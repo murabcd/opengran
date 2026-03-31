@@ -257,6 +257,136 @@ describe("TranscriptionController", () => {
 		expect(transports[1].close).toHaveBeenCalledTimes(1);
 	});
 
+	it("rotates realtime sessions before the session limit without consuming recovery budget", async () => {
+		const firstMicrophone = createMockStream();
+		const secondMicrophone = createMockStream();
+		const transports = [
+			{
+				close: vi.fn(async () => {}),
+			},
+			{
+				close: vi.fn(async () => {}),
+			},
+		] satisfies RealtimeTranscriptionTransport[];
+		let transportIndex = 0;
+		let streamIndex = 0;
+		const createMicrophoneInputStream = vi.fn(
+			async () =>
+				[firstMicrophone.stream, secondMicrophone.stream][streamIndex++] ??
+				secondMicrophone.stream,
+		);
+		const connectTransport = vi.fn(async () => {
+			const transport =
+				transports[transportIndex] ?? transports[transports.length - 1];
+			transportIndex += 1;
+			return transport;
+		});
+		const controller = createController({
+			connectTransport,
+			createMicrophoneInputStream,
+		});
+
+		await expect(controller.start()).resolves.toBe(true);
+		expect(controller.getSnapshot().phase).toBe("listening");
+
+		vi.advanceTimersByTime(29 * 60 * 1000);
+		await waitForAssertion(() => {
+			expect(controller.getSnapshot().phase).toBe("reconnecting");
+		});
+		vi.runOnlyPendingTimers();
+		await flushPromises();
+
+		await waitForAssertion(() => {
+			expect(connectTransport).toHaveBeenCalledTimes(2);
+			expect(controller.getSnapshot().phase).toBe("listening");
+			expect(controller.getSnapshot().recoveryStatus.state).toBe("idle");
+		});
+		expect(transports[0].close).toHaveBeenCalledTimes(1);
+		expect(transports[1].close).not.toHaveBeenCalled();
+	});
+
+	it("restores manually attached system audio after a planned rollover reconnect", async () => {
+		const firstMicrophone = createMockStream();
+		const secondMicrophone = createMockStream();
+		const firstSystemAudio = createMockStream();
+		const secondSystemAudio = createMockStream();
+		const transports = [
+			{
+				close: vi.fn(async () => {}),
+			},
+			{
+				close: vi.fn(async () => {}),
+			},
+			{
+				close: vi.fn(async () => {}),
+			},
+			{
+				close: vi.fn(async () => {}),
+			},
+		] satisfies RealtimeTranscriptionTransport[];
+		let microphoneIndex = 0;
+		let systemAudioIndex = 0;
+		let transportIndex = 0;
+		const createMicrophoneInputStream = vi.fn(
+			async () =>
+				[firstMicrophone.stream, secondMicrophone.stream][microphoneIndex++] ??
+				secondMicrophone.stream,
+		);
+		const createBrowserSystemAudioStream = vi.fn(
+			async () =>
+				[firstSystemAudio.stream, secondSystemAudio.stream][
+					systemAudioIndex++
+				] ?? secondSystemAudio.stream,
+		);
+		const connectTransport = vi.fn(async () => {
+			const transport =
+				transports[transportIndex] ?? transports[transports.length - 1];
+			transportIndex += 1;
+			return transport;
+		});
+		const controller = createController({
+			connectTransport,
+			createBrowserSystemAudioStream,
+			createMicrophoneInputStream,
+			resolvePolicy: vi.fn(async () =>
+				createPolicy({
+					platform: "browser",
+					systemAudioCapability: {
+						isSupported: true,
+						shouldAutoBootstrap: false,
+						sourceMode: "display-media",
+					},
+				}),
+			),
+		});
+
+		await expect(controller.start()).resolves.toBe(true);
+		await expect(controller.requestSystemAudio()).resolves.toBe(true);
+
+		expect(controller.getSnapshot().systemAudioStatus.state).toBe("connected");
+		expect(connectTransport).toHaveBeenCalledTimes(2);
+
+		vi.advanceTimersByTime(29 * 60 * 1000);
+		await waitForAssertion(() => {
+			expect(controller.getSnapshot().phase).toBe("reconnecting");
+		});
+		vi.runOnlyPendingTimers();
+		await flushPromises();
+
+		await waitForAssertion(() => {
+			expect(connectTransport).toHaveBeenCalledTimes(4);
+			expect(createBrowserSystemAudioStream).toHaveBeenCalledTimes(2);
+			expect(controller.getSnapshot().phase).toBe("listening");
+			expect(controller.getSnapshot().systemAudioStatus.state).toBe(
+				"connected",
+			);
+		});
+		expect(transports[0].close).toHaveBeenCalledTimes(1);
+		expect(transports[1].close).toHaveBeenCalledTimes(1);
+		expect(transports[2].close).not.toHaveBeenCalled();
+		expect(transports[3].close).not.toHaveBeenCalled();
+	});
+
 	it("stopping a session clears live transcript and closes the transport", async () => {
 		const { stream } = createMockStream();
 		const transport = {

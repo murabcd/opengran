@@ -59,8 +59,6 @@ const transcriptDraftsDirPath = join(
 );
 const microphoneCaptureEventChannel = "app:microphone-capture-event";
 const systemAudioCaptureEventChannel = "app:system-audio-capture-event";
-const desktopRealtimeTransportEventChannel =
-	"app:desktop-realtime-transport-event";
 const transcriptionSessionStateChannel = "app:transcription-session-state";
 const transcriptionSessionEventChannel = "app:transcription-session-event";
 const meetingDetectionStateChannel = "app:meeting-detection-state";
@@ -68,6 +66,9 @@ const captureHealthTimeoutMs = 3_000;
 const maxRecoveryAttempts = 3;
 const recoveryBackoffMs = [750, 1_500, 3_000];
 const systemAudioAttachRetryBackoffMs = [750, 1_500, 3_000];
+const realtimeSessionRolloverMs = 29 * 60 * 1000;
+const realtimeTranscriptionPrompt =
+	"Transcribe speech verbatim with punctuation. Preserve names, product terms, and domain-specific vocabulary when possible.";
 const transcriptDraftStorageVersion = 1;
 const transcriptDraftMaxAgeMs = 72 * 60 * 60 * 1000;
 const meetingDetectionDebounceMs = 8_000;
@@ -124,6 +125,19 @@ const createInitialMeetingDetectionState = () => ({
 	sourceName: null,
 	status: "idle",
 });
+
+const logOpenAiResponseMetadata = ({ context, requestId, response }) => {
+	const openAiRequestId = response.headers.get("x-request-id");
+	const processingMs = response.headers.get("openai-processing-ms");
+
+	console.info("[openai]", {
+		context,
+		openAiRequestId,
+		processingMs,
+		requestId,
+		status: response.status,
+	});
+};
 const createInitialTranscriptionSessionState = () => ({
 	autoStartKey: null,
 	error: null,
@@ -194,7 +208,6 @@ const captureEventListeners = {
 	microphone: new Set(),
 	systemAudio: new Set(),
 };
-const desktopRealtimeTransportListeners = new Set();
 const transcriptionSpeakers = {
 	them: createTranscriptionSpeakerRuntime("them"),
 	you: createTranscriptionSpeakerRuntime("you"),
@@ -207,6 +220,7 @@ let transcriptionConfig = {
 let transcriptionPolicy = null;
 let transcriptionRecoveryAttempt = 0;
 let transcriptionReconnectTimeoutId = null;
+let transcriptionRolloverTimeoutId = null;
 let systemAudioAttachRetryTimeoutId = null;
 let systemAudioAttachRetryAttempt = 0;
 let transcriptionLastHandledAutoStartKey = null;
@@ -1412,25 +1426,6 @@ const emitMicrophoneCaptureEvent = (event) => {
 	});
 };
 
-const emitDesktopRealtimeTransportEvent = (event) => {
-	for (const listener of desktopRealtimeTransportListeners) {
-		listener(event);
-	}
-
-	broadcastToDesktopWindows({
-		channel: desktopRealtimeTransportEventChannel,
-		payload: event,
-	});
-};
-
-const subscribeToDesktopRealtimeTransportEvents = (listener) => {
-	desktopRealtimeTransportListeners.add(listener);
-
-	return () => {
-		desktopRealtimeTransportListeners.delete(listener);
-	};
-};
-
 const subscribeToCaptureEvents = (source, listener) => {
 	const listenerSet = captureEventListeners[source];
 
@@ -1707,6 +1702,15 @@ const clearTranscriptionReconnectTimeout = () => {
 
 	clearTimeout(transcriptionReconnectTimeoutId);
 	transcriptionReconnectTimeoutId = null;
+};
+
+const clearTranscriptionRolloverTimeout = () => {
+	if (transcriptionRolloverTimeoutId == null) {
+		return;
+	}
+
+	clearTimeout(transcriptionRolloverTimeoutId);
+	transcriptionRolloverTimeoutId = null;
 };
 
 const isCurrentTranscriptionOperation = (operationId) =>
@@ -2432,6 +2436,98 @@ const stopDesktopRealtimeTransport = async (speaker) => {
 	return { ok: true };
 };
 
+const scheduleTranscriptionRollover = () => {
+	clearTranscriptionRolloverTimeout();
+
+	transcriptionRolloverTimeoutId = setTimeout(() => {
+		transcriptionRolloverTimeoutId = null;
+		void handleDesktopTransportInterrupted({
+			message: "Realtime transcription session reached the rollover window.",
+			planned: true,
+			speaker: "you",
+		});
+	}, realtimeSessionRolloverMs);
+};
+
+const createDesktopRealtimeSessionConfig = ({ lang, source }) => {
+	const language = lang?.split("-")[0]?.trim().toLowerCase();
+
+	return {
+		type: "transcription",
+		audio: {
+			input: {
+				format: {
+					rate: 24_000,
+					type: "audio/pcm",
+				},
+				noise_reduction: {
+					type: source === "microphone" ? "near_field" : "far_field",
+				},
+				transcription: {
+					...(language ? { language } : {}),
+					model: "gpt-4o-transcribe",
+					prompt: realtimeTranscriptionPrompt,
+				},
+				turn_detection: {
+					type: "server_vad",
+					threshold: 0.5,
+					prefix_padding_ms: 300,
+					silence_duration_ms: 200,
+				},
+			},
+		},
+	};
+};
+
+const createDesktopRealtimeClientSecret = async ({ lang, source }) => {
+	if (!process.env.OPENAI_API_KEY) {
+		throw new Error("OPENAI_API_KEY is not configured.");
+	}
+
+	const requestId = crypto.randomUUID();
+	const response = await fetch(
+		"https://api.openai.com/v1/realtime/client_secrets",
+		{
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+				"Content-Type": "application/json",
+				"X-Client-Request-Id": requestId,
+			},
+			body: JSON.stringify({
+				expires_after: {
+					anchor: "created_at",
+					seconds: 600,
+				},
+				session: createDesktopRealtimeSessionConfig({ lang, source }),
+			}),
+		},
+	);
+
+	logOpenAiResponseMetadata({
+		context: "desktop.realtime.client_secret",
+		requestId,
+		response,
+	});
+
+	const payload = await response.json().catch(() => ({}));
+
+	if (!response.ok) {
+		throw new Error(
+			payload?.error?.message ||
+				"Failed to create realtime transcription session.",
+		);
+	}
+
+	const clientSecret = payload?.value;
+
+	if (!clientSecret) {
+		throw new Error("OpenAI did not return a realtime client secret.");
+	}
+
+	return clientSecret;
+};
+
 const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 	if (process.platform !== "darwin") {
 		throw new Error(
@@ -2453,6 +2549,10 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 	}
 
 	await stopDesktopRealtimeTransport(speaker);
+	const clientSecret = await createDesktopRealtimeClientSecret({
+		lang,
+		source,
+	});
 
 	return await new Promise((resolvePromise, rejectPromise) => {
 		let didResolve = false;
@@ -2464,7 +2564,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 			"wss://api.openai.com/v1/realtime?intent=transcription",
 			{
 				headers: {
-					Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+					Authorization: `Bearer ${clientSecret}`,
 				},
 			},
 		);
@@ -2502,7 +2602,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 			});
 
 			if (didResolve) {
-				emitDesktopRealtimeTransportEvent({
+				void handleDesktopRealtimeTransportEvent({
 					speaker,
 					type: "interrupted",
 					message:
@@ -2539,7 +2639,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 			}
 
 			if (event.type === "error" || event.type === "stopped") {
-				emitDesktopRealtimeTransportEvent({
+				void handleDesktopRealtimeTransportEvent({
 					speaker,
 					type: "interrupted",
 					message: event.message ?? "Desktop audio capture was interrupted.",
@@ -2555,38 +2655,6 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 				source,
 				speaker,
 			});
-			const language = lang?.split("-")[0]?.trim().toLowerCase();
-			socket.send(
-				JSON.stringify({
-					type: "session.update",
-					session: {
-						type: "transcription",
-						audio: {
-							input: {
-								format: {
-									rate: 24_000,
-									type: "audio/pcm",
-								},
-								noise_reduction: {
-									type: source === "microphone" ? "near_field" : "far_field",
-								},
-								transcription: {
-									...(language ? { language } : {}),
-									model: "gpt-4o-transcribe",
-									prompt: "",
-								},
-								turn_detection: {
-									type: "server_vad",
-									threshold: 0.5,
-									prefix_padding_ms: 300,
-									silence_duration_ms: 200,
-								},
-							},
-						},
-					},
-				}),
-			);
-
 			clearTimeout(session.openTimeout);
 
 			if (!didResolve) {
@@ -2606,7 +2674,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 				});
 
 				if (transportEvent) {
-					emitDesktopRealtimeTransportEvent(transportEvent);
+					void handleDesktopRealtimeTransportEvent(transportEvent);
 				}
 			} catch (error) {
 				console.error(
@@ -2653,7 +2721,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 			}
 
 			if (!session.isClosing) {
-				emitDesktopRealtimeTransportEvent({
+				void handleDesktopRealtimeTransportEvent({
 					speaker,
 					type: "interrupted",
 					message: "Realtime transcription connection was interrupted.",
@@ -2761,6 +2829,7 @@ const cleanupDesktopTranscriptionSession = async ({
 		stopTranscriptionSpeaker("you"),
 		stopTranscriptionSpeaker("them"),
 	]);
+	clearTranscriptionRolloverTimeout();
 
 	if (transcriptionLifecycleOperationId !== operationId) {
 		return;
@@ -3034,6 +3103,7 @@ const attachDesktopSystemAudio = async ({
 const runDesktopTranscriptionStart = async ({ preserveUtterances, reason }) => {
 	const operationId = ++transcriptionLifecycleOperationId;
 	clearTranscriptionReconnectTimeout();
+	clearTranscriptionRolloverTimeout();
 	clearSystemAudioAttachRetryTimeout({
 		resetAttempt: true,
 	});
@@ -3079,6 +3149,7 @@ const runDesktopTranscriptionStart = async ({ preserveUtterances, reason }) => {
 			phase: "listening",
 			recoveryStatus: createTranscriptRecoveryStatus(),
 		});
+		scheduleTranscriptionRollover();
 
 		if (policy.systemAudioCapability.shouldAutoBootstrap) {
 			void attachDesktopSystemAudio({
@@ -3127,7 +3198,11 @@ const runDesktopTranscriptionStart = async ({ preserveUtterances, reason }) => {
 	}
 };
 
-async function handleDesktopTransportInterrupted({ message, speaker }) {
+async function handleDesktopTransportInterrupted({
+	message,
+	planned = false,
+	speaker,
+}) {
 	console.warn("[transcription] transport interrupted", {
 		message,
 		phase: latestTranscriptionSessionState.phase,
@@ -3177,6 +3252,31 @@ async function handleDesktopTransportInterrupted({ message, speaker }) {
 		operationId,
 		preserveUtterances: true,
 	});
+
+	if (planned) {
+		transcriptionRecoveryAttempt = 0;
+		patchTranscriptionSessionState({
+			error: null,
+			isConnecting: true,
+			isListening: false,
+			phase: "reconnecting",
+			recoveryStatus: createTranscriptRecoveryStatus({
+				attempt: 0,
+				maxAttempts: maxRecoveryAttempts,
+				message,
+				state: "reconnecting",
+			}),
+		});
+
+		transcriptionReconnectTimeoutId = setTimeout(() => {
+			transcriptionReconnectTimeoutId = null;
+			void runDesktopTranscriptionStart({
+				preserveUtterances: true,
+				reason: "reconnect",
+			});
+		}, 0);
+		return;
+	}
 
 	const nextAttempt = transcriptionRecoveryAttempt + 1;
 	if (nextAttempt > maxRecoveryAttempts) {
@@ -3253,6 +3353,7 @@ const stopDesktopTranscriptionSession = async ({
 
 	const operationId = ++transcriptionLifecycleOperationId;
 	clearTranscriptionReconnectTimeout();
+	clearTranscriptionRolloverTimeout();
 	clearSystemAudioAttachRetryTimeout({
 		resetAttempt: true,
 	});
@@ -3325,10 +3426,6 @@ const detachDesktopTranscriptionSystemAudio = async () => {
 			: latestTranscriptionSessionState.systemAudioStatus,
 	});
 };
-
-subscribeToDesktopRealtimeTransportEvents((event) => {
-	void handleDesktopRealtimeTransportEvent(event);
-});
 
 subscribeToCaptureEvents("systemAudio", (event) => {
 	const recording = transcriptionSpeakers.them.recording;
@@ -4626,28 +4723,6 @@ ipcMain.handle("app:stop-microphone-capture", async () => {
 	await stopMicrophoneCapture();
 	return { ok: true };
 });
-
-ipcMain.handle(
-	"app:start-desktop-realtime-transport",
-	async (_event, options) => {
-		if (!options || typeof options !== "object") {
-			throw new Error("Desktop realtime transport options are required.");
-		}
-
-		return await startDesktopRealtimeTransport(options);
-	},
-);
-
-ipcMain.handle(
-	"app:stop-desktop-realtime-transport",
-	async (_event, speaker) => {
-		if (speaker !== "you" && speaker !== "them") {
-			throw new Error("Desktop realtime transport speaker is invalid.");
-		}
-
-		return await stopDesktopRealtimeTransport(speaker);
-	},
-);
 
 ipcMain.handle("app:get-auth-callback-url", async () => {
 	return {

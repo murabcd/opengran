@@ -1,4 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+
+const REALTIME_TRANSCRIPTION_PROMPT =
+	"Transcribe speech verbatim with punctuation. Preserve names, product terms, and domain-specific vocabulary when possible.";
 
 const sendJson = (
 	response: ServerResponse,
@@ -28,6 +32,27 @@ const readJsonBody = async (request: IncomingMessage) => {
 	};
 };
 
+const logOpenAiResponseMetadata = ({
+	context,
+	requestId,
+	response,
+}: {
+	context: string;
+	requestId: string;
+	response: Response;
+}) => {
+	const openAiRequestId = response.headers.get("x-request-id");
+	const processingMs = response.headers.get("openai-processing-ms");
+
+	console.info("[openai]", {
+		context,
+		openAiRequestId,
+		processingMs,
+		requestId,
+		status: response.status,
+	});
+};
+
 export const handleRealtimeTranscriptionSessionRequest = async (
 	request: IncomingMessage,
 	response: ServerResponse,
@@ -40,7 +65,8 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 	}
 
 	const { lang } = await readJsonBody(request);
-	const language = lang?.trim().toLowerCase();
+	const language = lang?.split("-")[0]?.trim().toLowerCase();
+	const requestId = randomUUID();
 
 	const sessionResponse = await fetch(
 		"https://api.openai.com/v1/realtime/client_secrets",
@@ -49,6 +75,7 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 			headers: {
 				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
 				"Content-Type": "application/json",
+				"X-Client-Request-Id": requestId,
 			},
 			body: JSON.stringify({
 				expires_after: {
@@ -70,6 +97,7 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 							},
 							transcription: {
 								model: "gpt-4o-transcribe",
+								prompt: REALTIME_TRANSCRIPTION_PROMPT,
 								...(language ? { language } : {}),
 							},
 						},
@@ -79,16 +107,17 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 		},
 	);
 
+	logOpenAiResponseMetadata({
+		context: "web.realtime.client_secret",
+		requestId,
+		response: sessionResponse,
+	});
+
 	const payload = (await sessionResponse.json().catch(() => ({}))) as {
 		error?: {
 			message?: string;
 		};
 		value?: string;
-		expires_at?: number;
-		client_secret?: {
-			value?: string;
-			expires_at?: number;
-		};
 	};
 
 	if (!sessionResponse.ok) {
@@ -100,9 +129,7 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 		return;
 	}
 
-	const clientSecret = payload.value ?? payload.client_secret?.value;
-	const expiresAt =
-		payload.expires_at ?? payload.client_secret?.expires_at ?? null;
+	const clientSecret = payload.value;
 
 	if (!clientSecret) {
 		sendJson(response, 500, {
@@ -113,6 +140,5 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 
 	sendJson(response, 200, {
 		clientSecret,
-		expiresAt,
 	});
 };
