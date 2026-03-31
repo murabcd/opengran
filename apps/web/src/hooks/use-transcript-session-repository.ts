@@ -66,6 +66,9 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 				}
 			: "skip",
 	);
+	const isLatestTranscriptSessionLoading = Boolean(
+		noteId && latestTranscriptSessionQuery === undefined,
+	);
 
 	const latestTranscriptSession =
 		React.useMemo<TranscriptSessionSnapshot | null>(
@@ -250,6 +253,7 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 			appendUtterance,
 			clearDraft,
 			completeSession,
+			isLatestTranscriptSessionLoading,
 			latestTranscriptSession,
 			loadDraft,
 			markGenerated,
@@ -263,6 +267,7 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 			appendUtterance,
 			clearDraft,
 			completeSession,
+			isLatestTranscriptSessionLoading,
 			latestTranscriptSession,
 			loadDraft,
 			markGenerated,

@@ -393,6 +393,7 @@ const useNoteComposerController = ({
 		isPreparingRequest;
 	const hasMessage = message.trim().length > 0;
 	const canGenerateNotes =
+		transcriptSession.isTranscriptSessionReady &&
 		transcriptSession.hasPendingGenerateTranscript &&
 		!transcriptSession.hasGeneratedLatestTranscript &&
 		!transcriptSession.isSpeechListening &&

@@ -132,6 +132,10 @@ export const useNoteTranscriptSession = ({
 	);
 	const latestTranscriptSession =
 		transcriptSessionRepository.latestTranscriptSession;
+	const isTranscriptSessionReady =
+		previousNoteIdRef.current === noteId &&
+		isTranscriptDraftReady &&
+		!transcriptSessionRepository.isLatestTranscriptSessionLoading;
 	const hasGeneratedLatestTranscript = Boolean(
 		latestTranscriptSession?.generatedNoteAt ||
 			(latestTranscriptSession &&
@@ -685,6 +689,7 @@ export const useNoteTranscriptSession = ({
 		handleGenerateNotes,
 		hasGeneratedLatestTranscript,
 		hasPendingGenerateTranscript,
+		isTranscriptSessionReady,
 		isGeneratingNotes,
 		isRefiningTranscript,
 		isSpeechListening,
