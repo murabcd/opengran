@@ -189,6 +189,7 @@ describe("NoteComposer", () => {
 		useNoteTranscriptSessionMock.mockReturnValue({
 			autoStartKey: null,
 			captureScopeKey: "note:note-1",
+			displayTranscriptEntries: [],
 			fullTranscript: "",
 			handleGenerateNotes: vi.fn(),
 			isGeneratingNotes: false,
@@ -315,6 +316,16 @@ describe("NoteComposer", () => {
 		useNoteTranscriptSessionMock.mockReturnValue({
 			autoStartKey: null,
 			captureScopeKey: "note:note-1",
+			displayTranscriptEntries: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					isLive: false,
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
 			fullTranscript: "hello",
 			handleGenerateNotes: vi.fn(),
 			isGeneratingNotes: false,
@@ -395,6 +406,16 @@ describe("NoteComposer", () => {
 		useNoteTranscriptSessionMock.mockReturnValue({
 			autoStartKey: null,
 			captureScopeKey: "note:note-1",
+			displayTranscriptEntries: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					isLive: false,
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
 			fullTranscript: "hello",
 			handleGenerateNotes: vi.fn(),
 			isGeneratingNotes: false,
@@ -602,6 +623,16 @@ describe("NoteComposer", () => {
 		useNoteTranscriptSessionMock.mockReturnValue({
 			autoStartKey: null,
 			captureScopeKey: "note:note-1",
+			displayTranscriptEntries: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					isLive: false,
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
 			fullTranscript: "hello",
 			handleGenerateNotes: vi.fn(),
 			isGeneratingNotes: false,

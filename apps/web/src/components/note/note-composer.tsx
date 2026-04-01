@@ -228,14 +228,19 @@ const useNoteComposerController = ({
 			: "skip",
 	);
 	const userPreferences = useQuery(api.userPreferences.get, {});
+	const isTranscriptionLanguageReady = userPreferences !== undefined;
+	const transcriptionLanguage = isTranscriptionLanguageReady
+		? (userPreferences?.transcriptionLanguage ?? null)
+		: undefined;
 	const transcriptSession = useNoteTranscriptSession({
-		autoStartTranscription,
+		autoStartTranscription:
+			autoStartTranscription && isTranscriptionLanguageReady,
 		autoGenerateNotesOnStop,
 		noteId,
 		onAutoStartTranscriptionHandled,
 		onEnhanceTranscript,
 		stopTranscriptionWhenMeetingEnds,
-		transcriptionLanguage: userPreferences?.transcriptionLanguage ?? null,
+		transcriptionLanguage,
 	});
 
 	const transport = React.useMemo(
@@ -768,6 +773,7 @@ const useNoteComposerController = ({
 		inlinePanelHeight,
 		isChatLoading,
 		isChatOpen,
+		displayTranscriptEntries: transcriptSession.displayTranscriptEntries,
 		isGeneratingNotes: transcriptSession.isGeneratingNotes,
 		isRefiningTranscript: transcriptSession.isRefiningTranscript,
 		isMobile,
@@ -793,7 +799,8 @@ const useNoteComposerController = ({
 		setReactionsByMessageId,
 		shouldShowInlinePanel,
 		textareaRef,
-		transcriptionLanguage: userPreferences?.transcriptionLanguage ?? null,
+		transcriptionLanguageReady: isTranscriptionLanguageReady,
+		transcriptionLanguage,
 		onSystemAudioRecordingReady: transcriptSession.onSystemAudioRecordingReady,
 		onTranscriptUtterance: transcriptSession.onTranscriptUtterance,
 		handleInlinePanelResizeStart,
@@ -811,6 +818,7 @@ function NoteSpeechControls({
 	onRecoveryStatusChange,
 	onTranscriptListeningChange,
 	onTranscriptUtterance,
+	transcriptionLanguageReady,
 	transcriptionLanguage,
 }: {
 	autoStartKey?: string | number | null;
@@ -823,6 +831,7 @@ function NoteSpeechControls({
 	onRecoveryStatusChange: (status: TranscriptRecoveryStatus) => void;
 	onTranscriptListeningChange: (isListening: boolean) => void;
 	onTranscriptUtterance: (utterance: TranscriptUtterance) => void;
+	transcriptionLanguageReady: boolean;
 	transcriptionLanguage?: string | null;
 }) {
 	return (
@@ -831,6 +840,7 @@ function NoteSpeechControls({
 				variant="outline"
 				size="icon-sm"
 				autoStartKey={autoStartKey}
+				disabled={!transcriptionLanguageReady}
 				lang={transcriptionLanguage}
 				scopeKey={captureScopeKey}
 				className="shrink-0 rounded-full border-input/50 !bg-transparent text-muted-foreground shadow-none hover:!bg-muted hover:text-foreground"
@@ -1390,6 +1400,7 @@ function NoteComposerSpeechControls({
 			onRecoveryStatusChange={controller.onRecoveryStatusChange}
 			onTranscriptListeningChange={controller.onTranscriptListeningChange}
 			onTranscriptUtterance={controller.onTranscriptUtterance}
+			transcriptionLanguageReady={controller.transcriptionLanguageReady}
 			transcriptionLanguage={controller.transcriptionLanguage}
 		/>
 	);
@@ -1751,11 +1762,12 @@ function NoteTranscriptPanel({
 			className="w-full overflow-y-auto"
 		>
 			<div className={cn("flex flex-col gap-4 pr-4")}>
-				{controller.orderedTranscriptUtterances.map((utterance) => (
+				{controller.displayTranscriptEntries.map((utterance) => (
 					<div
 						key={utterance.id}
 						className={cn(
-							"flex w-full",
+							"flex w-full transition-opacity",
+							utterance.isLive && "opacity-75",
 							utterance.speaker === "you" ? "justify-end" : "justify-start",
 						)}
 					>
@@ -1768,26 +1780,6 @@ function NoteTranscriptPanel({
 							)}
 						>
 							<p className="whitespace-pre-wrap">{utterance.text}</p>
-						</div>
-					</div>
-				))}
-				{controller.liveTranscriptEntries.map((entry) => (
-					<div
-						key={`live:${entry.speaker}`}
-						className={cn(
-							"flex w-full opacity-75",
-							entry.speaker === "you" ? "justify-end" : "justify-start",
-						)}
-					>
-						<div
-							className={cn(
-								"max-w-[85%] text-sm leading-6",
-								entry.speaker === "you"
-									? "rounded-2xl bg-secondary px-4 py-3 text-right text-secondary-foreground"
-									: "text-foreground",
-							)}
-						>
-							<p className="whitespace-pre-wrap">{entry.text}</p>
 						</div>
 					</div>
 				))}

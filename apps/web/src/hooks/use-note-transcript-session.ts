@@ -12,6 +12,10 @@ import {
 	type TranscriptRecoveryStatus,
 	type TranscriptUtterance,
 } from "@/lib/transcript";
+import {
+	isSuspiciousCommittedTranscriptText,
+	sanitizeLiveTranscriptStateText,
+} from "@/lib/transcript-guard";
 import { refineSystemAudioTranscript } from "@/lib/transcript-refinement-service";
 import { createTranscriptText } from "@/lib/transcript-session";
 import { transcriptionSessionManager } from "@/lib/transcription-session-manager";
@@ -30,6 +34,13 @@ type UseNoteTranscriptSessionArgs = {
 	stopTranscriptionWhenMeetingEnds?: boolean;
 	transcriptionLanguage?: string | null;
 };
+
+const normalizeDisplayTranscriptText = (value: string) =>
+	value
+		.toLowerCase()
+		.replace(/[^\p{L}\p{N}\s]+/gu, " ")
+		.replace(/\s+/g, " ")
+		.trim();
 
 export const useNoteTranscriptSession = ({
 	autoStartTranscription,
@@ -124,6 +135,66 @@ export const useNoteTranscriptSession = ({
 				}),
 		[liveTranscript],
 	);
+
+	const displayTranscriptEntries = React.useMemo(() => {
+		const committedEntries = orderedTranscriptUtterances.map((utterance) => ({
+			...utterance,
+			isLive: false,
+		}));
+		const mergedEntries = [...committedEntries];
+
+		for (const entry of liveTranscriptEntries) {
+			const nextEntry = {
+				endedAt: entry.startedAt ?? Date.now(),
+				id: `live:${entry.speaker}:${entry.startedAt ?? 0}`,
+				isLive: true,
+				speaker: entry.speaker,
+				startedAt: entry.startedAt ?? Date.now(),
+				text: entry.text,
+			};
+			const normalizedLiveText = normalizeDisplayTranscriptText(entry.text);
+			const hasCommittedReplacement = committedEntries.some((utterance) => {
+				if (utterance.speaker !== entry.speaker) {
+					return false;
+				}
+
+				if (
+					Math.abs(
+						(utterance.startedAt ?? Number.MAX_SAFE_INTEGER) -
+							(entry.startedAt ?? Number.MAX_SAFE_INTEGER),
+					) > 1_500
+				) {
+					return false;
+				}
+
+				const normalizedCommittedText = normalizeDisplayTranscriptText(
+					utterance.text,
+				);
+
+				return (
+					normalizedCommittedText === normalizedLiveText ||
+					normalizedCommittedText.includes(normalizedLiveText) ||
+					normalizedLiveText.includes(normalizedCommittedText)
+				);
+			});
+
+			if (!hasCommittedReplacement) {
+				mergedEntries.push(nextEntry);
+			}
+		}
+
+		return mergedEntries.sort((left, right) => {
+			if (left.startedAt !== right.startedAt) {
+				return left.startedAt - right.startedAt;
+			}
+
+			if (left.endedAt !== right.endedAt) {
+				return left.endedAt - right.endedAt;
+			}
+
+			return left.id.localeCompare(right.id);
+		});
+	}, [liveTranscriptEntries, orderedTranscriptUtterances]);
 
 	const fullTranscript = [
 		...orderedTranscriptUtterances,
@@ -685,6 +756,15 @@ export const useNoteTranscriptSession = ({
 
 	const handleTranscriptUtterance = React.useCallback(
 		(utterance: TranscriptUtterance) => {
+			if (
+				isSuspiciousCommittedTranscriptText({
+					language: transcriptionLanguage,
+					text: utterance.text,
+				})
+			) {
+				return;
+			}
+
 			const currentUtterances = transcriptUtterancesRef.current;
 			if (
 				shouldSuppressEchoUtterance({
@@ -714,7 +794,29 @@ export const useNoteTranscriptSession = ({
 
 			queuedTranscriptUtterancesRef.current.push(utterance);
 		},
-		[persistTranscriptUtterance],
+		[persistTranscriptUtterance, transcriptionLanguage],
+	);
+
+	const handleLiveTranscriptChange = React.useCallback(
+		(state: LiveTranscriptState) => {
+			setLiveTranscript({
+				them: {
+					...state.them,
+					text: sanitizeLiveTranscriptStateText({
+						language: transcriptionLanguage,
+						text: state.them.text,
+					}),
+				},
+				you: {
+					...state.you,
+					text: sanitizeLiveTranscriptStateText({
+						language: transcriptionLanguage,
+						text: state.you.text,
+					}),
+				},
+			});
+		},
+		[transcriptionLanguage],
 	);
 
 	const handleSystemAudioRecordingReady = React.useCallback(
@@ -810,7 +912,10 @@ export const useNoteTranscriptSession = ({
 
 	return {
 		activeTranscriptSessionId,
-		autoStartKey: autoStartTranscription && noteId ? `${noteId}:capture` : null,
+		autoStartKey:
+			autoStartTranscription && noteId && transcriptionLanguage !== undefined
+				? `${noteId}:capture`
+				: null,
 		captureScopeKey: noteId ? `note:${noteId}` : "note:draft",
 		fullTranscript,
 		handleGenerateNotes,
@@ -820,8 +925,9 @@ export const useNoteTranscriptSession = ({
 		isGeneratingNotes,
 		isRefiningTranscript,
 		isSpeechListening,
+		displayTranscriptEntries,
 		liveTranscriptEntries,
-		onLiveTranscriptChange: setLiveTranscript,
+		onLiveTranscriptChange: handleLiveTranscriptChange,
 		onRecoveryStatusChange: setRecoveryStatus,
 		onSystemAudioRecordingReady: handleSystemAudioRecordingReady,
 		onSystemAudioStatusChange: setSystemAudioStatus,
