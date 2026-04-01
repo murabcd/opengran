@@ -511,7 +511,7 @@ const getTrayTitle = () => {
 		}
 
 		if (trayCalendarState.status === "error") {
-			return "Calendar unavailable";
+			return "";
 		}
 
 		return "";
@@ -543,17 +543,7 @@ const buildTrayCalendarMenuItems = () => {
 	}
 
 	if (trayCalendarState.status === "error") {
-		return [
-			{
-				label: todayLabel,
-				enabled: false,
-			},
-			{
-				label: "Couldn’t load calendar",
-				enabled: false,
-			},
-			{ type: "separator" },
-		];
+		return [];
 	}
 
 	if (trayCalendarState.status === "idle") {
@@ -5588,6 +5578,15 @@ if (!singleInstanceLock) {
 		}
 
 		app.on("activate", async () => {
+			if (
+				meetingWidgetWindow &&
+				!meetingWidgetWindow.isDestroyed() &&
+				meetingWidgetWindow.isVisible() &&
+				!mainWindow?.isVisible()
+			) {
+				return;
+			}
+
 			await showMainWindow();
 		});
 	});

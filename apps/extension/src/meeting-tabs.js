@@ -147,7 +147,7 @@ export const getMeetingTabs = (tabs) =>
 			detection: detectMeetingFromTab(tab),
 			tab,
 		}))
-		.filter((entry) => entry.detection !== null)
+		.filter((entry) => entry.detection !== null && entry.tab?.active === true)
 		.sort((left, right) => compareMeetingTabs(left.tab, right.tab));
 
 export const getMeetingSignalPayload = (tabs) => {

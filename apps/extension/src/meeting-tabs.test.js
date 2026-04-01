@@ -37,7 +37,7 @@ describe("meeting-tabs", () => {
 		expect(payload.tabId).toBeNull();
 	});
 
-	it("keeps a meeting signal while a matching meeting tab remains open in the background", () => {
+	it("does not keep a meeting signal for a matching tab left in the background", () => {
 		const payload = getMeetingSignalPayload([
 			{
 				active: false,
@@ -55,11 +55,11 @@ describe("meeting-tabs", () => {
 			},
 		]);
 
-		expect(payload.active).toBe(true);
-		expect(payload.tabId).toBe(3);
+		expect(payload.active).toBe(false);
+		expect(payload.tabId).toBeNull();
 	});
 
-	it("tracks only tabs that still qualify as live meetings", () => {
+	it("tracks only active tabs that still qualify as live meetings", () => {
 		const trackedTabIds = getTrackedMeetingTabIds([
 			{
 				active: false,
@@ -75,7 +75,7 @@ describe("meeting-tabs", () => {
 			},
 		]);
 
-		expect(trackedTabIds.has(5)).toBe(true);
+		expect(trackedTabIds.has(5)).toBe(false);
 		expect(trackedTabIds.has(6)).toBe(false);
 	});
 
