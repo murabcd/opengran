@@ -180,6 +180,7 @@ let isPromptingForQuitConfirmation = false;
 let traySettings = defaultTraySettings;
 let desktopPermissionsState = defaultDesktopPermissionsState;
 let trayCalendarState = createInitialTrayCalendarState();
+let trayCalendarWorkspaceId = null;
 let trayCalendarRefreshTimeoutId = null;
 let trayCalendarRefreshPromise = null;
 let trayStatusLabel = "Updates are unavailable in development builds";
@@ -547,12 +548,23 @@ const refreshTrayCalendar = async () => {
 				return;
 			}
 
+			if (!trayCalendarWorkspaceId) {
+				trayCalendarState = {
+					...createInitialTrayCalendarState(),
+					status: "not_connected",
+				};
+				return;
+			}
+
 			const convexClient = new ConvexHttpClient(getConvexUrl(), {
 				auth: convexToken,
 			});
 			const result = await convexClient.action(
 				api.calendar.listUpcomingGoogleEvents,
-				getCurrentDayWindow(),
+				{
+					workspaceId: trayCalendarWorkspaceId,
+					...getCurrentDayWindow(),
+				},
 			);
 
 			trayCalendarState =
@@ -4737,6 +4749,16 @@ ipcMain.handle("app:get-share-base-url", async () => {
 	return {
 		url: shareBaseUrl,
 	};
+});
+
+ipcMain.handle("app:set-active-workspace-id", async (_event, workspaceId) => {
+	if (workspaceId !== null && typeof workspaceId !== "string") {
+		throw new Error("Workspace id must be a string or null.");
+	}
+
+	trayCalendarWorkspaceId = workspaceId;
+	scheduleTrayCalendarRefresh(0);
+	return { ok: true };
 });
 
 ipcMain.handle("app:write-clipboard-text", async (_event, value) => {

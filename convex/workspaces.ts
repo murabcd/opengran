@@ -329,6 +329,22 @@ export const remove = mutation({
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,
 		});
+		await ctx.scheduler.runAfter(
+			0,
+			internal.calendarPreferences.removeAllForWorkspace,
+			{
+				ownerTokenIdentifier: identity.tokenIdentifier,
+				workspaceId: args.workspaceId,
+			},
+		);
+		await ctx.scheduler.runAfter(0, internal.appConnections.removeAllForWorkspace, {
+			ownerTokenIdentifier: identity.tokenIdentifier,
+			workspaceId: args.workspaceId,
+		});
+		await ctx.scheduler.runAfter(0, internal.templates.removeAllForWorkspace, {
+			ownerTokenIdentifier: identity.tokenIdentifier,
+			workspaceId: args.workspaceId,
+		});
 
 		if (workspace.iconStorageId) {
 			await ctx.storage.delete(workspace.iconStorageId);

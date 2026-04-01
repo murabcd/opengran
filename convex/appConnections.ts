@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, query } from "./_generated/server";
@@ -86,6 +87,7 @@ const chatToolConnectionValidator = v.union(
 );
 
 const APP_SOURCE_PREFIX = "app:";
+const REMOVE_ALL_APP_CONNECTIONS_BATCH_SIZE = 100;
 
 type YandexTrackerConnectionSettings = {
 	sourceId: string;
@@ -153,6 +155,23 @@ const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	return identity;
 };
 
+const requireOwnedWorkspace = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+) => {
+	const workspace = await ctx.db.get(workspaceId);
+
+	if (!workspace || workspace.ownerTokenIdentifier !== ownerTokenIdentifier) {
+		throw new ConvexError({
+			code: "WORKSPACE_NOT_FOUND",
+			message: "Workspace not found.",
+		});
+	}
+
+	return workspace;
+};
+
 const toAppSourceId = (id: Id<"appConnections">) => `${APP_SOURCE_PREFIX}${id}`;
 
 const getProviderPreview = (connection: Doc<"appConnections">) =>
@@ -182,37 +201,58 @@ const getJiraPreview = (connection: Doc<"appConnections">) => {
 const getOwnedConnection = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
 	provider: "jira" | "yandex-calendar" | "yandex-tracker",
 ) =>
 	await ctx.db
 		.query("appConnections")
-		.withIndex("by_ownerTokenIdentifier_and_provider", (q) =>
-			q.eq("ownerTokenIdentifier", ownerTokenIdentifier).eq("provider", provider),
+		.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_provider", (q) =>
+			q
+				.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+				.eq("workspaceId", workspaceId)
+				.eq("provider", provider),
 		)
 		.unique();
 
 const getOwnedYandexTrackerConnection = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
-) => await getOwnedConnection(ctx, ownerTokenIdentifier, "yandex-tracker");
+	workspaceId: Id<"workspaces">,
+) =>
+	await getOwnedConnection(
+		ctx,
+		ownerTokenIdentifier,
+		workspaceId,
+		"yandex-tracker",
+	);
 
 const getOwnedYandexCalendarConnection = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
-) => await getOwnedConnection(ctx, ownerTokenIdentifier, "yandex-calendar");
+	workspaceId: Id<"workspaces">,
+) =>
+	await getOwnedConnection(
+		ctx,
+		ownerTokenIdentifier,
+		workspaceId,
+		"yandex-calendar",
+	);
 
 const getOwnedJiraConnection = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
-) => await getOwnedConnection(ctx, ownerTokenIdentifier, "jira");
+	workspaceId: Id<"workspaces">,
+) => await getOwnedConnection(ctx, ownerTokenIdentifier, workspaceId, "jira");
 
 const toChatToolConnection = (
 	connection: Doc<"appConnections"> | null,
 	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
 ): ChatToolConnection | null => {
 	if (
 		!connection ||
 		connection.ownerTokenIdentifier !== ownerTokenIdentifier ||
+		connection.workspaceId !== workspaceId ||
 		connection.status !== "connected"
 	) {
 		return null;
@@ -268,15 +308,21 @@ const normalizeConnectionId = (
 };
 
 export const listSources = query({
-	args: {},
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
 	returns: v.array(appConnectionSourceValidator),
-	handler: async (ctx): Promise<AppConnectionSource[]> => {
+	handler: async (ctx, args): Promise<AppConnectionSource[]> => {
 		const identity = await requireIdentity(ctx);
+		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
 		const connections = await ctx.db
 			.query("appConnections")
-			.withIndex("by_ownerTokenIdentifier_and_status_and_updatedAt", (q) =>
+			.withIndex(
+				"by_ownerTokenIdentifier_and_workspaceId_and_status_and_updatedAt",
+				(q) =>
 				q
 					.eq("ownerTokenIdentifier", identity.tokenIdentifier)
+					.eq("workspaceId", args.workspaceId)
 					.eq("status", "connected"),
 			)
 			.order("desc")
@@ -305,13 +351,17 @@ export const listSources = query({
 });
 
 export const getYandexTracker = query({
-	args: {},
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
 	returns: v.union(yandexTrackerConnectionSettingsValidator, v.null()),
-	handler: async (ctx) => {
+	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
+		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
 		const connection = await getOwnedYandexTrackerConnection(
 			ctx,
 			identity.tokenIdentifier,
+			args.workspaceId,
 		);
 
 		if (
@@ -334,13 +384,17 @@ export const getYandexTracker = query({
 });
 
 export const getYandexCalendar = query({
-	args: {},
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
 	returns: v.union(yandexCalendarConnectionSettingsValidator, v.null()),
-	handler: async (ctx) => {
+	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
+		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
 		const connection = await getOwnedYandexCalendarConnection(
 			ctx,
 			identity.tokenIdentifier,
+			args.workspaceId,
 		);
 
 		if (
@@ -365,13 +419,17 @@ export const getYandexCalendar = query({
 });
 
 export const getJira = query({
-	args: {},
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
 	returns: v.union(jiraConnectionSettingsValidator, v.null()),
-	handler: async (ctx) => {
+	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
+		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
 		const connection = await getOwnedJiraConnection(
 			ctx,
 			identity.tokenIdentifier,
+			args.workspaceId,
 		);
 
 		if (!connection || !connection.baseUrl || !connection.email) {
@@ -391,11 +449,13 @@ export const getJira = query({
 
 export const getSelectedForChat = query({
 	args: {
+		workspaceId: v.id("workspaces"),
 		sourceIds: v.array(v.string()),
 	},
 	returns: v.array(chatToolConnectionValidator),
 	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
 		const identity = await requireIdentity(ctx);
+		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
 		const normalizedIds = args.sourceIds
 			.map((sourceId) => normalizeConnectionId(ctx, sourceId))
 			.filter((id, index, values): id is Id<"appConnections"> =>
@@ -412,7 +472,11 @@ export const getSelectedForChat = query({
 
 		return connections
 			.map((connection) =>
-				toChatToolConnection(connection, identity.tokenIdentifier),
+				toChatToolConnection(
+					connection,
+					identity.tokenIdentifier,
+					args.workspaceId,
+				),
 			)
 			.filter((connection): connection is ChatToolConnection =>
 				Boolean(connection),
@@ -421,15 +485,21 @@ export const getSelectedForChat = query({
 });
 
 export const getAllForChat = query({
-	args: {},
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
 	returns: v.array(chatToolConnectionValidator),
-	handler: async (ctx): Promise<ChatToolConnection[]> => {
+	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
 		const identity = await requireIdentity(ctx);
+		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
 		const connections = await ctx.db
 			.query("appConnections")
-			.withIndex("by_ownerTokenIdentifier_and_status_and_updatedAt", (q) =>
+			.withIndex(
+				"by_ownerTokenIdentifier_and_workspaceId_and_status_and_updatedAt",
+				(q) =>
 				q
 					.eq("ownerTokenIdentifier", identity.tokenIdentifier)
+					.eq("workspaceId", args.workspaceId)
 					.eq("status", "connected"),
 			)
 			.order("desc")
@@ -437,7 +507,11 @@ export const getAllForChat = query({
 
 		return connections
 			.map((connection) =>
-				toChatToolConnection(connection, identity.tokenIdentifier),
+				toChatToolConnection(
+					connection,
+					identity.tokenIdentifier,
+					args.workspaceId,
+				),
 			)
 			.filter((connection): connection is ChatToolConnection =>
 				Boolean(connection),
@@ -448,12 +522,14 @@ export const getAllForChat = query({
 export const getYandexCalendarCredentials = internalQuery({
 	args: {
 		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
 	},
 	returns: yandexCalendarCredentialsValidator,
 	handler: async (ctx, args) => {
 		const connection = await getOwnedYandexCalendarConnection(
 			ctx,
 			args.ownerTokenIdentifier,
+			args.workspaceId,
 		);
 
 		if (
@@ -478,21 +554,69 @@ export const getYandexCalendarCredentials = internalQuery({
 	},
 });
 
+const deleteConnectionBatchForOwner = async (
+	ctx: MutationCtx,
+	ownerTokenIdentifier: string,
+) => {
+	const connections = await ctx.db
+		.query("appConnections")
+		.withIndex("by_ownerTokenIdentifier_and_updatedAt", (q) =>
+			q.eq("ownerTokenIdentifier", ownerTokenIdentifier),
+		)
+		.take(REMOVE_ALL_APP_CONNECTIONS_BATCH_SIZE);
+
+	await Promise.all(connections.map((connection) => ctx.db.delete(connection._id)));
+
+	return {
+		deletedCount: connections.length,
+		hasMore: connections.length === REMOVE_ALL_APP_CONNECTIONS_BATCH_SIZE,
+	};
+};
+
+const deleteConnectionBatchForWorkspace = async (
+	ctx: MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+) => {
+	const connections = await ctx.db
+		.query("appConnections")
+		.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_updatedAt", (q) =>
+			q
+				.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+				.eq("workspaceId", workspaceId),
+		)
+		.take(REMOVE_ALL_APP_CONNECTIONS_BATCH_SIZE);
+
+	await Promise.all(connections.map((connection) => ctx.db.delete(connection._id)));
+
+	return {
+		deletedCount: connections.length,
+		hasMore: connections.length === REMOVE_ALL_APP_CONNECTIONS_BATCH_SIZE,
+	};
+};
+
 export const upsertYandexTracker = internalMutation({
 	args: {
 		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
 		orgType: yandexTrackerOrgTypeValidator,
 		orgId: v.string(),
 		token: v.string(),
 	},
 	returns: yandexTrackerConnectionSettingsValidator,
 	handler: async (ctx, args): Promise<YandexTrackerConnectionSettings> => {
+		await requireOwnedWorkspace(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
 		const now = Date.now();
 		const orgId = args.orgId.trim();
 		const token = args.token.trim();
 		const existingConnection = await getOwnedYandexTrackerConnection(
 			ctx,
 			args.ownerTokenIdentifier,
+			args.workspaceId,
 		);
 
 		if (existingConnection) {
@@ -517,6 +641,7 @@ export const upsertYandexTracker = internalMutation({
 
 		const id = await ctx.db.insert("appConnections", {
 			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
 			provider: "yandex-tracker",
 			status: "connected",
 			displayName: "Yandex Tracker",
@@ -541,6 +666,7 @@ export const upsertYandexTracker = internalMutation({
 export const upsertYandexCalendar = internalMutation({
 	args: {
 		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
 		email: v.string(),
 		password: v.string(),
 		serverAddress: v.string(),
@@ -551,6 +677,11 @@ export const upsertYandexCalendar = internalMutation({
 		ctx,
 		args,
 	): Promise<YandexCalendarConnectionSettings> => {
+		await requireOwnedWorkspace(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
 		const now = Date.now();
 		const email = args.email.trim().toLowerCase();
 		const password = args.password.trim();
@@ -559,6 +690,7 @@ export const upsertYandexCalendar = internalMutation({
 		const existingConnection = await getOwnedYandexCalendarConnection(
 			ctx,
 			args.ownerTokenIdentifier,
+			args.workspaceId,
 		);
 
 		if (existingConnection) {
@@ -585,6 +717,7 @@ export const upsertYandexCalendar = internalMutation({
 
 		const id = await ctx.db.insert("appConnections", {
 			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
 			provider: "yandex-calendar",
 			status: "connected",
 			displayName: "Yandex Calendar",
@@ -611,12 +744,18 @@ export const upsertYandexCalendar = internalMutation({
 export const upsertJira = internalMutation({
 	args: {
 		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
 		baseUrl: v.string(),
 		email: v.string(),
 		token: v.string(),
 	},
 	returns: jiraConnectionSettingsValidator,
 	handler: async (ctx, args): Promise<JiraConnectionSettings> => {
+		await requireOwnedWorkspace(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
 		const now = Date.now();
 		const baseUrl = args.baseUrl.trim();
 		const email = args.email.trim().toLowerCase();
@@ -624,6 +763,7 @@ export const upsertJira = internalMutation({
 		const existingConnection = await getOwnedJiraConnection(
 			ctx,
 			args.ownerTokenIdentifier,
+			args.workspaceId,
 		);
 
 		if (existingConnection) {
@@ -648,6 +788,7 @@ export const upsertJira = internalMutation({
 
 		const id = await ctx.db.insert("appConnections", {
 			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
 			provider: "jira",
 			status: "connected",
 			displayName: "Jira",
@@ -666,5 +807,50 @@ export const upsertJira = internalMutation({
 			baseUrl,
 			email,
 		};
+	},
+});
+
+export const removeAllForWorkspace = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const result = await deleteConnectionBatchForWorkspace(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+
+		if (result.hasMore) {
+			await ctx.scheduler.runAfter(0, internal.appConnections.removeAllForWorkspace, {
+				ownerTokenIdentifier: args.ownerTokenIdentifier,
+				workspaceId: args.workspaceId,
+			});
+		}
+
+		return null;
+	},
+});
+
+export const removeAllForOwner = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const result = await deleteConnectionBatchForOwner(
+			ctx,
+			args.ownerTokenIdentifier,
+		);
+
+		if (result.hasMore) {
+			await ctx.scheduler.runAfter(0, internal.appConnections.removeAllForOwner, {
+				ownerTokenIdentifier: args.ownerTokenIdentifier,
+			});
+		}
+
+		return null;
 	},
 });

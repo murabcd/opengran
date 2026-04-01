@@ -2,6 +2,7 @@
 
 import { ConvexError, v } from "convex/values";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action } from "./_generated/server";
 import { authComponent, createAuth } from "./auth";
@@ -486,11 +487,13 @@ const fetchYandexUpcomingEvents = async ({
 	now,
 	timeMax,
 	timeMin,
+	workspaceId,
 }: {
 	ctx: ActionCtx;
 	now: number;
 	timeMax: number;
 	timeMin: number;
+	workspaceId: Id<"workspaces">;
 }): Promise<UpcomingEventsFetchResult> => {
 	const identity = await ctx.auth.getUserIdentity();
 
@@ -512,6 +515,7 @@ const fetchYandexUpcomingEvents = async ({
 		internal.appConnections.getYandexCalendarCredentials,
 		{
 			ownerTokenIdentifier: identity.tokenIdentifier,
+			workspaceId,
 		},
 	);
 
@@ -539,6 +543,7 @@ const fetchYandexUpcomingEvents = async ({
 
 export const listUpcomingGoogleEvents = action({
 	args: {
+		workspaceId: v.id("workspaces"),
 		timeMax: v.string(),
 		timeMin: v.string(),
 	},
@@ -556,15 +561,16 @@ export const listUpcomingGoogleEvents = action({
 		try {
 			const authContext = await getGoogleAuthContext(ctx);
 			const calendarVisibilityPreferences: CalendarVisibilityPreferences =
-				await ctx.runQuery(api.calendarPreferences.get, {});
+				await ctx.runQuery(api.calendarPreferences.get, {
+					workspaceId: args.workspaceId,
+				});
 			if (
 				!calendarVisibilityPreferences.showGoogleCalendar &&
 				!calendarVisibilityPreferences.showYandexCalendar
 			) {
 				return {
-					status: "ready" as const,
+					status: "not_connected" as const,
 					events: [] as UpcomingCalendarEvent[],
-					connectedCalendarCount: 0,
 				};
 			}
 			const now = Date.now();
@@ -587,6 +593,7 @@ export const listUpcomingGoogleEvents = action({
 							now,
 							timeMin: requestedWindow.timeMin,
 							timeMax: requestedWindow.timeMax,
+							workspaceId: args.workspaceId,
 						})
 					: Promise.resolve({
 							connectedCalendarCount: 0,

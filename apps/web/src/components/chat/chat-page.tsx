@@ -80,7 +80,14 @@ const useChatPageController = ({
 		api.notes.list,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
-	const appSources = useQuery(api.appConnections.listSources, {});
+	const appSources = useQuery(
+		api.appConnections.listSources,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
+	React.useEffect(() => {
+		void activeWorkspaceId;
+		setSelectedSourceIds([]);
+	}, [activeWorkspaceId]);
 	const moveChatToTrash = useMutation(
 		api.chats.moveToTrash,
 	).withOptimisticUpdate((localStore, args) => {

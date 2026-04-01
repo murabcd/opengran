@@ -143,8 +143,12 @@ const getNotesContext = async ({
 const getSelectedAppConnections = async ({
 	convexToken,
 	selectedSourceIds,
-}: Pick<ChatRequestBody, "convexToken" | "selectedSourceIds">) => {
-	if (!convexToken) {
+	workspaceId,
+}: Pick<
+	ChatRequestBody,
+	"convexToken" | "selectedSourceIds" | "workspaceId"
+>) => {
+	if (!convexToken || !workspaceId) {
 		return [];
 	}
 
@@ -153,7 +157,9 @@ const getSelectedAppConnections = async ({
 	const client = new ConvexHttpClient(getConvexUrl(), { auth: convexToken });
 
 	if (allSelectedSourceIds.length === 0) {
-		return await client.query(api.appConnections.getAllForChat, {});
+		return await client.query(api.appConnections.getAllForChat, {
+			workspaceId: workspaceId as Id<"workspaces">,
+		});
 	}
 
 	if (sourceIds.length === 0) {
@@ -161,6 +167,7 @@ const getSelectedAppConnections = async ({
 	}
 
 	return await client.query(api.appConnections.getSelectedForChat, {
+		workspaceId: workspaceId as Id<"workspaces">,
 		sourceIds,
 	});
 };
@@ -506,6 +513,7 @@ export const handleChatRequest = async (
 		? await getSelectedAppConnections({
 				convexToken,
 				selectedSourceIds,
+				workspaceId,
 			})
 		: [];
 	const trackerConnection =

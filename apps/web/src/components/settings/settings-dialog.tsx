@@ -687,14 +687,18 @@ function AppearanceSettings() {
 }
 
 function CalendarSettings() {
+	const activeWorkspaceId = useActiveWorkspaceId();
 	const { data: session } = authClient.useSession();
-	const calendarPreferences = useQuery(api.calendarPreferences.get, {});
+	const calendarPreferences = useQuery(
+		api.calendarPreferences.get,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const updateCalendarPreferences = useMutation(
 		api.calendarPreferences.update,
 	).withOptimisticUpdate((localStore, args) => {
 		localStore.setQuery(
 			api.calendarPreferences.get,
-			{},
+			{ workspaceId: args.workspaceId },
 			{
 				showGoogleCalendar: args.showGoogleCalendar,
 				showYandexCalendar: args.showYandexCalendar,
@@ -703,7 +707,7 @@ function CalendarSettings() {
 	});
 	const yandexCalendarConnection = useQuery(
 		api.appConnections.getYandexCalendar,
-		{},
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
 	const connectYandexCalendar = useAction(
 		api.appConnectionActions.connectYandexCalendar,
@@ -730,6 +734,19 @@ function CalendarSettings() {
 		googleAccount?.scopes.includes(
 			"https://www.googleapis.com/auth/calendar.readonly",
 		) ?? false;
+	const isGoogleCalendarEnabledForWorkspace =
+		calendarPreferences?.showGoogleCalendar ?? false;
+	const googleCalendarButtonLabel = !googleAccount
+		? "Connect"
+		: !hasCalendarScope
+			? "Grant calendar access"
+			: isGoogleCalendarEnabledForWorkspace
+				? "Reconnect"
+				: "Connect";
+	const googleCalendarButtonVariant =
+		googleAccount && hasCalendarScope && isGoogleCalendarEnabledForWorkspace
+			? "outline"
+			: "default";
 
 	const handleYandexCalendarDialogOpenChange = (open: boolean) => {
 		dispatch({ type: "setIsYandexCalendarDialogOpen", value: open });
@@ -748,6 +765,24 @@ function CalendarSettings() {
 		dispatch({
 			type: "setYandexCalendarFormState",
 			value: initialYandexCalendarConnectionFormState,
+		});
+	};
+
+	const enableCalendarForWorkspace = async (provider: "google" | "yandex") => {
+		if (!activeWorkspaceId) {
+			return;
+		}
+
+		await updateCalendarPreferences({
+			workspaceId: activeWorkspaceId,
+			showGoogleCalendar:
+				provider === "google"
+					? true
+					: (calendarPreferences?.showGoogleCalendar ?? false),
+			showYandexCalendar:
+				provider === "yandex"
+					? true
+					: (calendarPreferences?.showYandexCalendar ?? false),
 		});
 	};
 
@@ -783,6 +818,7 @@ function CalendarSettings() {
 
 			if (!url) {
 				if (linkedWithoutRedirect) {
+					await enableCalendarForWorkspace("google");
 					await loadAccounts();
 					toast.success("Google account linked");
 					return;
@@ -810,6 +846,7 @@ function CalendarSettings() {
 
 	const handleConnectYandexCalendar = async () => {
 		if (
+			!activeWorkspaceId ||
 			!yandexCalendarFormState.email.trim() ||
 			!yandexCalendarFormState.password.trim()
 		) {
@@ -820,9 +857,11 @@ function CalendarSettings() {
 
 		try {
 			await connectYandexCalendar({
+				workspaceId: activeWorkspaceId,
 				email: yandexCalendarFormState.email.trim(),
 				password: yandexCalendarFormState.password.trim(),
 			});
+			await enableCalendarForWorkspace("yandex");
 			toast.success("Yandex Calendar connected");
 			handleYandexCalendarDialogOpenChange(false);
 		} catch (error) {
@@ -845,10 +884,17 @@ function CalendarSettings() {
 		showGoogleCalendar: boolean;
 		showYandexCalendar: boolean;
 	}) => {
+		if (!activeWorkspaceId) {
+			return;
+		}
+
 		dispatch({ type: "setIsSavingCalendarPreferences", value: true });
 
 		try {
-			await updateCalendarPreferences(nextPreferences);
+			await updateCalendarPreferences({
+				workspaceId: activeWorkspaceId,
+				...nextPreferences,
+			});
 		} catch (error) {
 			console.error("Failed to update calendar preferences", error);
 			toast.error("Failed to update calendar visibility");
@@ -856,6 +902,14 @@ function CalendarSettings() {
 			dispatch({ type: "setIsSavingCalendarPreferences", value: false });
 		}
 	};
+
+	if (!activeWorkspaceId) {
+		return (
+			<div className="py-4 text-sm text-muted-foreground">
+				Select a workspace to manage workspace-specific calendar settings.
+			</div>
+		);
+	}
 
 	return (
 		<div className="py-4">
@@ -866,29 +920,23 @@ function CalendarSettings() {
 						<CalendarProviderRow
 							icon={<Icons.googleLogo className="size-5 shrink-0" />}
 							name="Google Calendar"
-							checked={calendarPreferences?.showGoogleCalendar ?? true}
+							checked={calendarPreferences?.showGoogleCalendar ?? false}
 							switchDisabled={isSavingCalendarPreferences}
 							onCheckedChange={(checked) => {
 								void handleCalendarVisibilityChange({
 									showGoogleCalendar: checked,
 									showYandexCalendar:
-										calendarPreferences?.showYandexCalendar ?? true,
+										calendarPreferences?.showYandexCalendar ?? false,
 								});
 							}}
-							buttonVariant={googleAccount ? "outline" : "default"}
+							buttonVariant={googleCalendarButtonVariant}
 							onButtonClick={() => {
 								void handleConnectGoogleCalendar();
 							}}
 							buttonDisabled={
 								isConnectingGoogle || !session?.user || isLoadingAccounts
 							}
-							buttonLabel={
-								googleAccount
-									? hasCalendarScope
-										? "Reconnect"
-										: "Grant calendar access"
-									: "Connect"
-							}
+							buttonLabel={googleCalendarButtonLabel}
 							buttonIcon={
 								isConnectingGoogle ? (
 									<LoaderCircle className="animate-spin" />
@@ -898,12 +946,12 @@ function CalendarSettings() {
 						<CalendarProviderRow
 							icon={<Icons.yandexCalendarLogo className="size-5 shrink-0" />}
 							name="Yandex Calendar"
-							checked={calendarPreferences?.showYandexCalendar ?? true}
+							checked={calendarPreferences?.showYandexCalendar ?? false}
 							switchDisabled={isSavingCalendarPreferences}
 							onCheckedChange={(checked) => {
 								void handleCalendarVisibilityChange({
 									showGoogleCalendar:
-										calendarPreferences?.showGoogleCalendar ?? true,
+										calendarPreferences?.showGoogleCalendar ?? false,
 									showYandexCalendar: checked,
 								});
 							}}
@@ -1085,12 +1133,16 @@ function YandexCalendarDialog({
 }
 
 function ConnectionsSettings() {
+	const activeWorkspaceId = useActiveWorkspaceId();
 	const { data: session } = authClient.useSession();
 	const yandexTrackerConnection = useQuery(
 		api.appConnections.getYandexTracker,
-		{},
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
-	const jiraConnection = useQuery(api.appConnections.getJira, {});
+	const jiraConnection = useQuery(
+		api.appConnections.getJira,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const connectYandexTracker = useAction(
 		api.appConnectionActions.connectYandexTracker,
 	);
@@ -1130,6 +1182,7 @@ function ConnectionsSettings() {
 
 	const handleConnectYandexTracker = async () => {
 		if (
+			!activeWorkspaceId ||
 			!yandexTrackerFormState.orgId.trim() ||
 			!yandexTrackerFormState.token.trim()
 		) {
@@ -1140,6 +1193,7 @@ function ConnectionsSettings() {
 
 		try {
 			await connectYandexTracker({
+				workspaceId: activeWorkspaceId,
 				orgType: yandexTrackerFormState.orgType,
 				orgId: yandexTrackerFormState.orgId.trim(),
 				token: yandexTrackerFormState.token.trim(),
@@ -1184,6 +1238,7 @@ function ConnectionsSettings() {
 
 	const handleConnectJira = async () => {
 		if (
+			!activeWorkspaceId ||
 			!jiraFormState.baseUrl.trim() ||
 			!jiraFormState.email.trim() ||
 			!jiraFormState.token.trim()
@@ -1195,6 +1250,7 @@ function ConnectionsSettings() {
 
 		try {
 			await connectJira({
+				workspaceId: activeWorkspaceId,
 				baseUrl: jiraFormState.baseUrl.trim(),
 				email: jiraFormState.email.trim(),
 				token: jiraFormState.token.trim(),
@@ -1217,6 +1273,14 @@ function ConnectionsSettings() {
 		jiraFormState.baseUrl.trim().length > 0 &&
 		jiraFormState.email.trim().length > 0 &&
 		jiraFormState.token.trim().length > 0;
+
+	if (!activeWorkspaceId) {
+		return (
+			<div className="py-4 text-sm text-muted-foreground">
+				Select a workspace to manage workspace-specific tool connections.
+			</div>
+		);
+	}
 
 	return (
 		<div className="py-4">

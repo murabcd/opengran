@@ -260,9 +260,13 @@ describe("ChatPage", () => {
 		const meetingNotesButtons = screen.getAllByRole("button", {
 			name: "Meeting notes",
 		});
+		const brandGuidelinesButtons = screen.getAllByRole("button", {
+			name: "Brand guidelines",
+		});
 		expect(meetingNotesButtons[0]).toBeDefined();
+		expect(brandGuidelinesButtons[0]).toBeDefined();
 		await user.click(meetingNotesButtons[0]);
-		await user.click(screen.getByRole("button", { name: "Brand guidelines" }));
+		await user.click(brandGuidelinesButtons[0]);
 		await user.click(screen.getByRole("button", { name: "Send" }));
 
 		expect(sendMessageMock).toHaveBeenCalledTimes(1);

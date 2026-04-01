@@ -227,6 +227,28 @@ const deleteTemplateBatch = async (
 	};
 };
 
+const deleteTemplateBatchForWorkspace = async (
+	ctx: MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+) => {
+	const templates = await ctx.db
+		.query("templates")
+		.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_createdAt", (q) =>
+			q
+				.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+				.eq("workspaceId", workspaceId),
+		)
+		.take(REMOVE_ALL_TEMPLATES_BATCH_SIZE);
+
+	await Promise.all(templates.map((template) => ctx.db.delete(template._id)));
+
+	return {
+		deletedCount: templates.length,
+		hasMore: templates.length === REMOVE_ALL_TEMPLATES_BATCH_SIZE,
+	};
+};
+
 export const list = query({
 	args: {
 		workspaceId: v.id("workspaces"),
@@ -349,6 +371,30 @@ export const removeAllForOwner = internalMutation({
 		if (result.hasMore) {
 			await ctx.scheduler.runAfter(0, internal.templates.removeAllForOwner, {
 				ownerTokenIdentifier: args.ownerTokenIdentifier,
+			});
+		}
+
+		return null;
+	},
+});
+
+export const removeAllForWorkspace = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const result = await deleteTemplateBatchForWorkspace(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+
+		if (result.hasMore) {
+			await ctx.scheduler.runAfter(0, internal.templates.removeAllForWorkspace, {
+				ownerTokenIdentifier: args.ownerTokenIdentifier,
+				workspaceId: args.workspaceId,
 			});
 		}
 

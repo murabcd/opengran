@@ -126,7 +126,7 @@ export function WorkspaceSwitcher({
 							</SidebarMenuButton>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent
-							className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+							className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg [&>[data-slot=dropdown-menu-item]+[data-slot=dropdown-menu-item]]:mt-1"
 							side="bottom"
 							align="start"
 							sideOffset={4}

@@ -512,11 +512,29 @@ function ScopePicker({
 						filteredWorkspaceSources={filteredWorkspaceSources}
 						selectedSourceIds={selectedSourceIds}
 					/>
-					<AppSourceItems
-						appSources={appSources}
-						selectedSourceIds={selectedSourceIds}
-						onToggleSource={onToggleSource}
-					/>
+					{appSources.map((source) => {
+						const selected = selectedSourceIds.includes(source.id);
+
+						return (
+							<DropdownMenuCheckboxItem
+								key={source.id}
+								checked={selected}
+								className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
+								onCheckedChange={() => onToggleSource(source.id)}
+							>
+								{source.provider === "yandex-tracker" ? (
+									<Icons.yandexTrackerLogo className="size-4 text-blue-500" />
+								) : source.provider === "jira" ? (
+									<Icons.jiraLogo className="size-4" />
+								) : (
+									<Grid3x3 className="size-4" />
+								)}
+								<div className="min-w-0">
+									<div className="truncate">{source.title}</div>
+								</div>
+							</DropdownMenuCheckboxItem>
+						);
+					})}
 					<DropdownMenuItem>
 						<Book /> Help Center
 					</DropdownMenuItem>
@@ -721,40 +739,6 @@ function WorkspaceScopeAvatar({
 			</AvatarFallback>
 		</Avatar>
 	);
-}
-
-function AppSourceItems({
-	appSources,
-	selectedSourceIds,
-	onToggleSource,
-}: {
-	appSources: AppSource[];
-	selectedSourceIds: string[];
-	onToggleSource: (sourceId: string) => void;
-}) {
-	return appSources.map((source) => {
-		const selected = selectedSourceIds.includes(source.id);
-
-		return (
-			<DropdownMenuCheckboxItem
-				key={source.id}
-				checked={selected}
-				className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
-				onCheckedChange={() => onToggleSource(source.id)}
-			>
-				{source.provider === "yandex-tracker" ? (
-					<Icons.yandexTrackerLogo className="size-4 text-blue-500" />
-				) : source.provider === "jira" ? (
-					<Icons.jiraLogo className="size-4" />
-				) : (
-					<Grid3x3 className="size-4" />
-				)}
-				<div className="min-w-0">
-					<div className="truncate">{source.title}</div>
-				</div>
-			</DropdownMenuCheckboxItem>
-		);
-	});
 }
 
 function ChatNoteListSkeleton() {

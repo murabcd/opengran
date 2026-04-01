@@ -148,6 +148,9 @@ declare global {
 			getShareBaseUrl: () => Promise<{
 				url: string;
 			}>;
+			setActiveWorkspaceId: (workspaceId: string | null) => Promise<{
+				ok: boolean;
+			}>;
 			openExternalUrl: (url: string) => Promise<{
 				ok: boolean;
 			}>;

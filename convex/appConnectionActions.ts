@@ -117,6 +117,7 @@ const requireIdentity = async (ctx: ActionCtx) => {
 
 export const connectYandexTracker = action({
 	args: {
+		workspaceId: v.id("workspaces"),
 		orgType: yandexTrackerOrgTypeValidator,
 		orgId: v.string(),
 		token: v.string(),
@@ -153,6 +154,7 @@ export const connectYandexTracker = action({
 
 		return await ctx.runMutation(internal.appConnections.upsertYandexTracker, {
 			ownerTokenIdentifier: identity.tokenIdentifier,
+			workspaceId: args.workspaceId,
 			orgType: args.orgType,
 			orgId,
 			token,
@@ -162,6 +164,7 @@ export const connectYandexTracker = action({
 
 export const connectYandexCalendar = action({
 	args: {
+		workspaceId: v.id("workspaces"),
 		email: v.string(),
 		password: v.string(),
 	},
@@ -189,6 +192,7 @@ export const connectYandexCalendar = action({
 				internal.appConnections.upsertYandexCalendar,
 				{
 					ownerTokenIdentifier: identity.tokenIdentifier,
+					workspaceId: args.workspaceId,
 					email: verifiedConnection.email,
 					password,
 					serverAddress: verifiedConnection.serverAddress,
@@ -209,6 +213,7 @@ export const connectYandexCalendar = action({
 
 export const connectJira = action({
 	args: {
+		workspaceId: v.id("workspaces"),
 		baseUrl: v.string(),
 		email: v.string(),
 		token: v.string(),
@@ -246,6 +251,7 @@ export const connectJira = action({
 
 		return await ctx.runMutation(internal.appConnections.upsertJira, {
 			ownerTokenIdentifier: identity.tokenIdentifier,
+			workspaceId: args.workspaceId,
 			baseUrl,
 			email,
 			token,

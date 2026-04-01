@@ -48,11 +48,20 @@ export default defineSchema({
 	}).index("by_ownerTokenIdentifier", ["ownerTokenIdentifier"]),
 	calendarPreferences: defineTable({
 		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
 		showGoogleCalendar: v.boolean(),
 		showYandexCalendar: v.boolean(),
 		createdAt: v.number(),
 		updatedAt: v.number(),
-	}).index("by_ownerTokenIdentifier", ["ownerTokenIdentifier"]),
+	})
+		.index("by_ownerTokenIdentifier_and_workspaceId", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+		])
+		.index("by_ownerTokenIdentifier_and_updatedAt", [
+			"ownerTokenIdentifier",
+			"updatedAt",
+		]),
 	onboardingStates: defineTable({
 		ownerTokenIdentifier: v.string(),
 		hasSeenWelcomeCelebration: v.boolean(),
@@ -244,6 +253,7 @@ export default defineSchema({
 		.index("by_chatId_and_messageId", ["chatId", "messageId"]),
 	appConnections: defineTable({
 		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
 		provider: appConnectionProviderValidator,
 		status: appConnectionStatusValidator,
 		displayName: v.string(),
@@ -262,12 +272,19 @@ export default defineSchema({
 			"ownerTokenIdentifier",
 			"updatedAt",
 		])
-		.index("by_ownerTokenIdentifier_and_provider", [
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_updatedAt", [
 			"ownerTokenIdentifier",
+			"workspaceId",
+			"updatedAt",
+		])
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_provider", [
+			"ownerTokenIdentifier",
+			"workspaceId",
 			"provider",
 		])
-		.index("by_ownerTokenIdentifier_and_status_and_updatedAt", [
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_status_and_updatedAt", [
 			"ownerTokenIdentifier",
+			"workspaceId",
 			"status",
 			"updatedAt",
 		]),

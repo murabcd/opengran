@@ -1520,15 +1520,14 @@ function DesktopPermissionsOnboardingScreen({
 				description="When you turn it on, OpenGran transcribes meetings using your computer's audio."
 				contentClassName="flex flex-col gap-5"
 			>
-				<div className="overflow-hidden rounded-xl border">
-					{permissions.map((permission, index) => {
+				<div>
+					{permissions.map((permission) => {
 						const Icon = getDesktopPermissionIcon(permission.id);
 						const isRequestBlockedByDependency =
 							permission.id === "systemAudio" && !isMicrophoneGranted;
 
 						return (
 							<React.Fragment key={permission.id}>
-								{index > 0 ? <Separator /> : null}
 								<div className="flex items-center gap-3 p-4">
 									<div
 										className={cn(
@@ -1700,20 +1699,27 @@ const useAppShellState = ({
 	>("idle");
 	const [isLoadingUpcomingCalendarEvents, setIsLoadingUpcomingCalendarEvents] =
 		React.useState(false);
+	const upcomingCalendarRequestIdRef = React.useRef(0);
 	const upcomingCalendarLoadKey = session?.user?.email
 		? `${isConvexAuthenticated ? "authenticated" : "unauthenticated"}:${session.user.email}`
 		: "anonymous";
 	const calendarPreferences = useQuery(
 		api.calendarPreferences.get,
-		isConvexAuthenticated ? {} : "skip",
+		isConvexAuthenticated && resolvedActiveWorkspaceId
+			? { workspaceId: resolvedActiveWorkspaceId }
+			: "skip",
 	);
 	const yandexCalendarConnection = useQuery(
 		api.appConnections.getYandexCalendar,
-		isConvexAuthenticated ? {} : "skip",
+		isConvexAuthenticated && resolvedActiveWorkspaceId
+			? { workspaceId: resolvedActiveWorkspaceId }
+			: "skip",
 	);
-	const calendarVisibilityKey = calendarPreferences
-		? `${calendarPreferences.showGoogleCalendar}:${calendarPreferences.showYandexCalendar}`
-		: "loading";
+	const calendarVisibilityKey = !resolvedActiveWorkspaceId
+		? "no-workspace"
+		: calendarPreferences
+			? `${calendarPreferences.showGoogleCalendar}:${calendarPreferences.showYandexCalendar}`
+			: "loading";
 	const yandexCalendarConnectionKey = yandexCalendarConnection
 		? [
 				yandexCalendarConnection.sourceId,
@@ -1722,7 +1728,9 @@ const useAppShellState = ({
 				yandexCalendarConnection.serverAddress,
 				yandexCalendarConnection.calendarHomePath,
 			].join(":")
-		: "none";
+		: resolvedActiveWorkspaceId
+			? "none"
+			: "no-workspace";
 	const createNote = useMutation(api.notes.create);
 	const createWorkspace = useMutation(api.workspaces.create);
 	const listUpcomingGoogleEvents = useAction(
@@ -1801,19 +1809,46 @@ const useAppShellState = ({
 			: currentView;
 
 	const refreshUpcomingCalendarEvents = React.useEffectEvent(
-		async (dayKey: string) => {
-			if (!session?.user?.email || !isConvexAuthenticated) {
+		async (
+			dayKey: string,
+			options?: {
+				resetState?: boolean;
+			},
+		) => {
+			const shouldResetState = options?.resetState ?? true;
+			const requestId = upcomingCalendarRequestIdRef.current + 1;
+			upcomingCalendarRequestIdRef.current = requestId;
+
+			if (
+				!resolvedActiveWorkspaceId ||
+				!session?.user?.email ||
+				!isConvexAuthenticated
+			) {
+				if (upcomingCalendarRequestIdRef.current !== requestId) {
+					return;
+				}
+
 				setUpcomingCalendarEvents([]);
 				setUpcomingCalendarStatus("not_connected");
+				setIsLoadingUpcomingCalendarEvents(false);
 				return;
 			}
 
+			if (shouldResetState) {
+				setUpcomingCalendarEvents([]);
+				setUpcomingCalendarStatus("idle");
+			}
 			setIsLoadingUpcomingCalendarEvents(true);
 
 			try {
-				const result = await listUpcomingGoogleEvents(
-					getDayWindowFromDayKey(dayKey),
-				);
+				const result = await listUpcomingGoogleEvents({
+					workspaceId: resolvedActiveWorkspaceId,
+					...getDayWindowFromDayKey(dayKey),
+				});
+
+				if (upcomingCalendarRequestIdRef.current !== requestId) {
+					return;
+				}
 
 				if (result.status === "not_connected") {
 					setUpcomingCalendarEvents([]);
@@ -1824,11 +1859,17 @@ const useAppShellState = ({
 				setUpcomingCalendarEvents(result.events);
 				setUpcomingCalendarStatus("ready");
 			} catch (error) {
+				if (upcomingCalendarRequestIdRef.current !== requestId) {
+					return;
+				}
+
 				console.error("Failed to load upcoming calendar events", error);
 				setUpcomingCalendarEvents([]);
 				setUpcomingCalendarStatus("error");
 			} finally {
-				setIsLoadingUpcomingCalendarEvents(false);
+				if (upcomingCalendarRequestIdRef.current === requestId) {
+					setIsLoadingUpcomingCalendarEvents(false);
+				}
 			}
 		},
 	);
@@ -1851,6 +1892,14 @@ const useAppShellState = ({
 	]);
 
 	React.useEffect(() => {
+		if (!window.openGranDesktop) {
+			return;
+		}
+
+		void window.openGranDesktop.setActiveWorkspaceId(resolvedActiveWorkspaceId);
+	}, [resolvedActiveWorkspaceId]);
+
+	React.useEffect(() => {
 		void calendarVisibilityKey;
 		void yandexCalendarConnectionKey;
 
@@ -1859,7 +1908,9 @@ const useAppShellState = ({
 		}
 
 		const handleFocus = () => {
-			void refreshUpcomingCalendarEvents(currentDayKey);
+			void refreshUpcomingCalendarEvents(currentDayKey, {
+				resetState: false,
+			});
 		};
 
 		window.addEventListener("focus", handleFocus);
