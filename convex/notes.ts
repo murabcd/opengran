@@ -14,6 +14,7 @@ const noteFields = {
 	_creationTime: v.number(),
 	ownerTokenIdentifier: v.string(),
 	workspaceId: v.id("workspaces"),
+	calendarEventKey: v.optional(v.string()),
 	authorName: v.optional(v.string()),
 	isStarred: v.optional(v.boolean()),
 	title: v.string(),
@@ -155,9 +156,7 @@ export const getLatest = query({
 		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 		const note = await ctx.db
 			.query("notes")
-			.withIndex(
-				"by_owner_ws_arch_upd",
-				(q) =>
+			.withIndex("by_owner_ws_arch_upd", (q) =>
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
 					.eq("workspaceId", args.workspaceId)
@@ -180,9 +179,7 @@ export const list = query({
 		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 		const notes = await ctx.db
 			.query("notes")
-			.withIndex(
-				"by_owner_ws_arch_upd",
-				(q) =>
+			.withIndex("by_owner_ws_arch_upd", (q) =>
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
 					.eq("workspaceId", args.workspaceId)
@@ -205,9 +202,7 @@ export const listShared = query({
 		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 		const notes = await ctx.db
 			.query("notes")
-			.withIndex(
-				"by_owner_ws_vis_arch_upd",
-				(q) =>
+			.withIndex("by_owner_ws_vis_arch_upd", (q) =>
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
 					.eq("workspaceId", args.workspaceId)
@@ -231,9 +226,7 @@ export const listArchived = query({
 		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 		const notes = await ctx.db
 			.query("notes")
-			.withIndex(
-				"by_owner_ws_arch_upd",
-				(q) =>
+			.withIndex("by_owner_ws_arch_upd", (q) =>
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
 					.eq("workspaceId", args.workspaceId)
@@ -394,6 +387,65 @@ export const create = mutation({
 				content: [{ type: "paragraph" }],
 			}),
 			searchableText: "",
+			visibility: "private",
+			shareId: undefined,
+			sharedAt: undefined,
+			isArchived: false,
+			archivedAt: undefined,
+			createdAt: now,
+			updatedAt: now,
+		});
+	},
+});
+
+export const createFromCalendarEvent = mutation({
+	args: {
+		workspaceId: v.id("workspaces"),
+		calendarEventKey: v.string(),
+		title: v.string(),
+		content: v.string(),
+		searchableText: v.string(),
+	},
+	returns: v.id("notes"),
+	handler: async (ctx, args) => {
+		const identity = await requireIdentity(ctx);
+		const ownerTokenIdentifier = identity.tokenIdentifier;
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
+		const authorName = getAuthorName(identity);
+		const now = Date.now();
+		const calendarEventKey = args.calendarEventKey.trim();
+
+		if (!calendarEventKey) {
+			throw new ConvexError({
+				code: "INVALID_CALENDAR_EVENT",
+				message: "Calendar event key is required.",
+			});
+		}
+
+		const existingNote = await ctx.db
+			.query("notes")
+			.withIndex("by_owner_ws_event_arch", (q) =>
+				q
+					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+					.eq("workspaceId", args.workspaceId)
+					.eq("calendarEventKey", calendarEventKey)
+					.eq("isArchived", false),
+			)
+			.unique();
+
+		if (existingNote) {
+			return existingNote._id;
+		}
+
+		return await ctx.db.insert("notes", {
+			ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
+			calendarEventKey,
+			authorName,
+			isStarred: false,
+			title: args.title,
+			content: args.content,
+			searchableText: args.searchableText,
 			visibility: "private",
 			shareId: undefined,
 			sharedAt: undefined,
@@ -713,21 +765,23 @@ export const removeAll = mutation({
 		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 		const notes = await ctx.db
 			.query("notes")
-			.withIndex(
-				"by_ownerTokenIdentifier_and_workspaceId_and_updatedAt",
-				(q) =>
-					q
-						.eq("ownerTokenIdentifier", ownerTokenIdentifier)
-						.eq("workspaceId", args.workspaceId),
+			.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_updatedAt", (q) =>
+				q
+					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+					.eq("workspaceId", args.workspaceId),
 			)
 			.take(REMOVE_ALL_NOTES_BATCH_SIZE);
 
 		await Promise.all(
 			notes.map(async (note) => {
-				await ctx.scheduler.runAfter(0, internal.transcriptSessions.removeForNote, {
-					noteId: note._id,
-					ownerTokenIdentifier: note.ownerTokenIdentifier,
-				});
+				await ctx.scheduler.runAfter(
+					0,
+					internal.transcriptSessions.removeForNote,
+					{
+						noteId: note._id,
+						ownerTokenIdentifier: note.ownerTokenIdentifier,
+					},
+				);
 				await ctx.db.delete(note._id);
 			}),
 		);
@@ -755,21 +809,23 @@ export const removeAllForWorkspace = internalMutation({
 	handler: async (ctx, args) => {
 		const notes = await ctx.db
 			.query("notes")
-			.withIndex(
-				"by_ownerTokenIdentifier_and_workspaceId_and_updatedAt",
-				(q) =>
-					q
-						.eq("ownerTokenIdentifier", args.ownerTokenIdentifier)
-						.eq("workspaceId", args.workspaceId),
+			.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_updatedAt", (q) =>
+				q
+					.eq("ownerTokenIdentifier", args.ownerTokenIdentifier)
+					.eq("workspaceId", args.workspaceId),
 			)
 			.take(REMOVE_ALL_NOTES_BATCH_SIZE);
 
 		await Promise.all(
 			notes.map(async (note) => {
-				await ctx.scheduler.runAfter(0, internal.transcriptSessions.removeForNote, {
-					noteId: note._id,
-					ownerTokenIdentifier: note.ownerTokenIdentifier,
-				});
+				await ctx.scheduler.runAfter(
+					0,
+					internal.transcriptSessions.removeForNote,
+					{
+						noteId: note._id,
+						ownerTokenIdentifier: note.ownerTokenIdentifier,
+					},
+				);
 				await ctx.db.delete(note._id);
 			}),
 		);

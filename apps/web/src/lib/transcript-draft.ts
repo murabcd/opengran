@@ -83,6 +83,7 @@ const normalizeDraft = (
 	];
 
 	return {
+		updatedAt: draft.updatedAt,
 		pendingGenerateTranscript:
 			typeof draft.pendingGenerateTranscript === "string"
 				? draft.pendingGenerateTranscript

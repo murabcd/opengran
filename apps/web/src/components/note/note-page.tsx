@@ -243,6 +243,7 @@ const useNotePageController = ({
 				}
 			: "skip",
 	);
+	const shouldPreserveStructuredNoteTitle = Boolean(note?.calendarEventKey);
 	const saveNote = useMutation(api.notes.save);
 	const setNoteTemplate = useMutation(
 		api.notes.setTemplate,
@@ -701,7 +702,9 @@ const useNotePageController = ({
 					const nextContent = JSON.stringify(nextDocument);
 					const nextSearchableText =
 						structuredNoteToSearchableText(enhancedNote);
-					const nextTitle = enhancedNote.title.trim() || title;
+					const nextTitle = shouldPreserveStructuredNoteTitle
+						? title
+						: enhancedNote.title.trim() || title;
 
 					editor.commands.setContent(nextDocument, { emitUpdate: false });
 					setTitle(nextTitle);
@@ -859,6 +862,7 @@ const useNotePageController = ({
 			noteId,
 			requestStructuredNote,
 			setNoteTemplate,
+			shouldPreserveStructuredNoteTitle,
 		],
 	);
 
@@ -948,7 +952,9 @@ const useNotePageController = ({
 				const nextDocument = structuredNoteToDocument(enhancedNote);
 				const nextContent = JSON.stringify(nextDocument);
 				const nextSearchableText = structuredNoteToSearchableText(enhancedNote);
-				const nextTitle = enhancedNote.title.trim() || title;
+				const nextTitle = shouldPreserveStructuredNoteTitle
+					? title
+					: enhancedNote.title.trim() || title;
 				const nextNoteId = nextNoteIdRef.current ?? noteId;
 				if (!nextNoteId) {
 					return;
@@ -987,6 +993,7 @@ const useNotePageController = ({
 			requestStructuredNote,
 			searchableText,
 			setNoteTemplate,
+			shouldPreserveStructuredNoteTitle,
 			title,
 		],
 	);
@@ -1006,18 +1013,22 @@ const useNotePageController = ({
 
 export function NotePage({
 	autoStartTranscription = false,
+	autoGenerateNotesOnStop = false,
 	noteId,
 	externalTitle,
 	onAutoStartTranscriptionHandled,
 	onTitleChange,
 	onEditorActionsChange,
+	stopTranscriptionWhenMeetingEnds = false,
 }: {
 	autoStartTranscription?: boolean;
+	autoGenerateNotesOnStop?: boolean;
 	noteId: Id<"notes"> | null;
 	externalTitle?: string;
 	onAutoStartTranscriptionHandled?: () => void;
 	onTitleChange?: (title: string) => void;
 	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
+	stopTranscriptionWhenMeetingEnds?: boolean;
 }) {
 	const controller = useNotePageController({
 		noteId,
@@ -1076,6 +1087,7 @@ export function NotePage({
 							<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
 								<NoteComposer
 									autoStartTranscription={autoStartTranscription}
+									autoGenerateNotesOnStop={autoGenerateNotesOnStop}
 									noteContext={{
 										noteId: controller.noteId,
 										title: controller.title,
@@ -1086,6 +1098,9 @@ export function NotePage({
 									}
 									onAddMessageToNote={controller.appendChatResponseToNote}
 									onEnhanceTranscript={controller.handleEnhanceTranscript}
+									stopTranscriptionWhenMeetingEnds={
+										stopTranscriptionWhenMeetingEnds
+									}
 								/>
 							</div>
 						</div>

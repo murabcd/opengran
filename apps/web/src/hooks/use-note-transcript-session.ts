@@ -18,19 +18,26 @@ import { transcriptionSessionManager } from "@/lib/transcription-session-manager
 import type { SystemAudioRecordingPayload } from "@/lib/transcription-session-types";
 import type { Id } from "../../../../convex/_generated/dataModel";
 
+const granolaIdleStopMs = 15 * 60 * 1000;
+const granolaIdleCheckIntervalMs = 15 * 1000;
+
 type UseNoteTranscriptSessionArgs = {
 	autoStartTranscription?: boolean;
+	autoGenerateNotesOnStop?: boolean;
 	noteId: Id<"notes"> | null;
 	onAutoStartTranscriptionHandled?: () => void;
 	onEnhanceTranscript?: (transcript: string) => Promise<void>;
+	stopTranscriptionWhenMeetingEnds?: boolean;
 	transcriptionLanguage?: string | null;
 };
 
 export const useNoteTranscriptSession = ({
 	autoStartTranscription,
+	autoGenerateNotesOnStop,
 	noteId,
 	onAutoStartTranscriptionHandled,
 	onEnhanceTranscript,
+	stopTranscriptionWhenMeetingEnds,
 	transcriptionLanguage,
 }: UseNoteTranscriptSessionArgs) => {
 	const [isSpeechListening, setIsSpeechListening] = React.useState(false);
@@ -59,10 +66,16 @@ export const useNoteTranscriptSession = ({
 	const previousSpeechListeningRef = React.useRef(false);
 	const previousNoteIdRef = React.useRef(noteId);
 	const hasHandledAutoStartRef = React.useRef(false);
+	const shouldAutoGenerateNotesOnStopRef = React.useRef(false);
+	const hasQueuedAutoGenerateNotesRef = React.useRef(false);
 	const shouldStopWhenMeetingEndsRef = React.useRef(false);
+	const hasSeenBrowserMeetingSignalRef = React.useRef(false);
+	const hasRequestedAutomaticStopRef = React.useRef(false);
 	const hasRestoredTranscriptDraftRef = React.useRef(false);
 	const hasHydratedStoredTranscriptSessionRef = React.useRef(false);
 	const hasLoadedTranscriptDraftContentRef = React.useRef(false);
+	const loadedTranscriptDraftUpdatedAtRef = React.useRef<number | null>(null);
+	const lastAudioActivityAtRef = React.useRef(Date.now());
 	const transcriptUtterancesRef = React.useRef<TranscriptUtterance[]>([]);
 	const transcriptSessionStartPromiseRef =
 		React.useRef<Promise<Id<"transcriptSessions"> | null> | null>(null);
@@ -143,14 +156,22 @@ export const useNoteTranscriptSession = ({
 	);
 
 	React.useEffect(() => {
+		if (autoGenerateNotesOnStop && onEnhanceTranscript) {
+			shouldAutoGenerateNotesOnStopRef.current = true;
+		}
+	}, [autoGenerateNotesOnStop, onEnhanceTranscript]);
+
+	React.useEffect(() => {
+		// Latch meeting-controlled auto-stop for the active capture even after
+		// the route/query state is cleaned up post-start.
 		if (
-			autoStartTranscription &&
+			stopTranscriptionWhenMeetingEnds &&
 			typeof window !== "undefined" &&
 			window.openGranDesktop
 		) {
 			shouldStopWhenMeetingEndsRef.current = true;
 		}
-	}, [autoStartTranscription]);
+	}, [stopTranscriptionWhenMeetingEnds]);
 
 	React.useEffect(() => {
 		if (typeof window === "undefined" || !window.openGranDesktop) {
@@ -158,15 +179,24 @@ export const useNoteTranscriptSession = ({
 		}
 
 		return window.openGranDesktop.onMeetingDetectionState((state) => {
+			if (state.hasBrowserMeetingSignal) {
+				hasSeenBrowserMeetingSignalRef.current = true;
+				shouldStopWhenMeetingEndsRef.current = true;
+				return;
+			}
+
 			if (
 				!shouldStopWhenMeetingEndsRef.current ||
+				!hasSeenBrowserMeetingSignalRef.current ||
 				!isSpeechListening ||
-				state.hasBrowserMeetingSignal
+				hasRequestedAutomaticStopRef.current ||
+				state.hasMeetingSignal
 			) {
 				return;
 			}
 
 			shouldStopWhenMeetingEndsRef.current = false;
+			hasRequestedAutomaticStopRef.current = true;
 			void transcriptionSessionManager.controller.stop();
 		});
 	}, [isSpeechListening]);
@@ -327,6 +357,7 @@ export const useNoteTranscriptSession = ({
 		let isCancelled = false;
 		hasRestoredTranscriptDraftRef.current = false;
 		hasLoadedTranscriptDraftContentRef.current = false;
+		loadedTranscriptDraftUpdatedAtRef.current = null;
 		setIsTranscriptDraftReady(false);
 		void transcriptSessionRepository
 			.loadDraft(transcriptDraftKey)
@@ -336,6 +367,7 @@ export const useNoteTranscriptSession = ({
 				}
 
 				hasLoadedTranscriptDraftContentRef.current = true;
+				loadedTranscriptDraftUpdatedAtRef.current = draft.updatedAt;
 				persistedTranscriptUtteranceIdsRef.current = new Set(
 					draft.utterances.map((utterance) => utterance.id),
 				);
@@ -362,12 +394,34 @@ export const useNoteTranscriptSession = ({
 	}, [transcriptDraftKey, transcriptSessionRepository.loadDraft]);
 
 	React.useEffect(() => {
+		const latestServerTranscript =
+			latestTranscriptSession?.finalTranscript ||
+			(latestTranscriptSession
+				? createTranscriptText(latestTranscriptSession.utterances)
+				: "");
+		const hasNewerServerSnapshot =
+			loadedTranscriptDraftUpdatedAtRef.current !== null &&
+			latestTranscriptSession?.updatedAt >
+				loadedTranscriptDraftUpdatedAtRef.current;
+		const hasMoreServerUtterances = Boolean(
+			latestTranscriptSession &&
+				latestTranscriptSession.utterances.length > transcriptUtterances.length,
+		);
+		const hasLongerServerTranscript =
+			latestServerTranscript.length > pendingGenerateTranscript.trim().length;
+		const shouldHydrateFromServer =
+			!hasHydratedStoredTranscriptSessionRef.current &&
+			!isSpeechListening &&
+			Boolean(latestTranscriptSession) &&
+			(!hasLoadedTranscriptDraftContentRef.current ||
+				latestTranscriptSession.generatedNoteAt !== null ||
+				hasNewerServerSnapshot ||
+				hasMoreServerUtterances ||
+				hasLongerServerTranscript);
+
 		if (
 			!isTranscriptDraftReady ||
-			hasLoadedTranscriptDraftContentRef.current ||
-			hasHydratedStoredTranscriptSessionRef.current ||
-			isSpeechListening ||
-			transcriptUtterances.length > 0 ||
+			!shouldHydrateFromServer ||
 			!latestTranscriptSession
 		) {
 			return;
@@ -387,19 +441,26 @@ export const useNoteTranscriptSession = ({
 			latestTranscriptSession.generatedNoteAt ||
 				latestTranscriptSession.sessionId === generatedTranscriptSessionId
 				? ""
-				: latestTranscriptSession.finalTranscript ||
-						createTranscriptText(latestTranscriptSession.utterances),
+				: latestServerTranscript,
 		);
 		setIsRefiningTranscript(
 			latestTranscriptSession.refinementStatus === "running",
 		);
 		setTranscriptRefinementError(latestTranscriptSession.refinementError);
+		if (hasLoadedTranscriptDraftContentRef.current) {
+			void transcriptSessionRepository.clearDraft(transcriptDraftKey);
+			hasLoadedTranscriptDraftContentRef.current = false;
+			loadedTranscriptDraftUpdatedAtRef.current = null;
+		}
 	}, [
 		generatedTranscriptSessionId,
 		isSpeechListening,
 		isTranscriptDraftReady,
 		latestTranscriptSession,
+		pendingGenerateTranscript,
+		transcriptDraftKey,
 		transcriptUtterances.length,
+		transcriptSessionRepository,
 	]);
 
 	React.useEffect(() => {
@@ -435,10 +496,17 @@ export const useNoteTranscriptSession = ({
 			setLiveTranscript(createEmptyLiveTranscriptState());
 			setPendingGenerateTranscript("");
 			setTranscriptRefinementError(null);
+			hasQueuedAutoGenerateNotesRef.current = false;
+			hasRequestedAutomaticStopRef.current = false;
+			lastAudioActivityAtRef.current = Date.now();
 		}
 
 		if (!isSpeechListening && previousSpeechListeningRef.current) {
 			shouldStopWhenMeetingEndsRef.current = false;
+			hasSeenBrowserMeetingSignalRef.current = false;
+			hasRequestedAutomaticStopRef.current = false;
+			hasQueuedAutoGenerateNotesRef.current =
+				shouldAutoGenerateNotesOnStopRef.current;
 			const completedTranscript =
 				fullTranscript || createTranscriptText(transcriptUtterancesRef.current);
 			if (completedTranscript) {
@@ -465,6 +533,34 @@ export const useNoteTranscriptSession = ({
 
 		previousSpeechListeningRef.current = isSpeechListening;
 	}, [fullTranscript, isSpeechListening, transcriptSessionRepository]);
+
+	React.useEffect(() => {
+		if (liveTranscriptEntries.some((entry) => entry.text.trim().length > 0)) {
+			lastAudioActivityAtRef.current = Date.now();
+		}
+	}, [liveTranscriptEntries]);
+
+	React.useEffect(() => {
+		if (!isSpeechListening) {
+			return;
+		}
+
+		const intervalId = window.setInterval(() => {
+			if (
+				hasRequestedAutomaticStopRef.current ||
+				Date.now() - lastAudioActivityAtRef.current < granolaIdleStopMs
+			) {
+				return;
+			}
+
+			shouldStopWhenMeetingEndsRef.current = false;
+			hasSeenBrowserMeetingSignalRef.current = false;
+			hasRequestedAutomaticStopRef.current = true;
+			void transcriptionSessionManager.controller.stop();
+		}, granolaIdleCheckIntervalMs);
+
+		return () => window.clearInterval(intervalId);
+	}, [isSpeechListening]);
 
 	React.useEffect(() => {
 		const sessionId = activeTranscriptSessionIdRef.current;
@@ -539,11 +635,18 @@ export const useNoteTranscriptSession = ({
 						sessionId,
 					});
 					setGeneratedTranscriptSessionId(sessionId);
+					lastCompletedTranscriptSessionIdRef.current = sessionId;
 				}
 
-				resetTranscriptSessionState({
-					clearDraft: true,
-				});
+				await transcriptSessionRepository.clearDraft(transcriptDraftKey);
+				setPendingGenerateTranscript("");
+				setLiveTranscript(createEmptyLiveTranscriptState());
+				setTranscriptRefinementError(null);
+				setActiveTranscriptSessionId(null);
+				activeTranscriptSessionIdRef.current = null;
+				transcriptSessionStartPromiseRef.current = null;
+				sessionSystemAudioModePersistedRef.current = null;
+				shouldAutoGenerateNotesOnStopRef.current = false;
 			} catch (error) {
 				console.error("Failed to generate notes from transcript", error);
 			} finally {
@@ -555,8 +658,29 @@ export const useNoteTranscriptSession = ({
 		isRefiningTranscript,
 		onEnhanceTranscript,
 		pendingGenerateTranscript,
-		resetTranscriptSessionState,
+		transcriptDraftKey,
 		transcriptSessionRepository,
+	]);
+
+	React.useEffect(() => {
+		if (
+			!hasQueuedAutoGenerateNotesRef.current ||
+			isSpeechListening ||
+			isGeneratingNotes ||
+			isRefiningTranscript ||
+			!hasPendingGenerateTranscript
+		) {
+			return;
+		}
+
+		hasQueuedAutoGenerateNotesRef.current = false;
+		handleGenerateNotes();
+	}, [
+		handleGenerateNotes,
+		hasPendingGenerateTranscript,
+		isGeneratingNotes,
+		isRefiningTranscript,
+		isSpeechListening,
 	]);
 
 	const handleTranscriptUtterance = React.useCallback(
@@ -571,6 +695,7 @@ export const useNoteTranscriptSession = ({
 				return;
 			}
 
+			lastAudioActivityAtRef.current = Date.now();
 			const nextUtterances = [...currentUtterances, utterance];
 			transcriptUtterancesRef.current = nextUtterances;
 			setTranscriptUtterances(nextUtterances);

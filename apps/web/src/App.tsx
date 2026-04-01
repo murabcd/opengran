@@ -109,6 +109,10 @@ type AppLocationState = {
 	chatId: string | null;
 	noteIdString: string | null;
 	shouldAutoStartNoteCapture: boolean;
+	shouldStopNoteCaptureWhenMeetingEnds: boolean;
+	shouldAutoGenerateNoteAfterCapture: boolean;
+	scheduledAutoStartNoteCaptureAt: string | null;
+	pendingCalendarEvent: UpcomingCalendarEvent | null;
 	canonicalPath: "/home" | "/chat" | "/shared" | "/note" | null;
 	canonicalSearch: string;
 };
@@ -199,6 +203,9 @@ type UpcomingCalendarEvent = {
 	meetingUrl?: string;
 	location?: string;
 };
+
+const createCalendarEventKey = (event: UpcomingCalendarEvent) =>
+	[event.calendarId, event.id, event.startAt].join("::");
 
 const GOOGLE_CALENDAR_SCOPES = [
 	"openid",
@@ -309,6 +316,161 @@ const isUpcomingEventToday = (
 	);
 };
 
+const buildCalendarEventNoteDocument = ({
+	currentDate,
+	event,
+}: {
+	currentDate: Date;
+	event: UpcomingCalendarEvent;
+}) => {
+	const details = [
+		`When: ${formatUpcomingEventMeta(event, currentDate)}`,
+		`Calendar: ${event.calendarName}`,
+		event.location?.trim() ? `Location: ${event.location.trim()}` : null,
+		event.meetingUrl?.trim() ? `Join link: ${event.meetingUrl.trim()}` : null,
+	].filter((value): value is string => Boolean(value));
+
+	return JSON.stringify({
+		type: "doc",
+		content: details.map((detail) => ({
+			type: "paragraph",
+			content: [{ type: "text", text: detail }],
+		})),
+	});
+};
+
+const buildCalendarEventSearchableText = ({
+	currentDate,
+	event,
+}: {
+	currentDate: Date;
+	event: UpcomingCalendarEvent;
+}) =>
+	[
+		event.title.trim(),
+		`When: ${formatUpcomingEventMeta(event, currentDate)}`,
+		`Calendar: ${event.calendarName}`,
+		event.location?.trim() ? `Location: ${event.location.trim()}` : null,
+		event.meetingUrl?.trim() ? `Join link: ${event.meetingUrl.trim()}` : null,
+	]
+		.filter((value): value is string => Boolean(value))
+		.join("\n");
+
+const appendCalendarEventSearchParams = ({
+	event,
+	searchParams,
+}: {
+	event: UpcomingCalendarEvent;
+	searchParams: URLSearchParams;
+}) => {
+	searchParams.set("calendarEventId", event.id);
+	searchParams.set("calendarId", event.calendarId);
+	searchParams.set("calendarName", event.calendarName);
+	searchParams.set("eventTitle", event.title);
+	searchParams.set("startAt", event.startAt);
+	searchParams.set("endAt", event.endAt);
+	searchParams.set("isAllDay", event.isAllDay ? "1" : "0");
+
+	if (event.meetingUrl?.trim()) {
+		searchParams.set("meetingUrl", event.meetingUrl);
+	}
+
+	if (event.location?.trim()) {
+		searchParams.set("location", event.location);
+	}
+
+	if (event.htmlLink?.trim()) {
+		searchParams.set("htmlLink", event.htmlLink);
+	}
+};
+
+const getPendingCalendarEventFromUrl = (
+	url: URL,
+): UpcomingCalendarEvent | null => {
+	const id = url.searchParams.get("calendarEventId")?.trim();
+	const calendarId = url.searchParams.get("calendarId")?.trim();
+	const calendarName = url.searchParams.get("calendarName")?.trim();
+	const title = url.searchParams.get("eventTitle")?.trim();
+	const startAt = url.searchParams.get("startAt")?.trim();
+	const endAt = url.searchParams.get("endAt")?.trim();
+
+	if (!id || !calendarId || !calendarName || !title || !startAt || !endAt) {
+		return null;
+	}
+
+	return {
+		id,
+		calendarId,
+		calendarName,
+		title,
+		startAt,
+		endAt,
+		isAllDay: url.searchParams.get("isAllDay") === "1",
+		isMeeting: true,
+		htmlLink: url.searchParams.get("htmlLink")?.trim() || undefined,
+		location: url.searchParams.get("location")?.trim() || undefined,
+		meetingUrl: url.searchParams.get("meetingUrl")?.trim() || undefined,
+	};
+};
+
+const getScheduledAutoStartNoteCaptureAt = (url: URL): string | null => {
+	const captureAt = url.searchParams.get("captureAt")?.trim();
+
+	if (!captureAt) {
+		return null;
+	}
+
+	return Number.isNaN(new Date(captureAt).getTime()) ? null : captureAt;
+};
+
+const createNoteSearch = ({
+	autoGenerateNotesOnStop = false,
+	autoStartCapture = false,
+	calendarEvent,
+	noteId,
+	scheduledAutoStartAt,
+	stopCaptureWhenMeetingEnds = false,
+}: {
+	autoGenerateNotesOnStop?: boolean;
+	autoStartCapture?: boolean;
+	calendarEvent?: UpcomingCalendarEvent | null;
+	noteId?: string | null;
+	scheduledAutoStartAt?: string | null;
+	stopCaptureWhenMeetingEnds?: boolean;
+}) => {
+	const searchParams = new URLSearchParams();
+
+	if (noteId?.trim()) {
+		searchParams.set("noteId", noteId);
+	}
+
+	if (autoStartCapture) {
+		searchParams.set("capture", "1");
+	}
+
+	if (stopCaptureWhenMeetingEnds) {
+		searchParams.set("meeting", "1");
+	}
+
+	if (autoGenerateNotesOnStop) {
+		searchParams.set("autogen", "1");
+	}
+
+	if (scheduledAutoStartAt?.trim()) {
+		searchParams.set("captureAt", scheduledAutoStartAt);
+	}
+
+	if (calendarEvent && !noteId) {
+		appendCalendarEventSearchParams({
+			event: calendarEvent,
+			searchParams,
+		});
+	}
+
+	const search = searchParams.toString();
+	return search ? `?${search}` : "";
+};
+
 const getSettingsPageFromPath = (pathname: string): SettingsPage | null => {
 	const normalizedPath = pathname.replace(/\/+$/, "") || "/";
 
@@ -375,19 +537,37 @@ const getAppLocationState = (url: URL): AppLocationState => {
 			chatId: null,
 			noteIdString: null,
 			shouldAutoStartNoteCapture: false,
+			shouldStopNoteCaptureWhenMeetingEnds: false,
+			shouldAutoGenerateNoteAfterCapture: false,
+			scheduledAutoStartNoteCaptureAt: null,
+			pendingCalendarEvent: null,
 			canonicalPath: null,
 			canonicalSearch: "",
 		};
 	}
 
+	const shouldAutoStartNoteCapture =
+		view === "note" && url.searchParams.get("capture") === "1";
+	const shouldStopNoteCaptureWhenMeetingEnds =
+		view === "note" && url.searchParams.get("meeting") === "1";
+	const shouldAutoGenerateNoteAfterCapture =
+		view === "note" && url.searchParams.get("autogen") === "1";
+	const scheduledAutoStartNoteCaptureAt =
+		view === "note" ? getScheduledAutoStartNoteCaptureAt(url) : null;
+	const pendingCalendarEvent =
+		view === "note" && noteIdString === null
+			? getPendingCalendarEventFromUrl(url)
+			: null;
+
 	return {
 		view,
 		chatId: view === "chat" ? chatId : null,
 		noteIdString: view === "note" ? noteIdString : null,
-		shouldAutoStartNoteCapture:
-			view === "note" &&
-			url.searchParams.get("capture") === "1" &&
-			!url.searchParams.get("noteId"),
+		shouldAutoStartNoteCapture,
+		shouldStopNoteCaptureWhenMeetingEnds,
+		shouldAutoGenerateNoteAfterCapture,
+		scheduledAutoStartNoteCaptureAt,
+		pendingCalendarEvent,
 		canonicalPath:
 			view === "home"
 				? "/home"
@@ -397,13 +577,18 @@ const getAppLocationState = (url: URL): AppLocationState => {
 						? "/shared"
 						: "/note",
 		canonicalSearch:
-			view === "note" && noteIdString
-				? `?noteId=${encodeURIComponent(noteIdString)}${url.searchParams.get("capture") === "1" ? "&capture=1" : ""}`
-				: view === "note" && url.searchParams.get("capture") === "1"
-					? "?capture=1"
-					: view === "chat" && chatId
-						? `?chatId=${encodeURIComponent(chatId)}`
-						: "",
+			view === "note"
+				? createNoteSearch({
+						autoGenerateNotesOnStop: shouldAutoGenerateNoteAfterCapture,
+						autoStartCapture: shouldAutoStartNoteCapture,
+						calendarEvent: pendingCalendarEvent,
+						noteId: noteIdString,
+						scheduledAutoStartAt: scheduledAutoStartNoteCaptureAt,
+						stopCaptureWhenMeetingEnds: shouldStopNoteCaptureWhenMeetingEnds,
+					})
+				: view === "chat" && chatId
+					? `?chatId=${encodeURIComponent(chatId)}`
+					: "",
 	};
 };
 
@@ -1680,6 +1865,46 @@ const useAppShellState = ({
 
 			return shouldAutoStartNoteCaptureFromUrl(new URL(window.location.href));
 		});
+	const [
+		shouldStopNoteCaptureWhenMeetingEnds,
+		setShouldStopNoteCaptureWhenMeetingEnds,
+	] = React.useState(() => {
+		if (typeof window === "undefined") {
+			return false;
+		}
+
+		return getAppLocationState(new URL(window.location.href))
+			.shouldStopNoteCaptureWhenMeetingEnds;
+	});
+	const [
+		shouldAutoGenerateNoteAfterCapture,
+		setShouldAutoGenerateNoteAfterCapture,
+	] = React.useState(() => {
+		if (typeof window === "undefined") {
+			return false;
+		}
+
+		return getAppLocationState(new URL(window.location.href))
+			.shouldAutoGenerateNoteAfterCapture;
+	});
+	const [scheduledAutoStartNoteCaptureAt, setScheduledAutoStartNoteCaptureAt] =
+		React.useState<string | null>(() => {
+			if (typeof window === "undefined") {
+				return null;
+			}
+
+			return getAppLocationState(new URL(window.location.href))
+				.scheduledAutoStartNoteCaptureAt;
+		});
+	const [pendingCalendarEvent, setPendingCalendarEvent] =
+		React.useState<UpcomingCalendarEvent | null>(() => {
+			if (typeof window === "undefined") {
+				return null;
+			}
+
+			return getAppLocationState(new URL(window.location.href))
+				.pendingCalendarEvent;
+		});
 	const [currentNoteTitle, setCurrentNoteTitle] = React.useState("New note");
 	const [currentNoteEditorActions, setCurrentNoteEditorActions] =
 		React.useState<NoteEditorActions | null>(null);
@@ -1740,6 +1965,9 @@ const useAppShellState = ({
 			? "none"
 			: "no-workspace";
 	const createNote = useMutation(api.notes.create);
+	const createNoteFromCalendarEvent = useMutation(
+		api.notes.createFromCalendarEvent,
+	);
 	const createWorkspace = useMutation(api.workspaces.create);
 	const listUpcomingGoogleEvents = useAction(
 		api.calendar.listUpcomingGoogleEvents,
@@ -1917,7 +2145,7 @@ const useAppShellState = ({
 			notifyForScheduledMeetings:
 				notificationPreferences?.notifyForScheduledMeetings ?? false,
 			notifyForAutoDetectedMeetings:
-				notificationPreferences?.notifyForAutoDetectedMeetings ?? false,
+				notificationPreferences?.notifyForAutoDetectedMeetings ?? true,
 		});
 	}, [
 		notificationPreferences?.notifyForAutoDetectedMeetings,
@@ -1986,6 +2214,12 @@ const useAppShellState = ({
 			const nextNoteIdString = nextLocationState.noteIdString;
 			const nextShouldAutoStartNoteCapture =
 				nextLocationState.shouldAutoStartNoteCapture;
+			const nextShouldStopNoteCaptureWhenMeetingEnds =
+				nextLocationState.shouldStopNoteCaptureWhenMeetingEnds;
+			const nextShouldAutoGenerateNoteAfterCapture =
+				nextLocationState.shouldAutoGenerateNoteAfterCapture;
+			const nextScheduledAutoStartNoteCaptureAt =
+				nextLocationState.scheduledAutoStartNoteCaptureAt;
 
 			setCurrentView(nextView);
 			setCurrentChatId(nextChatId);
@@ -1997,6 +2231,14 @@ const useAppShellState = ({
 			setCurrentNoteId(null);
 			setCurrentRouteNoteId(nextView === "note" ? nextNoteIdString : null);
 			setShouldAutoStartNoteCapture(nextShouldAutoStartNoteCapture);
+			setShouldStopNoteCaptureWhenMeetingEnds(
+				nextShouldStopNoteCaptureWhenMeetingEnds,
+			);
+			setShouldAutoGenerateNoteAfterCapture(
+				nextShouldAutoGenerateNoteAfterCapture,
+			);
+			setScheduledAutoStartNoteCaptureAt(nextScheduledAutoStartNoteCaptureAt);
+			setPendingCalendarEvent(nextLocationState.pendingCalendarEvent);
 			setCurrentNoteEditorActions(null);
 			setSettingsPage(nextSettingsPage ?? "Profile");
 
@@ -2093,6 +2335,9 @@ const useAppShellState = ({
 			noteId: Id<"notes">,
 			options?: {
 				autoStartCapture?: boolean;
+				autoGenerateNotesOnStop?: boolean;
+				scheduledAutoStartAt?: string | null;
+				stopCaptureWhenMeetingEnds?: boolean;
 			},
 		) => {
 			setCurrentView("note");
@@ -2100,35 +2345,83 @@ const useAppShellState = ({
 			setCurrentNoteId(noteId);
 			setCurrentRouteNoteId(noteId);
 			setShouldAutoStartNoteCapture(options?.autoStartCapture === true);
+			setShouldStopNoteCaptureWhenMeetingEnds(
+				options?.stopCaptureWhenMeetingEnds === true,
+			);
+			setShouldAutoGenerateNoteAfterCapture(
+				options?.autoGenerateNotesOnStop === true,
+			);
+			setScheduledAutoStartNoteCaptureAt(
+				options?.scheduledAutoStartAt?.trim() || null,
+			);
+			setPendingCalendarEvent(null);
 			setCurrentNoteEditorActions(null);
 			window.history.pushState(
 				null,
 				"",
-				`/note?noteId=${noteId}${options?.autoStartCapture ? "&capture=1" : ""}`,
+				`/note${createNoteSearch({
+					autoGenerateNotesOnStop: options?.autoGenerateNotesOnStop === true,
+					autoStartCapture: options?.autoStartCapture === true,
+					noteId,
+					scheduledAutoStartAt: options?.scheduledAutoStartAt,
+					stopCaptureWhenMeetingEnds:
+						options?.stopCaptureWhenMeetingEnds === true,
+				})}`,
 			);
 		},
 		[],
 	);
 
 	const handleCreateNote = React.useCallback(
-		(options?: { autoStartCapture?: boolean }) => {
+		(options?: {
+			autoStartCapture?: boolean;
+			autoGenerateNotesOnStop?: boolean;
+			calendarEvent?: UpcomingCalendarEvent | null;
+			stopCaptureWhenMeetingEnds?: boolean;
+		}) => {
 			if (creatingNoteRef.current) {
 				return;
 			}
 
 			creatingNoteRef.current = true;
 			const shouldStartCapture = options?.autoStartCapture === true;
+			const shouldAutoGenerateNotesOnStop =
+				options?.autoGenerateNotesOnStop === true;
+			const shouldStopCaptureWhenMeetingEnds =
+				options?.stopCaptureWhenMeetingEnds === true;
+			const calendarEvent = options?.calendarEvent ?? null;
+			const scheduledAutoStartAt =
+				!shouldStartCapture && calendarEvent ? calendarEvent.startAt : null;
 
 			if (!resolvedActiveWorkspaceId) {
 				creatingNoteRef.current = false;
 				return;
 			}
 
-			void createNote({ workspaceId: resolvedActiveWorkspaceId })
+			const createNotePromise = calendarEvent
+				? createNoteFromCalendarEvent({
+						workspaceId: resolvedActiveWorkspaceId,
+						calendarEventKey: createCalendarEventKey(calendarEvent),
+						title: calendarEvent.title.trim() || "New note",
+						content: buildCalendarEventNoteDocument({
+							currentDate,
+							event: calendarEvent,
+						}),
+						searchableText: buildCalendarEventSearchableText({
+							currentDate,
+							event: calendarEvent,
+						}),
+					})
+				: createNote({ workspaceId: resolvedActiveWorkspaceId });
+
+			void createNotePromise
 				.then((noteId) => {
-					setCurrentNoteTitle("New note");
+					setCurrentNoteTitle(calendarEvent?.title.trim() || "New note");
 					openNote(noteId, {
+						autoGenerateNotesOnStop: shouldAutoGenerateNotesOnStop,
 						autoStartCapture: shouldStartCapture,
+						scheduledAutoStartAt,
+						stopCaptureWhenMeetingEnds: shouldStopCaptureWhenMeetingEnds,
 					});
 				})
 				.catch((error) => {
@@ -2138,7 +2431,13 @@ const useAppShellState = ({
 					creatingNoteRef.current = false;
 				});
 		},
-		[createNote, openNote, resolvedActiveWorkspaceId],
+		[
+			createNote,
+			createNoteFromCalendarEvent,
+			currentDate,
+			openNote,
+			resolvedActiveWorkspaceId,
+		],
 	);
 
 	const handleQuickNote = React.useCallback(() => {
@@ -2147,12 +2446,19 @@ const useAppShellState = ({
 		setCurrentNoteId(null);
 		setCurrentRouteNoteId(null);
 		setShouldAutoStartNoteCapture(true);
+		setShouldStopNoteCaptureWhenMeetingEnds(false);
+		setShouldAutoGenerateNoteAfterCapture(false);
+		setScheduledAutoStartNoteCaptureAt(null);
+		setPendingCalendarEvent(null);
 		setCurrentNoteEditorActions(null);
 		window.history.pushState(null, "", "/note?capture=1");
 	}, []);
 
 	const handleAutoStartNoteCaptureHandled = React.useCallback(() => {
 		setShouldAutoStartNoteCapture(false);
+		setShouldStopNoteCaptureWhenMeetingEnds(false);
+		setShouldAutoGenerateNoteAfterCapture(false);
+		setScheduledAutoStartNoteCaptureAt(null);
 
 		if (resolvedCurrentView !== "note" || !resolvedCurrentNoteId) {
 			return;
@@ -2172,16 +2478,77 @@ const useAppShellState = ({
 			currentRouteNoteId === null
 		) {
 			handleCreateNote({
+				autoGenerateNotesOnStop: shouldAutoGenerateNoteAfterCapture,
 				autoStartCapture: shouldAutoStartNoteCapture,
+				calendarEvent: pendingCalendarEvent,
+				stopCaptureWhenMeetingEnds: shouldStopNoteCaptureWhenMeetingEnds,
 			});
 		}
 	}, [
 		currentRouteNoteId,
 		handleCreateNote,
+		pendingCalendarEvent,
 		resolvedCurrentNoteId,
 		resolvedCurrentView,
+		shouldAutoGenerateNoteAfterCapture,
+		shouldAutoStartNoteCapture,
+		shouldStopNoteCaptureWhenMeetingEnds,
+	]);
+
+	React.useEffect(() => {
+		if (
+			resolvedCurrentView !== "note" ||
+			!resolvedCurrentNoteId ||
+			shouldAutoStartNoteCapture ||
+			!scheduledAutoStartNoteCaptureAt
+		) {
+			return;
+		}
+
+		const scheduledAt = new Date(scheduledAutoStartNoteCaptureAt).getTime();
+
+		if (Number.isNaN(scheduledAt)) {
+			setScheduledAutoStartNoteCaptureAt(null);
+			return;
+		}
+
+		if (scheduledAt <= Date.now()) {
+			setShouldAutoStartNoteCapture(true);
+			setScheduledAutoStartNoteCaptureAt(null);
+			return;
+		}
+
+		const timeoutId = window.setTimeout(() => {
+			setShouldAutoStartNoteCapture(true);
+			setScheduledAutoStartNoteCaptureAt(null);
+		}, scheduledAt - Date.now());
+
+		return () => window.clearTimeout(timeoutId);
+	}, [
+		resolvedCurrentNoteId,
+		resolvedCurrentView,
+		scheduledAutoStartNoteCaptureAt,
 		shouldAutoStartNoteCapture,
 	]);
+
+	const handleOpenCalendarEventNote = React.useCallback(
+		(
+			event: UpcomingCalendarEvent,
+			options?: {
+				autoGenerateNotesOnStop?: boolean;
+				autoStartCapture?: boolean;
+				stopCaptureWhenMeetingEnds?: boolean;
+			},
+		) => {
+			handleCreateNote({
+				autoGenerateNotesOnStop: options?.autoGenerateNotesOnStop ?? true,
+				autoStartCapture: options?.autoStartCapture,
+				calendarEvent: event,
+				stopCaptureWhenMeetingEnds: options?.stopCaptureWhenMeetingEnds ?? true,
+			});
+		},
+		[handleCreateNote],
+	);
 
 	const handleSettingsOpenChange = React.useCallback(
 		(open: boolean, page: SettingsPage = "Profile") => {
@@ -2361,6 +2728,7 @@ const useAppShellState = ({
 		handleQuickNote,
 		handleNewChat,
 		handleNoteTrashed,
+		handleOpenCalendarEventNote,
 		handleOpenCalendarSettings,
 		handleOpenChat,
 		handleSettingsOpenChange,
@@ -2379,7 +2747,9 @@ const useAppShellState = ({
 		setActiveWorkspaceId,
 		setCurrentNoteEditorActions,
 		setCurrentNoteTitle,
+		shouldAutoGenerateNoteAfterCapture,
 		shouldAutoStartNoteCapture,
+		shouldStopNoteCaptureWhenMeetingEnds,
 		sharedNotes,
 		upcomingCalendarEvents,
 		upcomingCalendarStatus,
@@ -2502,6 +2872,7 @@ function AppShell({
 						onOpenNote={controller.openNote}
 						onNoteTrashed={controller.handleNoteTrashed}
 						onCreateNote={controller.handleQuickNote}
+						onOpenCalendarEventNote={controller.handleOpenCalendarEventNote}
 						onOpenCalendarSettings={controller.handleOpenCalendarSettings}
 						chatComposerId={controller.chatComposerId}
 						initialChatMessages={controller.initialChatMessages}
@@ -2520,7 +2891,13 @@ function AppShell({
 						onAutoStartNoteCaptureHandled={
 							controller.handleAutoStartNoteCaptureHandled
 						}
+						shouldAutoGenerateNoteAfterCapture={
+							controller.shouldAutoGenerateNoteAfterCapture
+						}
 						shouldAutoStartNoteCapture={controller.shouldAutoStartNoteCapture}
+						shouldStopNoteCaptureWhenMeetingEnds={
+							controller.shouldStopNoteCaptureWhenMeetingEnds
+						}
 						onGoHome={() => controller.handleViewChange("home")}
 					/>
 				</AppShellInset>
@@ -2997,6 +3374,7 @@ function AppShellContent({
 	onOpenNote,
 	onNoteTrashed,
 	onCreateNote,
+	onOpenCalendarEventNote,
 	onOpenCalendarSettings,
 	chatComposerId,
 	initialChatMessages,
@@ -3009,7 +3387,9 @@ function AppShellContent({
 	onNoteTitleChange,
 	onNoteEditorActionsChange,
 	onAutoStartNoteCaptureHandled,
+	shouldAutoGenerateNoteAfterCapture,
 	shouldAutoStartNoteCapture,
+	shouldStopNoteCaptureWhenMeetingEnds,
 	onGoHome,
 }: {
 	currentView: AppView;
@@ -3029,6 +3409,14 @@ function AppShellContent({
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 	onCreateNote: () => void;
+	onOpenCalendarEventNote: (
+		event: UpcomingCalendarEvent,
+		options?: {
+			autoGenerateNotesOnStop?: boolean;
+			autoStartCapture?: boolean;
+			stopCaptureWhenMeetingEnds?: boolean;
+		},
+	) => Promise<void> | void;
 	onOpenCalendarSettings: () => void;
 	chatComposerId: string;
 	initialChatMessages: UIMessage[];
@@ -3041,7 +3429,9 @@ function AppShellContent({
 	onNoteTitleChange: (title: string) => void;
 	onNoteEditorActionsChange: (actions: NoteEditorActions | null) => void;
 	onAutoStartNoteCaptureHandled: () => void;
+	shouldAutoGenerateNoteAfterCapture: boolean;
 	shouldAutoStartNoteCapture: boolean;
+	shouldStopNoteCaptureWhenMeetingEnds: boolean;
 	onGoHome: () => void;
 }) {
 	const noteViewScrollRef = React.useRef<HTMLDivElement | null>(null);
@@ -3089,6 +3479,7 @@ function AppShellContent({
 					onOpenNote={onOpenNote}
 					onNoteTrashed={onNoteTrashed}
 					onCreateNote={onCreateNote}
+					onOpenCalendarEventNote={onOpenCalendarEventNote}
 					onOpenCalendarSettings={onOpenCalendarSettings}
 				/>
 			</div>
@@ -3118,11 +3509,15 @@ function AppShellContent({
 			>
 				<NotePage
 					autoStartTranscription={shouldAutoStartNoteCapture}
+					autoGenerateNotesOnStop={shouldAutoGenerateNoteAfterCapture}
 					noteId={currentNoteId}
 					externalTitle={currentNoteTitle}
 					onAutoStartTranscriptionHandled={onAutoStartNoteCaptureHandled}
 					onTitleChange={onNoteTitleChange}
 					onEditorActionsChange={onNoteEditorActionsChange}
+					stopTranscriptionWhenMeetingEnds={
+						shouldStopNoteCaptureWhenMeetingEnds
+					}
 				/>
 			</div>
 		);
@@ -3180,6 +3575,7 @@ function HomeView({
 	onOpenNote,
 	onNoteTrashed,
 	onCreateNote,
+	onOpenCalendarEventNote,
 	onOpenCalendarSettings,
 }: {
 	currentDate: Date;
@@ -3196,6 +3592,14 @@ function HomeView({
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 	onCreateNote: () => void;
+	onOpenCalendarEventNote: (
+		event: UpcomingCalendarEvent,
+		options?: {
+			autoGenerateNotesOnStop?: boolean;
+			autoStartCapture?: boolean;
+			stopCaptureWhenMeetingEnds?: boolean;
+		},
+	) => Promise<void> | void;
 	onOpenCalendarSettings: () => void;
 }) {
 	const visibleUpcomingEvents = upcomingCalendarEvents
@@ -3215,6 +3619,11 @@ function HomeView({
 
 		window.open(url, "_blank", "noopener,noreferrer");
 	}, []);
+	const hasUpcomingEventStarted = React.useCallback(
+		(event: UpcomingCalendarEvent) =>
+			new Date(event.startAt).getTime() <= currentDate.getTime(),
+		[currentDate],
+	);
 
 	return (
 		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
@@ -3258,7 +3667,7 @@ function HomeView({
 														event,
 														currentDate,
 													);
-													const canJoinNow = Boolean(event.meetingUrl);
+													const hasStarted = hasUpcomingEventStarted(event);
 
 													return (
 														<div
@@ -3289,23 +3698,26 @@ function HomeView({
 																			)}
 																		</p>
 																	</div>
-																	{canJoinNow ? (
-																		<Button
-																			type="button"
-																			variant="default"
-																			size="sm"
-																			className="shrink-0"
-																			onClick={() => {
-																				if (event.meetingUrl) {
-																					void openMeetingLink(
-																						event.meetingUrl,
-																					);
-																				}
-																			}}
-																		>
-																			Start now
-																		</Button>
-																	) : null}
+																	<Button
+																		type="button"
+																		variant="default"
+																		size="sm"
+																		className="shrink-0"
+																		onClick={() => {
+																			void onOpenCalendarEventNote(event, {
+																				autoGenerateNotesOnStop: true,
+																				autoStartCapture: hasStarted,
+																				stopCaptureWhenMeetingEnds: true,
+																			});
+																			if (event.meetingUrl) {
+																				void openMeetingLink(event.meetingUrl);
+																			}
+																		}}
+																	>
+																		{event.meetingUrl
+																			? "Start now"
+																			: "Open note"}
+																	</Button>
 																</div>
 															</div>
 														</div>

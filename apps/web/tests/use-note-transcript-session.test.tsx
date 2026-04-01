@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import * as React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,6 +31,7 @@ vi.mock("../src/lib/transcription-session-manager", () => ({
 
 describe("useNoteTranscriptSession", () => {
 	beforeEach(() => {
+		vi.useRealTimers();
 		useTranscriptSessionRepositoryMock.mockReset();
 		stopTranscriptionSessionMock.mockReset();
 		window.openGranDesktop = undefined;
@@ -88,7 +89,7 @@ describe("useNoteTranscriptSession", () => {
 		expect(result.current.isSpeechListening).toBe(false);
 	});
 
-	it("stops an auto-started desktop capture when the browser meeting signal disappears", async () => {
+	it("stops a meeting-controlled desktop capture when the browser meeting signal disappears", async () => {
 		let meetingDetectionListener:
 			| ((state: DesktopMeetingDetectionState) => void)
 			| null = null;
@@ -123,6 +124,227 @@ describe("useNoteTranscriptSession", () => {
 			useNoteTranscriptSession({
 				autoStartTranscription: true,
 				noteId: "note-1" as never,
+				stopTranscriptionWhenMeetingEnds: true,
+			}),
+		);
+
+		result.current.onTranscriptListeningChange(true);
+
+		await waitFor(() => {
+			expect(result.current.isSpeechListening).toBe(true);
+		});
+
+		meetingDetectionListener?.({
+			candidateStartedAt: Date.now(),
+			confidence: 1,
+			dismissedUntil: null,
+			hasBrowserMeetingSignal: true,
+			hasMeetingSignal: true,
+			isMicrophoneActive: false,
+			isSuppressed: false,
+			sourceName: "Google Meet",
+			status: "monitoring",
+		});
+
+		meetingDetectionListener?.({
+			candidateStartedAt: null,
+			confidence: 0,
+			dismissedUntil: null,
+			hasBrowserMeetingSignal: false,
+			hasMeetingSignal: false,
+			isMicrophoneActive: false,
+			isSuppressed: true,
+			sourceName: null,
+			status: "idle",
+		});
+
+		await waitFor(() => {
+			expect(stopTranscriptionSessionMock).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("keeps a meeting-controlled capture running until a browser meeting signal is seen", async () => {
+		let meetingDetectionListener:
+			| ((state: DesktopMeetingDetectionState) => void)
+			| null = null;
+
+		window.openGranDesktop = {
+			onMeetingDetectionState: (listener) => {
+				meetingDetectionListener = listener;
+				return () => {
+					meetingDetectionListener = null;
+				};
+			},
+		} as Window["openGranDesktop"];
+
+		useTranscriptSessionRepositoryMock.mockReturnValue({
+			appendUtterance: vi.fn(),
+			clearDraft: vi.fn(),
+			completeSession: vi.fn(),
+			latestTranscriptSession: null,
+			loadDraft: vi.fn().mockResolvedValue(null),
+			replaceSpeakerUtterances: vi.fn(),
+			saveDraft: vi.fn(),
+			setRefinementStatus: vi.fn(),
+			setSystemAudioSourceMode: vi.fn(),
+			startSession: vi.fn().mockResolvedValue("session-3"),
+		});
+
+		const { useNoteTranscriptSession } = await import(
+			"../src/hooks/use-note-transcript-session"
+		);
+
+		const { result } = renderHook(() =>
+			useNoteTranscriptSession({
+				autoStartTranscription: true,
+				noteId: "note-1" as never,
+				stopTranscriptionWhenMeetingEnds: true,
+			}),
+		);
+
+		result.current.onTranscriptListeningChange(true);
+
+		await waitFor(() => {
+			expect(result.current.isSpeechListening).toBe(true);
+		});
+
+		meetingDetectionListener?.({
+			candidateStartedAt: null,
+			confidence: 0,
+			dismissedUntil: null,
+			hasBrowserMeetingSignal: false,
+			hasMeetingSignal: false,
+			isMicrophoneActive: false,
+			isSuppressed: true,
+			sourceName: null,
+			status: "idle",
+		});
+
+		await waitFor(() => {
+			expect(stopTranscriptionSessionMock).not.toHaveBeenCalled();
+		});
+	});
+
+	it("keeps meeting-control latched after the auto-start prop is cleared", async () => {
+		let meetingDetectionListener:
+			| ((state: DesktopMeetingDetectionState) => void)
+			| null = null;
+
+		window.openGranDesktop = {
+			onMeetingDetectionState: (listener) => {
+				meetingDetectionListener = listener;
+				return () => {
+					meetingDetectionListener = null;
+				};
+			},
+		} as Window["openGranDesktop"];
+
+		useTranscriptSessionRepositoryMock.mockReturnValue({
+			appendUtterance: vi.fn(),
+			clearDraft: vi.fn(),
+			completeSession: vi.fn(),
+			latestTranscriptSession: null,
+			loadDraft: vi.fn().mockResolvedValue(null),
+			replaceSpeakerUtterances: vi.fn(),
+			saveDraft: vi.fn(),
+			setRefinementStatus: vi.fn(),
+			setSystemAudioSourceMode: vi.fn(),
+			startSession: vi.fn().mockResolvedValue("session-4"),
+		});
+
+		const { useNoteTranscriptSession } = await import(
+			"../src/hooks/use-note-transcript-session"
+		);
+
+		const { result, rerender } = renderHook(
+			({ stopTranscriptionWhenMeetingEnds }) =>
+				useNoteTranscriptSession({
+					autoStartTranscription: true,
+					noteId: "note-1" as never,
+					stopTranscriptionWhenMeetingEnds,
+				}),
+			{
+				initialProps: {
+					stopTranscriptionWhenMeetingEnds: true,
+				},
+			},
+		);
+
+		result.current.onTranscriptListeningChange(true);
+
+		await waitFor(() => {
+			expect(result.current.isSpeechListening).toBe(true);
+		});
+
+		rerender({
+			stopTranscriptionWhenMeetingEnds: false,
+		});
+
+		meetingDetectionListener?.({
+			candidateStartedAt: Date.now(),
+			confidence: 1,
+			dismissedUntil: null,
+			hasBrowserMeetingSignal: true,
+			hasMeetingSignal: true,
+			isMicrophoneActive: false,
+			isSuppressed: false,
+			sourceName: "Google Meet",
+			status: "monitoring",
+		});
+
+		meetingDetectionListener?.({
+			candidateStartedAt: null,
+			confidence: 0,
+			dismissedUntil: null,
+			hasBrowserMeetingSignal: false,
+			hasMeetingSignal: false,
+			isMicrophoneActive: false,
+			isSuppressed: true,
+			sourceName: null,
+			status: "idle",
+		});
+
+		await waitFor(() => {
+			expect(stopTranscriptionSessionMock).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("keeps a desktop capture running without meeting-control when the browser signal disappears", async () => {
+		let meetingDetectionListener:
+			| ((state: DesktopMeetingDetectionState) => void)
+			| null = null;
+
+		window.openGranDesktop = {
+			onMeetingDetectionState: (listener) => {
+				meetingDetectionListener = listener;
+				return () => {
+					meetingDetectionListener = null;
+				};
+			},
+		} as Window["openGranDesktop"];
+
+		useTranscriptSessionRepositoryMock.mockReturnValue({
+			appendUtterance: vi.fn(),
+			clearDraft: vi.fn(),
+			completeSession: vi.fn(),
+			latestTranscriptSession: null,
+			loadDraft: vi.fn().mockResolvedValue(null),
+			replaceSpeakerUtterances: vi.fn(),
+			saveDraft: vi.fn(),
+			setRefinementStatus: vi.fn(),
+			setSystemAudioSourceMode: vi.fn(),
+			startSession: vi.fn().mockResolvedValue("session-5"),
+		});
+
+		const { useNoteTranscriptSession } = await import(
+			"../src/hooks/use-note-transcript-session"
+		);
+
+		const { result } = renderHook(() =>
+			useNoteTranscriptSession({
+				autoStartTranscription: true,
+				noteId: "note-1" as never,
+				stopTranscriptionWhenMeetingEnds: false,
 			}),
 		);
 
@@ -145,7 +367,46 @@ describe("useNoteTranscriptSession", () => {
 		});
 
 		await waitFor(() => {
-			expect(stopTranscriptionSessionMock).toHaveBeenCalledTimes(1);
+			expect(stopTranscriptionSessionMock).not.toHaveBeenCalled();
 		});
+	});
+
+	it("stops a capture after 15 minutes with no new audio", async () => {
+		vi.useFakeTimers();
+
+		useTranscriptSessionRepositoryMock.mockReturnValue({
+			appendUtterance: vi.fn(),
+			clearDraft: vi.fn(),
+			completeSession: vi.fn(),
+			latestTranscriptSession: null,
+			loadDraft: vi.fn().mockResolvedValue(null),
+			replaceSpeakerUtterances: vi.fn(),
+			saveDraft: vi.fn(),
+			setRefinementStatus: vi.fn(),
+			setSystemAudioSourceMode: vi.fn(),
+			startSession: vi.fn().mockResolvedValue("session-6"),
+		});
+
+		const { useNoteTranscriptSession } = await import(
+			"../src/hooks/use-note-transcript-session"
+		);
+
+		const { result } = renderHook(() =>
+			useNoteTranscriptSession({
+				noteId: "note-1" as never,
+			}),
+		);
+
+		await act(async () => {
+			result.current.onTranscriptListeningChange(true);
+		});
+
+		expect(result.current.isSpeechListening).toBe(true);
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(15 * 60 * 1000 + 15 * 1000);
+		});
+
+		expect(stopTranscriptionSessionMock).toHaveBeenCalledTimes(1);
 	});
 });

@@ -86,9 +86,11 @@ type NoteComposerProps = {
 		text: string;
 	};
 	autoStartTranscription?: boolean;
+	autoGenerateNotesOnStop?: boolean;
 	onAutoStartTranscriptionHandled?: () => void;
 	onAddMessageToNote?: (text: string) => Promise<void> | void;
 	onEnhanceTranscript?: (transcript: string) => Promise<void>;
+	stopTranscriptionWhenMeetingEnds?: boolean;
 };
 
 const extractTextParts = (message: UIMessage) =>
@@ -156,8 +158,10 @@ const createDraftChatId = (): string => crypto.randomUUID();
 const useNoteComposerController = ({
 	noteContext,
 	autoStartTranscription,
+	autoGenerateNotesOnStop,
 	onAutoStartTranscriptionHandled,
 	onEnhanceTranscript,
+	stopTranscriptionWhenMeetingEnds,
 }: NoteComposerProps) => {
 	const {
 		isMobile,
@@ -226,9 +230,11 @@ const useNoteComposerController = ({
 	const userPreferences = useQuery(api.userPreferences.get, {});
 	const transcriptSession = useNoteTranscriptSession({
 		autoStartTranscription,
+		autoGenerateNotesOnStop,
 		noteId,
 		onAutoStartTranscriptionHandled,
 		onEnhanceTranscript,
+		stopTranscriptionWhenMeetingEnds,
 		transcriptionLanguage: userPreferences?.transcriptionLanguage ?? null,
 	});
 

@@ -755,7 +755,7 @@ function NotificationsSettings() {
 						void handleNotificationPreferenceChange({
 							notifyForScheduledMeetings: checked,
 							notifyForAutoDetectedMeetings:
-								notificationPreferences?.notifyForAutoDetectedMeetings ?? false,
+								notificationPreferences?.notifyForAutoDetectedMeetings ?? true,
 						});
 					}}
 				/>
@@ -763,7 +763,7 @@ function NotificationsSettings() {
 					id="settings-auto-detected-meetings"
 					label="Auto-detected meetings"
 					checked={
-						notificationPreferences?.notifyForAutoDetectedMeetings ?? false
+						notificationPreferences?.notifyForAutoDetectedMeetings ?? true
 					}
 					disabled={isSavingNotificationPreference}
 					onCheckedChange={(checked) => {

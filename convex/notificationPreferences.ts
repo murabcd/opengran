@@ -62,7 +62,11 @@ export const get = query({
 	returns: notificationPreferencesValidator,
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
-		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
 		const preferences = await getNotificationPreferencesRecord(
 			ctx,
 			identity.tokenIdentifier,
@@ -73,7 +77,7 @@ export const get = query({
 			notifyForScheduledMeetings:
 				preferences?.notifyForScheduledMeetings ?? false,
 			notifyForAutoDetectedMeetings:
-				preferences?.notifyForAutoDetectedMeetings ?? false,
+				preferences?.notifyForAutoDetectedMeetings ?? true,
 		};
 	},
 });
@@ -87,7 +91,11 @@ export const update = mutation({
 	returns: notificationPreferencesValidator,
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
-		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
 		const existing = await getNotificationPreferencesRecord(
 			ctx,
 			identity.tokenIdentifier,
@@ -135,7 +143,9 @@ const deleteNotificationPreferencesBatchForOwner = async (
 		)
 		.take(REMOVE_ALL_NOTIFICATION_PREFERENCES_BATCH_SIZE);
 
-	await Promise.all(preferences.map((preference) => ctx.db.delete(preference._id)));
+	await Promise.all(
+		preferences.map((preference) => ctx.db.delete(preference._id)),
+	);
 
 	return {
 		deletedCount: preferences.length,

@@ -66,6 +66,7 @@ export const ENHANCED_NOTE_SYSTEM_PROMPT = joinPromptSections([
 	"Preserve the source language used in the input.",
 	"Do not invent facts, decisions, owners, dates, or action items.",
 	"Return a concise, specific note title that matches the content.",
+	"If the current note title is generic or in a different language than the source, replace it with a title in the dominant source language.",
 	"Prefer a short overview only when it adds signal.",
 	"Organize the body into 3 to 6 topic-based sections with descriptive titles grounded in the actual discussion.",
 	"Group related bullets together under the most relevant topic instead of scattering them across generic headings.",

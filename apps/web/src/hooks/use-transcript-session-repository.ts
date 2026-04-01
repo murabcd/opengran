@@ -21,6 +21,7 @@ type TranscriptSessionSnapshot = {
 	refinementError: string | null;
 	refinementStatus: "idle" | "running" | "completed" | "failed";
 	sessionId: Id<"transcriptSessions">;
+	updatedAt: number;
 	utterances: TranscriptUtterance[];
 };
 
@@ -85,6 +86,7 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 								latestTranscriptSessionQuery.session.refinementError ?? null,
 							refinementStatus:
 								latestTranscriptSessionQuery.session.refinementStatus,
+							updatedAt: latestTranscriptSessionQuery.session.updatedAt,
 							utterances: latestTranscriptSessionQuery.utterances.map(
 								(utterance) => ({
 									id: utterance.utteranceId,

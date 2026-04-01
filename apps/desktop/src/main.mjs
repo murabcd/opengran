@@ -22,6 +22,7 @@ import {
 	ipcMain,
 	Menu,
 	nativeImage,
+	powerMonitor,
 	screen,
 	shell,
 	systemPreferences,
@@ -377,6 +378,43 @@ const formatTrayNextEventHeader = (event, currentDate) => {
 const formatTrayEventMenuLabel = (event) =>
 	`${truncateTrayLabel(event.title, 42)} • ${formatTrayEventTimeRange(event)}`;
 
+const getDetectedMeetingCalendarEvent = (currentDate = new Date()) => {
+	if (trayCalendarState.status !== "ready") {
+		return null;
+	}
+
+	const currentTimestamp = currentDate.getTime();
+	const liveMeeting = getTrayTodayEvents(trayCalendarState.events, currentDate)
+		.filter((event) => event?.isMeeting)
+		.find((event) => {
+			const startAt = new Date(event.startAt).getTime();
+			const endAt = new Date(event.endAt).getTime();
+
+			return (
+				Number.isFinite(startAt) &&
+				Number.isFinite(endAt) &&
+				startAt <= currentTimestamp &&
+				endAt >= currentTimestamp
+			);
+		});
+
+	if (liveMeeting) {
+		return liveMeeting;
+	}
+
+	return getTrayTodayEvents(trayCalendarState.events, currentDate)
+		.filter((event) => event?.isMeeting)
+		.find((event) => {
+			const startAt = new Date(event.startAt).getTime();
+
+			return (
+				Number.isFinite(startAt) &&
+				Math.abs(startAt - currentTimestamp) <=
+					scheduledMeetingNotificationLeadTimeMs
+			);
+		});
+};
+
 const openTrayMeetingLink = async (event) => {
 	if (!event?.meetingUrl) {
 		return;
@@ -385,11 +423,74 @@ const openTrayMeetingLink = async (event) => {
 	await shell.openExternal(event.meetingUrl);
 };
 
+const createCalendarEventNoteSearch = (event, options = {}) => {
+	const searchParams = new URLSearchParams();
+	const autoStartCapture = options.autoStartCapture === true;
+	const stopCaptureWhenMeetingEnds =
+		options.stopCaptureWhenMeetingEnds === true;
+	const autoGenerateNotesOnStop = options.autoGenerateNotesOnStop !== false;
+
+	if (autoStartCapture) {
+		searchParams.set("capture", "1");
+	}
+
+	if (stopCaptureWhenMeetingEnds) {
+		searchParams.set("meeting", "1");
+	}
+
+	if (autoGenerateNotesOnStop) {
+		searchParams.set("autogen", "1");
+	}
+
+	searchParams.set("calendarEventId", event.id);
+	searchParams.set("calendarId", event.calendarId);
+	searchParams.set("calendarName", event.calendarName);
+	searchParams.set("eventTitle", event.title);
+	searchParams.set("startAt", event.startAt);
+	searchParams.set("endAt", event.endAt);
+	searchParams.set("isAllDay", event.isAllDay ? "1" : "0");
+
+	if (event.meetingUrl) {
+		searchParams.set("meetingUrl", event.meetingUrl);
+	}
+
+	if (event.location) {
+		searchParams.set("location", event.location);
+	}
+
+	if (event.htmlLink) {
+		searchParams.set("htmlLink", event.htmlLink);
+	}
+
+	return `?${searchParams.toString()}`;
+};
+
+const openCalendarEventNote = async (event, options = {}) => {
+	const hasStarted = new Date(event.startAt).getTime() <= Date.now();
+
+	await showMainWindow({
+		pathname: "/note",
+		search: createCalendarEventNoteSearch(event, {
+			autoGenerateNotesOnStop: options.autoGenerateNotesOnStop !== false,
+			autoStartCapture:
+				options.autoStartCapture === true ||
+				(options.autoStartCapture == null && hasStarted),
+			stopCaptureWhenMeetingEnds:
+				options.stopCaptureWhenMeetingEnds === true ||
+				(options.stopCaptureWhenMeetingEnds == null && event.isMeeting),
+		}),
+	});
+
+	if (options.openMeetingLink !== false && event.meetingUrl) {
+		await openTrayMeetingLink(event);
+	}
+};
+
 const buildTrayEventMenuItem = (event) => ({
 	label: formatTrayEventMenuLabel(event),
-	enabled: Boolean(event.meetingUrl),
+	enabled: event?.isMeeting === true,
 	click: () => {
-		void openTrayMeetingLink(event);
+		void openCalendarEventNote(event);
 	},
 });
 
@@ -403,7 +504,7 @@ const getTrayTitle = () => {
 		}
 
 		if (trayCalendarState.status === "not_connected") {
-			return "Connect Calendar";
+			return "";
 		}
 
 		if (trayCalendarState.status === "error") {
@@ -435,19 +536,7 @@ const buildTrayCalendarMenuItems = () => {
 	).slice(0, trayCalendarMenuEventLimit);
 
 	if (trayCalendarState.status === "not_connected") {
-		return [
-			{
-				label: todayLabel,
-				enabled: false,
-			},
-			{
-				label: "Connect Google Calendar",
-				click: () => {
-					void showMainWindow({ pathname: "/settings/profile" });
-				},
-			},
-			{ type: "separator" },
-		];
+		return [];
 	}
 
 	if (trayCalendarState.status === "error") {
@@ -716,6 +805,14 @@ const maybeShowScheduledMeetingNotifications = (events) => {
 		});
 
 		try {
+			notification.on("click", () => {
+				void openCalendarEventNote(event, {
+					autoStartCapture: isStartingNow,
+					autoGenerateNotesOnStop: true,
+					openMeetingLink: true,
+					stopCaptureWhenMeetingEnds: true,
+				});
+			});
 			notification.show();
 		} catch (error) {
 			console.warn("Failed to show scheduled meeting notification.", error);
@@ -1987,9 +2084,20 @@ const startDetectedMeetingNote = async () => {
 		status: "idle",
 	});
 
+	const detectedMeetingCalendarEvent = getDetectedMeetingCalendarEvent();
+
+	if (detectedMeetingCalendarEvent) {
+		await openCalendarEventNote(detectedMeetingCalendarEvent, {
+			autoGenerateNotesOnStop: true,
+			autoStartCapture: true,
+			stopCaptureWhenMeetingEnds: true,
+		});
+		return;
+	}
+
 	await showMainWindow({
 		pathname: "/note",
-		search: "?capture=1",
+		search: "?capture=1&meeting=1&autogen=1",
 	});
 };
 
@@ -5393,6 +5501,22 @@ if (!singleInstanceLock) {
 
 	app.whenReady().then(async () => {
 		refreshTranscriptionPolicy();
+
+		powerMonitor.on("suspend", () => {
+			if (
+				!["starting", "listening", "reconnecting"].includes(
+					latestTranscriptionSessionState.phase,
+				)
+			) {
+				return;
+			}
+
+			void stopDesktopTranscriptionSession({
+				preserveUtterances: true,
+				resetError: true,
+				resetRecovery: true,
+			});
+		});
 
 		if (process.platform === "darwin") {
 			app.dock?.setIcon(dockIconPath);

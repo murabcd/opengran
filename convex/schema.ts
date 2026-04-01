@@ -135,6 +135,7 @@ export default defineSchema({
 	notes: defineTable({
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),
+		calendarEventKey: v.optional(v.string()),
 		authorName: v.optional(v.string()),
 		isStarred: v.optional(v.boolean()),
 		title: v.string(),
@@ -170,6 +171,12 @@ export default defineSchema({
 		.index("by_ownerTokenIdentifier_and_updatedAt", [
 			"ownerTokenIdentifier",
 			"updatedAt",
+		])
+		.index("by_owner_ws_event_arch", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"calendarEventKey",
+			"isArchived",
 		])
 		.index("by_ownerTokenIdentifier_and_isArchived_and_updatedAt", [
 			"ownerTokenIdentifier",
