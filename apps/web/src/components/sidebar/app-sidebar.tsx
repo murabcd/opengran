@@ -170,10 +170,7 @@ export function AppSidebar({
 					</div>
 				</SidebarHeader>
 				<SidebarContent>
-					{currentView === "shared" ||
-					currentView === "note" ||
-					sharedNotes === undefined ||
-					(sharedNotes?.length ?? 0) > 0 ? (
+					{(sharedNotes?.length ?? 0) > 0 ? (
 						<NavNotes
 							notes={sharedNotes}
 							title="Shared"
