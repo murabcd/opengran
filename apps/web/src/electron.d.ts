@@ -151,6 +151,13 @@ declare global {
 			setActiveWorkspaceId: (workspaceId: string | null) => Promise<{
 				ok: boolean;
 			}>;
+			setActiveWorkspaceNotificationPreferences: (payload: {
+				workspaceId: string | null;
+				notifyForScheduledMeetings: boolean;
+				notifyForAutoDetectedMeetings: boolean;
+			}) => Promise<{
+				ok: boolean;
+			}>;
 			openExternalUrl: (url: string) => Promise<{
 				ok: boolean;
 			}>;

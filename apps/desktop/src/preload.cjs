@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 	getShareBaseUrl: () => ipcRenderer.invoke("app:get-share-base-url"),
 	setActiveWorkspaceId: (workspaceId) =>
 		ipcRenderer.invoke("app:set-active-workspace-id", workspaceId),
+	setActiveWorkspaceNotificationPreferences: (payload) =>
+		ipcRenderer.invoke(
+			"app:set-active-workspace-notification-preferences",
+			payload,
+		),
 	openExternalUrl: (url) => ipcRenderer.invoke("app:open-external-url", url),
 	requestPermission: (permissionId) =>
 		ipcRenderer.invoke("app:request-permission", permissionId),

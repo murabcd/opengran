@@ -337,6 +337,14 @@ export const remove = mutation({
 				workspaceId: args.workspaceId,
 			},
 		);
+		await ctx.scheduler.runAfter(
+			0,
+			internal.notificationPreferences.removeAllForWorkspace,
+			{
+				ownerTokenIdentifier: identity.tokenIdentifier,
+				workspaceId: args.workspaceId,
+			},
+		);
 		await ctx.scheduler.runAfter(0, internal.appConnections.removeAllForWorkspace, {
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,

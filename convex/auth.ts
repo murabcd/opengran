@@ -73,6 +73,12 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 								ownerTokenIdentifier: identity.tokenIdentifier,
 							},
 						);
+						await runCtx.runMutation(
+							internal.notificationPreferences.removeAllForOwner,
+							{
+								ownerTokenIdentifier: identity.tokenIdentifier,
+							},
+						);
 						await runCtx.runMutation(internal.appConnections.removeAllForOwner, {
 							ownerTokenIdentifier: identity.tokenIdentifier,
 						});

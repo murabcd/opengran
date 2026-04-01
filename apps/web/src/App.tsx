@@ -117,6 +117,7 @@ type SocialAuthProvider = "github" | "google";
 const SETTINGS_PAGE_BY_SLUG = {
 	profile: "Profile",
 	appearance: "Appearance",
+	notifications: "Notifications",
 	workspace: "Workspace",
 	calendar: "Calendar",
 	connections: "Connections",
@@ -126,6 +127,7 @@ const SETTINGS_PAGE_BY_SLUG = {
 const SETTINGS_SLUG_BY_PAGE: Record<SettingsPage, string> = {
 	Profile: "profile",
 	Appearance: "appearance",
+	Notifications: "notifications",
 	Workspace: "workspace",
 	Calendar: "calendar",
 	Connections: "connections",
@@ -1709,6 +1711,12 @@ const useAppShellState = ({
 			? { workspaceId: resolvedActiveWorkspaceId }
 			: "skip",
 	);
+	const notificationPreferences = useQuery(
+		api.notificationPreferences.get,
+		isConvexAuthenticated && resolvedActiveWorkspaceId
+			? { workspaceId: resolvedActiveWorkspaceId }
+			: "skip",
+	);
 	const yandexCalendarConnection = useQuery(
 		api.appConnections.getYandexCalendar,
 		isConvexAuthenticated && resolvedActiveWorkspaceId
@@ -1898,6 +1906,24 @@ const useAppShellState = ({
 
 		void window.openGranDesktop.setActiveWorkspaceId(resolvedActiveWorkspaceId);
 	}, [resolvedActiveWorkspaceId]);
+
+	React.useEffect(() => {
+		if (!window.openGranDesktop) {
+			return;
+		}
+
+		void window.openGranDesktop.setActiveWorkspaceNotificationPreferences({
+			workspaceId: resolvedActiveWorkspaceId,
+			notifyForScheduledMeetings:
+				notificationPreferences?.notifyForScheduledMeetings ?? false,
+			notifyForAutoDetectedMeetings:
+				notificationPreferences?.notifyForAutoDetectedMeetings ?? false,
+		});
+	}, [
+		notificationPreferences?.notifyForAutoDetectedMeetings,
+		notificationPreferences?.notifyForScheduledMeetings,
+		resolvedActiveWorkspaceId,
+	]);
 
 	React.useEffect(() => {
 		void calendarVisibilityKey;

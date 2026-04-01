@@ -62,6 +62,7 @@ import { Switch } from "@workspace/ui/components/switch";
 import { useTheme } from "@workspace/ui/components/theme-provider";
 import { useAction, useMutation, useQuery } from "convex/react";
 import {
+	Bell,
 	CalendarDays,
 	Database,
 	FolderKanban,
@@ -96,6 +97,7 @@ type SettingsUser = {
 export type SettingsPage =
 	| "Profile"
 	| "Appearance"
+	| "Notifications"
 	| "Workspace"
 	| "Calendar"
 	| "Connections"
@@ -114,6 +116,7 @@ type SettingsDialogProps = {
 const settingsNav = [
 	{ name: "Profile", icon: UserRound },
 	{ name: "Appearance", icon: Paintbrush },
+	{ name: "Notifications", icon: Bell },
 	{ name: "Workspace", icon: FolderKanban },
 	{ name: "Calendar", icon: CalendarDays },
 	{ name: "Connections", icon: Link2 },
@@ -515,6 +518,8 @@ export function SettingsDialog({
 								/>
 							) : activePage === "Appearance" ? (
 								<AppearanceSettings />
+							) : activePage === "Notifications" ? (
+								<NotificationsSettings />
 							) : activePage === "Workspace" ? (
 								<WorkspaceSettings
 									workspace={workspace}
@@ -682,6 +687,122 @@ function AppearanceSettings() {
 					</Select>
 				</Field>
 			</FieldGroup>
+		</div>
+	);
+}
+
+function NotificationsSettings() {
+	const activeWorkspaceId = useActiveWorkspaceId();
+	const notificationPreferences = useQuery(
+		api.notificationPreferences.get,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
+	const updateNotificationPreferences = useMutation(
+		api.notificationPreferences.update,
+	).withOptimisticUpdate((localStore, args) => {
+		localStore.setQuery(
+			api.notificationPreferences.get,
+			{ workspaceId: args.workspaceId },
+			{
+				notifyForScheduledMeetings: args.notifyForScheduledMeetings,
+				notifyForAutoDetectedMeetings: args.notifyForAutoDetectedMeetings,
+			},
+		);
+	});
+	const [isSavingNotificationPreference, setIsSavingNotificationPreference] =
+		useState(false);
+
+	const handleNotificationPreferenceChange = async (preferences: {
+		notifyForScheduledMeetings: boolean;
+		notifyForAutoDetectedMeetings: boolean;
+	}) => {
+		if (!activeWorkspaceId) {
+			return;
+		}
+
+		setIsSavingNotificationPreference(true);
+
+		try {
+			await updateNotificationPreferences({
+				workspaceId: activeWorkspaceId,
+				...preferences,
+			});
+		} catch (error) {
+			console.error("Failed to update notification preferences", error);
+			toast.error("Failed to update notification preferences");
+		} finally {
+			setIsSavingNotificationPreference(false);
+		}
+	};
+
+	if (!activeWorkspaceId) {
+		return (
+			<div className="py-4 text-sm text-muted-foreground">
+				Select a workspace to manage workspace-specific notification settings.
+			</div>
+		);
+	}
+
+	return (
+		<div className="py-4">
+			<FieldGroup className="gap-4">
+				<NotificationPreferenceRow
+					id="settings-scheduled-meetings"
+					label="Scheduled meetings"
+					checked={notificationPreferences?.notifyForScheduledMeetings ?? false}
+					disabled={isSavingNotificationPreference}
+					onCheckedChange={(checked) => {
+						void handleNotificationPreferenceChange({
+							notifyForScheduledMeetings: checked,
+							notifyForAutoDetectedMeetings:
+								notificationPreferences?.notifyForAutoDetectedMeetings ?? false,
+						});
+					}}
+				/>
+				<NotificationPreferenceRow
+					id="settings-auto-detected-meetings"
+					label="Auto-detected meetings"
+					checked={
+						notificationPreferences?.notifyForAutoDetectedMeetings ?? false
+					}
+					disabled={isSavingNotificationPreference}
+					onCheckedChange={(checked) => {
+						void handleNotificationPreferenceChange({
+							notifyForScheduledMeetings:
+								notificationPreferences?.notifyForScheduledMeetings ?? false,
+							notifyForAutoDetectedMeetings: checked,
+						});
+					}}
+				/>
+			</FieldGroup>
+		</div>
+	);
+}
+
+function NotificationPreferenceRow({
+	id,
+	label,
+	checked,
+	disabled,
+	onCheckedChange,
+}: {
+	id: string;
+	label: string;
+	checked: boolean;
+	disabled: boolean;
+	onCheckedChange: (checked: boolean) => void;
+}) {
+	return (
+		<div className="flex items-center justify-between gap-4">
+			<Label htmlFor={id} className="text-sm font-medium text-foreground">
+				{label}
+			</Label>
+			<Switch
+				id={id}
+				checked={checked}
+				disabled={disabled}
+				onCheckedChange={onCheckedChange}
+			/>
 		</div>
 	);
 }

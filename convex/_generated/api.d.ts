@@ -16,6 +16,7 @@ import type * as calendarPreferences from "../calendarPreferences.js";
 import type * as chats from "../chats.js";
 import type * as http from "../http.js";
 import type * as notes from "../notes.js";
+import type * as notificationPreferences from "../notificationPreferences.js";
 import type * as onboarding from "../onboarding.js";
 import type * as templates from "../templates.js";
 import type * as transcriptSessions from "../transcriptSessions.js";
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   chats: typeof chats;
   http: typeof http;
   notes: typeof notes;
+  notificationPreferences: typeof notificationPreferences;
   onboarding: typeof onboarding;
   templates: typeof templates;
   transcriptSessions: typeof transcriptSessions;

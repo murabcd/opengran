@@ -18,6 +18,7 @@ import {
 	clipboard,
 	desktopCapturer,
 	dialog,
+	Notification as ElectronNotification,
 	ipcMain,
 	Menu,
 	nativeImage,
@@ -74,6 +75,7 @@ const transcriptDraftMaxAgeMs = 72 * 60 * 60 * 1000;
 const meetingDetectionDebounceMs = 8_000;
 const meetingDetectionDismissMs = 30 * 60 * 1000;
 const meetingWidgetAutoHideMs = 12 * 1000;
+const scheduledMeetingNotificationLeadTimeMs = 5 * 60 * 1000;
 const trayCalendarRefreshMs = 60 * 1000;
 const trayCalendarMenuEventLimit = 5;
 const browserMeetingSignalFreshMs = 30 * 1000;
@@ -101,6 +103,10 @@ const createInitialTrayCalendarState = () => ({
 	status: "idle",
 	events: [],
 	connectedCalendarCount: 0,
+});
+const createInitialNotificationPreferences = () => ({
+	notifyForScheduledMeetings: false,
+	notifyForAutoDetectedMeetings: false,
 });
 const getCurrentDayWindow = () => {
 	const now = new Date();
@@ -181,6 +187,8 @@ let traySettings = defaultTraySettings;
 let desktopPermissionsState = defaultDesktopPermissionsState;
 let trayCalendarState = createInitialTrayCalendarState();
 let trayCalendarWorkspaceId = null;
+let activeWorkspaceNotificationPreferences =
+	createInitialNotificationPreferences();
 let trayCalendarRefreshTimeoutId = null;
 let trayCalendarRefreshPromise = null;
 let trayStatusLabel = "Updates are unavailable in development builds";
@@ -204,6 +212,7 @@ let pendingUpdateWindowState = null;
 let resolveUpdateWindowActionPromise = null;
 let latestMeetingDetectionState = createInitialMeetingDetectionState();
 let latestTranscriptionSessionState = createInitialTranscriptionSessionState();
+const shownScheduledMeetingNotificationKeys = new Set();
 const desktopRealtimeTransportSessions = new Map();
 const captureEventListeners = {
 	microphone: new Set(),
@@ -581,6 +590,12 @@ const refreshTrayCalendar = async () => {
 							...createInitialTrayCalendarState(),
 							status: "not_connected",
 						};
+
+			if (trayCalendarState.status === "ready") {
+				maybeShowScheduledMeetingNotifications(trayCalendarState.events);
+			} else {
+				syncShownScheduledMeetingNotifications([]);
+			}
 		} catch (error) {
 			console.warn("Failed to refresh tray calendar.", error);
 			trayCalendarState = {
@@ -617,6 +632,96 @@ const getCurrentBrowserMeetingSourceName = () =>
 
 const hasFreshBrowserMeetingSignal = () =>
 	getCurrentBrowserMeetingSignal() !== null;
+
+const createScheduledMeetingNotificationKey = (workspaceId, event) =>
+	`${workspaceId}:${event.id}:${event.startAt}`;
+
+const formatScheduledMeetingNotificationTime = (value) =>
+	new Intl.DateTimeFormat(undefined, {
+		hour: "numeric",
+		minute: "2-digit",
+	}).format(new Date(value));
+
+const syncShownScheduledMeetingNotifications = (events) => {
+	if (!trayCalendarWorkspaceId) {
+		shownScheduledMeetingNotificationKeys.clear();
+		return;
+	}
+
+	const activeEventKeys = new Set(
+		events.map((event) =>
+			createScheduledMeetingNotificationKey(trayCalendarWorkspaceId, event),
+		),
+	);
+
+	for (const key of shownScheduledMeetingNotificationKeys) {
+		if (
+			key.startsWith(`${trayCalendarWorkspaceId}:`) &&
+			!activeEventKeys.has(key)
+		) {
+			shownScheduledMeetingNotificationKeys.delete(key);
+		}
+	}
+};
+
+const maybeShowScheduledMeetingNotifications = (events) => {
+	if (
+		!trayCalendarWorkspaceId ||
+		!activeWorkspaceNotificationPreferences.notifyForScheduledMeetings ||
+		!ElectronNotification.isSupported()
+	) {
+		return;
+	}
+
+	const now = Date.now();
+	syncShownScheduledMeetingNotifications(events);
+
+	for (const event of events) {
+		if (!event?.isMeeting || event.isAllDay) {
+			continue;
+		}
+
+		const startAt = new Date(event.startAt).getTime();
+		const endAt = new Date(event.endAt).getTime();
+
+		if (
+			!Number.isFinite(startAt) ||
+			!Number.isFinite(endAt) ||
+			endAt <= now ||
+			startAt - now > scheduledMeetingNotificationLeadTimeMs
+		) {
+			continue;
+		}
+
+		const notificationKey = createScheduledMeetingNotificationKey(
+			trayCalendarWorkspaceId,
+			event,
+		);
+
+		if (shownScheduledMeetingNotificationKeys.has(notificationKey)) {
+			continue;
+		}
+
+		shownScheduledMeetingNotificationKeys.add(notificationKey);
+
+		const isStartingNow = startAt <= now;
+		const notification = new ElectronNotification({
+			title: isStartingNow ? "Meeting started" : "Meeting starting soon",
+			body: `${event.title}\n${event.calendarName} • ${
+				isStartingNow
+					? "In progress now"
+					: `Starts at ${formatScheduledMeetingNotificationTime(event.startAt)}`
+			}`,
+			icon: dockIconPath,
+		});
+
+		try {
+			notification.show();
+		} catch (error) {
+			console.warn("Failed to show scheduled meeting notification.", error);
+		}
+	}
+};
 
 const getUpdateWindowIconDataUrl = () => {
 	const icon = nativeImage.createFromPath(dockIconPath);
@@ -1820,6 +1925,12 @@ const reevaluateMeetingDetection = () => {
 		sourceName,
 		status: "monitoring",
 	});
+
+	if (!activeWorkspaceNotificationPreferences.notifyForAutoDetectedMeetings) {
+		clearMeetingDetectionDebounceTimeout();
+		hideMeetingWidgetWindow();
+		return;
+	}
 
 	if (meetingDetectionDebounceTimeoutId != null) {
 		return;
@@ -4757,9 +4868,50 @@ ipcMain.handle("app:set-active-workspace-id", async (_event, workspaceId) => {
 	}
 
 	trayCalendarWorkspaceId = workspaceId;
+	activeWorkspaceNotificationPreferences =
+		createInitialNotificationPreferences();
+	reevaluateMeetingDetection();
 	scheduleTrayCalendarRefresh(0);
 	return { ok: true };
 });
+
+ipcMain.handle(
+	"app:set-active-workspace-notification-preferences",
+	async (_event, payload) => {
+		if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+			throw new Error("Notification preferences payload is invalid.");
+		}
+
+		const {
+			workspaceId,
+			notifyForScheduledMeetings,
+			notifyForAutoDetectedMeetings,
+		} = payload;
+
+		if (workspaceId !== null && typeof workspaceId !== "string") {
+			throw new Error("Workspace id must be a string or null.");
+		}
+
+		if (
+			typeof notifyForScheduledMeetings !== "boolean" ||
+			typeof notifyForAutoDetectedMeetings !== "boolean"
+		) {
+			throw new Error("Notification preference values must be booleans.");
+		}
+
+		if (workspaceId !== trayCalendarWorkspaceId) {
+			return { ok: true };
+		}
+
+		activeWorkspaceNotificationPreferences = {
+			notifyForScheduledMeetings,
+			notifyForAutoDetectedMeetings,
+		};
+		reevaluateMeetingDetection();
+		scheduleTrayCalendarRefresh(0);
+		return { ok: true };
+	},
+);
 
 ipcMain.handle("app:write-clipboard-text", async (_event, value) => {
 	if (typeof value !== "string") {

@@ -46,6 +46,22 @@ export default defineSchema({
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	}).index("by_ownerTokenIdentifier", ["ownerTokenIdentifier"]),
+	notificationPreferences: defineTable({
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		notifyForScheduledMeetings: v.boolean(),
+		notifyForAutoDetectedMeetings: v.boolean(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_ownerTokenIdentifier_and_workspaceId", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+		])
+		.index("by_ownerTokenIdentifier_and_updatedAt", [
+			"ownerTokenIdentifier",
+			"updatedAt",
+		]),
 	calendarPreferences: defineTable({
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),
