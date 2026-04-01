@@ -23,6 +23,11 @@ import {
 	CHAT_TITLE_SYSTEM_PROMPT,
 	ENHANCED_NOTE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
+import {
+	createRealtimeTranscriptionSession,
+	normalizeTranscriptionLanguage,
+	TRANSCRIPTION_MODEL,
+} from "../../../packages/ai/src/transcription.mjs";
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
 const webDistDir = resolve(runtimeDir, "../../web/dist");
@@ -49,10 +54,6 @@ const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
 const CHAT_TITLE_MODEL = "gpt-5.4-nano";
 const MAX_AUDIO_FILE_SIZE_BYTES = 25 * 1024 * 1024;
-const REALTIME_TRANSCRIPTION_PROMPT =
-	"Transcribe speech verbatim with punctuation. Preserve names, product terms, and domain-specific vocabulary when possible.";
-const TRANSCRIPT_REFINEMENT_PROMPT =
-	"Transcribe the audio clearly with punctuation. Preserve names, jargon, and quoted wording when possible.";
 const preferredExtensionBridgePorts = Array.from(
 	{ length: 20 },
 	(_value, index) => 42831 + index,
@@ -451,7 +452,7 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 	}
 
 	const { lang } = await readJsonBody(request);
-	const language = lang?.split("-")[0]?.trim().toLowerCase();
+	const language = normalizeTranscriptionLanguage(lang);
 	const requestId = crypto.randomUUID();
 
 	const sessionResponse = await fetch(
@@ -468,27 +469,10 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 					anchor: "created_at",
 					seconds: 600,
 				},
-				session: {
-					type: "transcription",
-					audio: {
-						input: {
-							noise_reduction: {
-								type: "near_field",
-							},
-							turn_detection: {
-								type: "server_vad",
-								threshold: 0.5,
-								prefix_padding_ms: 300,
-								silence_duration_ms: 200,
-							},
-							transcription: {
-								model: "gpt-4o-transcribe",
-								prompt: REALTIME_TRANSCRIPTION_PROMPT,
-								...(language ? { language } : {}),
-							},
-						},
-					},
-				},
+				session: createRealtimeTranscriptionSession({
+					language,
+					noiseReductionType: "near_field",
+				}),
 			}),
 		},
 	);
@@ -579,15 +563,10 @@ const handleRefineTranscriptAudioRequest = async (request, response) => {
 	const formData = await createFormDataRequest(request).formData();
 	const audioValue = formData.get("audio");
 	const langValue = formData.get("lang");
-	const promptValue = formData.get("prompt");
 	const language =
 		typeof langValue === "string"
-			? langValue.split("-")[0]?.trim().toLowerCase() || null
+			? normalizeTranscriptionLanguage(langValue)
 			: null;
-	const prompt =
-		typeof promptValue === "string" && promptValue.trim()
-			? promptValue.trim()
-			: TRANSCRIPT_REFINEMENT_PROMPT;
 
 	if (!(audioValue instanceof File)) {
 		sendJson(response, 400, {
@@ -616,8 +595,8 @@ const handleRefineTranscriptAudioRequest = async (request, response) => {
 		audioValue,
 		audioValue.name || "system-audio.webm",
 	);
-	openAiFormData.append("model", "gpt-4o-transcribe");
-	openAiFormData.append("prompt", prompt);
+	openAiFormData.append("model", TRANSCRIPTION_MODEL);
+	openAiFormData.append("response_format", "json");
 	if (language) {
 		openAiFormData.append("language", language);
 	}

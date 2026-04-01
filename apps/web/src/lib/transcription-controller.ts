@@ -15,6 +15,7 @@ import {
 	type TranscriptSpeaker,
 	type TranscriptUtterance,
 } from "@/lib/transcript";
+import { isSuspiciousCommittedTranscriptText } from "@/lib/transcript-guard";
 import { createTranscriptionLogger } from "@/lib/transcription-logger";
 import { TranscriptionSessionStore } from "@/lib/transcription-session-store";
 import {
@@ -36,6 +37,12 @@ import {
 
 type TranscriptTurnState = {
 	itemId: string;
+	failed: boolean;
+	logprobs?: Array<{
+		bytes?: number[];
+		logprob?: number;
+		token?: string;
+	}> | null;
 	previousItemId: string | null;
 	startedAt: number | null;
 	text: string;
@@ -707,6 +714,8 @@ export class TranscriptionController {
 		if (event.type === "partial") {
 			const existingTurn = state.turns.get(event.itemId);
 			const nextTurn = this.upsertTurn(event.speaker, event.itemId, {
+				failed: false,
+				logprobs: event.logprobs ?? existingTurn?.logprobs ?? null,
 				startedAt: existingTurn?.startedAt ?? Date.now(),
 				text: `${existingTurn?.text ?? ""}${event.textDelta}`,
 			});
@@ -719,9 +728,33 @@ export class TranscriptionController {
 			return;
 		}
 
+		if (event.type === "turn_failed") {
+			const existingTurn = state.turns.get(event.itemId);
+			this.upsertTurn(event.speaker, event.itemId, {
+				completed: false,
+				failed: true,
+				logprobs: null,
+				startedAt:
+					existingTurn?.startedAt ??
+					this.getState().liveTranscript[event.speaker].startedAt ??
+					Date.now(),
+				text: "",
+			});
+
+			if (state.liveItemId === event.itemId) {
+				state.liveItemId = null;
+				this.clearLiveTranscript(event.speaker);
+			}
+
+			this.emitOrderedTurns(event.speaker);
+			return;
+		}
+
 		const existingTurn = state.turns.get(event.itemId);
 		this.upsertTurn(event.speaker, event.itemId, {
 			completed: true,
+			failed: false,
+			logprobs: event.logprobs ?? existingTurn?.logprobs ?? null,
 			startedAt:
 				existingTurn?.startedAt ??
 				this.getState().liveTranscript[event.speaker].startedAt ??
@@ -743,7 +776,9 @@ export class TranscriptionController {
 		const currentValue = state.turns.get(itemId);
 		const nextValue: TranscriptTurnState = {
 			completed: currentValue?.completed ?? false,
+			failed: currentValue?.failed ?? false,
 			itemId,
+			logprobs: currentValue?.logprobs ?? null,
 			previousItemId: currentValue?.previousItemId ?? null,
 			startedAt: currentValue?.startedAt ?? null,
 			text: currentValue?.text ?? "",
@@ -789,7 +824,7 @@ export class TranscriptionController {
 		for (;;) {
 			const nextTurn = [...state.turns.values()].find(
 				(turn) =>
-					turn.completed &&
+					(turn.completed || turn.failed) &&
 					!state.emittedItemIds.has(turn.itemId) &&
 					turn.previousItemId === state.lastCommittedItemId,
 			);
@@ -799,7 +834,15 @@ export class TranscriptionController {
 			}
 
 			const text = nextTurn.text.trim();
-			if (text) {
+			if (
+				!nextTurn.failed &&
+				text &&
+				!isSuspiciousCommittedTranscriptText({
+					language: this.config.lang,
+					logprobs: nextTurn.logprobs ?? null,
+					text,
+				})
+			) {
 				this.appendUtterance({
 					endedAt: Date.now(),
 					id: `${state.sessionId ?? "session"}:${speaker}:${nextTurn.itemId}`,

@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
+import {
+	normalizeTranscriptionLanguage,
+	TRANSCRIPTION_MODEL,
+} from "../../../packages/ai/src/transcription.mjs";
 
 const MAX_AUDIO_FILE_SIZE_BYTES = 25 * 1024 * 1024;
-const TRANSCRIPT_REFINEMENT_PROMPT =
-	"Transcribe the audio clearly with punctuation. Preserve names, jargon, and quoted wording when possible.";
 
 const sendJson = (
 	response: ServerResponse,
@@ -72,15 +74,10 @@ export const handleRefineTranscriptAudioRequest = async (
 	const formData = await createFormDataRequest(request).formData();
 	const audioValue = formData.get("audio");
 	const langValue = formData.get("lang");
-	const promptValue = formData.get("prompt");
 	const language =
 		typeof langValue === "string"
-			? langValue.split("-")[0]?.trim().toLowerCase() || null
+			? normalizeTranscriptionLanguage(langValue)
 			: null;
-	const prompt =
-		typeof promptValue === "string" && promptValue.trim()
-			? promptValue.trim()
-			: TRANSCRIPT_REFINEMENT_PROMPT;
 
 	if (!(audioValue instanceof File)) {
 		sendJson(response, 400, {
@@ -109,8 +106,8 @@ export const handleRefineTranscriptAudioRequest = async (
 		audioValue,
 		audioValue.name || "system-audio.webm",
 	);
-	openAiFormData.append("model", "gpt-4o-transcribe");
-	openAiFormData.append("prompt", prompt);
+	openAiFormData.append("model", TRANSCRIPTION_MODEL);
+	openAiFormData.append("response_format", "json");
 	if (language) {
 		openAiFormData.append("language", language);
 	}

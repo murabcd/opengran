@@ -3,19 +3,17 @@ import {
 	MAX_TRANSCRIPT_REFINEMENT_AUDIO_BYTES,
 	type TranscriptUtterance,
 } from "@/lib/transcript";
+import { isSuspiciousRefinementTranscript } from "@/lib/transcript-guard";
 import {
 	createTranscriptText,
 	replaceTranscriptUtterancesLocally,
 } from "@/lib/transcript-session";
+import { normalizeTranscriptionLanguage } from "../../../../packages/ai/src/transcription.mjs";
 
 type RefineTranscriptAudioPayload = {
 	error?: string;
 	text?: string;
 };
-
-const TRANSCRIPT_REFINEMENT_PROMPT =
-	"Transcribe the audio clearly with punctuation. Preserve names, jargon, and quoted wording when possible.";
-const MAX_REFINEMENT_PROMPT_CHARS = 4_000;
 
 type RefineSystemAudioTranscriptArgs = {
 	blob: Blob;
@@ -257,18 +255,16 @@ const buildRefinementUploads = async ({
 const refineTranscriptUpload = async ({
 	blob,
 	language,
-	prompt,
 }: {
 	blob: Blob;
 	language?: string | null;
-	prompt: string;
 }) => {
 	const formData = new FormData();
 	formData.append("audio", blob, getAudioUploadFilename(blob));
-	if (language) {
-		formData.append("lang", language);
+	const normalizedLanguage = normalizeTranscriptionLanguage(language);
+	if (normalizedLanguage) {
+		formData.append("lang", normalizedLanguage);
 	}
-	formData.append("prompt", prompt);
 
 	const response = await fetch("/api/refine-transcript-audio", {
 		method: "POST",
@@ -285,16 +281,6 @@ const refineTranscriptUpload = async ({
 	}
 
 	return payload;
-};
-
-const createRefinementPrompt = (previousSegmentTranscript?: string | null) => {
-	const trimmedPreviousSegment = previousSegmentTranscript?.trim();
-
-	if (!trimmedPreviousSegment) {
-		return TRANSCRIPT_REFINEMENT_PROMPT;
-	}
-
-	return `${TRANSCRIPT_REFINEMENT_PROMPT}\n\nContinue from the previous transcript segment:\n${trimmedPreviousSegment.slice(-MAX_REFINEMENT_PROMPT_CHARS)}`;
 };
 
 export const refineSystemAudioTranscript = async ({
@@ -330,8 +316,6 @@ export const refineSystemAudioTranscript = async ({
 	let nextUtterances = currentUtterances;
 	const refinedUtterances: TranscriptUtterance[] = [];
 	const targetUtteranceIds = new Set<string>();
-	let previousSegmentTranscript: string | null = null;
-
 	for (const upload of uploads) {
 		const targetBatchUtterances = nextUtterances.filter(
 			(utterance) =>
@@ -347,8 +331,20 @@ export const refineSystemAudioTranscript = async ({
 		const payload = await refineTranscriptUpload({
 			blob: upload.blob,
 			language,
-			prompt: createRefinementPrompt(previousSegmentTranscript),
 		});
+		const batchReferenceText = targetBatchUtterances
+			.map((utterance) => utterance.text)
+			.join(" ");
+
+		if (
+			isSuspiciousRefinementTranscript({
+				candidateText: payload.text,
+				language,
+				referenceText: batchReferenceText,
+			})
+		) {
+			continue;
+		}
 		const batchTargetUtteranceIds = targetBatchUtterances.map(
 			(utterance) => utterance.id,
 		);
@@ -371,8 +367,6 @@ export const refineSystemAudioTranscript = async ({
 		for (const utteranceId of batchTargetUtteranceIds) {
 			targetUtteranceIds.add(utteranceId);
 		}
-
-		previousSegmentTranscript = payload.text.trim();
 	}
 
 	if (refinedUtterances.length === 0) {

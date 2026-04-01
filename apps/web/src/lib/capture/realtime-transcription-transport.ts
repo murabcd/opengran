@@ -1,5 +1,12 @@
 import type { TranscriptSpeaker } from "@/lib/transcript";
 import type { TranscriptionLogger } from "@/lib/transcription-logger";
+import { normalizeTranscriptionLanguage } from "../../../../../packages/ai/src/transcription.mjs";
+
+type RealtimeTranscriptionLogprob = {
+	bytes?: number[];
+	logprob?: number;
+	token?: string;
+};
 
 type RealtimeSessionPayload = {
 	clientSecret: string;
@@ -9,6 +16,7 @@ type OpenAIRealtimeTranscriptionEvent =
 	| {
 			type: "conversation.item.input_audio_transcription.completed";
 			item_id?: string;
+			logprobs?: RealtimeTranscriptionLogprob[];
 			transcript?: string;
 			text?: string;
 	  }
@@ -16,6 +24,14 @@ type OpenAIRealtimeTranscriptionEvent =
 			type: "conversation.item.input_audio_transcription.delta";
 			item_id?: string;
 			delta?: string;
+			logprobs?: RealtimeTranscriptionLogprob[];
+	  }
+	| {
+			type: "conversation.item.input_audio_transcription.failed";
+			item_id?: string;
+			error?: {
+				message?: string;
+			};
 	  }
 	| {
 			type: "input_audio_buffer.committed";
@@ -39,13 +55,21 @@ export type RealtimeTranscriptionTransportEvent =
 	| {
 			type: "partial";
 			itemId: string;
+			logprobs?: RealtimeTranscriptionLogprob[];
 			textDelta: string;
 			speaker: TranscriptSpeaker;
 	  }
 	| {
 			type: "final";
 			itemId: string;
+			logprobs?: RealtimeTranscriptionLogprob[];
 			text: string;
+			speaker: TranscriptSpeaker;
+	  }
+	| {
+			type: "turn_failed";
+			itemId: string;
+			message: string;
 			speaker: TranscriptSpeaker;
 	  }
 	| {
@@ -61,7 +85,7 @@ export type RealtimeTranscriptionTransport = {
 const createRealtimeSession = async (
 	lang?: string,
 ): Promise<RealtimeSessionPayload> => {
-	const language = lang?.split("-")[0]?.trim().toLowerCase();
+	const language = normalizeTranscriptionLanguage(lang);
 
 	const response = await fetch("/api/realtime-transcription-session", {
 		method: "POST",
@@ -203,6 +227,7 @@ export const connectRealtimeTranscriptionTransport = async ({
 					onEvent({
 						type: "partial",
 						itemId: realtimeEvent.item_id,
+						logprobs: realtimeEvent.logprobs,
 						textDelta: realtimeEvent.delta,
 						speaker,
 					});
@@ -221,7 +246,27 @@ export const connectRealtimeTranscriptionTransport = async ({
 				onEvent({
 					type: "final",
 					itemId: realtimeEvent.item_id,
+					logprobs: realtimeEvent.logprobs,
 					text: realtimeEvent.transcript ?? realtimeEvent.text ?? "",
+					speaker,
+				});
+				return;
+			}
+
+			if (
+				realtimeEvent.type ===
+				"conversation.item.input_audio_transcription.failed"
+			) {
+				if (!realtimeEvent.item_id) {
+					return;
+				}
+
+				onEvent({
+					type: "turn_failed",
+					itemId: realtimeEvent.item_id,
+					message:
+						realtimeEvent.error?.message ??
+						"Realtime transcription failed for the current turn.",
 					speaker,
 				});
 				return;

@@ -513,4 +513,118 @@ describe("TranscriptionController", () => {
 		expect(utterances[0]?.text).toBe("hello world");
 		expect(controller.getSnapshot().liveTranscript.you.text).toBe("");
 	});
+
+	it("drops a committed turn when the transcription logprobs are very low", async () => {
+		const { stream } = createMockStream();
+		const transportEvents: Array<
+			(event: RealtimeTranscriptionTransportEvent) => void
+		> = [];
+		const createMicrophoneInputStream = vi.fn(async () => stream);
+		const connectTransport = vi.fn(
+			async (args: {
+				onEvent: (event: RealtimeTranscriptionTransportEvent) => void;
+			}) => {
+				transportEvents.push(args.onEvent);
+				return {
+					close: vi.fn(async () => {}),
+				} satisfies RealtimeTranscriptionTransport;
+			},
+		);
+		const controller = createController({
+			connectTransport,
+			createMicrophoneInputStream,
+		});
+		const utterances: TranscriptionControllerState["utterances"] = [];
+		controller.subscribeToEvents((event) => {
+			if (event.type === "session.utterance_committed") {
+				utterances.push(event.utterance);
+			}
+		});
+
+		await controller.start();
+		transportEvents[0]?.({
+			itemId: "turn-1",
+			speaker: "you",
+			text: "hello hello hello hello hello hello",
+			logprobs: Array.from({ length: 6 }, () => ({
+				logprob: -3,
+				token: "hello",
+			})),
+			type: "final",
+		});
+		transportEvents[0]?.({
+			itemId: "turn-1",
+			previousItemId: null,
+			speaker: "you",
+			type: "committed",
+		});
+
+		expect(utterances).toHaveLength(0);
+		expect(controller.getSnapshot().liveTranscript.you.text).toBe("");
+	});
+
+	it("drops only the failed turn and still emits later committed turns", async () => {
+		const { stream } = createMockStream();
+		const transportEvents: Array<
+			(event: RealtimeTranscriptionTransportEvent) => void
+		> = [];
+		const createMicrophoneInputStream = vi.fn(async () => stream);
+		const connectTransport = vi.fn(
+			async (args: {
+				onEvent: (event: RealtimeTranscriptionTransportEvent) => void;
+			}) => {
+				transportEvents.push(args.onEvent);
+				return {
+					close: vi.fn(async () => {}),
+				} satisfies RealtimeTranscriptionTransport;
+			},
+		);
+		const controller = createController({
+			connectTransport,
+			createMicrophoneInputStream,
+		});
+		const utterances: TranscriptionControllerState["utterances"] = [];
+		controller.subscribeToEvents((event) => {
+			if (event.type === "session.utterance_committed") {
+				utterances.push(event.utterance);
+			}
+		});
+
+		await controller.start();
+		transportEvents[0]?.({
+			itemId: "turn-1",
+			speaker: "you",
+			textDelta: "bad live turn",
+			type: "partial",
+		});
+
+		expect(controller.getSnapshot().liveTranscript.you.text).toBe(
+			"bad live turn",
+		);
+
+		transportEvents[0]?.({
+			itemId: "turn-1",
+			message: "ASR failed for this item.",
+			speaker: "you",
+			type: "turn_failed",
+		});
+		transportEvents[0]?.({
+			itemId: "turn-2",
+			previousItemId: "turn-1",
+			speaker: "you",
+			type: "committed",
+		});
+		transportEvents[0]?.({
+			itemId: "turn-2",
+			speaker: "you",
+			text: "working turn",
+			type: "final",
+		});
+
+		expect(controller.getSnapshot().phase).toBe("listening");
+		expect(controller.getSnapshot().isListening).toBe(true);
+		expect(controller.getSnapshot().liveTranscript.you.text).toBe("");
+		expect(utterances).toHaveLength(1);
+		expect(utterances[0]?.text).toBe("working turn");
+	});
 });

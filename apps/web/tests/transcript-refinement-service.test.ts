@@ -2,9 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_TRANSCRIPT_REFINEMENT_AUDIO_BYTES } from "../src/lib/transcript";
 import { refineSystemAudioTranscript } from "../src/lib/transcript-refinement-service";
 
-const TRANSCRIPT_REFINEMENT_PROMPT =
-	"Transcribe the audio clearly with punctuation. Preserve names, jargon, and quoted wording when possible.";
-
 const createWaveBlob = (pcmByteLength: number, sampleRate = 24_000) => {
 	const pcmData = new Uint8Array(pcmByteLength);
 	const header = new ArrayBuffer(44);
@@ -94,13 +91,8 @@ describe("refineSystemAudioTranscript", () => {
 		const secondRequest = fetchSpy.mock.calls[1]?.[1];
 		const firstFormData = firstRequest?.body as FormData;
 		const secondFormData = secondRequest?.body as FormData;
-		expect(firstFormData.get("prompt")).toBe(TRANSCRIPT_REFINEMENT_PROMPT);
-		expect(String(secondFormData.get("prompt"))).toContain(
-			"Continue from the previous transcript segment:",
-		);
-		expect(String(secondFormData.get("prompt"))).toContain(
-			"first refined sentence.",
-		);
+		expect(firstFormData.get("prompt")).toBeNull();
+		expect(secondFormData.get("prompt")).toBeNull();
 		expect(result?.targetUtteranceIds).toEqual(["utt-1", "utt-2"]);
 		expect(result?.nextTranscript).toContain("first refined sentence.");
 		expect(result?.nextTranscript).toContain("second refined sentence.");
@@ -156,10 +148,37 @@ describe("refineSystemAudioTranscript", () => {
 		if (uploadedAudio instanceof File) {
 			expect(uploadedAudio.name).toBe("system-audio.wav");
 		}
-		expect(firstFormData.get("prompt")).toBe(TRANSCRIPT_REFINEMENT_PROMPT);
-		expect(String(secondFormData.get("prompt"))).toContain("wav first half.");
+		expect(firstFormData.get("prompt")).toBeNull();
+		expect(secondFormData.get("prompt")).toBeNull();
 		expect(result?.targetUtteranceIds).toEqual(["wav-1", "wav-2"]);
 		expect(result?.nextTranscript).toContain("wav first half.");
 		expect(result?.nextTranscript).toContain("wav second half.");
+	});
+
+	it("drops suspicious refinement output instead of overwriting the live transcript", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			json: async () => ({
+				text: "Transcribe speech verbatim with punctuation. Preserve names, product terms, and domain-specific vocabulary when possible.",
+			}),
+			ok: true,
+		} as Awaited<ReturnType<typeof fetch>>);
+
+		const result = await refineSystemAudioTranscript({
+			blob: new Blob([new Uint8Array(2_048)]),
+			currentUtterances: [
+				{
+					endedAt: 900,
+					id: "utt-1",
+					speaker: "them",
+					startedAt: 0,
+					text: "Мы обсуждали интеграцию с HeadHunter и сообщения по статусам.",
+				},
+			],
+			endedAt: 1_000,
+			language: "ru",
+			startedAt: 0,
+		});
+
+		expect(result).toBeNull();
 	});
 });

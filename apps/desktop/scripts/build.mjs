@@ -67,3 +67,7 @@ await cp(
 	resolve(packageRoot, "../../packages/ai/src/prompts.mjs"),
 	resolve(bundlePromptsDir, "prompts.mjs"),
 );
+await cp(
+	resolve(packageRoot, "../../packages/ai/src/transcription.mjs"),
+	resolve(bundlePromptsDir, "transcription.mjs"),
+);

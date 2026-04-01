@@ -31,6 +31,11 @@ import {
 import electronUpdater from "electron-updater";
 import WebSocket from "ws";
 import { api } from "../../../convex/_generated/api.js";
+import {
+	createRealtimeTranscriptionSession,
+	isLowConfidenceTranscriptLogprobs,
+	normalizeTranscriptionLanguage,
+} from "../../../packages/ai/src/transcription.mjs";
 import { getDesktopAuthClient } from "./auth-client.mjs";
 import { loadRootEnv } from "./env.mjs";
 import { startLocalServer } from "./local-server.mjs";
@@ -69,8 +74,6 @@ const maxRecoveryAttempts = 3;
 const recoveryBackoffMs = [750, 1_500, 3_000];
 const systemAudioAttachRetryBackoffMs = [750, 1_500, 3_000];
 const realtimeSessionRolloverMs = 29 * 60 * 1000;
-const realtimeTranscriptionPrompt =
-	"Transcribe speech verbatim with punctuation. Preserve names, product terms, and domain-specific vocabulary when possible.";
 const transcriptDraftStorageVersion = 1;
 const transcriptDraftMaxAgeMs = 72 * 60 * 60 * 1000;
 const meetingDetectionDebounceMs = 8_000;
@@ -2209,7 +2212,7 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 	for (;;) {
 		const nextTurn = [...state.turns.values()].find(
 			(turn) =>
-				turn.completed &&
+				(turn.completed || turn.failed) &&
 				!state.emittedItemIds.has(turn.itemId) &&
 				turn.previousItemId === state.lastCommittedItemId,
 		);
@@ -2219,7 +2222,14 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 		}
 
 		const text = nextTurn.text.trim();
-		if (text) {
+		if (
+			!nextTurn.failed &&
+			text &&
+			!isLowConfidenceTranscriptLogprobs({
+				logprobs: nextTurn.logprobs ?? null,
+				text,
+			})
+		) {
 			appendTranscriptionUtterance({
 				endedAt: Date.now(),
 				id: `${state.sessionId ?? "session"}:${speaker}:${nextTurn.itemId}`,
@@ -2244,7 +2254,9 @@ const upsertTranscriptionTurn = (speaker, itemId, updates) => {
 	const currentValue = state.turns.get(itemId);
 	const nextValue = {
 		completed: currentValue?.completed ?? false,
+		failed: currentValue?.failed ?? false,
 		itemId,
+		logprobs: currentValue?.logprobs ?? null,
 		previousItemId: currentValue?.previousItemId ?? null,
 		startedAt: currentValue?.startedAt ?? null,
 		text: currentValue?.text ?? "",
@@ -2606,6 +2618,7 @@ const parseDesktopRealtimeTransportEvent = ({ event, speaker }) => {
 		typeof event.delta === "string"
 	) {
 		return {
+			logprobs: event.logprobs ?? null,
 			speaker,
 			type: "partial",
 			itemId: event.item_id,
@@ -2618,10 +2631,26 @@ const parseDesktopRealtimeTransportEvent = ({ event, speaker }) => {
 		event.item_id
 	) {
 		return {
+			logprobs: event.logprobs ?? null,
 			speaker,
 			type: "final",
 			itemId: event.item_id,
 			text: event.transcript ?? event.text ?? "",
+		};
+	}
+
+	if (event.type === "conversation.item.input_audio_transcription.failed") {
+		if (!event.item_id) {
+			return null;
+		}
+
+		return {
+			itemId: event.item_id,
+			message:
+				event.error?.message ??
+				"Realtime transcription failed for the current turn.",
+			speaker,
+			type: "turn_failed",
 		};
 	}
 
@@ -2681,29 +2710,20 @@ const scheduleTranscriptionRollover = () => {
 };
 
 const createDesktopRealtimeSessionConfig = ({ lang, source }) => {
-	const language = lang?.split("-")[0]?.trim().toLowerCase();
+	const language = normalizeTranscriptionLanguage(lang);
+	const session = createRealtimeTranscriptionSession({
+		language,
+		noiseReductionType: source === "microphone" ? "near_field" : "far_field",
+	});
 
 	return {
-		type: "transcription",
+		...session,
 		audio: {
 			input: {
+				...session.audio.input,
 				format: {
 					rate: 24_000,
 					type: "audio/pcm",
-				},
-				noise_reduction: {
-					type: source === "microphone" ? "near_field" : "far_field",
-				},
-				transcription: {
-					...(language ? { language } : {}),
-					model: "gpt-4o-transcribe",
-					prompt: realtimeTranscriptionPrompt,
-				},
-				turn_detection: {
-					type: "server_vad",
-					threshold: 0.5,
-					prefix_padding_ms: 300,
-					silence_duration_ms: 200,
 				},
 			},
 		},
@@ -3098,6 +3118,8 @@ const handleDesktopRealtimeTransportEvent = async (event) => {
 	if (event.type === "partial") {
 		const existingTurn = state.turns.get(event.itemId);
 		const nextTurn = upsertTranscriptionTurn(event.speaker, event.itemId, {
+			failed: false,
+			logprobs: event.logprobs ?? existingTurn?.logprobs ?? null,
 			startedAt: existingTurn?.startedAt ?? Date.now(),
 			text: `${existingTurn?.text ?? ""}${event.textDelta}`,
 		});
@@ -3110,10 +3132,35 @@ const handleDesktopRealtimeTransportEvent = async (event) => {
 		return;
 	}
 
+	if (event.type === "turn_failed") {
+		const existingTurn = state.turns.get(event.itemId);
+		upsertTranscriptionTurn(event.speaker, event.itemId, {
+			completed: false,
+			failed: true,
+			logprobs: null,
+			startedAt:
+				existingTurn?.startedAt ??
+				latestTranscriptionSessionState.liveTranscript[event.speaker]
+					.startedAt ??
+				Date.now(),
+			text: "",
+		});
+
+		if (state.liveItemId === event.itemId) {
+			state.liveItemId = null;
+			clearTranscriptionLiveTranscript(event.speaker);
+		}
+
+		emitTranscriptionOrderedTurns(event.speaker);
+		return;
+	}
+
 	if (event.type === "final") {
 		const existingTurn = state.turns.get(event.itemId);
 		upsertTranscriptionTurn(event.speaker, event.itemId, {
 			completed: true,
+			failed: false,
+			logprobs: event.logprobs ?? existingTurn?.logprobs ?? null,
 			startedAt:
 				existingTurn?.startedAt ??
 				latestTranscriptionSessionState.liveTranscript[event.speaker]

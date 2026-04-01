@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-
-const REALTIME_TRANSCRIPTION_PROMPT =
-	"Transcribe speech verbatim with punctuation. Preserve names, product terms, and domain-specific vocabulary when possible.";
+import {
+	createRealtimeTranscriptionSession,
+	normalizeTranscriptionLanguage,
+} from "../../../packages/ai/src/transcription.mjs";
 
 const sendJson = (
 	response: ServerResponse,
@@ -65,7 +66,7 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 	}
 
 	const { lang } = await readJsonBody(request);
-	const language = lang?.split("-")[0]?.trim().toLowerCase();
+	const language = normalizeTranscriptionLanguage(lang);
 	const requestId = randomUUID();
 
 	const sessionResponse = await fetch(
@@ -82,27 +83,10 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 					anchor: "created_at",
 					seconds: 600,
 				},
-				session: {
-					type: "transcription",
-					audio: {
-						input: {
-							noise_reduction: {
-								type: "near_field",
-							},
-							turn_detection: {
-								type: "server_vad",
-								threshold: 0.5,
-								prefix_padding_ms: 300,
-								silence_duration_ms: 200,
-							},
-							transcription: {
-								model: "gpt-4o-transcribe",
-								prompt: REALTIME_TRANSCRIPTION_PROMPT,
-								...(language ? { language } : {}),
-							},
-						},
-					},
-				},
+				session: createRealtimeTranscriptionSession({
+					language,
+					noiseReductionType: "near_field",
+				}),
 			}),
 		},
 	);
