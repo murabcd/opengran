@@ -545,7 +545,7 @@ function TrashEmptyState({ hasArchivedItems }: { hasArchivedItems: boolean }) {
 					<EmptyDescription className="text-xs">
 						{hasArchivedItems
 							? "Try a different search."
-							: "Deleted notes and chats will appear here."}
+							: "Deleted notes and chats will appear here"}
 					</EmptyDescription>
 				</EmptyHeader>
 			</Empty>
