@@ -1,5 +1,11 @@
 # desktop
 
+## 0.1.2
+
+### Patch Changes
+
+- fix the standalone desktop packaging regression by bundling the shared template-stream parser with the app instead of importing it from the web workspace
+
 ## 0.1.1
 
 ### Patch Changes

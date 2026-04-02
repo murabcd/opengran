@@ -17,7 +17,7 @@ import type { Id } from "./_generated/dataModel";
 import {
 	parseTemplateStreamToStructuredNote,
 	validateTemplateStream,
-} from "../apps/web/src/lib/note-template-stream";
+} from "../packages/ai/src/note-template-stream.mjs";
 import {
 	APPLY_TEMPLATE_SYSTEM_PROMPT,
 	buildApplyTemplatePrompt,

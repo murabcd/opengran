@@ -19,6 +19,10 @@ import { ConvexHttpClient } from "convex/browser";
 import { z } from "zod";
 import { api } from "../../../convex/_generated/api.js";
 import {
+	parseTemplateStreamToStructuredNote,
+	validateTemplateStream,
+} from "../../../packages/ai/src/note-template-stream.mjs";
+import {
 	APPLY_TEMPLATE_SYSTEM_PROMPT,
 	buildApplyTemplatePrompt,
 	buildChatSystemPrompt,
@@ -31,10 +35,6 @@ import {
 	normalizeTranscriptionLanguage,
 	TRANSCRIPTION_MODEL,
 } from "../../../packages/ai/src/transcription.mjs";
-import {
-	parseTemplateStreamToStructuredNote,
-	validateTemplateStream,
-} from "../../web/src/lib/note-template-stream.ts";
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
 const webDistDir = resolve(runtimeDir, "../../web/dist");
