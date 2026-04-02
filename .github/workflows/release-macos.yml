@@ -54,6 +54,21 @@ jobs:
           bun run typecheck
           bun run test
 
+      - name: Validate Convex production deploy configuration
+        env:
+          CONVEX_DEPLOY_KEY_SECRET: ${{ secrets.CONVEX_DEPLOY_KEY_PROD }}
+        run: |
+          if [ -z "$CONVEX_DEPLOY_KEY_SECRET" ]; then
+            echo "Missing required secret: CONVEX_DEPLOY_KEY_PROD"
+            echo "Generate a production deploy key for precious-crane-700 in the Convex dashboard and add it as a GitHub Actions secret."
+            exit 1
+          fi
+
+      - name: Deploy Convex production backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY_PROD }}
+        run: bunx convex deploy --typecheck disable
+
       - name: Validate signing configuration
         env:
           REQUIRE_MACOS_SIGNING: ${{ vars.REQUIRE_MACOS_SIGNING || 'false' }}
