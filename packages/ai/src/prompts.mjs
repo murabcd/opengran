@@ -1,14 +1,20 @@
 const joinPromptSections = (sections) => sections.filter(Boolean).join(" ");
 
+const normalizePromptText = (value) =>
+	typeof value === "string" ? value.trim() : "";
+
 const buildUserProfilePromptSection = ({
 	name = "",
 	jobTitle = "",
 	companyName = "",
 } = {}) => {
+	const normalizedName = normalizePromptText(name);
+	const normalizedJobTitle = normalizePromptText(jobTitle);
+	const normalizedCompanyName = normalizePromptText(companyName);
 	const profileLines = [
-		name.trim() ? `- Name: ${name.trim()}` : "",
-		jobTitle.trim() ? `- Job title: ${jobTitle.trim()}` : "",
-		companyName.trim() ? `- Company: ${companyName.trim()}` : "",
+		normalizedName ? `- Name: ${normalizedName}` : "",
+		normalizedJobTitle ? `- Job title: ${normalizedJobTitle}` : "",
+		normalizedCompanyName ? `- Company: ${normalizedCompanyName}` : "",
 	].filter(Boolean);
 
 	if (profileLines.length === 0) {
@@ -81,10 +87,18 @@ export const buildEnhancedNotePrompt = ({
 	noteText = "",
 } = {}) =>
 	[
-		title.trim() ? `Current note title: ${title.trim()}` : "",
-		rawNotes.trim() ? `User notes:\n${rawNotes.trim()}` : "",
-		transcript.trim() ? `Raw transcript:\n${transcript.trim()}` : "",
-		noteText.trim() ? `Source note text:\n${noteText.trim()}` : "",
+		normalizePromptText(title)
+			? `Current note title: ${normalizePromptText(title)}`
+			: "",
+		normalizePromptText(rawNotes)
+			? `User notes:\n${normalizePromptText(rawNotes)}`
+			: "",
+		normalizePromptText(transcript)
+			? `Raw transcript:\n${normalizePromptText(transcript)}`
+			: "",
+		normalizePromptText(noteText)
+			? `Source note text:\n${normalizePromptText(noteText)}`
+			: "",
 		[
 			"Rewrite this into a polished note with:",
 			"- a concise title",
@@ -118,9 +132,15 @@ export const buildApplyTemplatePrompt = ({
 	noteText = "",
 } = {}) =>
 	[
-		title.trim() ? `Current note title: ${title.trim()}` : "",
-		templateName.trim() ? `Template name: ${templateName.trim()}` : "",
-		meetingContext.trim() ? `Template context:\n${meetingContext.trim()}` : "",
+		normalizePromptText(title)
+			? `Current note title: ${normalizePromptText(title)}`
+			: "",
+		normalizePromptText(templateName)
+			? `Template name: ${normalizePromptText(templateName)}`
+			: "",
+		normalizePromptText(meetingContext)
+			? `Template context:\n${normalizePromptText(meetingContext)}`
+			: "",
 		[
 			"Template sections:",
 			...templateSections.map(
@@ -130,7 +150,7 @@ export const buildApplyTemplatePrompt = ({
 					}`,
 			),
 		].join("\n"),
-		`Source note:\n${noteText.trim()}`,
+		`Source note:\n${normalizePromptText(noteText)}`,
 		[
 			"Return every template section in the same order.",
 			"Keep each section aligned to the matching template section.",
