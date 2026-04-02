@@ -34,6 +34,11 @@ declare global {
 		permissions: DesktopPermissionStatus[];
 	}
 
+	interface DesktopPreferences {
+		launchAtLogin: boolean;
+		canLaunchAtLogin: boolean;
+	}
+
 	type DesktopTranscriptionControllerPhase =
 		| "idle"
 		| "starting"
@@ -148,6 +153,7 @@ declare global {
 				throw?: boolean;
 			}) => Promise<unknown>;
 			getPermissionsStatus: () => Promise<DesktopPermissionsStatus>;
+			getPreferences: () => Promise<DesktopPreferences>;
 			getAuthCallbackUrl: () => Promise<{
 				url: string;
 			}>;
@@ -173,6 +179,7 @@ declare global {
 			openPermissionSettings: (permissionId: DesktopPermissionId) => Promise<{
 				ok: boolean;
 			}>;
+			setLaunchAtLogin: (enabled: boolean) => Promise<DesktopPreferences>;
 			getTranscriptionSessionState: () => Promise<DesktopTranscriptionControllerState>;
 			getMeetingDetectionState: () => Promise<DesktopMeetingDetectionState>;
 			configureTranscriptionSession: (options: {

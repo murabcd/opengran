@@ -71,6 +71,7 @@ import {
 	Link2,
 	LoaderCircle,
 	Paintbrush,
+	SlidersHorizontal,
 	UserRound,
 } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
@@ -98,6 +99,7 @@ type SettingsUser = {
 export type SettingsPage =
 	| "Profile"
 	| "Appearance"
+	| "Preferences"
 	| "Notifications"
 	| "Workspace"
 	| "Calendar"
@@ -117,12 +119,18 @@ type SettingsDialogProps = {
 const settingsNav = [
 	{ name: "Profile", icon: UserRound },
 	{ name: "Appearance", icon: Paintbrush },
+	{ name: "Preferences", icon: SlidersHorizontal },
 	{ name: "Notifications", icon: Bell },
 	{ name: "Workspace", icon: FolderKanban },
 	{ name: "Calendar", icon: CalendarDays },
 	{ name: "Connections", icon: Link2 },
 	{ name: "Data controls", icon: Database },
 ] as const;
+
+const getSettingsNav = (isDesktopApp: boolean) =>
+	isDesktopApp
+		? settingsNav
+		: settingsNav.filter((item) => item.name !== "Preferences");
 
 const GOOGLE_CALENDAR_SCOPES = [
 	"openid",
@@ -428,7 +436,10 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
 	const [selectedPage, setSelectedPage] = useState<SettingsPage | null>(null);
 	const { data: session } = authClient.useSession();
+	const isDesktopApp =
+		typeof window !== "undefined" && Boolean(window.openGranDesktop);
 	const activePage = selectedPage ?? initialPage;
+	const navItems = getSettingsNav(isDesktopApp);
 
 	const handlePageSelect = (page: SettingsPage) => {
 		setSelectedPage(page);
@@ -457,7 +468,7 @@ export function SettingsDialog({
 							<SidebarGroup>
 								<SidebarGroupContent>
 									<SidebarMenu>
-										{settingsNav.map((item) => (
+										{navItems.map((item) => (
 											<SidebarMenuItem key={item.name}>
 												<SidebarMenuButton
 													asChild
@@ -498,7 +509,7 @@ export function SettingsDialog({
 									viewportClassName="w-full"
 								>
 									<div className="flex w-max gap-2 py-2">
-										{settingsNav.map((item) => (
+										{navItems.map((item) => (
 											<Button
 												key={item.name}
 												variant={
@@ -530,6 +541,8 @@ export function SettingsDialog({
 								/>
 							) : activePage === "Appearance" ? (
 								<AppearanceSettings />
+							) : activePage === "Preferences" ? (
+								<PreferencesSettings />
 							) : activePage === "Notifications" ? (
 								<NotificationsSettings />
 							) : activePage === "Workspace" ? (
@@ -758,7 +771,7 @@ function NotificationsSettings() {
 	return (
 		<div className="py-4">
 			<FieldGroup className="gap-4">
-				<NotificationPreferenceRow
+				<SettingsSwitchRow
 					id="settings-scheduled-meetings"
 					label="Scheduled meetings"
 					checked={notificationPreferences?.notifyForScheduledMeetings ?? false}
@@ -771,7 +784,7 @@ function NotificationsSettings() {
 						});
 					}}
 				/>
-				<NotificationPreferenceRow
+				<SettingsSwitchRow
 					id="settings-auto-detected-meetings"
 					label="Auto-detected meetings"
 					checked={
@@ -791,7 +804,117 @@ function NotificationsSettings() {
 	);
 }
 
-function NotificationPreferenceRow({
+function PreferencesSettings() {
+	const [preferences, setPreferences] = useState<DesktopPreferences | null>(
+		null,
+	);
+	const [isLoadingPreferences, setIsLoadingPreferences] = useState(
+		typeof window !== "undefined" && Boolean(window.openGranDesktop),
+	);
+	const [isSavingLaunchAtLogin, setIsSavingLaunchAtLogin] = useState(false);
+
+	useEffect(() => {
+		if (!window.openGranDesktop) {
+			setIsLoadingPreferences(false);
+			return;
+		}
+
+		let isCancelled = false;
+
+		const loadPreferences = async () => {
+			setIsLoadingPreferences(true);
+
+			try {
+				const nextPreferences = await window.openGranDesktop.getPreferences();
+				if (!isCancelled) {
+					setPreferences(nextPreferences);
+				}
+			} catch (error) {
+				console.error("Failed to load desktop preferences", error);
+				if (!isCancelled) {
+					toast.error("Failed to load desktop preferences");
+				}
+			} finally {
+				if (!isCancelled) {
+					setIsLoadingPreferences(false);
+				}
+			}
+		};
+
+		void loadPreferences();
+
+		return () => {
+			isCancelled = true;
+		};
+	}, []);
+
+	const handleLaunchAtLoginChange = async (checked: boolean) => {
+		if (!window.openGranDesktop) {
+			return;
+		}
+
+		const previousPreferences = preferences;
+		setIsSavingLaunchAtLogin(true);
+		setPreferences((currentPreferences) =>
+			currentPreferences
+				? {
+						...currentPreferences,
+						launchAtLogin: checked,
+					}
+				: currentPreferences,
+		);
+
+		try {
+			const nextPreferences =
+				await window.openGranDesktop.setLaunchAtLogin(checked);
+			setPreferences(nextPreferences);
+		} catch (error) {
+			console.error("Failed to update launch at login preference", error);
+			setPreferences(previousPreferences);
+			toast.error("Failed to update launch at login preference");
+		} finally {
+			setIsSavingLaunchAtLogin(false);
+		}
+	};
+
+	if (!window.openGranDesktop) {
+		return (
+			<div className="py-4 text-sm text-muted-foreground">
+				Preferences are available in the desktop app.
+			</div>
+		);
+	}
+
+	if (isLoadingPreferences && !preferences) {
+		return (
+			<div className="py-4 text-sm text-muted-foreground">
+				Loading desktop preferences...
+			</div>
+		);
+	}
+
+	return (
+		<div className="py-4">
+			<FieldGroup className="gap-4">
+				<SettingsSwitchRow
+					id="settings-launch-at-login"
+					label="Launch at login"
+					checked={preferences?.launchAtLogin ?? false}
+					disabled={
+						isLoadingPreferences ||
+						isSavingLaunchAtLogin ||
+						!(preferences?.canLaunchAtLogin ?? false)
+					}
+					onCheckedChange={(checked) => {
+						void handleLaunchAtLoginChange(checked);
+					}}
+				/>
+			</FieldGroup>
+		</div>
+	);
+}
+
+function SettingsSwitchRow({
 	id,
 	label,
 	checked,

@@ -4747,6 +4747,42 @@ const getPermissionsStatus = () => ({
 	permissions: [getMicrophonePermission(), getSystemAudioPermission()],
 });
 
+const getDesktopPreferences = () => {
+	const canLaunchAtLogin =
+		app.isPackaged === true &&
+		(process.platform === "darwin" || process.platform === "win32");
+
+	if (!canLaunchAtLogin) {
+		return {
+			launchAtLogin: false,
+			canLaunchAtLogin: false,
+		};
+	}
+
+	return {
+		launchAtLogin: app.getLoginItemSettings().openAtLogin === true,
+		canLaunchAtLogin: true,
+	};
+};
+
+const setLaunchAtLogin = async (enabled) => {
+	if (typeof enabled !== "boolean") {
+		throw new Error("Launch at login must be a boolean.");
+	}
+
+	if (!getDesktopPreferences().canLaunchAtLogin) {
+		throw new Error(
+			"Launch at login is not available on this desktop platform.",
+		);
+	}
+
+	app.setLoginItemSettings({
+		openAtLogin: enabled,
+	});
+
+	return getDesktopPreferences();
+};
+
 const requestPermission = async (permissionId) => {
 	if (permissionId === "systemAudio") {
 		if (process.platform !== "darwin") {
@@ -4848,6 +4884,10 @@ ipcMain.handle("app:get-meta", () => ({
 
 ipcMain.handle("app:get-runtime-config", async () => {
 	return await getRuntimeConfig();
+});
+
+ipcMain.handle("app:get-preferences", async () => {
+	return getDesktopPreferences();
 });
 
 ipcMain.handle("app:auth-fetch", async (_event, request) => {
@@ -5004,6 +5044,10 @@ ipcMain.handle("app:open-permission-settings", async (_event, permissionId) => {
 	}
 
 	return await openPermissionSettings(permissionId);
+});
+
+ipcMain.handle("app:set-launch-at-login", async (_event, enabled) => {
+	return await setLaunchAtLogin(enabled);
 });
 
 ipcMain.handle("app:start-system-audio-capture", async () => {

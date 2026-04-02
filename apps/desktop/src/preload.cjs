@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 	getRuntimeConfig: () => ipcRenderer.invoke("app:get-runtime-config"),
 	authFetch: (request) => ipcRenderer.invoke("app:auth-fetch", request),
 	getPermissionsStatus: () => ipcRenderer.invoke("app:get-permissions-status"),
+	getPreferences: () => ipcRenderer.invoke("app:get-preferences"),
 	getAuthCallbackUrl: () => ipcRenderer.invoke("app:get-auth-callback-url"),
 	getShareBaseUrl: () => ipcRenderer.invoke("app:get-share-base-url"),
 	setActiveWorkspaceId: (workspaceId) =>
@@ -26,6 +27,8 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 		ipcRenderer.invoke("app:request-permission", permissionId),
 	openPermissionSettings: (permissionId) =>
 		ipcRenderer.invoke("app:open-permission-settings", permissionId),
+	setLaunchAtLogin: (enabled) =>
+		ipcRenderer.invoke("app:set-launch-at-login", enabled),
 	getTranscriptionSessionState: () =>
 		ipcRenderer.invoke("app:get-transcription-session-state"),
 	getMeetingDetectionState: () =>
