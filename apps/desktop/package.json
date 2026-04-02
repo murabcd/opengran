@@ -8,7 +8,8 @@
   "type": "module",
   "main": "./src/main.mjs",
   "scripts": {
-    "dev": "node ./scripts/dev-bundled.mjs",
+    "dev": "node ./scripts/dev.mjs",
+    "dev:bundled": "node ./scripts/dev-bundled.mjs",
     "build": "node ./scripts/build.mjs",
     "package:mac:dir": "electron-builder --mac dir",
     "package:mac": "electron-builder --mac dmg",
