@@ -551,6 +551,72 @@ describe("NoteComposer", () => {
 		).toBeNull();
 	});
 
+	it("shows only the selected chat presentation after switching modes", async () => {
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 4;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+
+		await waitFor(() => {
+			expect(screen.getAllByPlaceholderText("Continue chat")).toHaveLength(1);
+		});
+
+		fireEvent.click(screen.getByText("Floating"));
+
+		await waitFor(() => {
+			expect(screen.getAllByPlaceholderText("Continue chat")).toHaveLength(1);
+		});
+	});
+
 	it("moves the inline chat composer text to the left when speech controls are hidden", async () => {
 		let queryCall = 0;
 
@@ -709,7 +775,7 @@ describe("NoteComposer", () => {
 		expect(consentText).toBeDefined();
 		expect(footerSurface?.className).toContain("w-full");
 		expect(footerSurface?.className).toContain("border");
-		expect(footerSurface?.className).toContain("bg-card");
+		expect(footerSurface?.className).toContain("bg-background");
 		expect(footerSurface?.className).toContain("overflow-hidden");
 		expect(footerSpacingContainer).not.toBeNull();
 		expect(footerSpacingContainer?.className).toContain("px-6");

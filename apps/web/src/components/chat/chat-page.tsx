@@ -14,6 +14,7 @@ import { DefaultChatTransport } from "ai";
 import { useMutation, useQuery } from "convex/react";
 import { FileText } from "lucide-react";
 import * as React from "react";
+import { toast } from "sonner";
 import { ChatMessages } from "@/components/chat/messages";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
@@ -36,6 +37,7 @@ type ChatPageProps = {
 	onOpenChat: (chatId: string) => void;
 	onChatRemoved: (chatId: string) => void;
 	activeWorkspace: WorkspaceRecord | null;
+	onOpenConnectionsSettings: () => void;
 };
 
 const useChatPageController = ({
@@ -309,6 +311,17 @@ const useChatPageController = ({
 		onChatRemoved,
 	]);
 
+	const handleWebSearchEnabledChange = React.useCallback((enabled: boolean) => {
+		setWebSearchEnabled((current) => {
+			if (current === enabled) {
+				return current;
+			}
+
+			toast.success(enabled ? "Web search enabled" : "Web search disabled");
+			return enabled;
+		});
+	}, []);
+
 	return {
 		appsEnabled,
 		confirmTrashChatId,
@@ -320,6 +333,7 @@ const useChatPageController = ({
 		handleDraftKeyDown,
 		handleMoveChatToTrash,
 		handleSubmit,
+		handleWebSearchEnabledChange,
 		hasMessages,
 		isLoading,
 		isMovingChatToTrash,
@@ -341,7 +355,6 @@ const useChatPageController = ({
 		setSelectedModel,
 		setSourceSearchTerm,
 		setSourcesOpen,
-		setWebSearchEnabled,
 		shouldSearchDocuments,
 		sourceSearchTerm,
 		sourcesOpen,
@@ -395,6 +408,7 @@ export function ChatPage({
 	onOpenChat,
 	onChatRemoved,
 	activeWorkspace,
+	onOpenConnectionsSettings,
 }: ChatPageProps) {
 	const controller = useChatPageController({
 		chatId,
@@ -436,7 +450,7 @@ export function ChatPage({
 			sourcesOpen={controller.sourcesOpen}
 			onSourcesOpenChange={controller.setSourcesOpen}
 			webSearchEnabled={controller.webSearchEnabled}
-			onWebSearchEnabledChange={controller.setWebSearchEnabled}
+			onWebSearchEnabledChange={controller.handleWebSearchEnabledChange}
 			appsEnabled={controller.appsEnabled}
 			onAppsEnabledChange={controller.setAppsEnabled}
 			sourceSearchTerm={controller.sourceSearchTerm}
@@ -448,6 +462,7 @@ export function ChatPage({
 			appSources={controller.appSources}
 			onToggleSource={controller.onToggleSource}
 			onClearSelectedSources={controller.handleClearSelectedSources}
+			onOpenConnectionsSettings={onOpenConnectionsSettings}
 		/>
 	);
 

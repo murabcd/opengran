@@ -451,6 +451,11 @@ function useNoteActionsMenu({
 			});
 	}, [activeWorkspaceId, isMovingToTrash, moveToTrash, noteId, onMoveToTrash]);
 
+	const handleConfirmTrashOpen = React.useCallback(() => {
+		setMenuOpen(false);
+		setConfirmOpen(true);
+	}, []);
+
 	const handleStartRename = React.useCallback(() => {
 		setMenuOpen(false);
 		preventMenuCloseAutoFocusRef.current = true;
@@ -485,6 +490,7 @@ function useNoteActionsMenu({
 		handleSetVisibility,
 		handleCopyLink,
 		handleMoveToTrash,
+		handleConfirmTrashOpen,
 		handleStartRename,
 		handleRenameCancel,
 		handleRename,
@@ -529,6 +535,7 @@ export function NoteActionsMenu({
 		handleSetVisibility,
 		handleCopyLink,
 		handleMoveToTrash,
+		handleConfirmTrashOpen,
 		handleStartRename,
 		handleRenameCancel,
 		handleRename,
@@ -559,7 +566,7 @@ export function NoteActionsMenu({
 							isUpdatingStar={isUpdatingStar}
 							onToggleStar={handleToggleStar}
 							onCopyLink={handleCopyLink}
-							onConfirmTrash={() => setConfirmOpen(true)}
+							onConfirmTrash={handleConfirmTrashOpen}
 						/>
 					</DropdownMenu>
 					{showRename ? (
@@ -606,7 +613,7 @@ export function NoteActionsMenu({
 							isUpdatingStar={isUpdatingStar}
 							onToggleStar={handleToggleStar}
 							onCopyLink={handleCopyLink}
-							onConfirmTrash={() => setConfirmOpen(true)}
+							onConfirmTrash={handleConfirmTrashOpen}
 						/>
 					</DropdownMenu>
 					{showRename ? (
@@ -699,7 +706,7 @@ function NoteRenameEditor({
 				align={renamePopoverAlign}
 				side={renamePopoverSide}
 				sideOffset={renamePopoverSideOffset}
-				className={cn("w-96 rounded-xl p-2", renamePopoverClassName)}
+				className={cn("w-96 rounded-lg p-2", renamePopoverClassName)}
 				onOpenAutoFocus={(event) => {
 					event.preventDefault();
 					requestAnimationFrame(() => {
@@ -882,10 +889,7 @@ function NoteActionsDropdownContent({
 			<DropdownMenuItem
 				variant="destructive"
 				className="cursor-pointer"
-				onSelect={(event) => {
-					event.preventDefault();
-					onConfirmTrash();
-				}}
+				onSelect={onConfirmTrash}
 			>
 				<Trash2 />
 				Move to trash

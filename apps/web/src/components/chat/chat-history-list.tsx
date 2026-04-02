@@ -14,6 +14,7 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import { MessageCircle, MoreHorizontal, Trash2 } from "lucide-react";
+import * as React from "react";
 import { getChatId } from "@/lib/chat";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
 
@@ -76,75 +77,14 @@ export function ChatHistoryList({
 								</div>
 								<div className="space-y-2">
 									{section.chats.map((chat) => {
-										const storedChatId = getChatId(chat);
-										const preview = chat.authorName?.trim() || "Unknown user";
-										const createdTime = chatCreatedTimeFormatter.format(
-											new Date(chat.createdAt || chat._creationTime),
-										);
-
 										return (
-											<div
+											<ChatHistoryItem
 												key={chat._id}
-												className={cn(
-													"group flex items-center rounded-xl p-1 transition-colors hover:bg-card/50 has-[[data-chat-actions]:focus-visible]:bg-transparent has-[[data-chat-actions]:hover]:bg-transparent",
-													activeChatId === storedChatId
-														? "bg-transparent"
-														: "bg-transparent",
-												)}
-											>
-												<button
-													type="button"
-													onClick={() => onOpenChat(storedChatId)}
-													className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
-												>
-													<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
-														<MessageCircle className="size-4" />
-													</div>
-													<div className="min-w-0 flex-1">
-														<div className="truncate text-sm font-medium">
-															{chat.title || "New chat"}
-														</div>
-														<div className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-															<span className="truncate">{preview}</span>
-															<span aria-hidden="true">·</span>
-															<time
-																dateTime={new Date(
-																	chat.createdAt || chat._creationTime,
-																).toISOString()}
-																className="shrink-0 tabular-nums"
-															>
-																{createdTime}
-															</time>
-														</div>
-													</div>
-												</button>
-												<DropdownMenu>
-													<DropdownMenuTrigger asChild>
-														<button
-															type="button"
-															data-chat-actions
-															className="flex aspect-square size-5 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground opacity-0 outline-hidden transition-[color,opacity] group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
-															aria-label={`Open actions for ${chat.title || "chat"}`}
-															onClick={(event) => event.stopPropagation()}
-														>
-															<MoreHorizontal className="size-4" />
-														</button>
-													</DropdownMenuTrigger>
-													<DropdownMenuContent align="end">
-														<DropdownMenuItem
-															variant="destructive"
-															className="cursor-pointer"
-															onSelect={(event) => {
-																event.preventDefault();
-																onMoveToTrash(storedChatId);
-															}}
-														>
-															<Trash2 />
-															Move to trash
-														</DropdownMenuItem>
-													</DropdownMenuContent>
-												</DropdownMenu>
-											</div>
+												chat={chat}
+												activeChatId={activeChatId}
+												onOpenChat={onOpenChat}
+												onMoveToTrash={onMoveToTrash}
+											/>
 										);
 									})}
 								</div>
@@ -165,6 +105,87 @@ export function ChatHistoryList({
 					</EmptyHeader>
 				</Empty>
 			)}
+		</div>
+	);
+}
+
+function ChatHistoryItem({
+	chat,
+	activeChatId,
+	onOpenChat,
+	onMoveToTrash,
+}: {
+	chat: Doc<"chats">;
+	activeChatId: string | null;
+	onOpenChat: (chatId: string) => void;
+	onMoveToTrash: (chatId: string) => void;
+}) {
+	const [menuOpen, setMenuOpen] = React.useState(false);
+	const storedChatId = getChatId(chat);
+	const preview = chat.authorName?.trim() || "Unknown user";
+	const createdTime = chatCreatedTimeFormatter.format(
+		new Date(chat.createdAt || chat._creationTime),
+	);
+
+	return (
+		<div
+			className={cn(
+				"group flex items-center rounded-lg p-1 transition-colors hover:bg-card/50 has-[[data-chat-actions]:focus-visible]:bg-transparent has-[[data-chat-actions]:hover]:bg-transparent",
+				activeChatId === storedChatId ? "bg-transparent" : "bg-transparent",
+			)}
+		>
+			<button
+				type="button"
+				onClick={() => onOpenChat(storedChatId)}
+				className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
+			>
+				<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+					<MessageCircle className="size-4" />
+				</div>
+				<div className="min-w-0 flex-1">
+					<div className="truncate text-sm font-medium">
+						{chat.title || "New chat"}
+					</div>
+					<div className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+						<span className="truncate">{preview}</span>
+						<span aria-hidden="true">·</span>
+						<time
+							dateTime={new Date(
+								chat.createdAt || chat._creationTime,
+							).toISOString()}
+							className="shrink-0 tabular-nums"
+						>
+							{createdTime}
+						</time>
+					</div>
+				</div>
+			</button>
+			<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+				<DropdownMenuTrigger asChild>
+					<button
+						type="button"
+						data-chat-actions
+						className="flex aspect-square size-5 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground opacity-0 outline-hidden transition-[color,opacity] group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+						aria-label={`Open actions for ${chat.title || "chat"}`}
+						onClick={(event) => event.stopPropagation()}
+					>
+						<MoreHorizontal className="size-4" />
+					</button>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="end">
+					<DropdownMenuItem
+						variant="destructive"
+						className="cursor-pointer"
+						onSelect={() => {
+							setMenuOpen(false);
+							onMoveToTrash(storedChatId);
+						}}
+					>
+						<Trash2 />
+						Move to trash
+					</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
 		</div>
 	);
 }
@@ -216,7 +237,7 @@ function ChatHistorySkeleton() {
 		<div className="space-y-3">
 			<div className="space-y-2">
 				{["chat-history-1", "chat-history-2", "chat-history-3"].map((id) => (
-					<div key={id} className="flex items-center gap-3 rounded-xl p-2">
+					<div key={id} className="flex items-center gap-3 rounded-lg p-2">
 						<Skeleton className="size-8 rounded-lg" />
 						<div className="min-w-0 flex-1 space-y-2">
 							<Skeleton className="h-4 w-40" />

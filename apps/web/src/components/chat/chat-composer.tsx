@@ -119,6 +119,7 @@ type ChatComposerProps = {
 	appSources: AppSource[];
 	onToggleSource: (sourceId: string) => void;
 	onClearSelectedSources: () => void;
+	onOpenConnectionsSettings: () => void;
 };
 
 export function ChatComposer({
@@ -159,6 +160,7 @@ export function ChatComposer({
 	appSources,
 	onToggleSource,
 	onClearSelectedSources,
+	onOpenConnectionsSettings,
 }: ChatComposerProps) {
 	const filteredWorkspaceSources = filterWorkspaceSources(
 		workspaceSources,
@@ -194,7 +196,7 @@ export function ChatComposer({
 				<TooltipContent>Add context</TooltipContent>
 			</Tooltip>
 
-			<PopoverContent className="p-0 [--radius:1.2rem]" align="start">
+			<PopoverContent className="p-0" align="start">
 				<Command>
 					<CommandInput
 						placeholder="Search notes..."
@@ -237,7 +239,7 @@ export function ChatComposer({
 				Prompt
 			</label>
 			<InputGroup
-				className={`${hasMessages ? "min-h-[96px]" : "min-h-[148px]"} max-h-[32rem] overflow-hidden rounded-xl border-border bg-card bg-clip-padding shadow-sm has-disabled:bg-card has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30 [--radius:1rem]`}
+				className={`${hasMessages ? "min-h-[96px]" : "min-h-[148px]"} max-h-[32rem] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30`}
 			>
 				{showTopAddon ? (
 					<InputGroupAddon
@@ -314,6 +316,7 @@ export function ChatComposer({
 						isNotesLoading={isNotesLoading}
 						onToggleSource={onToggleSource}
 						onClearSelectedSources={onClearSelectedSources}
+						onOpenConnectionsSettings={onOpenConnectionsSettings}
 					/>
 					<InputGroupButton
 						aria-label="Send"
@@ -349,7 +352,10 @@ function ModelPicker({
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<DropdownMenuTrigger asChild>
-						<InputGroupButton size="sm" className="rounded-full gap-2">
+						<InputGroupButton
+							size="sm"
+							className="rounded-full gap-2 font-normal"
+						>
 							<Icons.codexLogo className="size-3.5 text-muted-foreground" />
 							{selectedModel.name}
 						</InputGroupButton>
@@ -357,7 +363,7 @@ function ModelPicker({
 				</TooltipTrigger>
 				<TooltipContent>Select model</TooltipContent>
 			</Tooltip>
-			<DropdownMenuContent side="top" align="start" className="[--radius:1rem]">
+			<DropdownMenuContent side="top" align="start">
 				<DropdownMenuGroup className="w-42">
 					<DropdownMenuLabel className="text-muted-foreground text-xs">
 						OpenAI
@@ -403,6 +409,7 @@ function ScopePicker({
 	isNotesLoading,
 	onToggleSource,
 	onClearSelectedSources,
+	onOpenConnectionsSettings,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -421,6 +428,7 @@ function ScopePicker({
 	isNotesLoading: boolean;
 	onToggleSource: (sourceId: string) => void;
 	onClearSelectedSources: () => void;
+	onOpenConnectionsSettings: () => void;
 }) {
 	const workspaceSourceSelected = workspaceSourceId
 		? selectedSourceIds.includes(workspaceSourceId)
@@ -440,7 +448,7 @@ function ScopePicker({
 					<DropdownMenuTrigger asChild>
 						<InputGroupButton
 							size="sm"
-							className="max-w-[180px] justify-start rounded-full"
+							className="max-w-[180px] justify-start rounded-full font-normal"
 						>
 							<Globe />
 							<span className="max-w-[160px] truncate">{scopesLabel}</span>
@@ -449,12 +457,7 @@ function ScopePicker({
 				</TooltipTrigger>
 				<TooltipContent>Select scope</TooltipContent>
 			</Tooltip>
-			<DropdownMenuContent
-				side="top"
-				align="end"
-				sideOffset={4}
-				className="[--radius:1rem]"
-			>
+			<DropdownMenuContent side="top" align="start" sideOffset={4}>
 				<DropdownMenuGroup>
 					<DropdownMenuItem
 						asChild
@@ -512,12 +515,15 @@ function ScopePicker({
 						filteredWorkspaceSources={filteredWorkspaceSources}
 						selectedSourceIds={selectedSourceIds}
 					/>
-					{appSources.map((source) => {
+					{appSources.map((source, index) => {
 						const selected = selectedSourceIds.includes(source.id);
+						const sourceKey = source.id
+							? `${source.provider ?? "app"}:${source.id}`
+							: `app-source-${index}`;
 
 						return (
 							<DropdownMenuCheckboxItem
-								key={source.id}
+								key={sourceKey}
 								checked={selected}
 								className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
 								onCheckedChange={() => onToggleSource(source.id)}
@@ -541,12 +547,7 @@ function ScopePicker({
 				</DropdownMenuGroup>
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
-					<DropdownMenuItem
-						onSelect={() => {
-							window.history.pushState(null, "", "/settings/connections");
-							window.dispatchEvent(new PopStateEvent("popstate"));
-						}}
-					>
+					<DropdownMenuItem onClick={onOpenConnectionsSettings}>
 						<Plus /> Connect Apps
 					</DropdownMenuItem>
 					<DropdownMenuLabel className="text-xs text-muted-foreground">
@@ -629,9 +630,9 @@ function WorkspaceScopeMenu({
 					</span>
 				) : null}
 			</DropdownMenuSubTrigger>
-			<DropdownMenuSubContent className="w-72 p-0 [--radius:1rem]">
+			<DropdownMenuSubContent className="w-72 border-input/30 p-0">
 				<Command>
-					<div className="[&_[data-slot=input-group]]:rounded-sm!">
+					<div>
 						<CommandInput
 							placeholder="Select a note"
 							value={sourceSearchTerm}

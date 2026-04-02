@@ -2136,7 +2136,6 @@ function DataControlAction({
 				<AlertDialogTrigger asChild>
 					<Button
 						variant="ghost"
-						size="sm"
 						className="shrink-0 bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
 						disabled={buttonDisabled}
 					>

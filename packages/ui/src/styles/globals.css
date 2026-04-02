@@ -84,6 +84,11 @@
 	--color-chart-3: var(--chart-3);
 	--color-chart-2: var(--chart-2);
 	--color-chart-1: var(--chart-1);
+	--color-status-live: var(--status-live);
+	--color-status-planned: var(--status-planned);
+	--color-warning-soft: var(--warning-soft);
+	--color-warning-border: var(--warning-border);
+	--color-warning-foreground: var(--warning-foreground);
 	--color-ring: var(--ring);
 	--color-input: var(--input);
 	--color-border: var(--border);
@@ -140,7 +145,7 @@
 	--warning-soft: oklch(0.965 0.02 94.36);
 	--warning-border: oklch(0.86 0.06 88.17);
 	--warning-foreground: oklch(0.51 0.096 76.25);
-	--radius: 0.625rem;
+	--radius: 0.875rem;
 	--sidebar: oklch(0.985 0 0);
 	--sidebar-foreground: oklch(0.141 0.005 285.823);
 	--sidebar-primary: oklch(0.21 0.006 285.885);

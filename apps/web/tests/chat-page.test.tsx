@@ -6,6 +6,7 @@ import { ActiveWorkspaceProvider } from "../src/hooks/use-active-workspace";
 
 const convexTokenMock = vi.fn();
 const sendMessageMock = vi.fn();
+const toastSuccessMock = vi.fn();
 const useChatMock = vi.fn();
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
@@ -34,6 +35,12 @@ vi.mock("@/lib/auth-client", () => ({
 		convex: {
 			token: convexTokenMock,
 		},
+	},
+}));
+
+vi.mock("sonner", () => ({
+	toast: {
+		success: toastSuccessMock,
 	},
 }));
 
@@ -100,8 +107,23 @@ vi.mock("@workspace/ui/components/dropdown-menu", () => ({
 	DropdownMenuGroup: ({ children }: React.PropsWithChildren) => (
 		<div>{children}</div>
 	),
-	DropdownMenuItem: ({ children }: React.PropsWithChildren) => (
-		<div>{children}</div>
+	DropdownMenuItem: ({
+		children,
+		onClick,
+		onSelect,
+	}: React.PropsWithChildren<{
+		onClick?: () => void;
+		onSelect?: (event: { preventDefault: () => void }) => void;
+	}>) => (
+		<button
+			type="button"
+			onClick={() => {
+				onClick?.();
+				onSelect?.({ preventDefault: () => {} });
+			}}
+		>
+			{children}
+		</button>
 	),
 	DropdownMenuLabel: ({ children }: React.PropsWithChildren) => (
 		<div>{children}</div>
@@ -191,6 +213,7 @@ describe("ChatPage", () => {
 	beforeEach(() => {
 		convexTokenMock.mockReset();
 		sendMessageMock.mockReset();
+		toastSuccessMock.mockReset();
 		useQueryMock.mockReset();
 		useMutationMock.mockReset();
 		convexTokenMock.mockResolvedValue({ data: { token: "convex-token" } });
@@ -247,6 +270,8 @@ describe("ChatPage", () => {
 					activeChatId={null}
 					onOpenChat={vi.fn()}
 					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
 				/>
 			</ActiveWorkspaceProvider>,
 		);
@@ -285,4 +310,72 @@ describe("ChatPage", () => {
 			},
 		);
 	}, 10_000);
+
+	it("opens connections settings without mutating the chat route directly", async () => {
+		const user = userEvent.setup();
+		const pushStateSpy = vi.spyOn(window.history, "pushState");
+		const onOpenConnectionsSettings = vi.fn();
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		vi.mocked(useChatMock).mockReturnValue({
+			messages: [],
+			sendMessage: sendMessageMock,
+			error: undefined,
+			status: "ready",
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={null}
+					onOpenChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={onOpenConnectionsSettings}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Connect Apps" }));
+
+		expect(onOpenConnectionsSettings).toHaveBeenCalledTimes(1);
+		expect(pushStateSpy).not.toHaveBeenCalledWith(
+			null,
+			"",
+			"/settings/connections",
+		);
+	});
+
+	it("shows a toast when web search is enabled or disabled", async () => {
+		const user = userEvent.setup();
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={null}
+					onOpenChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		await user.click(screen.getByLabelText("Web search"));
+		await user.click(screen.getByLabelText("Web search"));
+
+		expect(toastSuccessMock).toHaveBeenNthCalledWith(1, "Web search enabled");
+		expect(toastSuccessMock).toHaveBeenNthCalledWith(2, "Web search disabled");
+	});
 });

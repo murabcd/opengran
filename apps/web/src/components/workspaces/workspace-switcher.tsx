@@ -43,6 +43,7 @@ export function WorkspaceSwitcher({
 	onCreateWorkspace: (input: { name: string }) => Promise<WorkspaceRecord>;
 }) {
 	const [createOpen, setCreateOpen] = React.useState(false);
+	const [menuOpen, setMenuOpen] = React.useState(false);
 	const [name, setName] = React.useState("");
 	const [createError, setCreateError] = React.useState<string | null>(null);
 	const [isCreatingWorkspace, startWorkspaceCreation] = React.useTransition();
@@ -95,11 +96,16 @@ export function WorkspaceSwitcher({
 		});
 	};
 
+	const handleOpenCreateWorkspace = () => {
+		setMenuOpen(false);
+		setCreateOpen(true);
+	};
+
 	return (
 		<>
 			<SidebarMenu>
 				<SidebarMenuItem>
-					<DropdownMenu>
+					<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
 						<DropdownMenuTrigger asChild>
 							<SidebarMenuButton
 								size="lg"
@@ -166,10 +172,7 @@ export function WorkspaceSwitcher({
 							<DropdownMenuSeparator />
 							<DropdownMenuItem
 								className="h-8 gap-2 px-2"
-								onSelect={(event) => {
-									event.preventDefault();
-									setCreateOpen(true);
-								}}
+								onSelect={handleOpenCreateWorkspace}
 							>
 								<div className="flex size-6 items-center justify-center rounded-md bg-transparent">
 									<Plus className="size-4" />

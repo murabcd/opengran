@@ -921,7 +921,7 @@ function NoteChatMessages({
 					>
 						<div
 							className={cn(
-								"max-w-[85%] rounded-2xl px-4 py-3 text-sm",
+								"max-w-[85%] rounded-lg px-4 py-3 text-sm",
 								chatMessage.role === "user"
 									? "bg-secondary text-secondary-foreground"
 									: "bg-transparent px-0 py-0 text-foreground",
@@ -1152,7 +1152,12 @@ function NoteChatHeader({
 				</Select>
 			</div>
 
-			<div className="flex items-center gap-1">
+			<div
+				className={cn(
+					"flex items-center gap-1",
+					sidebarCompact ? "-mr-1" : "-mr-2",
+				)}
+			>
 				<Tooltip>
 					<TooltipTrigger asChild>
 						<Button
@@ -1176,7 +1181,6 @@ function NoteChatHeader({
 									type="button"
 									variant="ghost"
 									size="icon-sm"
-									className={sidebarCompact ? "-mr-1" : "-mr-2"}
 									aria-label="Switch chat mode"
 								>
 									{chatModeIcon}
@@ -1276,7 +1280,7 @@ function ChatInlinePopoverFooter({
 	textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
 	return (
-		<InputGroup className="min-h-[96px] overflow-hidden rounded-xl border-border bg-card bg-clip-padding shadow-sm has-disabled:bg-card has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30 [--radius:1rem]">
+		<InputGroup className="min-h-[96px] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30">
 			<InputGroupTextarea
 				data-slot="input-group-control"
 				ref={textareaRef}
@@ -1324,7 +1328,7 @@ function TranscriptInlinePopoverFooter({
 					</div>
 				) : null}
 
-				<InputGroup className="min-h-[96px] overflow-hidden rounded-xl border-border bg-card bg-clip-padding shadow-sm has-disabled:bg-card has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30 [--radius:1rem]">
+				<InputGroup className="min-h-[96px] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30">
 					<div
 						aria-hidden="true"
 						className="h-[46px] w-full shrink-0 px-4 pt-2 pb-0"
@@ -1775,7 +1779,7 @@ function NoteTranscriptPanel({
 							className={cn(
 								"max-w-[85%] text-sm leading-6",
 								utterance.speaker === "you"
-									? "rounded-2xl bg-secondary px-4 py-3 text-right text-secondary-foreground"
+									? "rounded-lg bg-secondary px-4 py-3 text-right text-secondary-foreground"
 									: "text-foreground",
 							)}
 						>
@@ -1793,7 +1797,7 @@ function NoteComposerDock({
 }: {
 	controller: NoteComposerController;
 }) {
-	if (controller.panelMode && controller.shouldShowInlinePanel) {
+	if (controller.panelMode) {
 		return null;
 	}
 

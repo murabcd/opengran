@@ -96,7 +96,7 @@ export function MeetingWidgetScreen() {
 				data-app-region="drag"
 				size="sm"
 				className={cn(
-					"relative rounded-2xl border border-border/70 bg-card py-0 text-card-foreground shadow-none",
+					"relative rounded-lg border border-border/70 bg-card py-0 text-card-foreground shadow-none",
 				)}
 			>
 				<CardContent className="flex items-center gap-2 px-1.5 py-1.5">

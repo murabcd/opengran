@@ -744,7 +744,7 @@ function SortableTemplateSectionCard({
 				transition,
 			}}
 			className={cn(
-				"group w-full max-w-[512px] rounded-xl border border-input bg-transparent px-3 py-2 dark:bg-input/30",
+				"group w-full max-w-[512px] rounded-lg border border-input bg-transparent px-3 py-2 dark:bg-input/30",
 				isDragging && "z-10 opacity-90 shadow-lg",
 			)}
 		>

@@ -1799,7 +1799,7 @@ function DesktopPermissionsOnboardingScreen({
 					})}
 				</div>
 				{error ? (
-					<div className="flex items-start gap-3 rounded-lg border border-[var(--warning-border)] bg-[var(--warning-soft)] px-4 py-3 text-sm text-[var(--warning-foreground)]">
+					<div className="flex items-start gap-3 rounded-lg border border-warning-border bg-warning-soft px-4 py-3 text-sm text-warning-foreground">
 						<TriangleAlert className="mt-0.5 size-4 shrink-0" />
 						<p>{error}</p>
 					</div>
@@ -2932,6 +2932,9 @@ function AppShell({
 						onChatPersisted={controller.handleChatPersisted}
 						onOpenChat={controller.handleOpenChat}
 						onChatRemoved={controller.handleChatRemoved}
+						onOpenConnectionsSettings={() =>
+							controller.handleSettingsOpenChange(true, "Connections")
+						}
 						onNoteTitleChange={controller.setCurrentNoteTitle}
 						onNoteEditorActionsChange={controller.setCurrentNoteEditorActions}
 						onAutoStartNoteCaptureHandled={
@@ -3220,7 +3223,7 @@ function AppShellBreadcrumbs({
 										align="start"
 										side="bottom"
 										sideOffset={6}
-										className="w-[340px] rounded-2xl border-sidebar-border/70 bg-sidebar p-1.5 shadow-2xl ring-1 ring-border/60"
+										className="w-[340px] rounded-lg border-sidebar-border/70 bg-sidebar p-1.5 shadow-2xl ring-1 ring-border/60"
 									>
 										<div className="flex items-center gap-2">
 											<NoteTitleEditInput
@@ -3430,6 +3433,7 @@ function AppShellContent({
 	onChatPersisted,
 	onOpenChat,
 	onChatRemoved,
+	onOpenConnectionsSettings,
 	onNoteTitleChange,
 	onNoteEditorActionsChange,
 	onAutoStartNoteCaptureHandled,
@@ -3472,6 +3476,7 @@ function AppShellContent({
 	onChatPersisted?: (chatId: string) => void;
 	onOpenChat: (chatId: string) => void;
 	onChatRemoved: (chatId: string) => void;
+	onOpenConnectionsSettings: () => void;
 	onNoteTitleChange: (title: string) => void;
 	onNoteEditorActionsChange: (actions: NoteEditorActions | null) => void;
 	onAutoStartNoteCaptureHandled: () => void;
@@ -3581,6 +3586,7 @@ function AppShellContent({
 			onOpenChat={onOpenChat}
 			onChatRemoved={onChatRemoved}
 			activeWorkspace={activeWorkspace}
+			onOpenConnectionsSettings={onOpenConnectionsSettings}
 		/>
 	);
 }
@@ -3676,7 +3682,7 @@ function HomeView({
 			<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
 				<section className="mx-auto w-full max-w-xl space-y-6">
 					<h1 className="text-lg md:text-xl">Coming up</h1>
-					<Card className="overflow-hidden rounded-xl border-border py-0 shadow-sm">
+					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
 						<CardContent className="p-0">
 							<div className="grid min-h-[152px] md:grid-cols-[184px_minmax(0,1fr)]">
 								<div className="flex items-start border-b border-border/60 px-5 py-4 md:border-b-0 md:border-r">
@@ -3686,7 +3692,7 @@ function HomeView({
 										</div>
 										<div className="flex items-center gap-2 pt-1 text-base leading-none">
 											<span>{currentMonthLabel}</span>
-											<span className="h-1.5 w-1.5 rounded-full bg-[var(--status-live)]" />
+											<span className="h-1.5 w-1.5 rounded-full bg-status-live" />
 										</div>
 										<p className="text-base leading-none text-muted-foreground">
 											{currentWeekdayLabel}
@@ -3722,8 +3728,8 @@ function HomeView({
 														>
 															<div
 																className={cn(
-																	"h-8 w-1 shrink-0 rounded-full bg-[var(--status-planned)]",
-																	isLive && "bg-[var(--status-live)]",
+																	"h-8 w-1 shrink-0 rounded-full bg-status-planned",
+																	isLive && "bg-status-live",
 																)}
 															/>
 															<div className="min-w-0 flex-1">
@@ -3735,7 +3741,7 @@ function HomeView({
 																		<p
 																			className={cn(
 																				"mt-0.5 text-xs text-muted-foreground",
-																				isLive && "text-[var(--status-live)]",
+																				isLive && "text-status-live",
 																			)}
 																		>
 																			{formatUpcomingEventMeta(
@@ -3862,7 +3868,7 @@ function SharedView({
 			<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
 				<section className="mx-auto w-full max-w-xl space-y-6">
 					<h1 className="text-lg md:text-xl">Shared with others</h1>
-					<Card className="overflow-hidden rounded-xl border-border py-0 shadow-sm">
+					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
 						<CardContent className="flex items-start justify-between gap-4 p-5">
 							<div>
 								<p className="text-5xl leading-none tracking-tight tabular-nums">
@@ -3958,7 +3964,7 @@ function HomeNotesSkeleton() {
 			</div>
 			<div className="space-y-2">
 				{HOME_NOTE_SKELETON_IDS.map((id) => (
-					<div key={id} className="flex items-center gap-3 rounded-xl p-1">
+					<div key={id} className="flex items-center gap-3 rounded-lg p-1">
 						<Skeleton className="size-8 rounded-lg" />
 						<div className="min-w-0 flex-1 space-y-2">
 							<Skeleton className="h-4 w-32" />
@@ -3979,7 +3985,7 @@ function SharedNotesSkeleton() {
 			</div>
 			<div className="space-y-2">
 				{HOME_NOTE_SKELETON_IDS.map((id) => (
-					<div key={id} className="flex items-center gap-3 rounded-xl p-1">
+					<div key={id} className="flex items-center gap-3 rounded-lg p-1">
 						<Skeleton className="size-8 rounded-lg" />
 						<div className="min-w-0 flex-1 space-y-2">
 							<Skeleton className="h-4 w-32" />
@@ -4049,7 +4055,7 @@ function SharedNotesList({
 									<div
 										key={note._id}
 										className={cn(
-											"group flex items-center rounded-xl p-1 transition-colors hover:bg-card/50 has-[[data-note-actions]:focus-visible]:bg-transparent has-[[data-note-actions]:hover]:bg-transparent",
+											"group flex items-center rounded-lg p-1 transition-colors hover:bg-card/50 has-[[data-note-actions]:focus-visible]:bg-transparent has-[[data-note-actions]:hover]:bg-transparent",
 											isActive ? "bg-transparent" : "bg-transparent",
 										)}
 									>
@@ -4160,7 +4166,7 @@ function HomeNotesList({
 									<div
 										key={note._id}
 										className={cn(
-											"group flex items-center rounded-xl p-1 transition-colors hover:bg-card/50 has-[[data-note-actions]:focus-visible]:bg-transparent has-[[data-note-actions]:hover]:bg-transparent",
+											"group flex items-center rounded-lg p-1 transition-colors hover:bg-card/50 has-[[data-note-actions]:focus-visible]:bg-transparent has-[[data-note-actions]:hover]:bg-transparent",
 											isActive ? "bg-transparent" : "bg-transparent",
 										)}
 									>
