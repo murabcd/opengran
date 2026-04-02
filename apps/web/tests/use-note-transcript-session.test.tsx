@@ -89,6 +89,51 @@ describe("useNoteTranscriptSession", () => {
 		expect(result.current.isSpeechListening).toBe(false);
 	});
 
+	it("consumes note auto-start after the first emission even if the prop stays true", async () => {
+		useTranscriptSessionRepositoryMock.mockReturnValue({
+			appendUtterance: vi.fn(),
+			clearDraft: vi.fn(),
+			completeSession: vi.fn(),
+			latestTranscriptSession: null,
+			loadDraft: vi.fn().mockResolvedValue(null),
+			replaceSpeakerUtterances: vi.fn(),
+			saveDraft: vi.fn(),
+			setRefinementStatus: vi.fn(),
+			setSystemAudioSourceMode: vi.fn(),
+			startSession: vi.fn().mockResolvedValue("session-auto-start"),
+		});
+
+		const { useNoteTranscriptSession } = await import(
+			"../src/hooks/use-note-transcript-session"
+		);
+
+		const { result } = renderHook(() =>
+			useNoteTranscriptSession({
+				autoStartTranscription: true,
+				noteId: "note-1" as never,
+				transcriptionLanguage: null,
+			}),
+		);
+
+		await waitFor(() => {
+			expect(result.current.autoStartKey).toBe("note-1:capture");
+		});
+
+		await waitFor(() => {
+			expect(result.current.autoStartKey).toBeNull();
+		});
+
+		await act(async () => {
+			result.current.onTranscriptListeningChange(false);
+		});
+
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		expect(result.current.autoStartKey).toBeNull();
+	});
+
 	it("stops a meeting-controlled desktop capture when the browser meeting signal disappears", async () => {
 		let meetingDetectionListener:
 			| ((state: DesktopMeetingDetectionState) => void)

@@ -73,9 +73,13 @@ export const useNoteTranscriptSession = ({
 	const [isGeneratingNotes, setIsGeneratingNotes] = React.useState(false);
 	const [generatedTranscriptSessionId, setGeneratedTranscriptSessionId] =
 		React.useState<Id<"transcriptSessions"> | null>(null);
+	const [pendingAutoStartKey, setPendingAutoStartKey] = React.useState<
+		string | null
+	>(null);
 	const { containerRef: transcriptViewportRef } = useStickyScrollToBottom();
 	const previousSpeechListeningRef = React.useRef(false);
 	const previousNoteIdRef = React.useRef(noteId);
+	const lastQueuedAutoStartKeyRef = React.useRef<string | null>(null);
 	const hasHandledAutoStartRef = React.useRef(false);
 	const shouldAutoGenerateNotesOnStopRef = React.useRef(false);
 	const hasQueuedAutoGenerateNotesRef = React.useRef(false);
@@ -231,6 +235,43 @@ export const useNoteTranscriptSession = ({
 			shouldAutoGenerateNotesOnStopRef.current = true;
 		}
 	}, [autoGenerateNotesOnStop, onEnhanceTranscript]);
+
+	React.useEffect(() => {
+		if (
+			!autoStartTranscription ||
+			!noteId ||
+			transcriptionLanguage === undefined
+		) {
+			lastQueuedAutoStartKeyRef.current = null;
+			setPendingAutoStartKey(null);
+			return;
+		}
+
+		const nextAutoStartKey = `${noteId}:capture`;
+
+		if (lastQueuedAutoStartKeyRef.current === nextAutoStartKey) {
+			return;
+		}
+
+		lastQueuedAutoStartKeyRef.current = nextAutoStartKey;
+		setPendingAutoStartKey(nextAutoStartKey);
+	}, [autoStartTranscription, noteId, transcriptionLanguage]);
+
+	React.useEffect(() => {
+		if (!pendingAutoStartKey) {
+			return;
+		}
+
+		const timeoutId = window.setTimeout(() => {
+			setPendingAutoStartKey((currentValue) =>
+				currentValue === pendingAutoStartKey ? null : currentValue,
+			);
+		}, 0);
+
+		return () => {
+			window.clearTimeout(timeoutId);
+		};
+	}, [pendingAutoStartKey]);
 
 	React.useEffect(() => {
 		// Latch meeting-controlled auto-stop for the active capture even after
@@ -912,10 +953,7 @@ export const useNoteTranscriptSession = ({
 
 	return {
 		activeTranscriptSessionId,
-		autoStartKey:
-			autoStartTranscription && noteId && transcriptionLanguage !== undefined
-				? `${noteId}:capture`
-				: null,
+		autoStartKey: pendingAutoStartKey,
 		captureScopeKey: noteId ? `note:${noteId}` : "note:draft",
 		fullTranscript,
 		handleGenerateNotes,
