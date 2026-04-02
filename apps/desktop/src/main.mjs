@@ -4522,14 +4522,18 @@ const getDesktopAuthCallbackUrl = async () => {
 const showMainWindow = async (options = {}) => {
 	const hasExplicitNavigation =
 		"pathname" in options || "search" in options || "hash" in options;
-	const targetUrl = await getNavigationUrl(
-		hasExplicitNavigation ? options : lastNavigation,
-	);
 
 	if (!mainWindow) {
+		const targetUrl = await getNavigationUrl(
+			hasExplicitNavigation ? options : lastNavigation,
+		);
 		await createMainWindow(targetUrl);
-	} else if (mainWindow.webContents.getURL() !== targetUrl) {
-		await mainWindow.loadURL(targetUrl);
+	} else if (hasExplicitNavigation) {
+		const targetUrl = await getNavigationUrl(options);
+
+		if (mainWindow.webContents.getURL() !== targetUrl) {
+			await mainWindow.loadURL(targetUrl);
+		}
 	}
 
 	if (mainWindow.isMinimized()) {
