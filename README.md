@@ -93,4 +93,6 @@ Your app should then be available on [localhost:3000](http://localhost:3000/).
 
 On macOS, `bun dev` launches an unpacked `OpenGran.app` wired to the local renderer so native permissions and desktop bundle behavior stay close to production.
 
+If macOS blocks `OpenGran.app` because it cannot verify the developer, open `System Settings > Privacy & Security`, scroll to the security section, click `Open Anyway` for `OpenGran`, authenticate with Touch ID or your password, then reopen the app and confirm `Open Anyway` one more time.
+
 If you only want the browser app, run `bun run dev:web`.
