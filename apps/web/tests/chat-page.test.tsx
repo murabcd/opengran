@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type * as React from "react";
+import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ActiveWorkspaceProvider } from "../src/hooks/use-active-workspace";
 
@@ -169,9 +169,10 @@ vi.mock("@workspace/ui/components/input-group", () => ({
 			{children}
 		</button>
 	),
-	InputGroupTextarea: (
-		props: React.TextareaHTMLAttributes<HTMLTextAreaElement>,
-	) => <textarea {...props} />,
+	InputGroupTextarea: React.forwardRef<
+		HTMLTextAreaElement,
+		React.TextareaHTMLAttributes<HTMLTextAreaElement>
+	>((props, ref) => <textarea ref={ref} {...props} />),
 }));
 
 vi.mock("@workspace/ui/components/popover", () => ({
@@ -253,6 +254,36 @@ describe("ChatPage", () => {
 
 	afterEach(() => {
 		cleanup();
+	});
+
+	it("focuses the chat prompt on open", async () => {
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+		const priorFocus = document.createElement("button");
+		priorFocus.type = "button";
+		document.body.appendChild(priorFocus);
+		priorFocus.focus();
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={null}
+					onOpenChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		expect(document.activeElement).toBe(
+			screen.getByPlaceholderText("Ask, search, or make anything..."),
+		);
+		priorFocus.remove();
 	});
 
 	it("submits the selected AI context in the chat request body", async () => {

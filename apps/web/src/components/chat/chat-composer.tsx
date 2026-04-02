@@ -56,7 +56,7 @@ import {
 	Plus,
 	X,
 } from "lucide-react";
-import type { KeyboardEventHandler } from "react";
+import * as React from "react";
 import { chatModels } from "@/lib/ai/models";
 import { getAvatarSrc } from "@/lib/avatar";
 import type { WorkspaceRecord } from "@/lib/workspaces";
@@ -85,7 +85,7 @@ type ChatComposerProps = {
 	hasMessages: boolean;
 	draft: string;
 	onDraftChange: (value: string) => void;
-	onDraftKeyDown: KeyboardEventHandler<HTMLTextAreaElement>;
+	onDraftKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>;
 	onSubmit: () => void | Promise<void>;
 	isLoading: boolean;
 	selectedModel: (typeof chatModels)[number];
@@ -162,6 +162,7 @@ export function ChatComposer({
 	onClearSelectedSources,
 	onOpenConnectionsSettings,
 }: ChatComposerProps) {
+	const promptRef = React.useRef<HTMLTextAreaElement | null>(null);
 	const filteredWorkspaceSources = filterWorkspaceSources(
 		workspaceSources,
 		sourceSearchTerm,
@@ -233,6 +234,29 @@ export function ChatComposer({
 	);
 	const showTopAddon = !hasMessages || mentions.length > 0;
 
+	React.useEffect(() => {
+		const prompt = promptRef.current;
+		if (!prompt) {
+			return;
+		}
+
+		const activeElement = document.activeElement;
+		const isEditableElement =
+			activeElement instanceof HTMLElement &&
+			(activeElement instanceof HTMLInputElement ||
+				activeElement instanceof HTMLTextAreaElement ||
+				activeElement instanceof HTMLSelectElement ||
+				activeElement.isContentEditable);
+
+		if (isEditableElement && activeElement !== prompt) {
+			return;
+		}
+
+		prompt.focus({ preventScroll: true });
+		const selectionEnd = prompt.value.length;
+		prompt.setSelectionRange(selectionEnd, selectionEnd);
+	}, []);
+
 	return (
 		<div className={`mx-auto w-full max-w-xl ${hasMessages ? "mt-auto" : ""}`}>
 			<label htmlFor="chat-prompt" className="sr-only">
@@ -278,6 +302,7 @@ export function ChatComposer({
 				) : null}
 
 				<InputGroupTextarea
+					ref={promptRef}
 					id="chat-prompt"
 					value={draft}
 					onChange={(event) => onDraftChange(event.target.value)}
