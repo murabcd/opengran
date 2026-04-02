@@ -44,7 +44,9 @@ import { getRuntimeConfig, hydrateRuntimeConfig } from "./runtime-config.mjs";
 const { autoUpdater } = electronUpdater;
 
 app.setName("OpenGran");
-loadRootEnv();
+loadRootEnv({
+	includeWorkingDirectory: app.isPackaged !== true,
+});
 await hydrateRuntimeConfig();
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url));

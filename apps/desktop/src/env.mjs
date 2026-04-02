@@ -7,14 +7,21 @@ export const getEnvFileName = () =>
 		? ".env"
 		: ".env.local";
 
-export const getEnvPaths = () => {
+export const getEnvPaths = (options = {}) => {
 	const envFileName = getEnvFileName();
-
-	return [
-		resolve(process.cwd(), "../..", envFileName),
-		resolve(process.cwd(), envFileName),
+	const includeWorkingDirectory = options.includeWorkingDirectory !== false;
+	const envPaths = [
 		resolve(fileURLToPath(new URL("../../..", import.meta.url)), envFileName),
-	].filter(Boolean);
+	];
+
+	if (includeWorkingDirectory) {
+		envPaths.unshift(
+			resolve(process.cwd(), "../..", envFileName),
+			resolve(process.cwd(), envFileName),
+		);
+	}
+
+	return envPaths.filter(Boolean);
 };
 
 const parseEnvLine = (line) => {

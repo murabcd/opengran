@@ -19,13 +19,31 @@ const getAuthBaseUrl = () => {
 	return value;
 };
 
-const readCookieJar = () => {
-	const stored = cookieStore.get("cookieJar");
+const getAuthOrigin = () => new URL(getAuthBaseUrl()).origin;
+
+const readCookieJars = () => {
+	const stored = cookieStore.get("cookieJars");
 	return stored && typeof stored === "object" ? stored : {};
 };
 
-const writeCookieJar = (value) => {
-	cookieStore.set("cookieJar", value);
+const writeCookieJars = (value) => {
+	cookieStore.set("cookieJars", value);
+
+	if (cookieStore.has("cookieJar")) {
+		cookieStore.delete("cookieJar");
+	}
+};
+
+const readCookieJar = (authOrigin) => {
+	const stored = readCookieJars()[authOrigin];
+	return stored && typeof stored === "object" ? stored : {};
+};
+
+const writeCookieJar = (authOrigin, value) => {
+	writeCookieJars({
+		...readCookieJars(),
+		[authOrigin]: value,
+	});
 };
 
 const parseSetCookieHeader = (headerValue) => {
@@ -60,9 +78,9 @@ const getSetCookieHeaders = (headers) => {
 	return combined ? [combined] : [];
 };
 
-const mergeSetCookieHeaders = (headers) => {
+const mergeSetCookieHeaders = (headers, authOrigin) => {
 	const nextCookieJar = {
-		...readCookieJar(),
+		...readCookieJar(authOrigin),
 	};
 
 	for (const headerValue of getSetCookieHeaders(headers)) {
@@ -89,12 +107,12 @@ const mergeSetCookieHeaders = (headers) => {
 		};
 	}
 
-	writeCookieJar(nextCookieJar);
+	writeCookieJar(authOrigin, nextCookieJar);
 };
 
-const getCookie = () => {
+const getCookie = (authOrigin) => {
 	const now = Date.now();
-	const currentCookieJar = readCookieJar();
+	const currentCookieJar = readCookieJar(authOrigin);
 	const nextCookieJar = {};
 	const cookieParts = [];
 
@@ -119,7 +137,7 @@ const getCookie = () => {
 		cookieParts.push(`${name}=${entry.value}`);
 	}
 
-	writeCookieJar(nextCookieJar);
+	writeCookieJar(authOrigin, nextCookieJar);
 	return cookieParts.join("; ");
 };
 
@@ -143,9 +161,9 @@ const toAbsoluteUrl = (path) =>
 
 const authFetch = async (path, options = {}) => {
 	const requestHeaders = new Headers(options.headers ?? {});
-	const cookie = getCookie();
 	const authBaseUrl = getAuthBaseUrl();
-	const authOrigin = new URL(authBaseUrl).origin;
+	const authOrigin = getAuthOrigin();
+	const cookie = getCookie(authOrigin);
 
 	if (cookie && !requestHeaders.has("cookie")) {
 		requestHeaders.set("cookie", cookie);
@@ -166,7 +184,7 @@ const authFetch = async (path, options = {}) => {
 		redirect: "follow",
 	});
 
-	mergeSetCookieHeaders(response.headers);
+	mergeSetCookieHeaders(response.headers, authOrigin);
 
 	const data = await parseResponse(response);
 
@@ -186,6 +204,6 @@ const authFetch = async (path, options = {}) => {
 };
 
 export const getDesktopAuthClient = () => ({
-	getCookie,
+	getCookie: () => getCookie(getAuthOrigin()),
 	$fetch: authFetch,
 });
