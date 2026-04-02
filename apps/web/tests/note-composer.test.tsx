@@ -764,6 +764,122 @@ describe("NoteComposer", () => {
 		expect(reservedSpeechSpacer).toBeUndefined();
 	});
 
+	it("hides generate notes while inline chat is open", async () => {
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 4;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		useNoteTranscriptSessionMock.mockReturnValue({
+			autoStartKey: null,
+			captureScopeKey: "note:note-1",
+			displayTranscriptEntries: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					isLive: false,
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
+			fullTranscript: "hello",
+			handleGenerateNotes: vi.fn(),
+			hasGeneratedLatestTranscript: false,
+			hasPendingGenerateTranscript: true,
+			isTranscriptSessionReady: true,
+			isGeneratingNotes: false,
+			isRefiningTranscript: false,
+			isSpeechListening: false,
+			liveTranscriptEntries: [],
+			onLiveTranscriptChange: vi.fn(),
+			onRecoveryStatusChange: vi.fn(),
+			onSystemAudioRecordingReady: vi.fn(),
+			onSystemAudioStatusChange: vi.fn(),
+			onTranscriptListeningChange: vi.fn(),
+			onTranscriptUtterance: vi.fn(),
+			orderedTranscriptUtterances: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
+			recoveryStatus: {
+				attempt: 0,
+				maxAttempts: 0,
+				message: null,
+				state: "idle",
+			},
+			systemAudioStatus: {
+				sourceMode: "display-media",
+				state: "ready",
+			},
+			transcriptRefinementError: null,
+			transcriptViewportRef: {
+				current: null,
+			},
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		expect(
+			screen.getByRole("button", { name: "Generate notes" }),
+		).toBeDefined();
+
+		fireEvent.focus(screen.getByRole("textbox"));
+
+		await screen.findByPlaceholderText("Continue chat");
+		expect(screen.queryByRole("button", { name: "Generate notes" })).toBeNull();
+	});
+
 	it("keeps the inline transcript controls pinned to the dock position", async () => {
 		useNoteTranscriptSessionMock.mockReturnValue({
 			autoStartKey: null,

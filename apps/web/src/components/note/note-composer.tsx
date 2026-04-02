@@ -408,6 +408,7 @@ const useNoteComposerController = ({
 		transcriptSession.hasPendingGenerateTranscript &&
 		!transcriptSession.hasGeneratedLatestTranscript &&
 		!transcriptSession.isSpeechListening &&
+		!isChatOpen &&
 		!isTranscriptOpen &&
 		!transcriptSession.isRefiningTranscript;
 	const selectedNoteChat =
