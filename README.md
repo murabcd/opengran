@@ -91,7 +91,19 @@ bun dev
 
 Your app should then be available on [localhost:3000](http://localhost:3000/).
 
-On macOS, `bun dev` launches an unpacked `OpenGran.app` wired to the local renderer so native permissions and desktop bundle behavior stay close to production.
+For day-to-day work, keep the command set small:
+
+```bash
+bun dev
+bun run dev:desktop
+bun run dev:desktop:native
+```
+
+- `bun dev` runs the full local stack: web, desktop, and `convex dev`
+- `bun run dev:desktop` is the fast desktop loop using plain Electron
+- `bun run dev:desktop:native` runs the packaged desktop app in local mode for macOS-native behavior such as permissions, app id, and system audio
+
+`bun dev` does not run the packaged macOS app. If you are testing microphone or screen/system-audio permissions, use `bun run dev:desktop:native`.
 
 If macOS blocks `OpenGran.app` because it cannot verify the developer, open `System Settings > Privacy & Security`, scroll to the security section, click `Open Anyway` for `OpenGran`, authenticate with Touch ID or your password, then reopen the app and confirm `Open Anyway` one more time.
 

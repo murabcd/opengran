@@ -45,7 +45,9 @@ const { autoUpdater } = electronUpdater;
 
 app.setName("OpenGran");
 loadRootEnv({
-	includeWorkingDirectory: app.isPackaged !== true,
+	includeWorkingDirectory:
+		app.isPackaged !== true ||
+		process.env.OPENGRAN_ENV_MODE?.trim() !== "production",
 });
 await hydrateRuntimeConfig();
 
@@ -53,10 +55,6 @@ const runtimeDir = dirname(fileURLToPath(import.meta.url));
 const trayIconPath = join(runtimeDir, "assets", "OpenGranTemplate.png");
 const dockIconPath = join(runtimeDir, "assets", "OpenGranDock.png");
 const traySettingsPath = join(app.getPath("userData"), "tray-settings.json");
-const desktopPermissionsPath = join(
-	app.getPath("userData"),
-	"desktop-permissions.json",
-);
 const lastNavigationPath = join(
 	app.getPath("userData"),
 	"last-navigation.json",
@@ -94,10 +92,6 @@ const defaultWindowSize = {
 };
 const defaultTraySettings = {
 	keepOpenInMenuBar: true,
-};
-const defaultDesktopPermissionsState = {
-	systemAudioValidated: false,
-	systemAudioBlocked: false,
 };
 const defaultLastNavigation = {
 	hash: "",
@@ -189,7 +183,6 @@ let isQuitting = false;
 let isBypassingQuitConfirmation = false;
 let isPromptingForQuitConfirmation = false;
 let traySettings = defaultTraySettings;
-let desktopPermissionsState = defaultDesktopPermissionsState;
 let trayCalendarState = createInitialTrayCalendarState();
 let trayCalendarWorkspaceId = null;
 let activeWorkspaceNotificationPreferences =
@@ -203,6 +196,7 @@ let microphoneCaptureStartRequestId = 0;
 let microphoneActivitySession = null;
 let systemAudioCaptureSession = null;
 let systemAudioCaptureStartRequestId = 0;
+let systemAudioPermissionState = "prompt";
 let meetingWidgetWindow = null;
 let latestMeetingWidgetSize = { width: 360, height: 104 };
 let meetingWidgetAutoHideTimeoutId = null;
@@ -1411,11 +1405,6 @@ const promptWithUpdateWindow = async (state, options = {}) => {
 	});
 };
 
-const normalizeDesktopPermissionsState = (value) => ({
-	systemAudioValidated: value?.systemAudioValidated === true,
-	systemAudioBlocked: value?.systemAudioBlocked === true,
-});
-
 const resolveSystemAudioHelperPath = () => {
 	const envPath = process.env.OPENGRAN_SYSTEM_AUDIO_HELPER_PATH?.trim();
 	const unpackedHelperPath = app.isPackaged
@@ -1546,51 +1535,6 @@ function createEmptyLiveTranscriptState() {
 	};
 }
 
-const hydrateDesktopPermissionsState = async () => {
-	try {
-		const raw = await readFile(desktopPermissionsPath, "utf8");
-		desktopPermissionsState = normalizeDesktopPermissionsState(JSON.parse(raw));
-	} catch (error) {
-		if (
-			error &&
-			typeof error === "object" &&
-			"code" in error &&
-			error.code === "ENOENT"
-		) {
-			desktopPermissionsState = defaultDesktopPermissionsState;
-			return;
-		}
-
-		console.warn("Failed to read desktop permissions state.", error);
-		desktopPermissionsState = defaultDesktopPermissionsState;
-	}
-};
-
-const persistDesktopPermissionsState = async () => {
-	await mkdir(app.getPath("userData"), { recursive: true });
-	await writeFile(
-		desktopPermissionsPath,
-		JSON.stringify(desktopPermissionsState, null, 2),
-		"utf8",
-	);
-};
-
-const setSystemAudioValidated = async (isValidated) => {
-	desktopPermissionsState = normalizeDesktopPermissionsState({
-		...desktopPermissionsState,
-		systemAudioValidated: isValidated,
-	});
-	await persistDesktopPermissionsState();
-};
-
-const setSystemAudioBlocked = async (isBlocked) => {
-	desktopPermissionsState = normalizeDesktopPermissionsState({
-		...desktopPermissionsState,
-		systemAudioBlocked: isBlocked,
-	});
-	await persistDesktopPermissionsState();
-};
-
 const isLikelySystemAudioPermissionError = (error) => {
 	const message = error instanceof Error ? error.message : String(error);
 
@@ -1601,7 +1545,17 @@ const isLikelySystemAudioPermissionError = (error) => {
 	);
 };
 
-await hydrateDesktopPermissionsState();
+const markSystemAudioPermissionGranted = () => {
+	systemAudioPermissionState = "granted";
+};
+
+const markSystemAudioPermissionPrompt = () => {
+	systemAudioPermissionState = "prompt";
+};
+
+const markSystemAudioPermissionBlocked = () => {
+	systemAudioPermissionState = "blocked";
+};
 
 const getLiveDesktopWindows = () =>
 	BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
@@ -4289,6 +4243,12 @@ const startSystemAudioCapture = async () => {
 				return;
 			}
 
+			if (isLikelySystemAudioPermissionError(error)) {
+				markSystemAudioPermissionBlocked();
+			} else if (systemAudioPermissionState !== "granted") {
+				markSystemAudioPermissionPrompt();
+			}
+
 			console.error(
 				"[system-audio] helper failed to start",
 				error instanceof Error ? error.message : error,
@@ -4319,6 +4279,7 @@ const startSystemAudioCapture = async () => {
 			}
 
 			console.info("[system-audio] helper reported ready", payload);
+			markSystemAudioPermissionGranted();
 			didResolve = true;
 			resolvePromise(payload);
 		};
@@ -4717,28 +4678,18 @@ const getSystemAudioPermission = () => {
 
 	if (process.platform === "darwin") {
 		const helperPath = resolveSystemAudioHelperPath();
-		const hasSystemAudioGrant = desktopPermissionsState.systemAudioValidated;
-		const isSystemAudioBlocked =
-			desktopPermissionsState.systemAudioBlocked && !hasSystemAudioGrant;
 
 		return {
 			id: "systemAudio",
 			description: helperPath
-				? hasSystemAudioGrant
-					? "During your meetings, OpenGran transcribes your system audio output."
-					: "During your meetings, OpenGran transcribes your system audio output."
+				? "During your meetings, OpenGran transcribes your system audio output."
 				: "The macOS system-audio helper is missing from this build.",
 			required: false,
-			state: helperPath
-				? hasSystemAudioGrant
-					? "granted"
-					: isSystemAudioBlocked
-						? "blocked"
-						: "prompt"
-				: "unsupported",
+			state: helperPath ? systemAudioPermissionState : "unsupported",
 			canRequest:
-				Boolean(helperPath) && !hasSystemAudioGrant && !isSystemAudioBlocked,
-			canOpenSystemSettings: isSystemAudioBlocked,
+				Boolean(helperPath) && systemAudioPermissionState === "prompt",
+			canOpenSystemSettings:
+				Boolean(helperPath) && systemAudioPermissionState === "blocked",
 		};
 	}
 
@@ -4772,18 +4723,17 @@ const requestPermission = async (permissionId) => {
 		try {
 			await startSystemAudioCapture();
 			await stopSystemAudioCapture();
-			await setSystemAudioBlocked(false);
-			await setSystemAudioValidated(true);
 		} catch (error) {
 			await stopSystemAudioCapture().catch(() => {});
 
 			if (isLikelySystemAudioPermissionError(error)) {
-				await setSystemAudioBlocked(true);
+				markSystemAudioPermissionBlocked();
 				throw new Error(
 					"System audio access is blocked. Enable it in System Settings > Privacy & Security > Screen & System Audio Recording, then try again.",
 				);
 			}
 
+			markSystemAudioPermissionPrompt();
 			throw error;
 		}
 
@@ -4812,7 +4762,7 @@ const openPermissionSettings = async (permissionId) => {
 			throw new Error("Unsupported desktop permission.");
 		}
 
-		await setSystemAudioBlocked(false);
+		markSystemAudioPermissionPrompt();
 		await shell.openExternal(
 			"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
 		);

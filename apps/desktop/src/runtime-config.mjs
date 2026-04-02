@@ -7,7 +7,9 @@ const defaultHostedSiteUrl = defaultHostedConvexSiteUrl;
 const trimConfigValue = (value) =>
 	typeof value === "string" ? value.trim() : "";
 
-const shouldUseHostedDefaults = () => app.isPackaged === true;
+const shouldUseHostedDefaults = () =>
+	app.isPackaged === true &&
+	process.env.OPENGRAN_ENV_MODE?.trim() === "production";
 
 const deriveConvexSiteUrl = (convexUrl) => {
 	if (!convexUrl) {

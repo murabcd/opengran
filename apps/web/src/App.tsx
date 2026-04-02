@@ -182,6 +182,11 @@ const DESKTOP_PERMISSION_LABELS: Record<DesktopPermissionId, string> = {
 	systemAudio: "Transcribe others",
 };
 
+const DESKTOP_PERMISSION_BUTTON_LABELS: Record<DesktopPermissionId, string> = {
+	microphone: "Enable",
+	systemAudio: "Enable",
+};
+
 type GroupedItems<T> = {
 	today: T[];
 	yesterday: T[];
@@ -750,6 +755,8 @@ const useAppBootstrapState = () => {
 		React.useState<DesktopPermissionsStatus | null>(null);
 	const [isRefreshingDesktopPermissions, startDesktopPermissionsRefresh] =
 		React.useTransition();
+	const [activeDesktopPermissionId, setActiveDesktopPermissionId] =
+		React.useState<DesktopPermissionId | null>(null);
 	const [isCompletingDesktopPermissions, startDesktopPermissionsCompletion] =
 		React.useTransition();
 	const workspaceNameSeededForRef = React.useRef<string | null>(null);
@@ -1024,6 +1031,7 @@ const useAppBootstrapState = () => {
 
 	const handleRequestDesktopPermission = React.useCallback(
 		(permissionId: DesktopPermissionId) => {
+			setActiveDesktopPermissionId(permissionId);
 			startDesktopPermissionsRefresh(async () => {
 				try {
 					setDesktopPermissionsError(null);
@@ -1041,6 +1049,8 @@ const useAppBootstrapState = () => {
 							? error.message
 							: "Failed to request desktop permission.",
 					);
+				} finally {
+					setActiveDesktopPermissionId(null);
 				}
 			});
 		},
@@ -1049,6 +1059,7 @@ const useAppBootstrapState = () => {
 
 	const handleOpenDesktopPermissionSettings = React.useCallback(
 		(permissionId: DesktopPermissionId) => {
+			setActiveDesktopPermissionId(permissionId);
 			startDesktopPermissionsRefresh(async () => {
 				try {
 					setDesktopPermissionsError(null);
@@ -1065,6 +1076,8 @@ const useAppBootstrapState = () => {
 							? error.message
 							: "Failed to open system settings.",
 					);
+				} finally {
+					setActiveDesktopPermissionId(null);
 				}
 			});
 		},
@@ -1111,6 +1124,7 @@ const useAppBootstrapState = () => {
 			systemAudioPermissionRow.state === "unsupported");
 
 	return {
+		activeDesktopPermissionId,
 		areDesktopPermissionsReady,
 		authError,
 		authenticatingProvider,
@@ -1220,6 +1234,7 @@ function MainApp() {
 			<DesktopPermissionsOnboardingScreen
 				error={controller.desktopPermissionsError}
 				isDesktopMac={controller.isDesktopMac}
+				activePermissionId={controller.activeDesktopPermissionId}
 				isRefreshing={controller.isRefreshingDesktopPermissions}
 				isSubmitting={controller.isCompletingDesktopPermissions}
 				permissions={controller.desktopPermissionRows}
@@ -1260,6 +1275,7 @@ function MainApp() {
 				controller.shouldShowDesktopPermissionsScreen
 			}
 			desktopPermissionsError={controller.desktopPermissionsError}
+			activeDesktopPermissionId={controller.activeDesktopPermissionId}
 			isRefreshingDesktopPermissions={controller.isRefreshingDesktopPermissions}
 			isCompletingDesktopPermissions={controller.isCompletingDesktopPermissions}
 			desktopPermissionRows={controller.desktopPermissionRows}
@@ -1302,6 +1318,7 @@ function AppGate({
 	desktopPermissionsStatus,
 	shouldShowDesktopPermissionsScreen,
 	desktopPermissionsError,
+	activeDesktopPermissionId,
 	isRefreshingDesktopPermissions,
 	isCompletingDesktopPermissions,
 	desktopPermissionRows,
@@ -1340,6 +1357,7 @@ function AppGate({
 	desktopPermissionsStatus: DesktopPermissionsStatus | null;
 	shouldShowDesktopPermissionsScreen: boolean;
 	desktopPermissionsError: string | null;
+	activeDesktopPermissionId: DesktopPermissionId | null;
 	isRefreshingDesktopPermissions: boolean;
 	isCompletingDesktopPermissions: boolean;
 	desktopPermissionRows: DesktopPermissionRow[];
@@ -1408,6 +1426,7 @@ function AppGate({
 			<DesktopPermissionsOnboardingScreen
 				error={desktopPermissionsError}
 				isDesktopMac={isDesktopMac}
+				activePermissionId={activeDesktopPermissionId}
 				isRefreshing={isRefreshingDesktopPermissions}
 				isSubmitting={isCompletingDesktopPermissions}
 				permissions={desktopPermissionRows}
@@ -1635,10 +1654,6 @@ const getDesktopPermissionTone = (state: DesktopPermissionState) => {
 		return "border-transparent bg-muted text-foreground";
 	}
 
-	if (state === "blocked") {
-		return "border-[var(--warning-border)] bg-[var(--warning-soft)] text-[var(--warning-foreground)]";
-	}
-
 	return "border-border bg-muted/40 text-muted-foreground";
 };
 
@@ -1646,7 +1661,7 @@ const getDesktopPermissionIcon = (permissionId: DesktopPermissionId) =>
 	permissionId === "microphone" ? Mic : Volume2;
 
 const getDesktopPermissionActionLabel = (permissionId: DesktopPermissionId) =>
-	permissionId === "microphone" ? "Enable Microphone" : "Enable System Audio";
+	DESKTOP_PERMISSION_BUTTON_LABELS[permissionId];
 
 const getDesktopPermissionStateLabel = (permission: DesktopPermissionRow) => {
 	if (permission.state === "granted") {
@@ -1673,6 +1688,7 @@ const getDesktopPermissionStateLabel = (permission: DesktopPermissionRow) => {
 function DesktopPermissionsOnboardingScreen({
 	error,
 	isDesktopMac,
+	activePermissionId,
 	isRefreshing,
 	isSubmitting,
 	permissions,
@@ -1683,6 +1699,7 @@ function DesktopPermissionsOnboardingScreen({
 }: {
 	error: string | null;
 	isDesktopMac: boolean;
+	activePermissionId: DesktopPermissionId | null;
 	isRefreshing: boolean;
 	isSubmitting: boolean;
 	permissions: DesktopPermissionRow[];
@@ -1712,6 +1729,8 @@ function DesktopPermissionsOnboardingScreen({
 						const Icon = getDesktopPermissionIcon(permission.id);
 						const isRequestBlockedByDependency =
 							permission.id === "systemAudio" && !isMicrophoneGranted;
+						const isActionPending =
+							isRefreshing && activePermissionId === permission.id;
 
 						return (
 							<React.Fragment key={permission.id}>
@@ -1725,7 +1744,9 @@ function DesktopPermissionsOnboardingScreen({
 										<Icon className="size-4" />
 									</div>
 									<div className="min-w-0 flex-1">
-										<p className="font-medium">{permission.label}</p>
+										<p className="font-medium whitespace-nowrap">
+											{permission.label}
+										</p>
 									</div>
 									{permission.state === "granted" ? (
 										<div className="inline-flex size-9 items-center justify-center rounded-full border border-border/70">
@@ -1735,7 +1756,7 @@ function DesktopPermissionsOnboardingScreen({
 										<Button
 											type="button"
 											size="sm"
-											className="shrink-0 rounded-full px-4"
+											className="shrink-0 rounded-full px-4 whitespace-nowrap"
 											onClick={() => onRequestPermission(permission.id)}
 											disabled={
 												isRefreshing ||
@@ -1743,7 +1764,7 @@ function DesktopPermissionsOnboardingScreen({
 												isRequestBlockedByDependency
 											}
 										>
-											{isRefreshing ? (
+											{isActionPending ? (
 												<LoaderCircle className="size-4 animate-spin" />
 											) : (
 												<Icon className="size-4" />
@@ -1755,11 +1776,15 @@ function DesktopPermissionsOnboardingScreen({
 											type="button"
 											size="sm"
 											variant="outline"
-											className="shrink-0 rounded-full px-4"
+											className="shrink-0 rounded-full px-4 whitespace-nowrap"
 											onClick={() => onOpenSettings(permission.id)}
 											disabled={isRefreshing || isSubmitting}
 										>
-											<ExternalLink className="size-4" />
+											{isActionPending ? (
+												<LoaderCircle className="size-4 animate-spin" />
+											) : (
+												<ExternalLink className="size-4" />
+											)}
 											Open settings
 										</Button>
 									) : (
