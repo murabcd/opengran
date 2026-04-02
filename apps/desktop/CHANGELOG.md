@@ -1,28 +1,11 @@
 # desktop
 
-## 0.1.3
-
-### Patch Changes
-
-- bundle the full shared ai runtime directory into the packaged desktop app so installed builds no longer crash on missing module imports
-
-## 0.1.2
-
-### Patch Changes
-
-- fix the standalone desktop packaging regression by bundling the shared template-stream parser with the app instead of importing it from the web workspace
-
-## 0.1.1
-
-### Patch Changes
-
-- make installed desktop builds use the hosted OpenGran backend by default so packaged releases open, sign in, and use AI features without a local env file
-
 ## 0.1.0
 
 ### Minor Changes
 
 - ship the next desktop release with improved transcription recovery, meeting controls, workspace settings, and note editing polish
+- make the hosted desktop build work as a standalone installed app with bundled shared AI runtime files instead of requiring local env-driven packaging workarounds
 
 ## 0.0.3
 
