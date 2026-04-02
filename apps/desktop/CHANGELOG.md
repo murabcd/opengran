@@ -1,5 +1,11 @@
 # desktop
 
+## 0.1.0
+
+### Minor Changes
+
+- ship the next desktop release with improved transcription recovery, meeting controls, workspace settings, and note editing polish
+
 ## 0.0.3
 
 ### Patch Changes
