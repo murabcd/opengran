@@ -129,6 +129,9 @@ const normalizeChatTitle = (value: string | undefined) => {
 		: "New chat";
 };
 
+const normalizeOptionalChatTitle = (value: string | undefined) =>
+	value === undefined ? undefined : normalizeChatTitle(value);
+
 const normalizeChatPreview = (value: string | undefined) =>
 	truncate(clampWhitespace(value ?? ""), MAX_CHAT_PREVIEW_LENGTH);
 
@@ -573,7 +576,7 @@ export const saveMessage = mutation({
 		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
 		const authorName = getAuthorName(identity);
 		const now = Date.now();
-		const normalizedTitle = normalizeChatTitle(args.title);
+		const normalizedTitle = normalizeOptionalChatTitle(args.title);
 		const normalizedPreview = normalizeChatPreview(
 			args.preview ?? args.message.text,
 		);
@@ -608,7 +611,7 @@ export const saveMessage = mutation({
 				authorName,
 				chatId: storedChatId,
 				noteId: storedNoteId,
-				title: normalizedTitle,
+				title: normalizedTitle ?? "New chat",
 				preview: normalizedPreview,
 				model: args.model,
 				isArchived: false,
@@ -619,9 +622,10 @@ export const saveMessage = mutation({
 			}));
 
 		if (existingChat) {
-			const nextTitle = shouldReplaceChatTitle(existingChat, normalizedTitle)
-				? normalizedTitle
-				: existingChat.title;
+			const nextTitle =
+				normalizedTitle && shouldReplaceChatTitle(existingChat, normalizedTitle)
+					? normalizedTitle
+					: existingChat.title;
 
 			await ctx.db.patch(existingChat._id, {
 				chatId: storedChatId,

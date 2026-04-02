@@ -39,7 +39,9 @@ export const CHAT_TITLE_SYSTEM_PROMPT = joinPromptSections([
 	"Use 2 to 5 words when possible.",
 	"Use the same primary language as the user's message.",
 	"Use sentence case: capitalize only the first letter, not every word.",
-	"If the message is too short, generic, or only a greeting, return exactly `New chat`.",
+	"Prefer a concise topic label, not a full sentence or question.",
+	"Do not copy the user's message verbatim unless it already reads like a title.",
+	"If the exchange is just a greeting or a quick check-in, return exactly `Quick check-in`.",
 	"Output only the title text.",
 	"Do not use quotes, prefixes, markdown, punctuation wrappers, or extra explanation.",
 ]);

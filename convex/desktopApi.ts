@@ -27,6 +27,11 @@ import {
 	ENHANCED_NOTE_SYSTEM_PROMPT,
 } from "../packages/ai/src/prompts.mjs";
 import {
+	buildChatTitlePrompt,
+	deriveFallbackChatTitle,
+	finalizeGeneratedChatTitle,
+} from "../packages/ai/src/chat-titles.mjs";
+import {
 	createRealtimeTranscriptionSession,
 	normalizeTranscriptionLanguage,
 	TRANSCRIPTION_MODEL,
@@ -189,42 +194,41 @@ const getMessageText = (message: UIMessage) =>
 			.join("\n\n"),
 	);
 
-const getChatTitleFromMessage = (message: UIMessage) => {
-	const text = getMessageText(message);
+const generateChatTitle = async ({
+	userMessage,
+	assistantMessage,
+}: {
+	userMessage: UIMessage;
+	assistantMessage?: UIMessage;
+}) => {
+	const userText = getMessageText(userMessage);
+	const assistantText = assistantMessage ? getMessageText(assistantMessage) : "";
 
-	return text ? truncate(text, MAX_CHAT_TITLE_LENGTH) : "New chat";
-};
-
-const sanitizeGeneratedChatTitle = (value: string) => {
-	const firstLine = value.split("\n")[0] ?? "";
-	const normalized = clampWhitespace(
-		firstLine
-			.replace(/^[#*`"'\s]+/, "")
-			.replace(/^(title|chat title)\s*:\s*/i, "")
-			.replace(/["'`]+$/g, ""),
-	);
-
-	return normalized ? truncate(normalized, MAX_CHAT_TITLE_LENGTH) : "New chat";
-};
-
-const generateChatTitle = async (message: UIMessage) => {
-	const messageText = getMessageText(message);
-
-	if (!messageText) {
-		return "New chat";
+	if (!userText) {
+		return "Quick chat";
 	}
 
 	try {
 		const { text } = await generateText({
 			model: openai(CHAT_TITLE_MODEL),
 			system: CHAT_TITLE_SYSTEM_PROMPT,
-			prompt: messageText,
+			prompt: buildChatTitlePrompt({
+				userText,
+				assistantText,
+			}),
 		});
 
-		return sanitizeGeneratedChatTitle(text);
+		return finalizeGeneratedChatTitle({
+			generatedTitle: text,
+			userText,
+			maxLength: MAX_CHAT_TITLE_LENGTH,
+		});
 	} catch (error) {
 		console.error("Failed to generate chat title", error);
-		return getChatTitleFromMessage(message);
+		return deriveFallbackChatTitle({
+			userText,
+			maxLength: MAX_CHAT_TITLE_LENGTH,
+		});
 	}
 };
 
@@ -485,19 +489,18 @@ export const handleChatRequest = async (request: Request) => {
 			.reverse()
 			.find((currentMessage) => currentMessage.role === "user");
 	const shouldGenerateChatTitle = Boolean(
-		convexClient && id && resolvedWorkspaceId && lastUserMessage && !storedChat,
+		convexClient &&
+			id &&
+			resolvedWorkspaceId &&
+			lastUserMessage &&
+			(!storedChat || storedChat.title === "New chat"),
 	);
-	const titlePromise = shouldGenerateChatTitle && lastUserMessage
-		? generateChatTitle(lastUserMessage)
-		: null;
-
 	if (convexClient && id && resolvedWorkspaceId && lastUserMessage) {
 		try {
 			await convexClient.mutation(api.chats.saveMessage, {
 				workspaceId: resolvedWorkspaceId,
 				chatId: id,
 				noteId: resolvedNoteId ?? undefined,
-				title: storedChat ? undefined : "New chat",
 				preview: getChatPreviewFromMessage(lastUserMessage),
 				model: selectedModel.model,
 				message: toStoredMessage(lastUserMessage),
@@ -505,20 +508,6 @@ export const handleChatRequest = async (request: Request) => {
 		} catch (error) {
 			console.error("Failed to persist user chat message", error);
 		}
-	}
-
-	if (convexClient && id && resolvedWorkspaceId && titlePromise) {
-		void titlePromise
-			.then(async (title) => {
-				await convexClient.mutation(api.chats.updateTitle, {
-					workspaceId: resolvedWorkspaceId,
-					chatId: id,
-					title,
-				});
-			})
-			.catch((error) => {
-				console.error("Failed to persist generated chat title", error);
-			});
 	}
 
 	const notesContext = await getNotesContext({
@@ -583,10 +572,18 @@ export const handleChatRequest = async (request: Request) => {
 			}
 
 			try {
+				const generatedChatTitle =
+					shouldGenerateChatTitle && lastUserMessage
+						? await generateChatTitle({
+								userMessage: lastUserMessage,
+								assistantMessage: responseMessage,
+							})
+						: undefined;
 				await convexClient.mutation(api.chats.saveMessage, {
 					workspaceId: resolvedWorkspaceId,
 					chatId: id,
 					noteId: resolvedNoteId ?? undefined,
+					title: generatedChatTitle,
 					preview: getChatPreviewFromMessage(responseMessage),
 					model: selectedModel.model,
 					message: toStoredMessage(responseMessage),
