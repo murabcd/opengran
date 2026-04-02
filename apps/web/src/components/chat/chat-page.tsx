@@ -9,6 +9,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@workspace/ui/components/alert-dialog";
+import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
 import { useMutation, useQuery } from "convex/react";
@@ -468,9 +469,10 @@ export function ChatPage({
 
 	return (
 		<>
-			<div
-				ref={controller.hasMessages ? containerRef : undefined}
-				className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+			<ScrollArea
+				className="min-h-0 flex-1"
+				viewportClassName="overscroll-contain"
+				viewportRef={controller.hasMessages ? containerRef : undefined}
 			>
 				<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
 					<div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
@@ -515,7 +517,7 @@ export function ChatPage({
 						)}
 					</div>
 				</div>
-			</div>
+			</ScrollArea>
 
 			<AlertDialog
 				open={controller.confirmTrashChatId !== null}

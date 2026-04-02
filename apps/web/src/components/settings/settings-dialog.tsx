@@ -39,6 +39,7 @@ import {
 import { Icons } from "@workspace/ui/components/icons";
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
+import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import {
 	Select,
 	SelectContent,
@@ -491,22 +492,33 @@ export function SettingsDialog({
 										</BreadcrumbItem>
 									</BreadcrumbList>
 								</Breadcrumb>
-								<div className="flex gap-2 overflow-x-auto py-2 md:hidden">
-									{settingsNav.map((item) => (
-										<Button
-											key={item.name}
-											variant={activePage === item.name ? "secondary" : "ghost"}
-											size="sm"
-											onClick={() => handlePageSelect(item.name)}
-										>
-											<item.icon />
-											{item.name}
-										</Button>
-									))}
-								</div>
+								<ScrollArea
+									className="md:hidden"
+									scrollbarOrientation="horizontal"
+									viewportClassName="w-full"
+								>
+									<div className="flex w-max gap-2 py-2">
+										{settingsNav.map((item) => (
+											<Button
+												key={item.name}
+												variant={
+													activePage === item.name ? "secondary" : "ghost"
+												}
+												size="sm"
+												onClick={() => handlePageSelect(item.name)}
+											>
+												<item.icon />
+												{item.name}
+											</Button>
+										))}
+									</div>
+								</ScrollArea>
 							</div>
 						</header>
-						<div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 pt-0">
+						<ScrollArea
+							className="flex flex-1"
+							viewportClassName="flex flex-col gap-4 p-4 pt-0"
+						>
 							{activePage === "Profile" ? (
 								<ManageAccountForm
 									user={user}
@@ -536,7 +548,7 @@ export function SettingsDialog({
 									onClose={() => onOpenChange(false)}
 								/>
 							) : null}
-						</div>
+						</ScrollArea>
 					</main>
 				</SidebarProvider>
 			</DialogContent>

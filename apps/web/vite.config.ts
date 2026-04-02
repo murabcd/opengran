@@ -71,5 +71,8 @@ export default defineConfig(() => {
 				"@": path.resolve(srcDir),
 			},
 		},
+		test: {
+			setupFiles: ["./tests/setup.ts"],
+		},
 	};
 });

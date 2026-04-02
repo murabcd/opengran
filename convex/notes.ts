@@ -680,12 +680,17 @@ export const moveToTrash = mutation({
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
-		await requireOwnedNote(ctx, args.id, args.workspaceId);
+		const note = await requireOwnedNote(ctx, args.id, args.workspaceId);
 
 		await ctx.db.patch(args.id, {
 			isArchived: true,
 			archivedAt: Date.now(),
 			updatedAt: Date.now(),
+		});
+		await ctx.runMutation(internal.chats.archiveForNote, {
+			ownerTokenIdentifier: note.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
+			noteId: args.id,
 		});
 
 		return null;
@@ -699,12 +704,17 @@ export const restore = mutation({
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
-		await requireOwnedNote(ctx, args.id, args.workspaceId);
+		const note = await requireOwnedNote(ctx, args.id, args.workspaceId);
 
 		await ctx.db.patch(args.id, {
 			isArchived: false,
 			archivedAt: undefined,
 			updatedAt: Date.now(),
+		});
+		await ctx.runMutation(internal.chats.restoreForNote, {
+			ownerTokenIdentifier: note.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
+			noteId: args.id,
 		});
 
 		return null;
@@ -719,6 +729,11 @@ export const remove = mutation({
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const note = await requireOwnedNote(ctx, args.id, args.workspaceId);
+		await ctx.runMutation(internal.chats.removeForNote, {
+			ownerTokenIdentifier: note.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
+			noteId: args.id,
+		});
 		await ctx.scheduler.runAfter(0, internal.transcriptSessions.removeForNote, {
 			noteId: args.id,
 			ownerTokenIdentifier: note.ownerTokenIdentifier,
@@ -774,6 +789,11 @@ export const removeAll = mutation({
 
 		await Promise.all(
 			notes.map(async (note) => {
+				await ctx.runMutation(internal.chats.removeForNote, {
+					ownerTokenIdentifier,
+					workspaceId: args.workspaceId,
+					noteId: note._id,
+				});
 				await ctx.scheduler.runAfter(
 					0,
 					internal.transcriptSessions.removeForNote,
@@ -818,6 +838,11 @@ export const removeAllForWorkspace = internalMutation({
 
 		await Promise.all(
 			notes.map(async (note) => {
+				await ctx.runMutation(internal.chats.removeForNote, {
+					ownerTokenIdentifier: args.ownerTokenIdentifier,
+					workspaceId: args.workspaceId,
+					noteId: note._id,
+				});
 				await ctx.scheduler.runAfter(
 					0,
 					internal.transcriptSessions.removeForNote,

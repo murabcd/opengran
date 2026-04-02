@@ -36,6 +36,7 @@ import {
 	PopoverAnchor,
 	PopoverContent,
 } from "@workspace/ui/components/popover";
+import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { Separator } from "@workspace/ui/components/separator";
 import {
 	SidebarProvider,
@@ -3514,7 +3515,10 @@ function AppShellContent({
 
 	if (currentView === "home") {
 		return (
-			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+			<ScrollArea
+				className="min-h-0 flex-1"
+				viewportClassName="overscroll-contain"
+			>
 				<HomeView
 					currentDate={currentDate}
 					currentDayOfMonth={currentDayOfMonth}
@@ -3533,13 +3537,16 @@ function AppShellContent({
 					onOpenCalendarEventNote={onOpenCalendarEventNote}
 					onOpenCalendarSettings={onOpenCalendarSettings}
 				/>
-			</div>
+			</ScrollArea>
 		);
 	}
 
 	if (currentView === "shared") {
 		return (
-			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+			<ScrollArea
+				className="min-h-0 flex-1"
+				viewportClassName="overscroll-contain"
+			>
 				<SharedView
 					sharedNotes={sharedNotes}
 					currentNoteId={currentNoteId}
@@ -3548,15 +3555,16 @@ function AppShellContent({
 					onOpenNote={onOpenNote}
 					onNoteTrashed={onNoteTrashed}
 				/>
-			</div>
+			</ScrollArea>
 		);
 	}
 
 	if (currentView === "note") {
 		return (
-			<div
-				ref={noteViewScrollRef}
-				className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+			<ScrollArea
+				className="min-h-0 flex-1"
+				viewportClassName="overscroll-contain"
+				viewportRef={noteViewScrollRef}
 			>
 				<NotePage
 					autoStartTranscription={shouldAutoStartNoteCapture}
@@ -3570,7 +3578,7 @@ function AppShellContent({
 						shouldStopNoteCaptureWhenMeetingEnds
 					}
 				/>
-			</div>
+			</ScrollArea>
 		);
 	}
 

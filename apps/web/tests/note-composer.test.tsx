@@ -247,6 +247,85 @@ describe("NoteComposer", () => {
 		).toBeNull();
 	});
 
+	it("keeps streaming assistant thinking aligned to the left", async () => {
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 4;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		useChatMock.mockReturnValue({
+			error: undefined,
+			messages: [
+				{
+					id: "assistant-streaming",
+					role: "assistant",
+					parts: [],
+				},
+			],
+			sendMessage: vi.fn(),
+			setMessages: vi.fn(),
+			status: "streaming",
+			stop: vi.fn(),
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+
+		await waitFor(() => {
+			expect(screen.getByText("Thinking")).toBeDefined();
+		});
+
+		expect(
+			screen.getByText("Thinking").closest(".flex.w-full")?.className,
+		).toBe("flex w-full justify-start");
+	});
+
 	it("keeps the full chat title accessible from the selector trigger", async () => {
 		const fullTitle = "New chat for the quarterly planning table follow-up";
 		let queryCall = 0;

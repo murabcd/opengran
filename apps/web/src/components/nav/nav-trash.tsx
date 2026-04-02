@@ -21,6 +21,7 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "@workspace/ui/components/popover";
+import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import {
 	SidebarMenu,
 	SidebarMenuButton,
@@ -46,6 +47,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { getChatId } from "@/lib/chat";
+import { removeNoteChats, restoreNoteChats } from "@/lib/optimistic-note-chats";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
@@ -133,6 +135,8 @@ function TrashPopoverContent() {
 					...active.filter((item) => item._id !== args.id),
 				]);
 			}
+
+			restoreNoteChats(localStore, args.workspaceId, args.id);
 		},
 	);
 	const remove = useMutation(api.notes.remove).withOptimisticUpdate(
@@ -147,6 +151,8 @@ function TrashPopoverContent() {
 					archived.filter((item) => item._id !== args.id),
 				);
 			}
+
+			removeNoteChats(localStore, args.workspaceId, args.id);
 		},
 	);
 	const restoreChat = useMutation(api.chats.restore).withOptimisticUpdate(
@@ -318,7 +324,7 @@ function TrashPopoverContent() {
 					onSearchChange={(event) => setSearch(event.target.value)}
 				/>
 
-				<div className="min-h-0 flex-1 overflow-y-auto p-2 pt-1">
+				<ScrollArea className="min-h-0 flex-1" viewportClassName="p-2 pt-1">
 					{archivedNotes === undefined || archivedChats === undefined ? (
 						<TrashPopoverSkeleton />
 					) : filteredNotes.length > 0 || filteredChats.length > 0 ? (
@@ -333,7 +339,7 @@ function TrashPopoverContent() {
 					) : (
 						<TrashEmptyState hasArchivedItems={hasArchivedItems} />
 					)}
-				</div>
+				</ScrollArea>
 
 				<div className="border-t px-3 py-2">
 					<div className="text-xs text-muted-foreground">

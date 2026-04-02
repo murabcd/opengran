@@ -49,6 +49,7 @@ import {
 import * as React from "react";
 import { toast } from "sonner";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
+import { archiveNoteChats } from "@/lib/optimistic-note-chats";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { NoteTitleEditInput } from "./note-title-edit-input";
@@ -291,6 +292,8 @@ function useNoteActionsMenu({
 					nextLatest,
 				);
 			}
+
+			archiveNoteChats(localStore, args.workspaceId, args.id);
 		},
 	);
 	const updateVisibility = useMutation(api.notes.updateVisibility);

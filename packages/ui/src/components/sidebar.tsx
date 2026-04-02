@@ -2,6 +2,7 @@
 
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
+import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { Separator } from "@workspace/ui/components/separator";
 import {
 	Sheet,
@@ -563,15 +564,19 @@ function SidebarSeparator({
 	);
 }
 
-function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
+function SidebarContent({
+	className,
+	...props
+}: React.ComponentProps<typeof ScrollArea>) {
 	return (
-		<div
+		<ScrollArea
 			data-slot="sidebar-content"
 			data-sidebar="content"
 			className={cn(
-				"no-scrollbar flex min-h-0 flex-1 flex-col gap-0 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
+				"min-h-0 flex-1 group-data-[collapsible=icon]:overflow-hidden",
 				className,
 			)}
+			viewportClassName="flex min-h-full flex-col gap-0"
 			{...props}
 		/>
 	);

@@ -9,6 +9,7 @@ import {
 	InputGroup,
 	InputGroupAddon,
 } from "@workspace/ui/components/input-group";
+import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { cn } from "@workspace/ui/lib/utils";
 import { Command as CommandPrimitive } from "cmdk";
 import { CheckIcon, SearchIcon } from "lucide-react";
@@ -90,14 +91,12 @@ function CommandList({
 	...props
 }: React.ComponentProps<typeof CommandPrimitive.List>) {
 	return (
-		<CommandPrimitive.List
-			data-slot="command-list"
-			className={cn(
-				"no-scrollbar max-h-72 scroll-py-1 overflow-x-hidden overflow-y-auto outline-none",
-				className,
-			)}
-			{...props}
-		/>
+		<ScrollArea
+			className={cn("max-h-72", className)}
+			viewportClassName="scroll-py-1 outline-none"
+		>
+			<CommandPrimitive.List data-slot="command-list" {...props} />
+		</ScrollArea>
 	);
 }
 

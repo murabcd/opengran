@@ -13,6 +13,7 @@ import {
 	InputGroupButton,
 	InputGroupTextarea,
 } from "@workspace/ui/components/input-group";
+import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import {
 	Select,
 	SelectContent,
@@ -893,12 +894,13 @@ function NoteChatMessages({
 	reactionsByMessageId: Record<string, "like" | "dislike" | undefined>;
 }) {
 	return (
-		<div
-			ref={chatViewportRef}
-			className={cn(
-				"flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-2 pb-2",
+		<ScrollArea
+			className="min-h-0 flex-1"
+			viewportClassName={cn(
+				"flex min-h-full flex-col gap-4 pr-4 pb-2",
 				disablePadding && "px-2",
 			)}
+			viewportRef={chatViewportRef}
 		>
 			{chatMessages.map((chatMessage) => {
 				const text = getChatText(chatMessage);
@@ -925,6 +927,9 @@ function NoteChatMessages({
 								chatMessage.role === "user"
 									? "bg-secondary text-secondary-foreground"
 									: "bg-transparent px-0 py-0 text-foreground",
+								isStreamingAssistantMessage &&
+									!text &&
+									"text-right text-muted-foreground",
 							)}
 						>
 							{isStreamingAssistantMessage && !text ? (
@@ -1049,7 +1054,7 @@ function NoteChatMessages({
 			{chatError ? (
 				<p className="text-sm text-destructive">{chatError.message}</p>
 			) : null}
-		</div>
+		</ScrollArea>
 	);
 }
 
@@ -1761,11 +1766,12 @@ function NoteTranscriptPanel({
 	}
 
 	return (
-		<div
-			ref={controller.transcriptViewportRef}
-			className="w-full overflow-y-auto"
+		<ScrollArea
+			className="min-h-0 w-full flex-1"
+			viewportClassName="flex flex-col gap-4 pr-4"
+			viewportRef={controller.transcriptViewportRef}
 		>
-			<div className={cn("flex flex-col gap-4 pr-4")}>
+			<div className={cn("flex flex-col gap-4")}>
 				{controller.displayTranscriptEntries.map((utterance) => (
 					<div
 						key={utterance.id}
@@ -1788,7 +1794,7 @@ function NoteTranscriptPanel({
 					</div>
 				))}
 			</div>
-		</div>
+		</ScrollArea>
 	);
 }
 

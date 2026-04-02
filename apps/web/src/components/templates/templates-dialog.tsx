@@ -34,6 +34,7 @@ import {
 import { Field, FieldGroup } from "@workspace/ui/components/field";
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
+import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import {
 	Sidebar,
 	SidebarContent,
@@ -564,7 +565,10 @@ function TemplatesEditor({
 	templatesCount: number;
 }) {
 	return (
-		<div className="flex flex-1 flex-col gap-6 overflow-y-auto p-4 pt-0">
+		<ScrollArea
+			className="flex flex-1"
+			viewportClassName="flex flex-col gap-6 p-4 pt-0"
+		>
 			{selectedTemplate ? (
 				<FieldGroup className="gap-2">
 					<Field>
@@ -629,7 +633,7 @@ function TemplatesEditor({
 					{isSaving ? "Saving..." : "Save"}
 				</Button>
 			</div>
-		</div>
+		</ScrollArea>
 	);
 }
 

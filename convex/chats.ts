@@ -65,6 +65,7 @@ const MAX_RETURNED_CHATS = 100;
 const MAX_RETURNED_CHAT_MESSAGES = 200;
 const REMOVE_CHAT_MESSAGES_BATCH_SIZE = 100;
 const REMOVE_ALL_CHATS_BATCH_SIZE = 25;
+const NOTE_CHAT_BATCH_SIZE = 25;
 
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
@@ -225,6 +226,40 @@ const deleteChatBatch = async (
 		hasMore: chats.length === REMOVE_ALL_CHATS_BATCH_SIZE,
 	};
 };
+
+const getNoteChatsByArchiveState = async (
+	ctx: MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+	noteId: Id<"notes">,
+	isArchived: boolean,
+) =>
+	await ctx.db
+		.query("chats")
+		.withIndex("by_owner_ws_note_chat_arch_upd", (q) =>
+			q
+				.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+				.eq("workspaceId", workspaceId)
+				.eq("noteId", noteId)
+				.eq("isArchived", isArchived),
+		)
+		.take(NOTE_CHAT_BATCH_SIZE);
+
+const getNoteChats = async (
+	ctx: MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+	noteId: Id<"notes">,
+) =>
+	await ctx.db
+		.query("chats")
+		.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_noteId_and_chatId", (q) =>
+			q
+				.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+				.eq("workspaceId", workspaceId)
+				.eq("noteId", noteId),
+		)
+		.take(NOTE_CHAT_BATCH_SIZE);
 
 export const list = query({
 	args: {
@@ -394,6 +429,117 @@ export const removeMessagesAndDeleteChat = internalMutation({
 
 		if (chat) {
 			await ctx.db.delete(args.chatId);
+		}
+
+		return null;
+	},
+});
+
+export const archiveForNote = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		noteId: v.id("notes"),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const chats = await getNoteChatsByArchiveState(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+			args.noteId,
+			false,
+		);
+		const timestamp = Date.now();
+
+		await Promise.all(
+			chats.map((chat) =>
+				ctx.db.patch(chat._id, {
+					isArchived: true,
+					archivedAt: timestamp,
+					updatedAt: timestamp,
+				}),
+			),
+		);
+
+		if (chats.length === NOTE_CHAT_BATCH_SIZE) {
+			await ctx.scheduler.runAfter(0, internal.chats.archiveForNote, args);
+		}
+
+		return null;
+	},
+});
+
+export const restoreForNote = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		noteId: v.id("notes"),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const chats = await getNoteChatsByArchiveState(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+			args.noteId,
+			true,
+		);
+		const timestamp = Date.now();
+
+		await Promise.all(
+			chats.map((chat) =>
+				ctx.db.patch(chat._id, {
+					isArchived: false,
+					archivedAt: undefined,
+					updatedAt: timestamp,
+				}),
+			),
+		);
+
+		if (chats.length === NOTE_CHAT_BATCH_SIZE) {
+			await ctx.scheduler.runAfter(0, internal.chats.restoreForNote, args);
+		}
+
+		return null;
+	},
+});
+
+export const removeForNote = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		noteId: v.id("notes"),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const chats = await getNoteChats(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+			args.noteId,
+		);
+
+		await Promise.all(
+			chats.map(async (chat) => {
+				await ctx.db.delete(chat._id);
+
+				const result = await deleteChatMessageBatch(ctx, chat._id);
+
+				if (result.hasMore) {
+					await ctx.scheduler.runAfter(
+						0,
+						internal.chats.removeMessagesAndDeleteChat,
+						{
+							chatId: chat._id,
+						},
+					);
+				}
+			}),
+		);
+
+		if (chats.length === NOTE_CHAT_BATCH_SIZE) {
+			await ctx.scheduler.runAfter(0, internal.chats.removeForNote, args);
 		}
 
 		return null;
