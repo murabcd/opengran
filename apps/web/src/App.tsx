@@ -2299,6 +2299,27 @@ const useAppShellState = ({
 	}, []);
 
 	React.useEffect(() => {
+		if (typeof window === "undefined" || !window.openGranDesktop?.onNavigate) {
+			return;
+		}
+
+		return window.openGranDesktop.onNavigate((navigation) => {
+			const nextLocation = `${navigation.pathname}${navigation.search}${navigation.hash}`;
+
+			if (
+				window.location.pathname === navigation.pathname &&
+				window.location.search === navigation.search &&
+				window.location.hash === navigation.hash
+			) {
+				return;
+			}
+
+			window.history.pushState(null, "", nextLocation);
+			window.dispatchEvent(new PopStateEvent("popstate"));
+		});
+	}, []);
+
+	React.useEffect(() => {
 		if (selectedNote?.title) {
 			setCurrentNoteTitle(selectedNote.title);
 			return;

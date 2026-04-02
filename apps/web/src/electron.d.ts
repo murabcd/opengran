@@ -61,6 +61,12 @@ declare global {
 		status: "idle" | "monitoring" | "prompting";
 	};
 
+	type DesktopNavigation = {
+		hash: string;
+		pathname: string;
+		search: string;
+	};
+
 	type DesktopTranscriptionControllerState = {
 		autoStartKey: string | number | null;
 		error: {
@@ -212,6 +218,9 @@ declare global {
 			) => () => void;
 			onMeetingDetectionState: (
 				listener: (state: DesktopMeetingDetectionState) => void,
+			) => () => void;
+			onNavigate: (
+				listener: (navigation: DesktopNavigation) => void,
 			) => () => void;
 			startSystemAudioCapture: () => Promise<{
 				channels: number;

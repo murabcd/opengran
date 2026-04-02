@@ -4,6 +4,7 @@ const systemAudioCaptureEventChannel = "app:system-audio-capture-event";
 const transcriptionSessionStateChannel = "app:transcription-session-state";
 const transcriptionSessionEventChannel = "app:transcription-session-event";
 const meetingDetectionStateChannel = "app:meeting-detection-state";
+const desktopNavigationChannel = "app:navigate";
 
 contextBridge.exposeInMainWorld("openGranDesktop", {
 	platform: process.platform,
@@ -86,6 +87,17 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 
 		return () => {
 			ipcRenderer.removeListener(meetingDetectionStateChannel, handler);
+		};
+	},
+	onNavigate: (listener) => {
+		const handler = (_event, payload) => {
+			listener(payload);
+		};
+
+		ipcRenderer.on(desktopNavigationChannel, handler);
+
+		return () => {
+			ipcRenderer.removeListener(desktopNavigationChannel, handler);
 		};
 	},
 	startSystemAudioCapture: () =>

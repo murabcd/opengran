@@ -68,6 +68,7 @@ const systemAudioCaptureEventChannel = "app:system-audio-capture-event";
 const transcriptionSessionStateChannel = "app:transcription-session-state";
 const transcriptionSessionEventChannel = "app:transcription-session-event";
 const meetingDetectionStateChannel = "app:meeting-detection-state";
+const desktopNavigationChannel = "app:navigate";
 const captureHealthTimeoutMs = 3_000;
 const maxRecoveryAttempts = 3;
 const recoveryBackoffMs = [750, 1_500, 3_000];
@@ -4490,11 +4491,7 @@ const showMainWindow = async (options = {}) => {
 		);
 		await createMainWindow(targetUrl);
 	} else if (hasExplicitNavigation) {
-		const targetUrl = await getNavigationUrl(options);
-
-		if (mainWindow.webContents.getURL() !== targetUrl) {
-			await mainWindow.loadURL(targetUrl);
-		}
+		await navigateMainWindow(options);
 	}
 
 	if (mainWindow.isMinimized()) {
@@ -4504,6 +4501,46 @@ const showMainWindow = async (options = {}) => {
 	ensureDockVisible();
 	mainWindow.show();
 	mainWindow.focus();
+};
+
+const navigateMainWindow = async (options = {}) => {
+	if (!mainWindow) {
+		return;
+	}
+
+	const targetUrl = new URL(await getNavigationUrl(options));
+	const currentUrlString = mainWindow.webContents.getURL();
+
+	if (!currentUrlString || mainWindow.webContents.isLoadingMainFrame()) {
+		await mainWindow.loadURL(targetUrl.toString());
+		return;
+	}
+
+	try {
+		const currentUrl = new URL(currentUrlString);
+
+		if (
+			currentUrl.origin !== targetUrl.origin ||
+			(currentUrl.pathname === targetUrl.pathname &&
+				currentUrl.search === targetUrl.search &&
+				currentUrl.hash === targetUrl.hash)
+		) {
+			if (currentUrl.toString() !== targetUrl.toString()) {
+				await mainWindow.loadURL(targetUrl.toString());
+			}
+			return;
+		}
+	} catch {
+		await mainWindow.loadURL(targetUrl.toString());
+		return;
+	}
+
+	mainWindow.webContents.send(desktopNavigationChannel, {
+		hash: targetUrl.hash,
+		pathname: targetUrl.pathname,
+		search: targetUrl.search,
+	});
+	await rememberRendererNavigation(targetUrl.toString());
 };
 
 const handleDesktopAuthCallback = async (callbackUrl) => {
