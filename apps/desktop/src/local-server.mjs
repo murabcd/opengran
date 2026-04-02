@@ -11,6 +11,7 @@ import {
 	createIdGenerator,
 	generateText,
 	Output,
+	smoothStream,
 	streamText,
 	validateUIMessages,
 } from "ai";
@@ -18,6 +19,8 @@ import { ConvexHttpClient } from "convex/browser";
 import { z } from "zod";
 import { api } from "../../../convex/_generated/api.js";
 import {
+	APPLY_TEMPLATE_SYSTEM_PROMPT,
+	buildApplyTemplatePrompt,
 	buildChatSystemPrompt,
 	buildEnhancedNotePrompt,
 	CHAT_TITLE_SYSTEM_PROMPT,
@@ -28,6 +31,10 @@ import {
 	normalizeTranscriptionLanguage,
 	TRANSCRIPTION_MODEL,
 } from "../../../packages/ai/src/transcription.mjs";
+import {
+	parseTemplateStreamToStructuredNote,
+	validateTemplateStream,
+} from "../../web/src/lib/note-template-stream.ts";
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
 const webDistDir = resolve(runtimeDir, "../../web/dist");
@@ -74,6 +81,8 @@ const structuredNoteSchema = z.object({
 		)
 		.min(1),
 });
+const APP_SOURCE_PREFIX = "app:";
+const WORKSPACE_SOURCE_PREFIX = "workspace:";
 
 const getConvexUrl = () => {
 	const value = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
@@ -98,30 +107,54 @@ const logOpenAiResponseMetadata = ({ context, requestId, response }) => {
 	});
 };
 
+const getHostedApiBaseUrl = () =>
+	process.env.CONVEX_SITE_URL?.trim() || process.env.SITE_URL?.trim() || "";
+
+const shouldProxyHostedAiRequest = () =>
+	!process.env.OPENAI_API_KEY && Boolean(getHostedApiBaseUrl());
+
 const getReferencedNoteIds = ({ mentions, selectedSourceIds }) =>
-	[...(mentions ?? []), ...(selectedSourceIds ?? [])].filter(
-		(value, index, values) => value && values.indexOf(value) === index,
+	[
+		...(mentions ?? []),
+		...((selectedSourceIds ?? []).filter(
+			(value) =>
+				!value.startsWith(APP_SOURCE_PREFIX) &&
+				!value.startsWith(WORKSPACE_SOURCE_PREFIX),
+		) ?? []),
+	].filter((value, index, values) => value && values.indexOf(value) === index);
+
+const hasWorkspaceSourceSelected = ({ selectedSourceIds }) =>
+	(selectedSourceIds ?? []).some((value) =>
+		value.startsWith(WORKSPACE_SOURCE_PREFIX),
 	);
 
 const getNotesContext = async ({
 	convexToken,
 	mentions,
 	selectedSourceIds,
+	workspaceId,
 }) => {
-	if (!convexToken) {
+	if (!convexToken || !workspaceId) {
 		return "";
 	}
 
 	const noteIds = getReferencedNoteIds({ mentions, selectedSourceIds });
-
-	if (noteIds.length === 0) {
-		return "";
-	}
-
 	const client = new ConvexHttpClient(getConvexUrl(), { auth: convexToken });
-	const notes = await client.query(api.notes.getChatContext, {
-		ids: noteIds,
-	});
+	const shouldUseWorkspaceScope =
+		noteIds.length === 0 &&
+		((selectedSourceIds ?? []).length === 0 ||
+			hasWorkspaceSourceSelected({ selectedSourceIds }));
+	const notes =
+		noteIds.length > 0
+			? await client.query(api.notes.getChatContext, {
+					workspaceId,
+					ids: noteIds,
+				})
+			: shouldUseWorkspaceScope
+				? await client.query(api.notes.getWorkspaceChatContext, {
+						workspaceId,
+					})
+				: [];
 
 	if (notes.length === 0) {
 		return "";
@@ -243,10 +276,82 @@ const readJsonBody = async (request) => {
 	return JSON.parse(rawBody);
 };
 
+const createTemplateSections = (template) =>
+	(template?.sections ?? [])
+		.map((section) => ({
+			title: section?.title?.trim() ?? "",
+			prompt: section?.prompt?.trim() ?? "",
+		}))
+		.filter((section) => section.title);
+
 const sendJson = (response, statusCode, payload) => {
 	response.statusCode = statusCode;
 	response.setHeader("Content-Type", "application/json");
 	response.end(JSON.stringify(payload));
+};
+
+const proxyHostedAiRequest = async ({
+	path,
+	request,
+	response,
+	bodyOverride,
+	headersOverride,
+}) => {
+	const baseUrl = getHostedApiBaseUrl();
+
+	if (!baseUrl) {
+		throw new Error("CONVEX_SITE_URL is not configured.");
+	}
+
+	const proxyHeaders = new Headers();
+
+	for (const [key, value] of Object.entries(request.headers)) {
+		if (value == null || key.toLowerCase() === "host") {
+			continue;
+		}
+
+		if (Array.isArray(value)) {
+			for (const entry of value) {
+				proxyHeaders.append(key, entry);
+			}
+			continue;
+		}
+
+		proxyHeaders.set(key, value);
+	}
+
+	for (const [key, value] of Object.entries(headersOverride ?? {})) {
+		if (value == null) {
+			proxyHeaders.delete(key);
+			continue;
+		}
+
+		proxyHeaders.set(key, value);
+	}
+
+	const proxyResponse = await fetch(new URL(path, baseUrl), {
+		method: request.method,
+		headers: proxyHeaders,
+		body:
+			bodyOverride ??
+			(request.method === "GET" || request.method === "HEAD"
+				? undefined
+				: Readable.toWeb(request)),
+		duplex: "half",
+	});
+
+	response.statusCode = proxyResponse.status;
+
+	for (const [key, value] of proxyResponse.headers.entries()) {
+		response.setHeader(key, value);
+	}
+
+	if (!proxyResponse.body) {
+		response.end();
+		return;
+	}
+
+	Readable.fromWeb(proxyResponse.body).pipe(response);
 };
 
 const getRequestOrigin = (request) => {
@@ -304,6 +409,15 @@ const createFormDataRequest = (request) =>
 	});
 
 const handleChatRequest = async (request, response) => {
+	if (shouldProxyHostedAiRequest()) {
+		await proxyHostedAiRequest({
+			path: "/api/chat",
+			request,
+			response,
+		});
+		return;
+	}
+
 	if (!process.env.OPENAI_API_KEY) {
 		sendJson(response, 500, {
 			error: "OPENAI_API_KEY is not configured.",
@@ -316,6 +430,7 @@ const handleChatRequest = async (request, response) => {
 		message,
 		messages = [],
 		model,
+		workspaceId,
 		webSearchEnabled = false,
 		mentions,
 		selectedSourceIds,
@@ -330,22 +445,29 @@ const handleChatRequest = async (request, response) => {
 	}
 
 	const selectedModel = resolveChatModel(model);
+	const resolvedWorkspaceId = workspaceId ?? null;
 	const convexClient =
-		convexToken && id
+		convexToken && id && resolvedWorkspaceId
 			? new ConvexHttpClient(getConvexUrl(), { auth: convexToken })
 			: null;
 	const storedChat =
-		convexClient && id
+		convexClient && id && resolvedWorkspaceId
 			? await convexClient
-					.query(api.chats.getSession, { chatId: id })
+					.query(api.chats.getSession, {
+						workspaceId: resolvedWorkspaceId,
+						chatId: id,
+					})
 					.catch(() => null)
 			: null;
 	const chatMessages = await validateUIMessages({
 		messages:
-			message && convexClient && id
+			message && convexClient && id && resolvedWorkspaceId
 				? [
 						...fromStoredMessages(
-							await convexClient.query(api.chats.getMessages, { chatId: id }),
+							await convexClient.query(api.chats.getMessages, {
+								workspaceId: resolvedWorkspaceId,
+								chatId: id,
+							}),
 						),
 						message,
 					]
@@ -359,15 +481,16 @@ const handleChatRequest = async (request, response) => {
 			.reverse()
 			.find((currentMessage) => currentMessage.role === "user");
 	const shouldGenerateChatTitle = Boolean(
-		convexClient && id && lastUserMessage && !storedChat,
+		convexClient && id && resolvedWorkspaceId && lastUserMessage && !storedChat,
 	);
 	const titlePromise = shouldGenerateChatTitle
 		? generateChatTitle(lastUserMessage)
 		: null;
 
-	if (convexClient && id && lastUserMessage) {
+	if (convexClient && id && resolvedWorkspaceId && lastUserMessage) {
 		try {
 			await convexClient.mutation(api.chats.saveMessage, {
+				workspaceId: resolvedWorkspaceId,
 				chatId: id,
 				title: storedChat ? undefined : "New chat",
 				preview: getChatPreviewFromMessage(lastUserMessage),
@@ -379,10 +502,11 @@ const handleChatRequest = async (request, response) => {
 		}
 	}
 
-	if (convexClient && id && titlePromise) {
+	if (convexClient && id && resolvedWorkspaceId && titlePromise) {
 		void titlePromise
 			.then(async (title) => {
 				await convexClient.mutation(api.chats.updateTitle, {
+					workspaceId: resolvedWorkspaceId,
 					chatId: id,
 					title,
 				});
@@ -396,6 +520,7 @@ const handleChatRequest = async (request, response) => {
 		convexToken,
 		mentions,
 		selectedSourceIds,
+		workspaceId: resolvedWorkspaceId,
 	});
 	const systemPrompt = buildChatSystemPrompt({
 		notesContext,
@@ -424,12 +549,13 @@ const handleChatRequest = async (request, response) => {
 		generateMessageId,
 		consumeSseStream: consumeStream,
 		onFinish: async ({ responseMessage }) => {
-			if (!convexClient || !id) {
+			if (!convexClient || !id || !resolvedWorkspaceId) {
 				return;
 			}
 
 			try {
 				await convexClient.mutation(api.chats.saveMessage, {
+					workspaceId: resolvedWorkspaceId,
 					chatId: id,
 					preview: getChatPreviewFromMessage(responseMessage),
 					model: selectedModel.model,
@@ -444,14 +570,22 @@ const handleChatRequest = async (request, response) => {
 };
 
 const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
-	if (!process.env.OPENAI_API_KEY) {
-		sendJson(response, 500, {
-			error: "OPENAI_API_KEY is not configured.",
+	if (shouldProxyHostedAiRequest()) {
+		const { lang, source } = await readJsonBody(request);
+		await proxyHostedAiRequest({
+			path: "/api/realtime-transcription-session",
+			request,
+			response,
+			bodyOverride: JSON.stringify({ lang, source }),
+			headersOverride: {
+				"content-type": "application/json",
+				"content-length": null,
+			},
 		});
 		return;
 	}
 
-	const { lang } = await readJsonBody(request);
+	const { lang, source } = await readJsonBody(request);
 	const language = normalizeTranscriptionLanguage(lang);
 	const requestId = crypto.randomUUID();
 
@@ -471,7 +605,8 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 				},
 				session: createRealtimeTranscriptionSession({
 					language,
-					noiseReductionType: "near_field",
+					noiseReductionType:
+						source === "microphone" ? "near_field" : "far_field",
 				}),
 			}),
 		},
@@ -509,9 +644,11 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 };
 
 const handleEnhanceNoteRequest = async (request, response) => {
-	if (!process.env.OPENAI_API_KEY) {
-		sendJson(response, 500, {
-			error: "OPENAI_API_KEY is not configured.",
+	if (shouldProxyHostedAiRequest()) {
+		await proxyHostedAiRequest({
+			path: "/api/enhance-note",
+			request,
+			response,
 		});
 		return;
 	}
@@ -552,10 +689,129 @@ const handleEnhanceNoteRequest = async (request, response) => {
 	});
 };
 
-const handleRefineTranscriptAudioRequest = async (request, response) => {
+const handleApplyTemplateRequest = async (request, response) => {
+	if (shouldProxyHostedAiRequest()) {
+		await proxyHostedAiRequest({
+			path: "/api/apply-template",
+			request,
+			response,
+		});
+		return;
+	}
+
 	if (!process.env.OPENAI_API_KEY) {
 		sendJson(response, 500, {
 			error: "OPENAI_API_KEY is not configured.",
+		});
+		return;
+	}
+
+	const { title = "", noteText = "", template } = await readJsonBody(request);
+
+	if (!noteText.trim()) {
+		sendJson(response, 400, {
+			error: "Note text is required.",
+		});
+		return;
+	}
+
+	if (!template?.name || !Array.isArray(template.sections)) {
+		sendJson(response, 400, {
+			error: "A valid template is required.",
+		});
+		return;
+	}
+
+	const templateSections = createTemplateSections(template);
+
+	if (templateSections.length === 0) {
+		sendJson(response, 400, {
+			error: "The selected template does not have usable sections.",
+		});
+		return;
+	}
+
+	response.statusCode = 200;
+	response.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+	response.setHeader("Cache-Control", "no-cache, no-transform");
+	response.flushHeaders?.();
+
+	const result = streamText({
+		model: openai("gpt-5.4-mini"),
+		system: APPLY_TEMPLATE_SYSTEM_PROMPT,
+		prompt: buildApplyTemplatePrompt({
+			title,
+			templateName: template.name,
+			meetingContext: template.meetingContext,
+			templateSections,
+			noteText,
+		}),
+		experimental_transform: smoothStream({
+			chunking: "line",
+		}),
+	});
+
+	const writeEvent = (payload) => {
+		response.write(`${JSON.stringify(payload)}\n`);
+	};
+
+	try {
+		let streamedText = "";
+
+		for await (const delta of result.textStream) {
+			streamedText += delta;
+			writeEvent({
+				type: "text-delta",
+				delta,
+			});
+		}
+
+		const parsed = parseTemplateStreamToStructuredNote({
+			text: streamedText,
+			template: {
+				sections: templateSections,
+			},
+			isFinal: true,
+		});
+		const validationError = validateTemplateStream({
+			template: {
+				sections: templateSections,
+			},
+			parsed,
+		});
+
+		if (validationError) {
+			writeEvent({
+				type: "error",
+				error: validationError,
+			});
+			response.end();
+			return;
+		}
+
+		writeEvent({
+			type: "final-note",
+			note: parsed.note,
+		});
+		response.end();
+	} catch (error) {
+		writeEvent({
+			type: "error",
+			error:
+				error instanceof Error
+					? error.message
+					: "Failed to apply note template rewrite.",
+		});
+		response.end();
+	}
+};
+
+const handleRefineTranscriptAudioRequest = async (request, response) => {
+	if (shouldProxyHostedAiRequest()) {
+		await proxyHostedAiRequest({
+			path: "/api/refine-transcript-audio",
+			request,
+			response,
 		});
 		return;
 	}
@@ -751,6 +1007,7 @@ export const startLocalServer = async ({
 
 		if (
 			requestPath === "/api/chat" ||
+			requestPath === "/api/apply-template" ||
 			requestPath === "/api/realtime-transcription-session" ||
 			requestPath === "/api/enhance-note" ||
 			requestPath === "/api/refine-transcript-audio"
@@ -772,6 +1029,22 @@ export const startLocalServer = async ({
 			}
 
 			void handleChatRequest(request, response).catch((error) => {
+				const message =
+					error instanceof Error ? error.message : "Unexpected server error.";
+				sendJson(response, 500, { error: message });
+			});
+			return;
+		}
+
+		if (requestPath === "/api/apply-template") {
+			if (request.method !== "POST") {
+				response.statusCode = 405;
+				response.setHeader("Content-Type", "application/json");
+				response.end(JSON.stringify({ error: "Method not allowed." }));
+				return;
+			}
+
+			void handleApplyTemplateRequest(request, response).catch((error) => {
 				const message =
 					error instanceof Error ? error.message : "Unexpected server error.";
 				sendJson(response, 500, { error: message });

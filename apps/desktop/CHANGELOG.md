@@ -1,5 +1,11 @@
 # desktop
 
+## 0.1.1
+
+### Patch Changes
+
+- make installed desktop builds use the hosted OpenGran backend by default so packaged releases open, sign in, and use AI features without a local env file
+
 ## 0.1.0
 
 ### Minor Changes

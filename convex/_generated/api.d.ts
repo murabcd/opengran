@@ -14,6 +14,7 @@ import type * as auth from "../auth.js";
 import type * as calendar from "../calendar.js";
 import type * as calendarPreferences from "../calendarPreferences.js";
 import type * as chats from "../chats.js";
+import type * as desktopApi from "../desktopApi.js";
 import type * as http from "../http.js";
 import type * as notes from "../notes.js";
 import type * as notificationPreferences from "../notificationPreferences.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   calendar: typeof calendar;
   calendarPreferences: typeof calendarPreferences;
   chats: typeof chats;
+  desktopApi: typeof desktopApi;
   http: typeof http;
   notes: typeof notes;
   notificationPreferences: typeof notificationPreferences;

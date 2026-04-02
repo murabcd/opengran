@@ -2,16 +2,20 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const envFileName =
+export const getEnvFileName = () =>
 	process.env.OPENGRAN_ENV_MODE?.trim() === "production"
 		? ".env"
 		: ".env.local";
 
-const envPaths = [
-	resolve(process.cwd(), "../..", envFileName),
-	resolve(process.cwd(), envFileName),
-	resolve(fileURLToPath(new URL("../../..", import.meta.url)), envFileName),
-];
+export const getEnvPaths = () => {
+	const envFileName = getEnvFileName();
+
+	return [
+		resolve(process.cwd(), "../..", envFileName),
+		resolve(process.cwd(), envFileName),
+		resolve(fileURLToPath(new URL("../../..", import.meta.url)), envFileName),
+	].filter(Boolean);
+};
 
 const parseEnvLine = (line) => {
 	const trimmed = line.trim();
@@ -38,8 +42,9 @@ const parseEnvLine = (line) => {
 	return { key, value };
 };
 
-export const loadRootEnv = () => {
+export const loadRootEnv = (options = {}) => {
 	const loadedKeys = new Set();
+	const envPaths = getEnvPaths(options);
 
 	for (const envPath of new Set(envPaths)) {
 		if (!existsSync(envPath)) {

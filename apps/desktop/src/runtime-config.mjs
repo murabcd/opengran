@@ -1,5 +1,13 @@
+import { app } from "electron";
+
+const defaultHostedConvexUrl = "https://precious-crane-700.convex.cloud";
+const defaultHostedConvexSiteUrl = "https://precious-crane-700.convex.site";
+const defaultHostedSiteUrl = defaultHostedConvexSiteUrl;
+
 const trimConfigValue = (value) =>
 	typeof value === "string" ? value.trim() : "";
+
+const shouldUseHostedDefaults = () => app.isPackaged === true;
 
 const deriveConvexSiteUrl = (convexUrl) => {
 	if (!convexUrl) {
@@ -22,9 +30,17 @@ const deriveConvexSiteUrl = (convexUrl) => {
 };
 
 const createRuntimeConfig = (value) => {
-	const convexUrl = trimConfigValue(value?.convexUrl);
+	const convexUrl =
+		trimConfigValue(value?.convexUrl) ||
+		(shouldUseHostedDefaults() ? defaultHostedConvexUrl : "");
 	const convexSiteUrlInput = trimConfigValue(value?.convexSiteUrl);
-	const convexSiteUrl = convexSiteUrlInput || deriveConvexSiteUrl(convexUrl);
+	const convexSiteUrl =
+		convexSiteUrlInput ||
+		deriveConvexSiteUrl(convexUrl) ||
+		(shouldUseHostedDefaults() ? defaultHostedConvexSiteUrl : "");
+	const siteUrl =
+		trimConfigValue(value?.siteUrl) ||
+		(shouldUseHostedDefaults() ? defaultHostedSiteUrl : "");
 	const openAIApiKey = trimConfigValue(value?.openAIApiKey);
 
 	if (!convexUrl) {
@@ -38,6 +54,7 @@ const createRuntimeConfig = (value) => {
 	return {
 		convexUrl,
 		convexSiteUrl,
+		siteUrl,
 		openAIApiKey,
 	};
 };
@@ -55,10 +72,12 @@ const resolveRuntimeConfig = async () => {
 		trimConfigValue(process.env.CONVEX_SITE_URL) ||
 		trimConfigValue(process.env.VITE_CONVEX_SITE_URL);
 	const envOpenAIApiKey = trimConfigValue(process.env.OPENAI_API_KEY);
+	const envSiteUrl = trimConfigValue(process.env.SITE_URL);
 
 	return createRuntimeConfig({
 		convexUrl: envConvexUrl,
 		convexSiteUrl: envConvexSiteUrl,
+		siteUrl: envSiteUrl,
 		openAIApiKey: envOpenAIApiKey,
 	});
 };
@@ -76,6 +95,10 @@ const applyRuntimeConfig = (value) => {
 
 	if (value.openAIApiKey) {
 		process.env.OPENAI_API_KEY = value.openAIApiKey;
+	}
+
+	if (value.siteUrl) {
+		process.env.SITE_URL = value.siteUrl;
 	}
 };
 

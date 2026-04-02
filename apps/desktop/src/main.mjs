@@ -43,10 +43,9 @@ import { getRuntimeConfig, hydrateRuntimeConfig } from "./runtime-config.mjs";
 
 const { autoUpdater } = electronUpdater;
 
+app.setName("OpenGran");
 loadRootEnv();
 await hydrateRuntimeConfig();
-
-app.setName("OpenGran");
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
 const trayIconPath = join(runtimeDir, "assets", "OpenGranTemplate.png");
@@ -1836,9 +1835,12 @@ const createSystemAudioStatusFromPolicy = (policy) => ({
 	sourceMode: policy.systemAudioCapability.sourceMode,
 });
 
+const canUseHostedDesktopAi = () =>
+	Boolean(process.env.CONVEX_SITE_URL?.trim() || process.env.SITE_URL?.trim());
+
 const getDesktopRealtimeAvailability = () =>
 	process.platform === "darwin" &&
-	Boolean(process.env.OPENAI_API_KEY) &&
+	(Boolean(process.env.OPENAI_API_KEY) || canUseHostedDesktopAi()) &&
 	Boolean(resolveMicrophoneHelperPath());
 
 const isNonRecoverableStartError = (error) => {
@@ -2722,7 +2724,42 @@ const createDesktopRealtimeSessionConfig = ({ lang, source }) => {
 
 const createDesktopRealtimeClientSecret = async ({ lang, source }) => {
 	if (!process.env.OPENAI_API_KEY) {
-		throw new Error("OPENAI_API_KEY is not configured.");
+		const baseUrl = process.env.CONVEX_SITE_URL?.trim();
+
+		if (!baseUrl) {
+			throw new Error("CONVEX_SITE_URL is not configured.");
+		}
+
+		const response = await fetch(
+			new URL("/api/realtime-transcription-session", baseUrl),
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					lang,
+					source,
+				}),
+			},
+		);
+		const payload = await response.json().catch(() => ({}));
+
+		if (!response.ok) {
+			throw new Error(
+				payload?.error?.message ||
+					payload?.error ||
+					"Failed to create realtime transcription session.",
+			);
+		}
+
+		const clientSecret = payload?.clientSecret;
+
+		if (!clientSecret || typeof clientSecret !== "string") {
+			throw new Error("OpenAI did not return a realtime client secret.");
+		}
+
+		return clientSecret;
 	}
 
 	const requestId = crypto.randomUUID();
@@ -2776,8 +2813,10 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 		);
 	}
 
-	if (!process.env.OPENAI_API_KEY) {
-		throw new Error("OPENAI_API_KEY is not configured.");
+	if (!process.env.OPENAI_API_KEY && !canUseHostedDesktopAi()) {
+		throw new Error(
+			"Realtime transcription is not configured for this desktop build.",
+		);
 	}
 
 	const captureSession =
