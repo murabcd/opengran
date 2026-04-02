@@ -185,6 +185,33 @@ type YandexCalendarConnectionFormState = {
 	password: string;
 };
 
+type PreferencesSettingsState = {
+	preferences: DesktopPreferences | null;
+	isLoadingPreferences: boolean;
+	isSavingLaunchAtLogin: boolean;
+};
+
+type PreferencesSettingsAction =
+	| {
+			type: "loadSucceeded";
+			value: DesktopPreferences;
+	  }
+	| {
+			type: "finishLoading";
+	  }
+	| {
+			type: "setIsSavingLaunchAtLogin";
+			value: boolean;
+	  }
+	| {
+			type: "setPreferences";
+			value: DesktopPreferences | null;
+	  }
+	| {
+			type: "setLaunchAtLoginOptimistic";
+			value: boolean;
+	  };
+
 type CalendarSettingsState = {
 	isConnectingGoogle: boolean;
 	isSavingCalendarPreferences: boolean;
@@ -218,6 +245,31 @@ type CalendarSettingsAction =
 			type: "patchYandexCalendarFormState";
 			value: Partial<YandexCalendarConnectionFormState>;
 	  };
+
+type CalendarVisibilityPreferences = {
+	showGoogleCalendar: boolean;
+	showYandexCalendar: boolean;
+};
+
+type CalendarProviderRowProps = {
+	icon: React.ReactNode;
+	name: string;
+	checked: boolean;
+	switchDisabled: boolean;
+	onCheckedChange: (checked: boolean) => void;
+	buttonVariant: "default" | "outline";
+	onButtonClick: () => void;
+	buttonDisabled: boolean;
+	buttonLabel: string;
+	buttonIcon?: React.ReactNode;
+};
+
+type ToolConnectionRowProps = {
+	icon: React.ReactNode;
+	name: string;
+	buttonLabel: string;
+	onButtonClick: () => void;
+};
 
 type ConnectionsSettingsState = {
 	isYandexTrackerDialogOpen: boolean;
@@ -298,6 +350,13 @@ const initialJiraConnectionFormState: JiraConnectionFormState = {
 	token: "",
 };
 
+const getInitialPreferencesSettingsState = (): PreferencesSettingsState => ({
+	preferences: null,
+	isLoadingPreferences:
+		typeof window !== "undefined" && Boolean(window.openGranDesktop),
+	isSavingLaunchAtLogin: false,
+});
+
 const initialCalendarSettingsState: CalendarSettingsState = {
 	isConnectingGoogle: false,
 	isSavingCalendarPreferences: false,
@@ -313,6 +372,36 @@ const initialConnectionsSettingsState: ConnectionsSettingsState = {
 	isSavingJiraConnection: false,
 	yandexTrackerFormState: initialYandexTrackerConnectionFormState,
 	jiraFormState: initialJiraConnectionFormState,
+};
+
+const preferencesSettingsReducer = (
+	state: PreferencesSettingsState,
+	action: PreferencesSettingsAction,
+): PreferencesSettingsState => {
+	switch (action.type) {
+		case "loadSucceeded":
+			return {
+				...state,
+				preferences: action.value,
+				isLoadingPreferences: false,
+			};
+		case "finishLoading":
+			return { ...state, isLoadingPreferences: false };
+		case "setIsSavingLaunchAtLogin":
+			return { ...state, isSavingLaunchAtLogin: action.value };
+		case "setPreferences":
+			return { ...state, preferences: action.value };
+		case "setLaunchAtLoginOptimistic":
+			return state.preferences
+				? {
+						...state,
+						preferences: {
+							...state.preferences,
+							launchAtLogin: action.value,
+						},
+					}
+				: state;
+	}
 };
 
 const calendarSettingsReducer = (
@@ -805,38 +894,30 @@ function NotificationsSettings() {
 }
 
 function PreferencesSettings() {
-	const [preferences, setPreferences] = useState<DesktopPreferences | null>(
-		null,
+	const [state, dispatch] = useReducer(
+		preferencesSettingsReducer,
+		getInitialPreferencesSettingsState(),
 	);
-	const [isLoadingPreferences, setIsLoadingPreferences] = useState(
-		typeof window !== "undefined" && Boolean(window.openGranDesktop),
-	);
-	const [isSavingLaunchAtLogin, setIsSavingLaunchAtLogin] = useState(false);
+	const { preferences, isLoadingPreferences, isSavingLaunchAtLogin } = state;
 
 	useEffect(() => {
 		if (!window.openGranDesktop) {
-			setIsLoadingPreferences(false);
 			return;
 		}
 
 		let isCancelled = false;
 
 		const loadPreferences = async () => {
-			setIsLoadingPreferences(true);
-
 			try {
 				const nextPreferences = await window.openGranDesktop.getPreferences();
 				if (!isCancelled) {
-					setPreferences(nextPreferences);
+					dispatch({ type: "loadSucceeded", value: nextPreferences });
 				}
 			} catch (error) {
 				console.error("Failed to load desktop preferences", error);
 				if (!isCancelled) {
+					dispatch({ type: "finishLoading" });
 					toast.error("Failed to load desktop preferences");
-				}
-			} finally {
-				if (!isCancelled) {
-					setIsLoadingPreferences(false);
 				}
 			}
 		};
@@ -854,26 +935,19 @@ function PreferencesSettings() {
 		}
 
 		const previousPreferences = preferences;
-		setIsSavingLaunchAtLogin(true);
-		setPreferences((currentPreferences) =>
-			currentPreferences
-				? {
-						...currentPreferences,
-						launchAtLogin: checked,
-					}
-				: currentPreferences,
-		);
+		dispatch({ type: "setIsSavingLaunchAtLogin", value: true });
+		dispatch({ type: "setLaunchAtLoginOptimistic", value: checked });
 
 		try {
 			const nextPreferences =
 				await window.openGranDesktop.setLaunchAtLogin(checked);
-			setPreferences(nextPreferences);
+			dispatch({ type: "setPreferences", value: nextPreferences });
 		} catch (error) {
 			console.error("Failed to update launch at login preference", error);
-			setPreferences(previousPreferences);
+			dispatch({ type: "setPreferences", value: previousPreferences });
 			toast.error("Failed to update launch at login preference");
 		} finally {
-			setIsSavingLaunchAtLogin(false);
+			dispatch({ type: "setIsSavingLaunchAtLogin", value: false });
 		}
 	};
 
@@ -943,6 +1017,47 @@ function SettingsSwitchRow({
 }
 
 function CalendarSettings() {
+	const {
+		activeWorkspaceId,
+		calendarProviders,
+		handleConnectYandexCalendar,
+		handleYandexCalendarDialogOpenChange,
+		isSavingYandexCalendarConnection,
+		isYandexCalendarDialogOpen,
+		isYandexCalendarFormValid,
+		setYandexCalendarEmail,
+		setYandexCalendarPassword,
+		yandexCalendarFormState,
+	} = useCalendarSettingsController();
+
+	if (!activeWorkspaceId) {
+		return (
+			<div className="py-4 text-sm text-muted-foreground">
+				Select a workspace to manage workspace-specific calendar settings.
+			</div>
+		);
+	}
+
+	return (
+		<div className="py-4">
+			<CalendarProvidersSection providers={calendarProviders} />
+			<YandexCalendarDialog
+				open={isYandexCalendarDialogOpen}
+				onOpenChange={handleYandexCalendarDialogOpenChange}
+				formState={yandexCalendarFormState}
+				onEmailChange={setYandexCalendarEmail}
+				onPasswordChange={setYandexCalendarPassword}
+				onConnect={() => {
+					void handleConnectYandexCalendar();
+				}}
+				isFormValid={isYandexCalendarFormValid}
+				isSaving={isSavingYandexCalendarConnection}
+			/>
+		</div>
+	);
+}
+
+function useCalendarSettingsController() {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const { data: session } = authClient.useSession();
 	const calendarPreferences = useQuery(
@@ -983,6 +1098,10 @@ function CalendarSettings() {
 		yandexCalendarFormState,
 	} = state;
 
+	const calendarVisibility: CalendarVisibilityPreferences = {
+		showGoogleCalendar: calendarPreferences?.showGoogleCalendar ?? false,
+		showYandexCalendar: calendarPreferences?.showYandexCalendar ?? false,
+	};
 	const googleAccount = accounts.find(
 		(account) => account.providerId === "google",
 	);
@@ -990,19 +1109,11 @@ function CalendarSettings() {
 		googleAccount?.scopes.includes(
 			"https://www.googleapis.com/auth/calendar.readonly",
 		) ?? false;
-	const isGoogleCalendarEnabledForWorkspace =
-		calendarPreferences?.showGoogleCalendar ?? false;
-	const googleCalendarButtonLabel = !googleAccount
-		? "Connect"
-		: !hasCalendarScope
-			? "Grant calendar access"
-			: isGoogleCalendarEnabledForWorkspace
-				? "Reconnect"
-				: "Connect";
-	const googleCalendarButtonVariant =
-		googleAccount && hasCalendarScope && isGoogleCalendarEnabledForWorkspace
-			? "outline"
-			: "default";
+	const googleCalendarAction = getGoogleCalendarAction({
+		googleAccount,
+		hasCalendarScope,
+		isGoogleCalendarEnabledForWorkspace: calendarVisibility.showGoogleCalendar,
+	});
 
 	const handleYandexCalendarDialogOpenChange = (open: boolean) => {
 		dispatch({ type: "setIsYandexCalendarDialogOpen", value: open });
@@ -1032,13 +1143,9 @@ function CalendarSettings() {
 		await updateCalendarPreferences({
 			workspaceId: activeWorkspaceId,
 			showGoogleCalendar:
-				provider === "google"
-					? true
-					: (calendarPreferences?.showGoogleCalendar ?? false),
+				provider === "google" ? true : calendarVisibility.showGoogleCalendar,
 			showYandexCalendar:
-				provider === "yandex"
-					? true
-					: (calendarPreferences?.showYandexCalendar ?? false),
+				provider === "yandex" ? true : calendarVisibility.showYandexCalendar,
 		});
 	};
 
@@ -1136,10 +1243,9 @@ function CalendarSettings() {
 		yandexCalendarFormState.email.trim().length > 0 &&
 		yandexCalendarFormState.password.trim().length > 0;
 
-	const handleCalendarVisibilityChange = async (nextPreferences: {
-		showGoogleCalendar: boolean;
-		showYandexCalendar: boolean;
-	}) => {
+	const handleCalendarVisibilityChange = async (
+		nextPreferences: CalendarVisibilityPreferences,
+	) => {
 		if (!activeWorkspaceId) {
 			return;
 		}
@@ -1159,91 +1265,106 @@ function CalendarSettings() {
 		}
 	};
 
-	if (!activeWorkspaceId) {
-		return (
-			<div className="py-4 text-sm text-muted-foreground">
-				Select a workspace to manage workspace-specific calendar settings.
-			</div>
-		);
-	}
+	const calendarProviders: CalendarProviderRowProps[] = [
+		{
+			icon: <Icons.googleLogo className="size-5 shrink-0" />,
+			name: "Google Calendar",
+			checked: calendarVisibility.showGoogleCalendar,
+			switchDisabled: isSavingCalendarPreferences,
+			onCheckedChange: (checked) => {
+				void handleCalendarVisibilityChange({
+					showGoogleCalendar: checked,
+					showYandexCalendar: calendarVisibility.showYandexCalendar,
+				});
+			},
+			buttonVariant: googleCalendarAction.buttonVariant,
+			onButtonClick: () => {
+				void handleConnectGoogleCalendar();
+			},
+			buttonDisabled: isConnectingGoogle || !session?.user || isLoadingAccounts,
+			buttonLabel: googleCalendarAction.buttonLabel,
+			buttonIcon: isConnectingGoogle ? (
+				<LoaderCircle className="animate-spin" />
+			) : null,
+		},
+		{
+			icon: <Icons.yandexCalendarLogo className="size-5 shrink-0" />,
+			name: "Yandex Calendar",
+			checked: calendarVisibility.showYandexCalendar,
+			switchDisabled: isSavingCalendarPreferences,
+			onCheckedChange: (checked) => {
+				void handleCalendarVisibilityChange({
+					showGoogleCalendar: calendarVisibility.showGoogleCalendar,
+					showYandexCalendar: checked,
+				});
+			},
+			buttonVariant: yandexCalendarConnection ? "outline" : "default",
+			onButtonClick: () => handleYandexCalendarDialogOpenChange(true),
+			buttonDisabled: !session?.user || isSavingYandexCalendarConnection,
+			buttonLabel: yandexCalendarConnection ? "Reconnect" : "Connect",
+		},
+	];
 
+	return {
+		activeWorkspaceId,
+		calendarProviders,
+		handleConnectYandexCalendar,
+		handleYandexCalendarDialogOpenChange,
+		isSavingYandexCalendarConnection,
+		isYandexCalendarDialogOpen,
+		isYandexCalendarFormValid,
+		setYandexCalendarEmail: (email: string) =>
+			dispatch({
+				type: "patchYandexCalendarFormState",
+				value: { email },
+			}),
+		setYandexCalendarPassword: (password: string) =>
+			dispatch({
+				type: "patchYandexCalendarFormState",
+				value: { password },
+			}),
+		yandexCalendarFormState,
+	};
+}
+
+const getGoogleCalendarAction = ({
+	googleAccount,
+	hasCalendarScope,
+	isGoogleCalendarEnabledForWorkspace,
+}: {
+	googleAccount: LinkedAccount | undefined;
+	hasCalendarScope: boolean;
+	isGoogleCalendarEnabledForWorkspace: boolean;
+}) => ({
+	buttonLabel: !googleAccount
+		? "Connect"
+		: !hasCalendarScope
+			? "Grant calendar access"
+			: isGoogleCalendarEnabledForWorkspace
+				? "Reconnect"
+				: "Connect",
+	buttonVariant:
+		googleAccount && hasCalendarScope && isGoogleCalendarEnabledForWorkspace
+			? ("outline" as const)
+			: ("default" as const),
+});
+
+function CalendarProvidersSection({
+	providers,
+}: {
+	providers: CalendarProviderRowProps[];
+}) {
 	return (
-		<div className="py-4">
-			<FieldGroup className="gap-6">
-				<Field>
-					<Label className={SETTINGS_LABEL_CLASSNAME}>Calendars</Label>
-					<div className="space-y-4">
-						<CalendarProviderRow
-							icon={<Icons.googleLogo className="size-5 shrink-0" />}
-							name="Google Calendar"
-							checked={calendarPreferences?.showGoogleCalendar ?? false}
-							switchDisabled={isSavingCalendarPreferences}
-							onCheckedChange={(checked) => {
-								void handleCalendarVisibilityChange({
-									showGoogleCalendar: checked,
-									showYandexCalendar:
-										calendarPreferences?.showYandexCalendar ?? false,
-								});
-							}}
-							buttonVariant={googleCalendarButtonVariant}
-							onButtonClick={() => {
-								void handleConnectGoogleCalendar();
-							}}
-							buttonDisabled={
-								isConnectingGoogle || !session?.user || isLoadingAccounts
-							}
-							buttonLabel={googleCalendarButtonLabel}
-							buttonIcon={
-								isConnectingGoogle ? (
-									<LoaderCircle className="animate-spin" />
-								) : null
-							}
-						/>
-						<CalendarProviderRow
-							icon={<Icons.yandexCalendarLogo className="size-5 shrink-0" />}
-							name="Yandex Calendar"
-							checked={calendarPreferences?.showYandexCalendar ?? false}
-							switchDisabled={isSavingCalendarPreferences}
-							onCheckedChange={(checked) => {
-								void handleCalendarVisibilityChange({
-									showGoogleCalendar:
-										calendarPreferences?.showGoogleCalendar ?? false,
-									showYandexCalendar: checked,
-								});
-							}}
-							buttonVariant={yandexCalendarConnection ? "outline" : "default"}
-							onButtonClick={() => handleYandexCalendarDialogOpenChange(true)}
-							buttonDisabled={
-								!session?.user || isSavingYandexCalendarConnection
-							}
-							buttonLabel={yandexCalendarConnection ? "Reconnect" : "Connect"}
-						/>
-					</div>
-				</Field>
-			</FieldGroup>
-			<YandexCalendarDialog
-				open={isYandexCalendarDialogOpen}
-				onOpenChange={handleYandexCalendarDialogOpenChange}
-				formState={yandexCalendarFormState}
-				onEmailChange={(email) =>
-					dispatch({
-						type: "patchYandexCalendarFormState",
-						value: { email },
-					})
-				}
-				onPasswordChange={(password) =>
-					dispatch({
-						type: "patchYandexCalendarFormState",
-						value: { password },
-					})
-				}
-				onConnect={() => {
-					void handleConnectYandexCalendar();
-				}}
-				isFormValid={isYandexCalendarFormValid}
-				isSaving={isSavingYandexCalendarConnection}
-			/>
-		</div>
+		<FieldGroup className="gap-6">
+			<Field>
+				<Label className={SETTINGS_LABEL_CLASSNAME}>Calendars</Label>
+				<div className="space-y-4">
+					{providers.map((provider) => (
+						<CalendarProviderRow key={provider.name} {...provider} />
+					))}
+				</div>
+			</Field>
+		</FieldGroup>
 	);
 }
 
@@ -1258,18 +1379,7 @@ function CalendarProviderRow({
 	buttonDisabled,
 	buttonLabel,
 	buttonIcon,
-}: {
-	icon: React.ReactNode;
-	name: string;
-	checked: boolean;
-	switchDisabled: boolean;
-	onCheckedChange: (checked: boolean) => void;
-	buttonVariant: "default" | "outline";
-	onButtonClick: () => void;
-	buttonDisabled: boolean;
-	buttonLabel: string;
-	buttonIcon?: React.ReactNode;
-}) {
+}: CalendarProviderRowProps) {
 	return (
 		<div className="flex items-center justify-between gap-4">
 			<div className="flex min-w-0 items-center gap-3">
@@ -1389,6 +1499,71 @@ function YandexCalendarDialog({
 }
 
 function ConnectionsSettings() {
+	const {
+		activeWorkspaceId,
+		handleConnectJira,
+		handleConnectYandexTracker,
+		handleJiraDialogOpenChange,
+		handleYandexTrackerDialogOpenChange,
+		isJiraDialogOpen,
+		isJiraFormValid,
+		isSavingJiraConnection,
+		isSavingYandexTrackerConnection,
+		isYandexTrackerDialogOpen,
+		isYandexTrackerFormValid,
+		jiraFormState,
+		setJiraBaseUrl,
+		setJiraEmail,
+		setJiraToken,
+		setYandexTrackerOrgId,
+		setYandexTrackerOrgType,
+		setYandexTrackerToken,
+		toolConnections,
+		yandexTrackerFormState,
+	} = useConnectionsSettingsController();
+
+	if (!activeWorkspaceId) {
+		return (
+			<div className="py-4 text-sm text-muted-foreground">
+				Select a workspace to manage workspace-specific tool connections.
+			</div>
+		);
+	}
+
+	return (
+		<div className="py-4">
+			<ToolConnectionsSection connections={toolConnections} />
+			<YandexTrackerDialog
+				open={isYandexTrackerDialogOpen}
+				onOpenChange={handleYandexTrackerDialogOpenChange}
+				formState={yandexTrackerFormState}
+				onOrgTypeChange={setYandexTrackerOrgType}
+				onOrgIdChange={setYandexTrackerOrgId}
+				onTokenChange={setYandexTrackerToken}
+				onConnect={() => {
+					void handleConnectYandexTracker();
+				}}
+				isFormValid={isYandexTrackerFormValid}
+				isSaving={isSavingYandexTrackerConnection}
+			/>
+			<JiraDialog
+				open={isJiraDialogOpen}
+				onOpenChange={handleJiraDialogOpenChange}
+				formState={jiraFormState}
+				onBaseUrlChange={setJiraBaseUrl}
+				onEmailChange={setJiraEmail}
+				onTokenChange={setJiraToken}
+				onConnect={() => {
+					void handleConnectJira();
+				}}
+				isFormValid={isJiraFormValid}
+				isSaving={isSavingJiraConnection}
+			/>
+		</div>
+	);
+}
+
+function useConnectionsSettingsController() {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const { data: session } = authClient.useSession();
 	const yandexTrackerConnection = useQuery(
@@ -1530,265 +1705,322 @@ function ConnectionsSettings() {
 		jiraFormState.email.trim().length > 0 &&
 		jiraFormState.token.trim().length > 0;
 
-	if (!activeWorkspaceId) {
-		return (
-			<div className="py-4 text-sm text-muted-foreground">
-				Select a workspace to manage workspace-specific tool connections.
-			</div>
-		);
-	}
+	const toolConnections: ToolConnectionRowProps[] = [
+		{
+			icon: (
+				<Icons.yandexTrackerLogo className="size-5 shrink-0 text-blue-500" />
+			),
+			name: "Yandex Tracker",
+			buttonLabel: yandexTrackerConnection ? "Reconnect" : "Connect",
+			onButtonClick: () => handleYandexTrackerDialogOpenChange(true),
+		},
+		{
+			icon: <Icons.jiraLogo className="size-5 shrink-0" />,
+			name: "Jira",
+			buttonLabel: jiraConnection ? "Reconnect" : "Connect",
+			onButtonClick: () => handleJiraDialogOpenChange(true),
+		},
+	];
 
+	return {
+		activeWorkspaceId,
+		handleConnectJira,
+		handleConnectYandexTracker,
+		handleJiraDialogOpenChange,
+		handleYandexTrackerDialogOpenChange,
+		isJiraDialogOpen,
+		isJiraFormValid,
+		isSavingJiraConnection,
+		isSavingYandexTrackerConnection,
+		isYandexTrackerDialogOpen,
+		isYandexTrackerFormValid,
+		jiraFormState,
+		setJiraBaseUrl: (baseUrl: string) =>
+			dispatch({
+				type: "patchJiraFormState",
+				value: { baseUrl },
+			}),
+		setJiraEmail: (email: string) =>
+			dispatch({
+				type: "patchJiraFormState",
+				value: { email },
+			}),
+		setJiraToken: (token: string) =>
+			dispatch({
+				type: "patchJiraFormState",
+				value: { token },
+			}),
+		setYandexTrackerOrgId: (orgId: string) =>
+			dispatch({
+				type: "patchYandexTrackerFormState",
+				value: { orgId },
+			}),
+		setYandexTrackerOrgType: (orgType: YandexTrackerOrgType) =>
+			dispatch({
+				type: "patchYandexTrackerFormState",
+				value: { orgType },
+			}),
+		setYandexTrackerToken: (token: string) =>
+			dispatch({
+				type: "patchYandexTrackerFormState",
+				value: { token },
+			}),
+		toolConnections,
+		yandexTrackerFormState,
+	};
+}
+
+function ToolConnectionsSection({
+	connections,
+}: {
+	connections: ToolConnectionRowProps[];
+}) {
 	return (
-		<div className="py-4">
-			<Field>
-				<Label className={SETTINGS_LABEL_CLASSNAME}>Tools</Label>
-				<div className="space-y-3">
-					<div className="flex items-center justify-between gap-4">
-						<div className="flex min-w-0 items-center gap-3">
-							<Icons.yandexTrackerLogo className="size-5 shrink-0 text-blue-500" />
-							<div className="min-w-0">
-								<Label className="text-sm font-medium text-foreground">
-									Yandex Tracker
-								</Label>
-							</div>
-						</div>
-						<Button
-							type="button"
-							variant="outline"
-							onClick={() => handleYandexTrackerDialogOpenChange(true)}
-						>
-							{yandexTrackerConnection ? "Reconnect" : "Connect"}
-						</Button>
-					</div>
-					<div className="flex items-center justify-between gap-4">
-						<div className="flex min-w-0 items-center gap-3">
-							<Icons.jiraLogo className="size-5 shrink-0" />
-							<div className="min-w-0">
-								<Label className="text-sm font-medium text-foreground">
-									Jira
-								</Label>
-							</div>
-						</div>
-						<Button
-							type="button"
-							variant="outline"
-							onClick={() => handleJiraDialogOpenChange(true)}
-						>
-							{jiraConnection ? "Reconnect" : "Connect"}
-						</Button>
-					</div>
+		<Field>
+			<Label className={SETTINGS_LABEL_CLASSNAME}>Tools</Label>
+			<div className="space-y-3">
+				{connections.map((connection) => (
+					<ToolConnectionRow key={connection.name} {...connection} />
+				))}
+			</div>
+		</Field>
+	);
+}
+
+function ToolConnectionRow({
+	icon,
+	name,
+	buttonLabel,
+	onButtonClick,
+}: ToolConnectionRowProps) {
+	return (
+		<div className="flex items-center justify-between gap-4">
+			<div className="flex min-w-0 items-center gap-3">
+				{icon}
+				<div className="min-w-0">
+					<Label className="text-sm font-medium text-foreground">{name}</Label>
 				</div>
-			</Field>
-			<Dialog
-				open={isYandexTrackerDialogOpen}
-				onOpenChange={handleYandexTrackerDialogOpenChange}
-			>
-				<DialogContent className="sm:max-w-md">
-					<DialogHeader>
-						<DialogTitle>Connect Yandex Tracker</DialogTitle>
-						<DialogDescription>
-							Enter the credentials OpenGran should use for your Tracker
-							connection.
-						</DialogDescription>
-					</DialogHeader>
-					<FieldGroup className="gap-4">
-						<Field>
-							<FieldContent>
-								<Label className={SETTINGS_LABEL_CLASSNAME}>
-									Organization type
-								</Label>
-							</FieldContent>
-							<Select
-								value={yandexTrackerFormState.orgType}
-								onValueChange={(value) =>
-									dispatch({
-										type: "patchYandexTrackerFormState",
-										value: {
-											orgType: value as YandexTrackerOrgType,
-										},
-									})
-								}
-							>
-								<SelectTrigger
-									size="sm"
-									className="w-full cursor-pointer justify-between"
-									aria-label="Select Yandex Tracker organization type"
-								>
-									<span>
-										{yandexTrackerFormState.orgType === "x-org-id"
-											? "Yandex 360"
-											: "Yandex Cloud"}
-									</span>
-								</SelectTrigger>
-								<SelectContent align="end">
-									<SelectItem value="x-org-id">Yandex 360</SelectItem>
-									<SelectItem value="x-cloud-org-id">Yandex Cloud</SelectItem>
-								</SelectContent>
-							</Select>
-						</Field>
-						<Field>
-							<Label
-								htmlFor="yandex-tracker-org-id"
-								className={SETTINGS_LABEL_CLASSNAME}
-							>
-								Organization ID
+			</div>
+			<Button type="button" variant="outline" onClick={onButtonClick}>
+				{buttonLabel}
+			</Button>
+		</div>
+	);
+}
+
+function YandexTrackerDialog({
+	open,
+	onOpenChange,
+	formState,
+	onOrgTypeChange,
+	onOrgIdChange,
+	onTokenChange,
+	onConnect,
+	isFormValid,
+	isSaving,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	formState: YandexTrackerConnectionFormState;
+	onOrgTypeChange: (orgType: YandexTrackerOrgType) => void;
+	onOrgIdChange: (orgId: string) => void;
+	onTokenChange: (token: string) => void;
+	onConnect: () => void;
+	isFormValid: boolean;
+	isSaving: boolean;
+}) {
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="sm:max-w-md">
+				<DialogHeader>
+					<DialogTitle>Connect Yandex Tracker</DialogTitle>
+					<DialogDescription>
+						Enter the credentials OpenGran should use for your Tracker
+						connection.
+					</DialogDescription>
+				</DialogHeader>
+				<FieldGroup className="gap-4">
+					<Field>
+						<FieldContent>
+							<Label className={SETTINGS_LABEL_CLASSNAME}>
+								Organization type
 							</Label>
-							<Input
-								id="yandex-tracker-org-id"
-								value={yandexTrackerFormState.orgId}
-								onChange={(event) =>
-									dispatch({
-										type: "patchYandexTrackerFormState",
-										value: { orgId: event.target.value },
-									})
-								}
-								placeholder="1234567"
-							/>
-						</Field>
-						<Field>
-							<Label
-								htmlFor="yandex-tracker-token"
-								className={SETTINGS_LABEL_CLASSNAME}
-							>
-								OAuth token
-							</Label>
-							<Input
-								id="yandex-tracker-token"
-								type="password"
-								value={yandexTrackerFormState.token}
-								onChange={(event) =>
-									dispatch({
-										type: "patchYandexTrackerFormState",
-										value: { token: event.target.value },
-									})
-								}
-								placeholder="y0_AgAAAA..."
-							/>
-						</Field>
-					</FieldGroup>
-					<div className="flex justify-end gap-2 pt-2">
-						<Button
-							type="button"
-							variant="ghost"
-							onClick={() => handleYandexTrackerDialogOpenChange(false)}
-							disabled={isSavingYandexTrackerConnection}
-						>
-							Cancel
-						</Button>
-						<Button
-							type="button"
-							onClick={() => {
-								void handleConnectYandexTracker();
-							}}
-							disabled={
-								!isYandexTrackerFormValid || isSavingYandexTrackerConnection
+						</FieldContent>
+						<Select
+							value={formState.orgType}
+							onValueChange={(value) =>
+								onOrgTypeChange(value as YandexTrackerOrgType)
 							}
 						>
-							{isSavingYandexTrackerConnection ? (
-								<>
-									<LoaderCircle className="animate-spin" />
-									Connecting
-								</>
-							) : (
-								"Connect"
-							)}
-						</Button>
-					</div>
-				</DialogContent>
-			</Dialog>
-			<Dialog open={isJiraDialogOpen} onOpenChange={handleJiraDialogOpenChange}>
-				<DialogContent className="sm:max-w-md">
-					<DialogHeader>
-						<DialogTitle>Connect Jira</DialogTitle>
-						<DialogDescription>
-							Enter the credentials OpenGran should use for your Jira
-							connection.
-						</DialogDescription>
-					</DialogHeader>
-					<FieldGroup className="gap-4">
-						<Field>
-							<Label
-								htmlFor="jira-base-url"
-								className={SETTINGS_LABEL_CLASSNAME}
+							<SelectTrigger
+								size="sm"
+								className="w-full cursor-pointer justify-between"
+								aria-label="Select Yandex Tracker organization type"
 							>
-								Jira URL
-							</Label>
-							<Input
-								id="jira-base-url"
-								value={jiraFormState.baseUrl}
-								onChange={(event) =>
-									dispatch({
-										type: "patchJiraFormState",
-										value: { baseUrl: event.target.value },
-									})
-								}
-								placeholder="https://your-team.atlassian.net"
-							/>
-						</Field>
-						<Field>
-							<Label htmlFor="jira-email" className={SETTINGS_LABEL_CLASSNAME}>
-								Email
-							</Label>
-							<Input
-								id="jira-email"
-								type="email"
-								value={jiraFormState.email}
-								onChange={(event) =>
-									dispatch({
-										type: "patchJiraFormState",
-										value: { email: event.target.value },
-									})
-								}
-								placeholder="name@company.com"
-							/>
-						</Field>
-						<Field>
-							<Label htmlFor="jira-token" className={SETTINGS_LABEL_CLASSNAME}>
-								API token
-							</Label>
-							<Input
-								id="jira-token"
-								type="password"
-								value={jiraFormState.token}
-								onChange={(event) =>
-									dispatch({
-										type: "patchJiraFormState",
-										value: { token: event.target.value },
-									})
-								}
-								placeholder="ATATT..."
-							/>
-						</Field>
-					</FieldGroup>
-					<div className="flex justify-end gap-2 pt-2">
-						<Button
-							type="button"
-							variant="ghost"
-							onClick={() => handleJiraDialogOpenChange(false)}
-							disabled={isSavingJiraConnection}
+								<span>
+									{formState.orgType === "x-org-id"
+										? "Yandex 360"
+										: "Yandex Cloud"}
+								</span>
+							</SelectTrigger>
+							<SelectContent align="end">
+								<SelectItem value="x-org-id">Yandex 360</SelectItem>
+								<SelectItem value="x-cloud-org-id">Yandex Cloud</SelectItem>
+							</SelectContent>
+						</Select>
+					</Field>
+					<Field>
+						<Label
+							htmlFor="yandex-tracker-org-id"
+							className={SETTINGS_LABEL_CLASSNAME}
 						>
-							Cancel
-						</Button>
-						<Button
-							type="button"
-							onClick={() => {
-								void handleConnectJira();
-							}}
-							disabled={!isJiraFormValid || isSavingJiraConnection}
+							Organization ID
+						</Label>
+						<Input
+							id="yandex-tracker-org-id"
+							value={formState.orgId}
+							onChange={(event) => onOrgIdChange(event.target.value)}
+							placeholder="1234567"
+						/>
+					</Field>
+					<Field>
+						<Label
+							htmlFor="yandex-tracker-token"
+							className={SETTINGS_LABEL_CLASSNAME}
 						>
-							{isSavingJiraConnection ? (
-								<>
-									<LoaderCircle className="animate-spin" />
-									Connecting
-								</>
-							) : (
-								"Connect"
-							)}
-						</Button>
-					</div>
-				</DialogContent>
-			</Dialog>
-		</div>
+							OAuth token
+						</Label>
+						<Input
+							id="yandex-tracker-token"
+							type="password"
+							value={formState.token}
+							onChange={(event) => onTokenChange(event.target.value)}
+							placeholder="y0_AgAAAA..."
+						/>
+					</Field>
+				</FieldGroup>
+				<div className="flex justify-end gap-2 pt-2">
+					<Button
+						type="button"
+						variant="ghost"
+						onClick={() => onOpenChange(false)}
+						disabled={isSaving}
+					>
+						Cancel
+					</Button>
+					<Button
+						type="button"
+						onClick={onConnect}
+						disabled={!isFormValid || isSaving}
+					>
+						{isSaving ? (
+							<>
+								<LoaderCircle className="animate-spin" />
+								Connecting
+							</>
+						) : (
+							"Connect"
+						)}
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+function JiraDialog({
+	open,
+	onOpenChange,
+	formState,
+	onBaseUrlChange,
+	onEmailChange,
+	onTokenChange,
+	onConnect,
+	isFormValid,
+	isSaving,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	formState: JiraConnectionFormState;
+	onBaseUrlChange: (baseUrl: string) => void;
+	onEmailChange: (email: string) => void;
+	onTokenChange: (token: string) => void;
+	onConnect: () => void;
+	isFormValid: boolean;
+	isSaving: boolean;
+}) {
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="sm:max-w-md">
+				<DialogHeader>
+					<DialogTitle>Connect Jira</DialogTitle>
+					<DialogDescription>
+						Enter the credentials OpenGran should use for your Jira connection.
+					</DialogDescription>
+				</DialogHeader>
+				<FieldGroup className="gap-4">
+					<Field>
+						<Label htmlFor="jira-base-url" className={SETTINGS_LABEL_CLASSNAME}>
+							Jira URL
+						</Label>
+						<Input
+							id="jira-base-url"
+							value={formState.baseUrl}
+							onChange={(event) => onBaseUrlChange(event.target.value)}
+							placeholder="https://your-team.atlassian.net"
+						/>
+					</Field>
+					<Field>
+						<Label htmlFor="jira-email" className={SETTINGS_LABEL_CLASSNAME}>
+							Email
+						</Label>
+						<Input
+							id="jira-email"
+							type="email"
+							value={formState.email}
+							onChange={(event) => onEmailChange(event.target.value)}
+							placeholder="name@company.com"
+						/>
+					</Field>
+					<Field>
+						<Label htmlFor="jira-token" className={SETTINGS_LABEL_CLASSNAME}>
+							API token
+						</Label>
+						<Input
+							id="jira-token"
+							type="password"
+							value={formState.token}
+							onChange={(event) => onTokenChange(event.target.value)}
+							placeholder="ATATT..."
+						/>
+					</Field>
+				</FieldGroup>
+				<div className="flex justify-end gap-2 pt-2">
+					<Button
+						type="button"
+						variant="ghost"
+						onClick={() => onOpenChange(false)}
+						disabled={isSaving}
+					>
+						Cancel
+					</Button>
+					<Button
+						type="button"
+						onClick={onConnect}
+						disabled={!isFormValid || isSaving}
+					>
+						{isSaving ? (
+							<>
+								<LoaderCircle className="animate-spin" />
+								Connecting
+							</>
+						) : (
+							"Connect"
+						)}
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
 	);
 }
 
