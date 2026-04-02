@@ -12,7 +12,8 @@ const bundleRootDir = resolve(packageRoot, ".bundle-root");
 const bundleDesktopDistDir = resolve(bundleRootDir, "apps", "desktop", "dist");
 const bundleWebDistDir = resolve(bundleRootDir, "apps", "web", "dist");
 const bundleConvexGeneratedDir = resolve(bundleRootDir, "convex", "_generated");
-const bundlePromptsDir = resolve(bundleRootDir, "packages", "ai", "src");
+const packageAiSrcDir = resolve(packageRoot, "../../packages/ai/src");
+const bundleAiSrcDir = resolve(bundleRootDir, "packages", "ai", "src");
 const desktopAssetsDir = resolve(sourceDir, "assets");
 
 if (!existsSync(resolve(webDistDir, "index.html"))) {
@@ -55,7 +56,7 @@ if (process.platform === "darwin") {
 await mkdir(bundleDesktopDistDir, { recursive: true });
 await mkdir(bundleWebDistDir, { recursive: true });
 await mkdir(bundleConvexGeneratedDir, { recursive: true });
-await mkdir(bundlePromptsDir, { recursive: true });
+await mkdir(bundleAiSrcDir, { recursive: true });
 
 await cp(distDir, bundleDesktopDistDir, { recursive: true });
 await cp(webDistDir, bundleWebDistDir, { recursive: true });
@@ -63,11 +64,4 @@ await cp(
 	resolve(packageRoot, "../../convex/_generated/api.js"),
 	resolve(bundleConvexGeneratedDir, "api.js"),
 );
-await cp(
-	resolve(packageRoot, "../../packages/ai/src/prompts.mjs"),
-	resolve(bundlePromptsDir, "prompts.mjs"),
-);
-await cp(
-	resolve(packageRoot, "../../packages/ai/src/transcription.mjs"),
-	resolve(bundlePromptsDir, "transcription.mjs"),
-);
+await cp(packageAiSrcDir, bundleAiSrcDir, { recursive: true });

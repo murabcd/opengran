@@ -1,5 +1,11 @@
 # desktop
 
+## 0.1.3
+
+### Patch Changes
+
+- bundle the full shared ai runtime directory into the packaged desktop app so installed builds no longer crash on missing module imports
+
 ## 0.1.2
 
 ### Patch Changes
