@@ -1,15 +1,14 @@
 import * as React from "react";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { useTranscriptSessionRepository } from "@/hooks/use-transcript-session-repository";
+import { useTranscriptionSession } from "@/hooks/use-transcription-session";
 import {
 	createEmptyLiveTranscriptState,
 	createSystemAudioCaptureStatus,
 	createTranscriptRecoveryStatus,
 	formatTranscriptUtterance,
 	type LiveTranscriptState,
-	type SystemAudioCaptureStatus,
 	shouldSuppressEchoUtterance,
-	type TranscriptRecoveryStatus,
 	type TranscriptUtterance,
 } from "@/lib/transcript";
 import {
@@ -51,18 +50,11 @@ export const useNoteTranscriptSession = ({
 	stopTranscriptionWhenMeetingEnds,
 	transcriptionLanguage,
 }: UseNoteTranscriptSessionArgs) => {
-	const [isSpeechListening, setIsSpeechListening] = React.useState(false);
 	const [transcriptUtterances, setTranscriptUtterances] = React.useState<
 		TranscriptUtterance[]
 	>([]);
-	const [liveTranscript, setLiveTranscript] =
-		React.useState<LiveTranscriptState>(createEmptyLiveTranscriptState);
 	const [pendingGenerateTranscript, setPendingGenerateTranscript] =
 		React.useState("");
-	const [systemAudioStatus, setSystemAudioStatus] =
-		React.useState<SystemAudioCaptureStatus>(createSystemAudioCaptureStatus);
-	const [recoveryStatus, setRecoveryStatus] =
-		React.useState<TranscriptRecoveryStatus>(createTranscriptRecoveryStatus);
 	const [isRefiningTranscript, setIsRefiningTranscript] = React.useState(false);
 	const [transcriptRefinementError, setTranscriptRefinementError] =
 		React.useState<string | null>(null);
@@ -104,8 +96,50 @@ export const useNoteTranscriptSession = ({
 	const queuedTranscriptUtterancesRef = React.useRef<TranscriptUtterance[]>([]);
 	const sessionSystemAudioModePersistedRef =
 		React.useRef<Id<"transcriptSessions"> | null>(null);
+	const resolvedCaptureScopeKey = noteId ? `note:${noteId}` : "note:draft";
+	const [captureScopeKey, setCaptureScopeKey] = React.useState(
+		resolvedCaptureScopeKey,
+	);
 	const transcriptDraftKey = noteId ? `note:${noteId}` : "note:draft";
 	const transcriptSessionRepository = useTranscriptSessionRepository(noteId);
+	const transcriptionSession = useTranscriptionSession();
+	const isScopedTranscriptionSession =
+		transcriptionSession.scopeKey === captureScopeKey;
+	const isSpeechListening = isScopedTranscriptionSession
+		? transcriptionSession.isListening
+		: false;
+	const systemAudioStatus = isScopedTranscriptionSession
+		? transcriptionSession.systemAudioStatus
+		: createSystemAudioCaptureStatus();
+	const recoveryStatus = isScopedTranscriptionSession
+		? transcriptionSession.recoveryStatus
+		: createTranscriptRecoveryStatus();
+	const liveTranscript = React.useMemo<LiveTranscriptState>(() => {
+		const nextLiveTranscript = isScopedTranscriptionSession
+			? transcriptionSession.liveTranscript
+			: createEmptyLiveTranscriptState();
+
+		return {
+			them: {
+				...nextLiveTranscript.them,
+				text: sanitizeLiveTranscriptStateText({
+					language: transcriptionLanguage,
+					text: nextLiveTranscript.them.text,
+				}),
+			},
+			you: {
+				...nextLiveTranscript.you,
+				text: sanitizeLiveTranscriptStateText({
+					language: transcriptionLanguage,
+					text: nextLiveTranscript.you.text,
+				}),
+			},
+		};
+	}, [
+		isScopedTranscriptionSession,
+		transcriptionLanguage,
+		transcriptionSession.liveTranscript,
+	]);
 
 	const orderedTranscriptUtterances = React.useMemo(
 		() =>
@@ -231,6 +265,18 @@ export const useNoteTranscriptSession = ({
 	);
 
 	React.useEffect(() => {
+		if (isSpeechListening) {
+			return;
+		}
+
+		setCaptureScopeKey((currentScopeKey) =>
+			currentScopeKey === resolvedCaptureScopeKey
+				? currentScopeKey
+				: resolvedCaptureScopeKey,
+		);
+	}, [isSpeechListening, resolvedCaptureScopeKey]);
+
+	React.useEffect(() => {
 		if (autoGenerateNotesOnStop && onEnhanceTranscript) {
 			shouldAutoGenerateNotesOnStopRef.current = true;
 		}
@@ -323,12 +369,8 @@ export const useNoteTranscriptSession = ({
 
 	const resetTranscriptSessionState = React.useCallback(
 		({ clearDraft = false }: { clearDraft?: boolean } = {}) => {
-			setIsSpeechListening(false);
 			setTranscriptUtterances([]);
-			setLiveTranscript(createEmptyLiveTranscriptState());
 			setPendingGenerateTranscript("");
-			setSystemAudioStatus(createSystemAudioCaptureStatus());
-			setRecoveryStatus(createTranscriptRecoveryStatus());
 			setIsRefiningTranscript(false);
 			setTranscriptRefinementError(null);
 			setIsTranscriptDraftReady(false);
@@ -484,7 +526,6 @@ export const useNoteTranscriptSession = ({
 					draft.utterances.map((utterance) => utterance.id),
 				);
 				setTranscriptUtterances(draft.utterances);
-				setLiveTranscript(createEmptyLiveTranscriptState());
 				setPendingGenerateTranscript(
 					draft.pendingGenerateTranscript.trim() ||
 						draft.utterances
@@ -548,7 +589,6 @@ export const useNoteTranscriptSession = ({
 			latestTranscriptSession.utterances.map((utterance) => utterance.id),
 		);
 		setTranscriptUtterances(latestTranscriptSession.utterances);
-		setLiveTranscript(createEmptyLiveTranscriptState());
 		setPendingGenerateTranscript(
 			latestTranscriptSession.generatedNoteAt ||
 				latestTranscriptSession.sessionId === generatedTranscriptSessionId
@@ -605,7 +645,6 @@ export const useNoteTranscriptSession = ({
 
 	React.useEffect(() => {
 		if (isSpeechListening && !previousSpeechListeningRef.current) {
-			setLiveTranscript(createEmptyLiveTranscriptState());
 			setPendingGenerateTranscript("");
 			setTranscriptRefinementError(null);
 			hasQueuedAutoGenerateNotesRef.current = false;
@@ -752,7 +791,6 @@ export const useNoteTranscriptSession = ({
 
 				await transcriptSessionRepository.clearDraft(transcriptDraftKey);
 				setPendingGenerateTranscript("");
-				setLiveTranscript(createEmptyLiveTranscriptState());
 				setTranscriptRefinementError(null);
 				setActiveTranscriptSessionId(null);
 				activeTranscriptSessionIdRef.current = null;
@@ -836,28 +874,6 @@ export const useNoteTranscriptSession = ({
 			queuedTranscriptUtterancesRef.current.push(utterance);
 		},
 		[persistTranscriptUtterance, transcriptionLanguage],
-	);
-
-	const handleLiveTranscriptChange = React.useCallback(
-		(state: LiveTranscriptState) => {
-			setLiveTranscript({
-				them: {
-					...state.them,
-					text: sanitizeLiveTranscriptStateText({
-						language: transcriptionLanguage,
-						text: state.them.text,
-					}),
-				},
-				you: {
-					...state.you,
-					text: sanitizeLiveTranscriptStateText({
-						language: transcriptionLanguage,
-						text: state.you.text,
-					}),
-				},
-			});
-		},
-		[transcriptionLanguage],
 	);
 
 	const handleSystemAudioRecordingReady = React.useCallback(
@@ -951,10 +967,34 @@ export const useNoteTranscriptSession = ({
 		],
 	);
 
+	React.useEffect(() => {
+		return transcriptionSessionManager.store.subscribeToEvents((event) => {
+			if (
+				transcriptionSessionManager.store.getSnapshot().scopeKey !==
+				captureScopeKey
+			) {
+				return;
+			}
+
+			if (event.type === "session.utterance_committed") {
+				handleTranscriptUtterance(event.utterance);
+				return;
+			}
+
+			if (event.type === "session.system_audio_recording_ready") {
+				void handleSystemAudioRecordingReady(event.payload);
+			}
+		});
+	}, [
+		captureScopeKey,
+		handleSystemAudioRecordingReady,
+		handleTranscriptUtterance,
+	]);
+
 	return {
 		activeTranscriptSessionId,
 		autoStartKey: pendingAutoStartKey,
-		captureScopeKey: noteId ? `note:${noteId}` : "note:draft",
+		captureScopeKey,
 		fullTranscript,
 		handleGenerateNotes,
 		hasGeneratedLatestTranscript,
@@ -965,12 +1005,6 @@ export const useNoteTranscriptSession = ({
 		isSpeechListening,
 		displayTranscriptEntries,
 		liveTranscriptEntries,
-		onLiveTranscriptChange: handleLiveTranscriptChange,
-		onRecoveryStatusChange: setRecoveryStatus,
-		onSystemAudioRecordingReady: handleSystemAudioRecordingReady,
-		onSystemAudioStatusChange: setSystemAudioStatus,
-		onTranscriptListeningChange: setIsSpeechListening,
-		onTranscriptUtterance: handleTranscriptUtterance,
 		orderedTranscriptUtterances,
 		recoveryStatus,
 		systemAudioStatus,

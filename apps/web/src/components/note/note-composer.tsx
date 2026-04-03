@@ -56,13 +56,6 @@ import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { getChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
-import type {
-	LiveTranscriptState,
-	SystemAudioCaptureStatus,
-	TranscriptRecoveryStatus,
-	TranscriptUtterance,
-} from "@/lib/transcript";
-import type { SystemAudioRecordingPayload } from "@/lib/transcription-session-types";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { SpeechInput } from "../ai-elements/speech-input";
@@ -785,10 +778,6 @@ const useNoteComposerController = ({
 		liveTranscriptEntries: transcriptSession.liveTranscriptEntries,
 		message,
 		noteChats,
-		onLiveTranscriptChange: transcriptSession.onLiveTranscriptChange,
-		onSystemAudioStatusChange: transcriptSession.onSystemAudioStatusChange,
-		onRecoveryStatusChange: transcriptSession.onRecoveryStatusChange,
-		onTranscriptListeningChange: transcriptSession.onTranscriptListeningChange,
 		orderedTranscriptUtterances: transcriptSession.orderedTranscriptUtterances,
 		openDraftChat,
 		panelMode,
@@ -803,8 +792,6 @@ const useNoteComposerController = ({
 		textareaRef,
 		transcriptionLanguageReady: isTranscriptionLanguageReady,
 		transcriptionLanguage,
-		onSystemAudioRecordingReady: transcriptSession.onSystemAudioRecordingReady,
-		onTranscriptUtterance: transcriptSession.onTranscriptUtterance,
 		handleInlinePanelResizeStart,
 	};
 };
@@ -814,12 +801,6 @@ function NoteSpeechControls({
 	captureScopeKey,
 	isTranscriptOpen,
 	onToggleTranscript,
-	onLiveTranscriptChange,
-	onSystemAudioRecordingReady,
-	onSystemAudioStatusChange,
-	onRecoveryStatusChange,
-	onTranscriptListeningChange,
-	onTranscriptUtterance,
 	transcriptionLanguageReady,
 	transcriptionLanguage,
 }: {
@@ -827,12 +808,6 @@ function NoteSpeechControls({
 	captureScopeKey: string;
 	isTranscriptOpen: boolean;
 	onToggleTranscript: () => void;
-	onLiveTranscriptChange: (state: LiveTranscriptState) => void;
-	onSystemAudioRecordingReady: (payload: SystemAudioRecordingPayload) => void;
-	onSystemAudioStatusChange: (status: SystemAudioCaptureStatus) => void;
-	onRecoveryStatusChange: (status: TranscriptRecoveryStatus) => void;
-	onTranscriptListeningChange: (isListening: boolean) => void;
-	onTranscriptUtterance: (utterance: TranscriptUtterance) => void;
 	transcriptionLanguageReady: boolean;
 	transcriptionLanguage?: string | null;
 }) {
@@ -846,12 +821,6 @@ function NoteSpeechControls({
 				lang={transcriptionLanguage}
 				scopeKey={captureScopeKey}
 				className="shrink-0 rounded-full border-input/50 !bg-transparent text-muted-foreground shadow-none hover:!bg-muted hover:text-foreground"
-				onListeningChange={onTranscriptListeningChange}
-				onLiveTranscriptChange={onLiveTranscriptChange}
-				onSystemAudioRecordingReady={onSystemAudioRecordingReady}
-				onSystemAudioStatusChange={onSystemAudioStatusChange}
-				onRecoveryStatusChange={onRecoveryStatusChange}
-				onUtterance={onTranscriptUtterance}
 			/>
 
 			<Button
@@ -1404,12 +1373,6 @@ function NoteComposerSpeechControls({
 					currentValue === "transcript" ? null : "transcript",
 				);
 			}}
-			onLiveTranscriptChange={controller.onLiveTranscriptChange}
-			onSystemAudioRecordingReady={controller.onSystemAudioRecordingReady}
-			onSystemAudioStatusChange={controller.onSystemAudioStatusChange}
-			onRecoveryStatusChange={controller.onRecoveryStatusChange}
-			onTranscriptListeningChange={controller.onTranscriptListeningChange}
-			onTranscriptUtterance={controller.onTranscriptUtterance}
 			transcriptionLanguageReady={controller.transcriptionLanguageReady}
 			transcriptionLanguage={controller.transcriptionLanguage}
 		/>
