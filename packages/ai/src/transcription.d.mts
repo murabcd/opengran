@@ -31,6 +31,16 @@ export declare function normalizeTranscriptionLanguage(
 	value?: string | null,
 ): string | null;
 
+export declare function normalizeTranscriptText(
+	value?: string | null,
+): string;
+
+export declare function getTranscriptWordCount(value?: string | null): number;
+
+export declare function isTranscriptPlaceholderText(
+	value?: string | null,
+): boolean;
+
 export declare function createRealtimeTranscriptionSession(options?: {
 	language?: string | null;
 	noiseReductionType?: "near_field" | "far_field" | null;
@@ -65,11 +75,15 @@ export declare function summarizeTranscriptConfidence(args: {
 		logprob?: number;
 		token?: string;
 	}> | null;
+	source?: string | null;
 	text?: string | null;
 }): {
 	average: number;
 	lowTokenRatio: number;
+	minProbability: number;
 	tokenCount: number;
+	veryLowTokenRatio: number;
+	wordCount: number;
 } | null;
 
 export declare function isLowConfidenceTranscriptLogprobs(args: {
@@ -78,5 +92,26 @@ export declare function isLowConfidenceTranscriptLogprobs(args: {
 		logprob?: number;
 		token?: string;
 	}> | null;
+	source?: string | null;
+	text?: string | null;
+}): boolean;
+
+export declare function shouldDropTranscriptForConfidence(args: {
+	logprobs?: Array<{
+		bytes?: number[];
+		logprob?: number;
+		token?: string;
+	}> | null;
+	source?: string | null;
+	text?: string | null;
+}): boolean;
+
+export declare function shouldKeepInterruptedTranscriptTurn(args: {
+	logprobs?: Array<{
+		bytes?: number[];
+		logprob?: number;
+		token?: string;
+	}> | null;
+	source?: string | null;
 	text?: string | null;
 }): boolean;

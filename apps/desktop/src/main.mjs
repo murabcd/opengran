@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import {
+	appendFile,
 	mkdir,
 	readdir,
 	readFile,
@@ -37,6 +38,8 @@ import {
 	createRealtimeTranscriptionSessionOptions,
 	isLowConfidenceTranscriptLogprobs,
 	normalizeTranscriptionLanguage,
+	shouldDropTranscriptForConfidence,
+	shouldKeepInterruptedTranscriptTurn,
 } from "../../../packages/ai/src/transcription.mjs";
 import { getDesktopAuthClient } from "./auth-client.mjs";
 import { loadRootEnv } from "./env.mjs";
@@ -88,6 +91,14 @@ const scheduledMeetingNotificationLeadTimeMs = 5 * 60 * 1000;
 const trayCalendarRefreshMs = 60 * 1000;
 const trayCalendarMenuEventLimit = 5;
 const browserMeetingSignalFreshMs = 30 * 1000;
+const shouldLogDesktopTurnDebug =
+	app.isPackaged !== true ||
+	process.env.OPENGRAN_ENABLE_TRANSCRIPTION_DEBUG === "1";
+const transcriptionDebugLogPath = join(
+	app.getPath("temp"),
+	"opengran-transcription-debug.log",
+);
+let hasLoggedDesktopTurnDebugSessionHeader = false;
 const minimumWindowSize = {
 	width: 390,
 	height: 640,
@@ -1638,6 +1649,54 @@ const patchTranscriptionSessionState = (patch) => {
 	});
 };
 
+const countLoggedTranscriptWords = (value) =>
+	typeof value === "string" && value.trim()
+		? value.trim().split(/\s+/u).filter(Boolean).length
+		: 0;
+
+const summarizeTranscriptTextForLog = (value) => {
+	const text = typeof value === "string" ? value.trim() : "";
+
+	return {
+		textLength: text.length,
+		textPreview: text.slice(0, 160),
+		wordCount: countLoggedTranscriptWords(text),
+	};
+};
+
+const logDesktopTurnDebug = (event, details = {}) => {
+	if (!shouldLogDesktopTurnDebug) {
+		return;
+	}
+
+	const payload = {
+		event,
+		timestamp: new Date().toISOString(),
+		...details,
+	};
+
+	console.info("[desktop-turn]", payload);
+
+	if (!hasLoggedDesktopTurnDebugSessionHeader) {
+		hasLoggedDesktopTurnDebugSessionHeader = true;
+		void appendFile(
+			transcriptionDebugLogPath,
+			`${JSON.stringify({
+				event: "debug_session_started",
+				pid: process.pid,
+				timestamp: new Date().toISOString(),
+			})}\n`,
+			"utf8",
+		).catch(() => {});
+	}
+
+	void appendFile(
+		transcriptionDebugLogPath,
+		`${JSON.stringify(payload)}\n`,
+		"utf8",
+	).catch(() => {});
+};
+
 const updateTranscriptionLiveTranscript = (speaker, value) => {
 	patchTranscriptionSessionState({
 		liveTranscript: {
@@ -1650,7 +1709,18 @@ const updateTranscriptionLiveTranscript = (speaker, value) => {
 	});
 };
 
-const clearTranscriptionLiveTranscript = (speaker) => {
+const clearTranscriptionLiveTranscript = (speaker, metadata = {}) => {
+	const previousValue = latestTranscriptionSessionState.liveTranscript[speaker];
+
+	if (previousValue?.text?.trim()) {
+		logDesktopTurnDebug("live.cleared", {
+			itemId: metadata.itemId ?? null,
+			reason: metadata.reason ?? "unknown",
+			speaker,
+			...summarizeTranscriptTextForLog(previousValue.text),
+		});
+	}
+
 	updateTranscriptionLiveTranscript(speaker, {
 		startedAt: null,
 		text: "",
@@ -2116,14 +2186,26 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 		}
 
 		const text = nextTurn.text.trim();
-		if (
-			!nextTurn.failed &&
-			text &&
-			!isLowConfidenceTranscriptLogprobs({
-				logprobs: nextTurn.logprobs ?? null,
-				text,
-			})
-		) {
+		const source = speaker === "them" ? "systemAudio" : "microphone";
+		const isLowConfidence =
+			!nextTurn.failed && text
+				? isLowConfidenceTranscriptLogprobs({
+						logprobs: nextTurn.logprobs ?? null,
+						source,
+						text,
+					})
+				: false;
+		const shouldDropForConfidence =
+			!nextTurn.failed && text
+				? shouldDropTranscriptForConfidence({
+						logprobs: nextTurn.logprobs ?? null,
+						source,
+						text,
+					})
+				: false;
+		const shouldEmit = !nextTurn.failed && text && !shouldDropForConfidence;
+
+		if (shouldEmit) {
 			appendTranscriptionUtterance({
 				endedAt: Date.now(),
 				id: `${state.sessionId ?? "session"}:${speaker}:${nextTurn.itemId}`,
@@ -2133,12 +2215,37 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 			});
 		}
 
+		logDesktopTurnDebug("turn.ordered", {
+			itemId: nextTurn.itemId,
+			outcome: shouldEmit
+				? "emitted"
+				: nextTurn.failed
+					? "failed"
+					: !text
+						? "empty"
+						: "low_confidence",
+			retainedDespiteLowConfidence:
+				shouldEmit && isLowConfidence && !shouldDropForConfidence,
+			previousItemId: nextTurn.previousItemId,
+			speaker,
+			...summarizeTranscriptTextForLog(text),
+		});
+
 		state.emittedItemIds.add(nextTurn.itemId);
 		state.lastCommittedItemId = nextTurn.itemId;
 
 		if (state.liveItemId === nextTurn.itemId) {
 			state.liveItemId = null;
-			clearTranscriptionLiveTranscript(speaker);
+			clearTranscriptionLiveTranscript(speaker, {
+				itemId: nextTurn.itemId,
+				reason: shouldEmit
+					? "turn_emitted"
+					: nextTurn.failed
+						? "turn_failed"
+						: !text
+							? "turn_empty"
+							: "turn_low_confidence",
+			});
 		}
 	}
 };
@@ -3156,6 +3263,16 @@ const handleDesktopRealtimeTransportEvent = async (event) => {
 	}
 
 	if (event.type === "committed") {
+		const existingTurn = state.turns.get(event.itemId);
+		logDesktopTurnDebug("transport.committed", {
+			hasExistingTurn: Boolean(existingTurn),
+			itemId: event.itemId,
+			liveItemId: state.liveItemId,
+			previousItemId: event.previousItemId,
+			speaker: event.speaker,
+			turnCompleted: existingTurn?.completed ?? false,
+			turnFailed: existingTurn?.failed ?? false,
+		});
 		upsertTranscriptionTurn(event.speaker, event.itemId, {
 			previousItemId: event.previousItemId,
 		});
@@ -3172,6 +3289,22 @@ const handleDesktopRealtimeTransportEvent = async (event) => {
 			text: `${existingTurn?.text ?? ""}${event.textDelta}`,
 		});
 
+		if (!existingTurn) {
+			logDesktopTurnDebug("transport.partial_started", {
+				itemId: event.itemId,
+				liveItemId: state.liveItemId,
+				speaker: event.speaker,
+				...summarizeTranscriptTextForLog(nextTurn.text),
+			});
+		} else if (state.liveItemId && state.liveItemId !== event.itemId) {
+			logDesktopTurnDebug("transport.partial_replaced_live_item", {
+				itemId: event.itemId,
+				replacedItemId: state.liveItemId,
+				speaker: event.speaker,
+				...summarizeTranscriptTextForLog(nextTurn.text),
+			});
+		}
+
 		state.liveItemId = event.itemId;
 		updateTranscriptionLiveTranscript(event.speaker, {
 			startedAt: nextTurn.startedAt,
@@ -3182,21 +3315,45 @@ const handleDesktopRealtimeTransportEvent = async (event) => {
 
 	if (event.type === "turn_failed") {
 		const existingTurn = state.turns.get(event.itemId);
+		const interruptedText =
+			existingTurn?.text ||
+			latestTranscriptionSessionState.liveTranscript[event.speaker].text ||
+			"";
+		const shouldKeepInterruptedText = shouldKeepInterruptedTranscriptTurn({
+			logprobs: existingTurn?.logprobs ?? null,
+			source: event.speaker === "them" ? "systemAudio" : "microphone",
+			text: interruptedText,
+		});
+		logDesktopTurnDebug("transport.turn_failed", {
+			itemId: event.itemId,
+			keepInterruptedText: shouldKeepInterruptedText,
+			liveItemId: state.liveItemId,
+			message: event.message,
+			speaker: event.speaker,
+			...summarizeTranscriptTextForLog(interruptedText),
+		});
 		upsertTranscriptionTurn(event.speaker, event.itemId, {
-			completed: false,
-			failed: true,
-			logprobs: null,
+			completed: shouldKeepInterruptedText,
+			failed: !shouldKeepInterruptedText,
+			logprobs: shouldKeepInterruptedText
+				? (existingTurn?.logprobs ?? null)
+				: null,
 			startedAt:
 				existingTurn?.startedAt ??
 				latestTranscriptionSessionState.liveTranscript[event.speaker]
 					.startedAt ??
 				Date.now(),
-			text: "",
+			text: shouldKeepInterruptedText ? interruptedText : "",
 		});
 
 		if (state.liveItemId === event.itemId) {
 			state.liveItemId = null;
-			clearTranscriptionLiveTranscript(event.speaker);
+			clearTranscriptionLiveTranscript(event.speaker, {
+				itemId: event.itemId,
+				reason: shouldKeepInterruptedText
+					? "turn_failed_salvaged"
+					: "turn_failed_dropped",
+			});
 		}
 
 		emitTranscriptionOrderedTurns(event.speaker);
@@ -3205,6 +3362,16 @@ const handleDesktopRealtimeTransportEvent = async (event) => {
 
 	if (event.type === "final") {
 		const existingTurn = state.turns.get(event.itemId);
+		logDesktopTurnDebug("transport.final", {
+			itemId: event.itemId,
+			liveItemId: state.liveItemId,
+			speaker: event.speaker,
+			...summarizeTranscriptTextForLog(
+				event.text ||
+					existingTurn?.text ||
+					latestTranscriptionSessionState.liveTranscript[event.speaker].text,
+			),
+		});
 		upsertTranscriptionTurn(event.speaker, event.itemId, {
 			completed: true,
 			failed: false,

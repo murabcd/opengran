@@ -6,6 +6,7 @@ import Foundation
 
 enum CaptureError: Error, LocalizedError {
 	case aggregateDeviceCreationFailed(OSStatus)
+	case converterCreationFailed
 	case defaultOutputLookupFailed(OSStatus)
 	case invalidTapFormat
 	case ioProcCreationFailed(OSStatus)
@@ -20,6 +21,8 @@ enum CaptureError: Error, LocalizedError {
 		switch self {
 		case .aggregateDeviceCreationFailed(let status):
 			return "Failed to create aggregate device (\(status))."
+		case .converterCreationFailed:
+			return "Failed to configure native system-audio conversion."
 		case .defaultOutputLookupFailed(let status):
 			return "Failed to resolve the default output device (\(status))."
 		case .invalidTapFormat:
@@ -155,6 +158,7 @@ final class PcmChunkEncoder: @unchecked Sendable {
 }
 
 final class SystemAudioCapture: @unchecked Sendable {
+	private static let targetSampleRate = 24_000.0
 	private let callbackQueue = DispatchQueue(
 		label: "com.opengran.system-audio.callback",
 		qos: .userInteractive
@@ -163,6 +167,8 @@ final class SystemAudioCapture: @unchecked Sendable {
 	private let logger: StderrLogger
 	private let routeChangeHandler: @Sendable () -> Void
 	private var aggregateDeviceID = AudioObjectID(kAudioObjectUnknown)
+	private var convertedFormat: AVAudioFormat?
+	private var converter: AVAudioConverter?
 	private var defaultOutputChangeListener: AudioObjectPropertyListenerBlock?
 	private var hasHandledRouteChange = false
 	private var ioProcID: AudioDeviceIOProcID?
@@ -248,6 +254,29 @@ final class SystemAudioCapture: @unchecked Sendable {
 			_ = AudioHardwareDestroyProcessTap(nextTapID)
 			throw CaptureError.invalidTapFormat
 		}
+		guard let targetFormat = AVAudioFormat(
+			standardFormatWithSampleRate: Self.targetSampleRate,
+			channels: 1
+		) else {
+			_ = AudioHardwareDestroyAggregateDevice(nextAggregateDeviceID)
+			_ = AudioHardwareDestroyProcessTap(nextTapID)
+			throw CaptureError.converterCreationFailed
+		}
+		let nextConverter =
+			format.sampleRate == targetFormat.sampleRate &&
+				format.channelCount == targetFormat.channelCount &&
+				format.commonFormat == targetFormat.commonFormat &&
+				format.isInterleaved == targetFormat.isInterleaved
+				? nil
+				: AVAudioConverter(from: format, to: targetFormat)
+
+		if format.sampleRate != targetFormat.sampleRate &&
+			nextConverter == nil
+		{
+			_ = AudioHardwareDestroyAggregateDevice(nextAggregateDeviceID)
+			_ = AudioHardwareDestroyProcessTap(nextTapID)
+			throw CaptureError.converterCreationFailed
+		}
 
 		var nextIoProcID: AudioDeviceIOProcID?
 		status = AudioDeviceCreateIOProcIDWithBlock(
@@ -255,7 +284,7 @@ final class SystemAudioCapture: @unchecked Sendable {
 			nextAggregateDeviceID,
 			callbackQueue
 		) { [weak self] _, inInputData, _, _, _ in
-			self?.handleInputData(inInputData, format: format)
+			self?.handleInputData(inInputData, sourceFormat: format)
 		}
 		logger.log("[helper] AudioDeviceCreateIOProcIDWithBlock status: \(status)")
 
@@ -276,12 +305,14 @@ final class SystemAudioCapture: @unchecked Sendable {
 
 		tapID = nextTapID
 		aggregateDeviceID = nextAggregateDeviceID
+		convertedFormat = targetFormat
+		converter = nextConverter
 		ioProcID = nextIoProcID
 		try registerDefaultOutputChangeListener()
 		encoder.start()
 		logger.log("[helper] encoder started, returning ready format")
 
-		return format
+		return targetFormat
 	}
 
 	func stop() throws {
@@ -293,6 +324,8 @@ final class SystemAudioCapture: @unchecked Sendable {
 		let currentTapID = tapID
 
 		aggregateDeviceID = AudioObjectID(kAudioObjectUnknown)
+		convertedFormat = nil
+		converter = nil
 		ioProcID = nil
 		tapID = AudioObjectID(kAudioObjectUnknown)
 		try removeDefaultOutputChangeListener()
@@ -340,12 +373,12 @@ final class SystemAudioCapture: @unchecked Sendable {
 
 	private func handleInputData(
 		_ inputData: UnsafePointer<AudioBufferList>,
-		format: AVAudioFormat
+		sourceFormat: AVAudioFormat
 	) {
 		let sourceBuffers = UnsafeMutableAudioBufferListPointer(
 			UnsafeMutablePointer(mutating: inputData)
 		)
-		let streamDescription = format.streamDescription
+		let streamDescription = sourceFormat.streamDescription
 		let bytesPerFrame = Int(streamDescription.pointee.mBytesPerFrame)
 		guard bytesPerFrame > 0, let firstSourceBuffer = sourceBuffers.first else {
 			return
@@ -357,7 +390,7 @@ final class SystemAudioCapture: @unchecked Sendable {
 		}
 
 		guard let pcmBuffer = AVAudioPCMBuffer(
-			pcmFormat: format,
+			pcmFormat: sourceFormat,
 			frameCapacity: frameCount
 		) else {
 			return
@@ -389,7 +422,57 @@ final class SystemAudioCapture: @unchecked Sendable {
 			destinationBuffers[index].mDataByteSize = UInt32(copySize)
 		}
 
-		encoder.append(buffer: pcmBuffer)
+		guard let targetFormat = convertedFormat else {
+			return
+		}
+
+		guard let converter else {
+			encoder.append(buffer: pcmBuffer)
+			return
+		}
+
+		let outputFrameCapacity = max(
+			AVAudioFrameCount(
+				ceil(Double(frameCount) * targetFormat.sampleRate / sourceFormat.sampleRate)
+			),
+			1
+		)
+		guard let convertedBuffer = AVAudioPCMBuffer(
+			pcmFormat: targetFormat,
+			frameCapacity: outputFrameCapacity
+		) else {
+			return
+		}
+
+		var hasSuppliedInput = false
+		var conversionError: NSError?
+		let status = converter.convert(to: convertedBuffer, error: &conversionError) {
+			_, outStatus in
+			if hasSuppliedInput {
+				outStatus.pointee = .noDataNow
+				return nil
+			}
+
+			hasSuppliedInput = true
+			outStatus.pointee = .haveData
+			return pcmBuffer
+		}
+
+		if let conversionError {
+			logger.log("[helper] conversion error: \(conversionError.localizedDescription)")
+			return
+		}
+
+		switch status {
+		case .haveData, .inputRanDry, .endOfStream:
+			if convertedBuffer.frameLength > 0 {
+				encoder.append(buffer: convertedBuffer)
+			}
+		case .error:
+			logger.log("[helper] conversion failed without a recoverable error")
+		@unknown default:
+			return
+		}
 	}
 
 	private func registerDefaultOutputChangeListener() throws {

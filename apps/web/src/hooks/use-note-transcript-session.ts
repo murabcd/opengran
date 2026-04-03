@@ -124,6 +124,7 @@ export const useNoteTranscriptSession = ({
 				...nextLiveTranscript.them,
 				text: sanitizeLiveTranscriptStateText({
 					language: transcriptionLanguage,
+					source: "systemAudio",
 					text: nextLiveTranscript.them.text,
 				}),
 			},
@@ -131,6 +132,7 @@ export const useNoteTranscriptSession = ({
 				...nextLiveTranscript.you,
 				text: sanitizeLiveTranscriptStateText({
 					language: transcriptionLanguage,
+					source: "microphone",
 					text: nextLiveTranscript.you.text,
 				}),
 			},
@@ -838,6 +840,7 @@ export const useNoteTranscriptSession = ({
 			if (
 				isSuspiciousCommittedTranscriptText({
 					language: transcriptionLanguage,
+					source: utterance.speaker === "them" ? "systemAudio" : "microphone",
 					text: utterance.text,
 				})
 			) {

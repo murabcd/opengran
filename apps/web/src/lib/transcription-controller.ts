@@ -34,6 +34,7 @@ import {
 	resolveTranscriptionPolicy,
 	type TranscriptionPolicy,
 } from "@/lib/transcription-policy";
+import { shouldKeepInterruptedTranscriptTurn } from "../../../../packages/ai/src/transcription.mjs";
 
 type TranscriptTurnState = {
 	itemId: string;
@@ -730,15 +731,26 @@ export class TranscriptionController {
 
 		if (event.type === "turn_failed") {
 			const existingTurn = state.turns.get(event.itemId);
+			const interruptedText =
+				existingTurn?.text ||
+				this.getState().liveTranscript[event.speaker].text ||
+				"";
+			const shouldKeepInterruptedText = shouldKeepInterruptedTranscriptTurn({
+				logprobs: existingTurn?.logprobs ?? null,
+				source: event.speaker === "them" ? "systemAudio" : "microphone",
+				text: interruptedText,
+			});
 			this.upsertTurn(event.speaker, event.itemId, {
-				completed: false,
-				failed: true,
-				logprobs: null,
+				completed: shouldKeepInterruptedText,
+				failed: !shouldKeepInterruptedText,
+				logprobs: shouldKeepInterruptedText
+					? (existingTurn?.logprobs ?? null)
+					: null,
 				startedAt:
 					existingTurn?.startedAt ??
 					this.getState().liveTranscript[event.speaker].startedAt ??
 					Date.now(),
-				text: "",
+				text: shouldKeepInterruptedText ? interruptedText : "",
 			});
 
 			if (state.liveItemId === event.itemId) {
@@ -840,6 +852,7 @@ export class TranscriptionController {
 				!isSuspiciousCommittedTranscriptText({
 					language: this.config.lang,
 					logprobs: nextTurn.logprobs ?? null,
+					source: speaker === "them" ? "systemAudio" : "microphone",
 					text,
 				})
 			) {

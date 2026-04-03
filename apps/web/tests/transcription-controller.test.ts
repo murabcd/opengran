@@ -627,4 +627,73 @@ describe("TranscriptionController", () => {
 		expect(utterances).toHaveLength(1);
 		expect(utterances[0]?.text).toBe("working turn");
 	});
+
+	it("salvages a substantial interrupted system-audio turn from partial text", async () => {
+		const { stream } = createMockStream();
+		const transportEvents: Array<
+			(event: RealtimeTranscriptionTransportEvent) => void
+		> = [];
+		const createMicrophoneInputStream = vi.fn(async () => stream);
+		const createBrowserSystemAudioStream = vi.fn(async () => stream);
+		const connectTransport = vi.fn(
+			async (args: {
+				speaker: "them" | "you";
+				onEvent: (event: RealtimeTranscriptionTransportEvent) => void;
+			}) => {
+				transportEvents.push(args.onEvent);
+				return {
+					close: vi.fn(async () => {}),
+				} satisfies RealtimeTranscriptionTransport;
+			},
+		);
+		const controller = createController({
+			connectTransport,
+			createBrowserSystemAudioStream,
+			createMicrophoneInputStream,
+			resolvePolicy: vi.fn(async () =>
+				createPolicy({
+					platform: "browser",
+					systemAudioCapability: {
+						isSupported: true,
+						shouldAutoBootstrap: false,
+						sourceMode: "display-media",
+					},
+				}),
+			),
+		});
+		const utterances: TranscriptionControllerState["utterances"] = [];
+		controller.subscribeToEvents((event) => {
+			if (event.type === "session.utterance_committed") {
+				utterances.push(event.utterance);
+			}
+		});
+
+		await controller.start();
+		await controller.requestSystemAudio();
+
+		transportEvents[1]?.({
+			itemId: "turn-1",
+			speaker: "them",
+			textDelta:
+				"If your ideation process is to find an idea that is both good and no one's ever thought of it before",
+			type: "partial",
+		});
+		transportEvents[1]?.({
+			itemId: "turn-1",
+			message: "ASR failed for this item.",
+			speaker: "them",
+			type: "turn_failed",
+		});
+		transportEvents[1]?.({
+			itemId: "turn-1",
+			previousItemId: null,
+			speaker: "them",
+			type: "committed",
+		});
+
+		expect(utterances).toHaveLength(1);
+		expect(utterances[0]?.speaker).toBe("them");
+		expect(utterances[0]?.text).toContain("If your ideation process");
+		expect(controller.getSnapshot().liveTranscript.them.text).toBe("");
+	});
 });

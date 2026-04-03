@@ -30,11 +30,46 @@ const transcriptionLanguageNames = {
 	zh: "Chinese",
 };
 
+const transcriptPlaceholderPatterns = new Set([
+	"audio unclear",
+	"background noise",
+	"inaudible",
+	"music",
+	"noise",
+	"silence",
+	"unintelligible",
+]);
+
 const isSystemAudioSource = (source) => {
 	const normalizedSource =
 		typeof source === "string" ? source.trim().toLowerCase() : "";
 
 	return systemAudioSources.has(normalizedSource);
+};
+
+export const normalizeTranscriptText = (value) =>
+	typeof value === "string"
+		? value
+				.toLowerCase()
+				.replace(/[^\p{L}\p{N}\s]+/gu, " ")
+				.replace(/\s+/g, " ")
+				.trim()
+		: "";
+
+export const getTranscriptWordCount = (value) =>
+	normalizeTranscriptText(value).split(" ").filter(Boolean).length;
+
+export const isTranscriptPlaceholderText = (value) => {
+	const normalizedValue = normalizeTranscriptText(value);
+
+	if (!normalizedValue) {
+		return false;
+	}
+
+	return (
+		transcriptPlaceholderPatterns.has(normalizedValue) &&
+		getTranscriptWordCount(normalizedValue) <= 2
+	);
 };
 
 export const resolveRealtimeNoiseReductionType = (source) => {
@@ -58,8 +93,9 @@ export const resolveRealtimeTranscriptionPrompt = ({
 			: null;
 	const prompt = [
 		languageName ? `The spoken language is ${languageName}.` : null,
-		"Transcribe spoken words verbatim.",
-		"Do not translate or paraphrase.",
+		"Transcribe only the words that are clearly audible in this segment.",
+		"Do not translate, paraphrase, summarize, or complete a thought beyond the audio.",
+		"Preserve punctuation and filler words when they are spoken.",
 		"If the audio is unclear or low-confidence, return an empty transcript instead of guessing.",
 		isSystemAudioSource(source)
 			? "This audio comes from direct system playback."
@@ -143,14 +179,22 @@ const getConfidenceCandidates = (logprobs) =>
 				)
 		: [];
 
-export const summarizeTranscriptConfidence = ({ logprobs, text }) => {
+export const summarizeTranscriptConfidence = ({
+	logprobs,
+	source = null,
+	text,
+}) => {
 	const normalizedText = typeof text === "string" ? text.trim() : "";
+	const wordCount = getTranscriptWordCount(normalizedText);
 	const confidenceCandidates = getConfidenceCandidates(logprobs);
+	const minimumCandidateCount = isSystemAudioSource(source)
+		? Math.max(2, Math.min(4, wordCount))
+		: 5;
 
 	if (
 		normalizedText.length === 0 ||
-		normalizedText.split(/\s+/u).length < 5 ||
-		confidenceCandidates.length < 5
+		wordCount === 0 ||
+		confidenceCandidates.length < minimumCandidateCount
 	) {
 		return null;
 	}
@@ -162,17 +206,29 @@ export const summarizeTranscriptConfidence = ({ logprobs, text }) => {
 	const lowTokenRatio =
 		probabilities.filter((probability) => probability < 0.2).length /
 		probabilities.length;
+	const veryLowTokenRatio =
+		probabilities.filter((probability) => probability < 0.08).length /
+		probabilities.length;
+	const minProbability = Math.min(...probabilities);
 
 	return {
 		average,
 		lowTokenRatio,
+		minProbability,
 		tokenCount: probabilities.length,
+		veryLowTokenRatio,
+		wordCount,
 	};
 };
 
-export const isLowConfidenceTranscriptLogprobs = ({ logprobs, text }) => {
+export const isLowConfidenceTranscriptLogprobs = ({
+	logprobs,
+	source = null,
+	text,
+}) => {
 	const summary = summarizeTranscriptConfidence({
 		logprobs,
+		source,
 		text,
 	});
 
@@ -180,5 +236,82 @@ export const isLowConfidenceTranscriptLogprobs = ({ logprobs, text }) => {
 		return false;
 	}
 
+	if (isSystemAudioSource(source)) {
+		if (summary.wordCount <= 4) {
+			return (
+				summary.average < 0.6 ||
+				summary.lowTokenRatio >= 0.5 ||
+				summary.veryLowTokenRatio >= 0.25 ||
+				summary.minProbability < 0.03
+			);
+		}
+
+		return (
+			summary.average < 0.5 ||
+			summary.lowTokenRatio >= 0.45 ||
+			summary.veryLowTokenRatio >= 0.18 ||
+			summary.minProbability < 0.02
+		);
+	}
+
 	return summary.average < 0.45 || summary.lowTokenRatio >= 0.6;
+};
+
+export const shouldDropTranscriptForConfidence = ({
+	logprobs,
+	source = null,
+	text,
+}) => {
+	const normalizedText = normalizeTranscriptText(text);
+
+	if (!normalizedText || isTranscriptPlaceholderText(normalizedText)) {
+		return true;
+	}
+
+	if (
+		!isLowConfidenceTranscriptLogprobs({
+			logprobs,
+			source,
+			text: normalizedText,
+		})
+	) {
+		return false;
+	}
+
+	const wordCount = getTranscriptWordCount(normalizedText);
+
+	if (isSystemAudioSource(source)) {
+		return wordCount <= 2 && normalizedText.length < 16;
+	}
+
+	return true;
+};
+
+export const shouldKeepInterruptedTranscriptTurn = ({
+	logprobs,
+	source = null,
+	text,
+}) => {
+	const normalizedText = normalizeTranscriptText(text);
+	const wordCount = getTranscriptWordCount(normalizedText);
+
+	if (!normalizedText || isTranscriptPlaceholderText(normalizedText)) {
+		return false;
+	}
+
+	if (
+		isLowConfidenceTranscriptLogprobs({
+			logprobs,
+			source,
+			text: normalizedText,
+		})
+	) {
+		return false;
+	}
+
+	if (isSystemAudioSource(source)) {
+		return wordCount >= 5 || normalizedText.length >= 28;
+	}
+
+	return wordCount >= 4 || normalizedText.length >= 24;
 };

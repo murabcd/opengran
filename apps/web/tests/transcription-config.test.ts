@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
 	createRealtimeTranscriptionSession,
 	createRealtimeTranscriptionSessionOptions,
+	isLowConfidenceTranscriptLogprobs,
 	resolveRealtimeNoiseReductionType,
 	resolveRealtimeSilenceDurationMs,
 	resolveRealtimeTranscriptionPrompt,
+	shouldDropTranscriptForConfidence,
 } from "../../../packages/ai/src/transcription.mjs";
 
 describe("transcription config", () => {
@@ -43,7 +45,69 @@ describe("transcription config", () => {
 
 		expect(session.audio.input.turn_detection.silence_duration_ms).toBe(450);
 		expect(session.audio.input.transcription.prompt).toContain(
-			"Do not translate or paraphrase.",
+			"Do not translate, paraphrase, summarize, or complete a thought beyond the audio.",
 		);
+	});
+
+	it("uses stricter low-confidence thresholds for system audio", () => {
+		expect(
+			isLowConfidenceTranscriptLogprobs({
+				logprobs: [
+					{ logprob: -1.8, token: "hello" },
+					{ logprob: -2.4, token: "world" },
+					{ logprob: -3.6, token: "today" },
+				],
+				source: "systemAudio",
+				text: "hello world today",
+			}),
+		).toBe(true);
+
+		expect(
+			isLowConfidenceTranscriptLogprobs({
+				logprobs: [
+					{ logprob: -0.08, token: "hello" },
+					{ logprob: -0.05, token: "world" },
+					{ logprob: -0.09, token: "today" },
+				],
+				source: "systemAudio",
+				text: "hello world today",
+			}),
+		).toBe(false);
+	});
+
+	it("only drops low-confidence system-audio turns when they are also short", () => {
+		expect(
+			shouldDropTranscriptForConfidence({
+				logprobs: Array.from({ length: 6 }, () => ({
+					logprob: -2.8,
+					token: "watch",
+				})),
+				source: "systemAudio",
+				text: "Watch this",
+			}),
+		).toBe(true);
+
+		expect(
+			shouldDropTranscriptForConfidence({
+				logprobs: [
+					{ logprob: -2.8, token: "i" },
+					{ logprob: -2.7, token: "am" },
+					{ logprob: -2.9, token: "trying" },
+				],
+				source: "systemAudio",
+				text: "I am trying",
+			}),
+		).toBe(false);
+
+		expect(
+			shouldDropTranscriptForConfidence({
+				logprobs: Array.from({ length: 10 }, () => ({
+					logprob: -2.8,
+					token: "ideas",
+				})),
+				source: "systemAudio",
+				text: "But if you really struggle to come up with good ideas, it's totally okay to go work somewhere else",
+			}),
+		).toBe(false);
 	});
 });

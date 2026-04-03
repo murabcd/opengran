@@ -178,6 +178,8 @@ const child = spawn(bundledAppExecutable, [], {
 	stdio: "inherit",
 	env: {
 		...process.env,
+		OPENGRAN_ENABLE_TRANSCRIPTION_DEBUG:
+			process.env.OPENGRAN_ENABLE_TRANSCRIPTION_DEBUG ?? "1",
 		OPENGRAN_DISABLE_UPDATER: "1",
 		OPENGRAN_RENDERER_URL: rendererUrl,
 	},

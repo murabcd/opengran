@@ -35,6 +35,68 @@ describe("transcript guard", () => {
 		).toBe(true);
 	});
 
+	it("flags placeholder transcript text", () => {
+		expect(
+			isSuspiciousCommittedTranscriptText({
+				text: "[inaudible]",
+			}),
+		).toBe(true);
+	});
+
+	it("flags tiny low-confidence system audio turns", () => {
+		expect(
+			isSuspiciousCommittedTranscriptText({
+				logprobs: [
+					{ logprob: -2.2, token: "trust" },
+					{ logprob: -2.5, token: "me" },
+				],
+				source: "systemAudio",
+				text: "Trust me",
+			}),
+		).toBe(true);
+	});
+
+	it("keeps short but plausible low-confidence system audio turns visible", () => {
+		expect(
+			isSuspiciousCommittedTranscriptText({
+				logprobs: [
+					{ logprob: -2.2, token: "i" },
+					{ logprob: -2.5, token: "am" },
+					{ logprob: -3.8, token: "trying" },
+				],
+				source: "systemAudio",
+				text: "I am trying",
+			}),
+		).toBe(false);
+	});
+
+	it("keeps longer low-confidence system audio turns visible", () => {
+		expect(
+			isSuspiciousCommittedTranscriptText({
+				logprobs: Array.from({ length: 8 }, () => ({
+					logprob: -2.6,
+					token: "idea",
+				})),
+				source: "systemAudio",
+				text: "But if you really struggle to come up with good ideas, it's okay to work somewhere else.",
+			}),
+		).toBe(false);
+	});
+
+	it("keeps short confident system audio turns", () => {
+		expect(
+			isSuspiciousCommittedTranscriptText({
+				logprobs: [
+					{ logprob: -0.08, token: "What" },
+					{ logprob: -0.06, token: "you" },
+					{ logprob: -0.11, token: "got" },
+				],
+				source: "systemAudio",
+				text: "What you got?",
+			}),
+		).toBe(false);
+	});
+
 	it("flags a refinement result that diverges heavily from the reference transcript", () => {
 		expect(
 			isSuspiciousRefinementTranscript({

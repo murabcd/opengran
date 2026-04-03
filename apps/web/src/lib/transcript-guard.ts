@@ -1,4 +1,8 @@
-import { isLowConfidenceTranscriptLogprobs } from "../../../../packages/ai/src/transcription.mjs";
+import {
+	isTranscriptPlaceholderText,
+	normalizeTranscriptText,
+	shouldDropTranscriptForConfidence,
+} from "../../../../packages/ai/src/transcription.mjs";
 
 const PROMPT_LEAK_PATTERNS = [
 	"transcribe speech verbatim",
@@ -17,13 +21,6 @@ const PROMPT_LEAK_PATTERNS = [
 
 const normalizeLanguage = (value?: string | null) =>
 	value?.split("-")[0]?.trim().toLowerCase() || null;
-
-const normalizeTranscriptText = (value: string) =>
-	value
-		.toLowerCase()
-		.replace(/[^\p{L}\p{N}\s]+/gu, " ")
-		.replace(/\s+/g, " ")
-		.trim();
 
 const getWordCount = (value: string) =>
 	normalizeTranscriptText(value).split(" ").filter(Boolean).length;
@@ -127,6 +124,7 @@ export const containsTranscriptPromptLeakage = (value: string) => {
 export const isSuspiciousCommittedTranscriptText = ({
 	logprobs,
 	language,
+	source,
 	text,
 }: {
 	logprobs?: Array<{
@@ -135,6 +133,7 @@ export const isSuspiciousCommittedTranscriptText = ({
 		token?: string;
 	}> | null;
 	language?: string | null;
+	source?: string | null;
 	text: string;
 }) => {
 	const trimmedText = text.trim();
@@ -147,9 +146,14 @@ export const isSuspiciousCommittedTranscriptText = ({
 		return true;
 	}
 
+	if (isTranscriptPlaceholderText(trimmedText)) {
+		return true;
+	}
+
 	if (
-		isLowConfidenceTranscriptLogprobs({
+		shouldDropTranscriptForConfidence({
 			logprobs,
+			source,
 			text: trimmedText,
 		})
 	) {
@@ -164,13 +168,16 @@ export const isSuspiciousCommittedTranscriptText = ({
 
 export const sanitizeLiveTranscriptStateText = ({
 	language,
+	source,
 	text,
 }: {
 	language?: string | null;
+	source?: string | null;
 	text: string;
 }) =>
 	isSuspiciousCommittedTranscriptText({
 		language,
+		source,
 		text,
 	})
 		? ""
