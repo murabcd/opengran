@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
 	createRealtimeTranscriptionSession,
+	createRealtimeTranscriptionSessionOptions,
 	normalizeTranscriptionLanguage,
 } from "../../../packages/ai/src/transcription.mjs";
 
@@ -30,6 +31,7 @@ const readJsonBody = async (request: IncomingMessage) => {
 
 	return JSON.parse(rawBody) as {
 		lang?: string;
+		source?: string;
 	};
 };
 
@@ -65,7 +67,7 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 		return;
 	}
 
-	const { lang } = await readJsonBody(request);
+	const { lang, source } = await readJsonBody(request);
 	const language = normalizeTranscriptionLanguage(lang);
 	const requestId = randomUUID();
 
@@ -83,10 +85,12 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 					anchor: "created_at",
 					seconds: 600,
 				},
-				session: createRealtimeTranscriptionSession({
-					language,
-					noiseReductionType: "near_field",
-				}),
+				session: createRealtimeTranscriptionSession(
+					createRealtimeTranscriptionSessionOptions({
+						language,
+						source,
+					}),
+				),
 			}),
 		},
 	);

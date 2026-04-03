@@ -31,8 +31,10 @@ import {
 import electronUpdater from "electron-updater";
 import WebSocket from "ws";
 import { api } from "../../../convex/_generated/api.js";
+import { createPcm16Resampler } from "../../../packages/ai/src/pcm16-resampler.mjs";
 import {
 	createRealtimeTranscriptionSession,
+	createRealtimeTranscriptionSessionOptions,
 	isLowConfidenceTranscriptLogprobs,
 	normalizeTranscriptionLanguage,
 } from "../../../packages/ai/src/transcription.mjs";
@@ -70,6 +72,9 @@ const transcriptionSessionEventChannel = "app:transcription-session-event";
 const meetingDetectionStateChannel = "app:meeting-detection-state";
 const desktopNavigationChannel = "app:navigate";
 const captureHealthTimeoutMs = 3_000;
+const desktopRealtimeConfigAckTimeoutMs = 1_500;
+const desktopRealtimeConnectTimeoutMs = 10_000;
+const desktopRealtimePendingAudioChunkLimit = 50;
 const maxRecoveryAttempts = 3;
 const recoveryBackoffMs = [750, 1_500, 3_000];
 const systemAudioAttachRetryBackoffMs = [750, 1_500, 3_000];
@@ -1610,79 +1615,6 @@ const clearCaptureHealthTimeout = (session) => {
 	}
 };
 
-const decodeBase64Pcm16 = (base64Value) => {
-	const buffer = Buffer.from(base64Value, "base64");
-
-	return new Int16Array(
-		buffer.buffer,
-		buffer.byteOffset,
-		Math.floor(buffer.byteLength / Int16Array.BYTES_PER_ELEMENT),
-	);
-};
-
-const encodeBase64Pcm16 = (pcm16Samples) =>
-	Buffer.from(
-		pcm16Samples.buffer,
-		pcm16Samples.byteOffset,
-		pcm16Samples.byteLength,
-	).toString("base64");
-
-const createPcm16Resampler = (inputRate, outputRate) => {
-	if (
-		!Number.isFinite(inputRate) ||
-		!Number.isFinite(outputRate) ||
-		inputRate <= 0 ||
-		outputRate <= 0
-	) {
-		throw new Error("Audio sample rate is invalid.");
-	}
-
-	if (inputRate === outputRate) {
-		return (base64Value) => base64Value;
-	}
-
-	let remainder = new Float32Array(0);
-	const sampleRatio = inputRate / outputRate;
-
-	return (base64Value) => {
-		const pcm16 = decodeBase64Pcm16(base64Value);
-		const nextInput = new Float32Array(remainder.length + pcm16.length);
-		nextInput.set(remainder);
-
-		for (let index = 0; index < pcm16.length; index += 1) {
-			nextInput[remainder.length + index] = pcm16[index] / 32768;
-		}
-
-		const outputLength = Math.floor((nextInput.length - 1) / sampleRatio);
-
-		if (outputLength <= 0) {
-			remainder = nextInput;
-			return "";
-		}
-
-		const output = new Int16Array(outputLength);
-
-		for (let index = 0; index < outputLength; index += 1) {
-			const position = index * sampleRatio;
-			const leftIndex = Math.floor(position);
-			const rightIndex = Math.min(leftIndex + 1, nextInput.length - 1);
-			const blend = position - leftIndex;
-			const sample =
-				nextInput[leftIndex] +
-				(nextInput[rightIndex] - nextInput[leftIndex]) * blend;
-			output[index] = Math.max(
-				-32768,
-				Math.min(32767, Math.round(sample * 32768)),
-			);
-		}
-
-		const consumedSamples = Math.floor(outputLength * sampleRatio);
-		remainder = nextInput.slice(Math.max(0, consumedSamples));
-
-		return encodeBase64Pcm16(output);
-	};
-};
-
 const syncTranscriptionSessionState = (state) => {
 	latestTranscriptionSessionState = state;
 	broadcastToDesktopWindows({
@@ -1792,6 +1724,23 @@ const createSystemAudioStatusFromPolicy = (policy) => ({
 	sourceMode: policy.systemAudioCapability.sourceMode,
 });
 
+const resolveCurrentSystemAudioStatus = (policy) => {
+	if (!policy.systemAudioCapability.isSupported) {
+		return createSystemAudioStatusFromPolicy(policy);
+	}
+
+	if (transcriptionSpeakers.them.transportActive) {
+		return {
+			sourceMode:
+				transcriptionSpeakers.them.activeSourceMode ??
+				policy.systemAudioCapability.sourceMode,
+			state: "connected",
+		};
+	}
+
+	return createSystemAudioStatusFromPolicy(policy);
+};
+
 const canUseHostedDesktopAi = () =>
 	Boolean(process.env.CONVEX_SITE_URL?.trim() || process.env.SITE_URL?.trim());
 
@@ -1896,13 +1845,9 @@ const clearSystemAudioAttachRetryTimeout = ({ resetAttempt = false } = {}) => {
 const refreshTranscriptionPolicy = () => {
 	transcriptionPolicy = createDesktopSystemAudioPolicy();
 
-	if (latestTranscriptionSessionState.systemAudioStatus.state === "connected") {
-		return transcriptionPolicy;
-	}
-
 	patchTranscriptionSessionState({
 		isAvailable: getDesktopRealtimeAvailability(),
-		systemAudioStatus: createSystemAudioStatusFromPolicy(transcriptionPolicy),
+		systemAudioStatus: resolveCurrentSystemAudioStatus(transcriptionPolicy),
 	});
 
 	return transcriptionPolicy;
@@ -2660,10 +2605,12 @@ const scheduleTranscriptionRollover = () => {
 
 const createDesktopRealtimeSessionConfig = ({ lang, source }) => {
 	const language = normalizeTranscriptionLanguage(lang);
-	const session = createRealtimeTranscriptionSession({
-		language,
-		noiseReductionType: source === "microphone" ? "near_field" : "far_field",
-	});
+	const session = createRealtimeTranscriptionSession(
+		createRealtimeTranscriptionSessionOptions({
+			language,
+			source,
+		}),
+	);
 
 	return {
 		...session,
@@ -2677,6 +2624,23 @@ const createDesktopRealtimeSessionConfig = ({ lang, source }) => {
 			},
 		},
 	};
+};
+
+const createDesktopRealtimeSessionUpdateEvent = ({ lang, source }) => ({
+	type: "session.update",
+	session: createDesktopRealtimeSessionConfig({
+		lang,
+		source,
+	}),
+});
+
+const sendDesktopRealtimeAudioChunk = ({ audio, socket }) => {
+	socket.send(
+		JSON.stringify({
+			type: "input_audio_buffer.append",
+			audio,
+		}),
+	);
 };
 
 const createDesktopRealtimeClientSecret = async ({ lang, source }) => {
@@ -2806,6 +2770,8 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 			},
 		);
 		const session = {
+			configAckTimeout: null,
+			isConfigured: false,
 			isClosing: false,
 			openTimeout: setTimeout(() => {
 				if (didResolve) {
@@ -2814,11 +2780,12 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 
 				rejectPromise(
 					new Error(
-						"Timed out while connecting desktop realtime transcription.",
+						"Timed out while configuring desktop realtime transcription.",
 					),
 				);
 				socket.terminate();
-			}, 10_000),
+			}, desktopRealtimeConnectTimeoutMs),
+			pendingAudio: [],
 			socket,
 			source,
 			speaker,
@@ -2831,6 +2798,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 		});
 
 		const finalizeStartError = (error) => {
+			clearTimeout(session.configAckTimeout);
 			console.warn("[desktop-realtime] transport start failed", {
 				didResolve,
 				message: error instanceof Error ? error.message : String(error),
@@ -2855,7 +2823,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 		};
 
 		session.unsubscribeCapture = subscribeToCaptureEvents(source, (event) => {
-			if (session.isClosing || socket.readyState !== WebSocket.OPEN) {
+			if (session.isClosing) {
 				return;
 			}
 
@@ -2866,12 +2834,20 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 					return;
 				}
 
-				socket.send(
-					JSON.stringify({
-						type: "input_audio_buffer.append",
-						audio,
-					}),
-				);
+				if (!session.isConfigured || socket.readyState !== WebSocket.OPEN) {
+					session.pendingAudio.push(audio);
+					if (
+						session.pendingAudio.length > desktopRealtimePendingAudioChunkLimit
+					) {
+						session.pendingAudio.shift();
+					}
+					return;
+				}
+
+				sendDesktopRealtimeAudioChunk({
+					audio,
+					socket,
+				});
 				return;
 			}
 
@@ -2892,19 +2868,103 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 				source,
 				speaker,
 			});
-			clearTimeout(session.openTimeout);
 
-			if (!didResolve) {
+			try {
+				socket.send(
+					JSON.stringify(
+						createDesktopRealtimeSessionUpdateEvent({
+							lang,
+							source,
+						}),
+					),
+				);
+			} catch (error) {
+				finalizeStartError(
+					error instanceof Error
+						? error
+						: new Error("Failed to initialize desktop realtime transcription."),
+				);
+				return;
+			}
+
+			session.configAckTimeout = setTimeout(() => {
+				if (didResolve || session.isClosing || session.isConfigured) {
+					return;
+				}
+
+				console.warn(
+					"[desktop-realtime] session config ack timed out; continuing with client secret defaults",
+					{
+						source,
+						speaker,
+					},
+				);
+
+				session.isConfigured = true;
+				clearTimeout(session.openTimeout);
+
+				for (const pendingAudio of session.pendingAudio) {
+					if (socket.readyState !== WebSocket.OPEN) {
+						break;
+					}
+
+					sendDesktopRealtimeAudioChunk({
+						audio: pendingAudio,
+						socket,
+					});
+				}
+				session.pendingAudio = [];
+
 				didResolve = true;
 				resolvePromise({
 					ok: true,
 				});
-			}
+			}, desktopRealtimeConfigAckTimeoutMs);
 		});
 
 		socket.on("message", (rawValue) => {
 			try {
 				const payload = JSON.parse(String(rawValue));
+
+				if (
+					payload?.type === "session.updated" ||
+					payload?.type === "transcription_session.updated"
+				) {
+					clearTimeout(session.configAckTimeout);
+					clearTimeout(session.openTimeout);
+					session.isConfigured = true;
+
+					for (const pendingAudio of session.pendingAudio) {
+						if (socket.readyState !== WebSocket.OPEN) {
+							break;
+						}
+
+						sendDesktopRealtimeAudioChunk({
+							audio: pendingAudio,
+							socket,
+						});
+					}
+					session.pendingAudio = [];
+
+					if (!didResolve) {
+						didResolve = true;
+						resolvePromise({
+							ok: true,
+						});
+					}
+					return;
+				}
+
+				if (payload?.type === "error" && !didResolve) {
+					finalizeStartError(
+						new Error(
+							payload.error?.message ??
+								"Realtime transcription failed during session initialization.",
+						),
+					);
+					return;
+				}
+
 				const transportEvent = parseDesktopRealtimeTransportEvent({
 					event: payload,
 					speaker,
@@ -2923,6 +2983,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 
 		socket.on("error", (error) => {
 			clearTimeout(session.openTimeout);
+			clearTimeout(session.configAckTimeout);
 			console.warn("[desktop-realtime] socket error", {
 				didResolve,
 				isClosing: session.isClosing,
@@ -2936,6 +2997,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 
 		socket.on("close", (code, reasonBuffer) => {
 			clearTimeout(session.openTimeout);
+			clearTimeout(session.configAckTimeout);
 			session.unsubscribeCapture?.();
 			session.unsubscribeCapture = null;
 
@@ -3078,7 +3140,7 @@ const cleanupDesktopTranscriptionSession = async ({
 		liveTranscript: createEmptyLiveTranscriptState(),
 		phase: "idle",
 		systemAudioStatus: transcriptionPolicy
-			? createSystemAudioStatusFromPolicy(transcriptionPolicy)
+			? resolveCurrentSystemAudioStatus(transcriptionPolicy)
 			: latestTranscriptionSessionState.systemAudioStatus,
 		utterances: preserveUtterances
 			? latestTranscriptionSessionState.utterances
@@ -3320,10 +3382,7 @@ const attachDesktopSystemAudio = async ({
 			}
 
 			patchTranscriptionSessionState({
-				systemAudioStatus: {
-					sourceMode: policy.systemAudioCapability.sourceMode,
-					state: "connected",
-				},
+				systemAudioStatus: resolveCurrentSystemAudioStatus(policy),
 			});
 
 			clearSystemAudioAttachRetryTimeout({
@@ -3338,7 +3397,7 @@ const attachDesktopSystemAudio = async ({
 				message,
 			});
 			patchTranscriptionSessionState({
-				systemAudioStatus: createSystemAudioStatusFromPolicy(policy),
+				systemAudioStatus: resolveCurrentSystemAudioStatus(policy),
 			});
 
 			if (automatic) {
@@ -3385,7 +3444,7 @@ const runDesktopTranscriptionStart = async ({ preserveUtterances, reason }) => {
 			reason === "reconnect"
 				? latestTranscriptionSessionState.recoveryStatus
 				: createTranscriptRecoveryStatus(),
-		systemAudioStatus: createSystemAudioStatusFromPolicy(policy),
+		systemAudioStatus: resolveCurrentSystemAudioStatus(policy),
 		utterances: preserveUtterances
 			? latestTranscriptionSessionState.utterances
 			: [],
@@ -3445,7 +3504,7 @@ const runDesktopTranscriptionStart = async ({ preserveUtterances, reason }) => {
 				message: normalizedError.message,
 				state: "failed",
 			}),
-			systemAudioStatus: createSystemAudioStatusFromPolicy(policy),
+			systemAudioStatus: resolveCurrentSystemAudioStatus(policy),
 			utterances: preserveUtterances
 				? latestTranscriptionSessionState.utterances
 				: [],
@@ -3490,7 +3549,7 @@ async function handleDesktopTransportInterrupted({
 			isListening: transcriptionSpeakers.you.transportActive,
 			phase: transcriptionSpeakers.you.transportActive ? "listening" : "idle",
 			systemAudioStatus: transcriptionPolicy
-				? createSystemAudioStatusFromPolicy(transcriptionPolicy)
+				? resolveCurrentSystemAudioStatus(transcriptionPolicy)
 				: {
 						sourceMode: "unsupported",
 						state: "unsupported",
@@ -3652,7 +3711,7 @@ const stopDesktopTranscriptionSession = async ({
 					? createTranscriptRecoveryStatus()
 					: latestTranscriptionSessionState.recoveryStatus,
 				systemAudioStatus: transcriptionPolicy
-					? createSystemAudioStatusFromPolicy(transcriptionPolicy)
+					? resolveCurrentSystemAudioStatus(transcriptionPolicy)
 					: latestTranscriptionSessionState.systemAudioStatus,
 				utterances: preserveUtterances
 					? latestTranscriptionSessionState.utterances
@@ -3686,7 +3745,7 @@ const detachDesktopTranscriptionSystemAudio = async () => {
 
 	patchTranscriptionSessionState({
 		systemAudioStatus: transcriptionPolicy
-			? createSystemAudioStatusFromPolicy(transcriptionPolicy)
+			? resolveCurrentSystemAudioStatus(transcriptionPolicy)
 			: latestTranscriptionSessionState.systemAudioStatus,
 	});
 };

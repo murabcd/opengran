@@ -4,13 +4,37 @@ export declare const REALTIME_TRANSCRIPTION_INCLUDE_FIELDS: readonly [
 	"item.input_audio_transcription.logprobs",
 ];
 
+export declare function resolveRealtimeNoiseReductionType(
+	source?: string | null,
+): "near_field" | null;
+
+export declare function resolveRealtimeSilenceDurationMs(
+	source?: string | null,
+): number;
+
+export declare function resolveRealtimeTranscriptionPrompt(args?: {
+	language?: string | null;
+	source?: string | null;
+}): string | null;
+
+export declare function createRealtimeTranscriptionSessionOptions(args?: {
+	language?: string | null;
+	source?: string | null;
+}): {
+	language: string | null;
+	noiseReductionType: "near_field" | null;
+	prompt: string | null;
+	silenceDurationMs: number;
+};
+
 export declare function normalizeTranscriptionLanguage(
 	value?: string | null,
 ): string | null;
 
 export declare function createRealtimeTranscriptionSession(options?: {
 	language?: string | null;
-	noiseReductionType?: "near_field" | "far_field";
+	noiseReductionType?: "near_field" | "far_field" | null;
+	prompt?: string | null;
 	silenceDurationMs?: number;
 }): {
 	type: "transcription";
@@ -19,7 +43,7 @@ export declare function createRealtimeTranscriptionSession(options?: {
 		input: {
 			noise_reduction: {
 				type: "near_field" | "far_field";
-			};
+			} | null;
 			turn_detection: {
 				type: "server_vad";
 				threshold: number;
@@ -28,6 +52,7 @@ export declare function createRealtimeTranscriptionSession(options?: {
 			};
 			transcription: {
 				model: "gpt-4o-transcribe";
+				prompt?: string;
 				language?: string;
 			};
 		};

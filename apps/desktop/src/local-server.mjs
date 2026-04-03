@@ -37,6 +37,7 @@ import {
 } from "../../../packages/ai/src/prompts.mjs";
 import {
 	createRealtimeTranscriptionSession,
+	createRealtimeTranscriptionSessionOptions,
 	normalizeTranscriptionLanguage,
 	TRANSCRIPTION_MODEL,
 } from "../../../packages/ai/src/transcription.mjs";
@@ -680,11 +681,12 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 					anchor: "created_at",
 					seconds: 600,
 				},
-				session: createRealtimeTranscriptionSession({
-					language,
-					noiseReductionType:
-						source === "microphone" ? "near_field" : "far_field",
-				}),
+				session: createRealtimeTranscriptionSession(
+					createRealtimeTranscriptionSessionOptions({
+						language,
+						source,
+					}),
+				),
 			}),
 		},
 	);

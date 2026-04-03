@@ -33,6 +33,7 @@ import {
 } from "../packages/ai/src/chat-titles.mjs";
 import {
 	createRealtimeTranscriptionSession,
+	createRealtimeTranscriptionSessionOptions,
 	normalizeTranscriptionLanguage,
 	TRANSCRIPTION_MODEL,
 } from "../packages/ai/src/transcription.mjs";
@@ -626,11 +627,12 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 					anchor: "created_at",
 					seconds: 600,
 				},
-				session: createRealtimeTranscriptionSession({
-					language,
-					noiseReductionType:
-						source === "microphone" ? "near_field" : "far_field",
-				}),
+				session: createRealtimeTranscriptionSession(
+					createRealtimeTranscriptionSessionOptions({
+						language,
+						source,
+					}),
+				),
 			}),
 		},
 	);

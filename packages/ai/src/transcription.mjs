@@ -4,21 +4,102 @@ export const REALTIME_TRANSCRIPTION_INCLUDE_FIELDS = [
 	"item.input_audio_transcription.logprobs",
 ];
 
+const systemAudioSources = new Set([
+	"systemaudio",
+	"system-audio",
+	"system_audio",
+]);
+
+const transcriptionLanguageNames = {
+	de: "German",
+	en: "English",
+	es: "Spanish",
+	fi: "Finnish",
+	fr: "French",
+	hi: "Hindi",
+	it: "Italian",
+	ja: "Japanese",
+	ko: "Korean",
+	nl: "Dutch",
+	pl: "Polish",
+	pt: "Portuguese",
+	ru: "Russian",
+	tr: "Turkish",
+	uk: "Ukrainian",
+	vi: "Vietnamese",
+	zh: "Chinese",
+};
+
+const isSystemAudioSource = (source) => {
+	const normalizedSource =
+		typeof source === "string" ? source.trim().toLowerCase() : "";
+
+	return systemAudioSources.has(normalizedSource);
+};
+
+export const resolveRealtimeNoiseReductionType = (source) => {
+	return isSystemAudioSource(source) ? null : "near_field";
+};
+
+export const resolveRealtimeSilenceDurationMs = (source) =>
+	isSystemAudioSource(source) ? 450 : 200;
+
 export const normalizeTranscriptionLanguage = (value) =>
 	value?.split("-")[0]?.trim().toLowerCase() || null;
+
+export const resolveRealtimeTranscriptionPrompt = ({
+	language = null,
+	source = null,
+} = {}) => {
+	const normalizedLanguage = normalizeTranscriptionLanguage(language);
+	const languageName =
+		normalizedLanguage && normalizedLanguage in transcriptionLanguageNames
+			? transcriptionLanguageNames[normalizedLanguage]
+			: null;
+	const prompt = [
+		languageName ? `The spoken language is ${languageName}.` : null,
+		"Transcribe spoken words verbatim.",
+		"Do not translate or paraphrase.",
+		"If the audio is unclear or low-confidence, return an empty transcript instead of guessing.",
+		isSystemAudioSource(source)
+			? "This audio comes from direct system playback."
+			: null,
+	]
+		.filter(Boolean)
+		.join(" ")
+		.trim();
+
+	return prompt || null;
+};
+
+export const createRealtimeTranscriptionSessionOptions = ({
+	language = null,
+	source = null,
+} = {}) => ({
+	language,
+	noiseReductionType: resolveRealtimeNoiseReductionType(source),
+	prompt: resolveRealtimeTranscriptionPrompt({
+		language,
+		source,
+	}),
+	silenceDurationMs: resolveRealtimeSilenceDurationMs(source),
+});
 
 export const createRealtimeTranscriptionSession = ({
 	language = null,
 	noiseReductionType = "near_field",
+	prompt = null,
 	silenceDurationMs = 200,
 } = {}) => ({
 	type: "transcription",
 	include: REALTIME_TRANSCRIPTION_INCLUDE_FIELDS,
 	audio: {
 		input: {
-			noise_reduction: {
-				type: noiseReductionType,
-			},
+			noise_reduction: noiseReductionType
+				? {
+						type: noiseReductionType,
+					}
+				: null,
 			turn_detection: {
 				type: "server_vad",
 				threshold: 0.5,
@@ -27,6 +108,7 @@ export const createRealtimeTranscriptionSession = ({
 			},
 			transcription: {
 				model: TRANSCRIPTION_MODEL,
+				...(prompt ? { prompt } : {}),
 				...(language ? { language } : {}),
 			},
 		},
