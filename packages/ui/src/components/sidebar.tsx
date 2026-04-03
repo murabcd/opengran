@@ -576,7 +576,7 @@ function SidebarContent({
 				"min-h-0 flex-1 group-data-[collapsible=icon]:overflow-hidden",
 				className,
 			)}
-			viewportClassName="flex min-h-full flex-col gap-0"
+			viewportClassName="flex min-h-full min-w-0 flex-col gap-0 [&>div]:!block [&>div]:min-w-0 [&>div]:w-full"
 			{...props}
 		/>
 	);
