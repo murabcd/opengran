@@ -2607,7 +2607,9 @@ const stopDesktopRealtimeTransport = async (speaker) => {
 	desktopRealtimeTransportSessions.delete(speaker);
 	session.isClosing = true;
 	session.unsubscribeCapture?.();
+	session.unsubscribeCapture = null;
 	clearTimeout(session.openTimeout);
+	clearTimeout(session.configAckTimeout);
 
 	await new Promise((resolvePromise) => {
 		const finalize = () => {
@@ -2641,14 +2643,33 @@ const scheduleTranscriptionRollover = () => {
 	}, realtimeSessionRolloverMs);
 };
 
-const createDesktopRealtimeSessionConfig = ({ lang, source }) => {
+const resolveDesktopRealtimeProfile = ({ source, speaker }) => {
+	if (source === "systemAudio" && speaker === "them") {
+		return "semantic_low";
+	}
+
+	return "default";
+};
+
+const createDesktopRealtimeSessionConfig = ({ lang, source, speaker }) => {
 	const language = normalizeTranscriptionLanguage(lang);
+	const profile = resolveDesktopRealtimeProfile({
+		source,
+		speaker,
+	});
 	const session = createRealtimeTranscriptionSession(
 		createRealtimeTranscriptionSessionOptions({
 			language,
 			source,
 		}),
 	);
+
+	if (profile === "semantic_low") {
+		session.audio.input.turn_detection = {
+			type: "semantic_vad",
+			eagerness: "low",
+		};
+	}
 
 	return {
 		...session,
@@ -2664,11 +2685,16 @@ const createDesktopRealtimeSessionConfig = ({ lang, source }) => {
 	};
 };
 
-const createDesktopRealtimeSessionUpdateEvent = ({ lang, source }) => ({
+const createDesktopRealtimeSessionUpdateEvent = ({
+	lang,
+	source,
+	speaker,
+}) => ({
 	type: "session.update",
 	session: createDesktopRealtimeSessionConfig({
 		lang,
 		source,
+		speaker,
 	}),
 });
 
@@ -2681,7 +2707,7 @@ const sendDesktopRealtimeAudioChunk = ({ audio, socket }) => {
 	);
 };
 
-const createDesktopRealtimeClientSecret = async ({ lang, source }) => {
+const createDesktopRealtimeClientSecret = async ({ lang, source, speaker }) => {
 	if (!process.env.OPENAI_API_KEY) {
 		const baseUrl = process.env.CONVEX_SITE_URL?.trim();
 
@@ -2736,7 +2762,11 @@ const createDesktopRealtimeClientSecret = async ({ lang, source }) => {
 					anchor: "created_at",
 					seconds: 600,
 				},
-				session: createDesktopRealtimeSessionConfig({ lang, source }),
+				session: createDesktopRealtimeSessionConfig({
+					lang,
+					source,
+					speaker,
+				}),
 			}),
 		},
 	);
@@ -2791,6 +2821,11 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 	const clientSecret = await createDesktopRealtimeClientSecret({
 		lang,
 		source,
+		speaker,
+	});
+	const profile = resolveDesktopRealtimeProfile({
+		source,
+		speaker,
 	});
 
 	return await new Promise((resolvePromise, rejectPromise) => {
@@ -2824,6 +2859,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 				socket.terminate();
 			}, desktopRealtimeConnectTimeoutMs),
 			pendingAudio: [],
+			profile,
 			socket,
 			source,
 			speaker,
@@ -2831,6 +2867,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 		};
 
 		console.info("[desktop-realtime] starting transport", {
+			profile,
 			source,
 			speaker,
 		});
@@ -2840,6 +2877,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 			console.warn("[desktop-realtime] transport start failed", {
 				didResolve,
 				message: error instanceof Error ? error.message : String(error),
+				profile,
 				source,
 				speaker,
 			});
@@ -2903,6 +2941,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 
 		socket.on("open", () => {
 			console.info("[desktop-realtime] transport open", {
+				profile,
 				source,
 				speaker,
 			});
@@ -2913,6 +2952,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 						createDesktopRealtimeSessionUpdateEvent({
 							lang,
 							source,
+							speaker,
 						}),
 					),
 				);
@@ -2933,6 +2973,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 				console.warn(
 					"[desktop-realtime] session config ack timed out; continuing with client secret defaults",
 					{
+						profile,
 						source,
 						speaker,
 					},
@@ -3026,6 +3067,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 				didResolve,
 				isClosing: session.isClosing,
 				message: error instanceof Error ? error.message : String(error),
+				profile,
 				socketState: socket.readyState,
 				source,
 				speaker,
@@ -3047,6 +3089,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 				code,
 				didResolve,
 				isClosing: session.isClosing,
+				profile,
 				reason,
 				socketState: socket.readyState,
 				source,

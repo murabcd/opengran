@@ -149,6 +149,11 @@ describe("TranscriptionController", () => {
 		expect(createMicrophoneInputStream).toHaveBeenCalledTimes(1);
 		expect(createBrowserSystemAudioStream).not.toHaveBeenCalled();
 		expect(connectTransport).toHaveBeenCalledTimes(1);
+		expect(connectTransport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				source: "microphone",
+			}),
+		);
 	});
 
 	it("serializes duplicate starts so the first startup still reaches listening", async () => {
@@ -246,6 +251,12 @@ describe("TranscriptionController", () => {
 		await expect(controller.requestSystemAudio()).resolves.toBe(true);
 
 		expect(controller.getSnapshot().systemAudioStatus.state).toBe("connected");
+		expect(connectTransport).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				source: "systemAudio",
+			}),
+		);
 
 		await interruptions[1]?.("System audio stream interrupted.");
 		await flushPromises();

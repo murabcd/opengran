@@ -3,6 +3,7 @@ import { createDesktopSystemAudioStream } from "@/lib/capture/desktop-system-aud
 import { createMicrophoneInputStream } from "@/lib/capture/microphone-input";
 import {
 	connectRealtimeTranscriptionTransport,
+	type RealtimeTranscriptionSource,
 	type RealtimeTranscriptionTransport,
 	type RealtimeTranscriptionTransportEvent,
 } from "@/lib/capture/realtime-transcription-transport";
@@ -71,6 +72,7 @@ export type TranscriptionControllerOptions = {
 
 type PendingInputStream = {
 	dispose?: () => void | Promise<void>;
+	source: RealtimeTranscriptionSource;
 	sourceMode: SystemAudioCaptureSourceMode;
 	speaker: TranscriptSpeaker;
 	stream: MediaStream;
@@ -538,6 +540,7 @@ export class TranscriptionController {
 			const microphoneStream =
 				await this.dependencies.createMicrophoneInputStream();
 			const microphoneInput: PendingInputStream = {
+				source: "microphone",
 				sourceMode: "unsupported",
 				speaker: "you",
 				stream: microphoneStream,
@@ -663,6 +666,7 @@ export class TranscriptionController {
 					speaker: pendingInput.speaker,
 				});
 			},
+			source: pendingInput.source,
 			speaker: pendingInput.speaker,
 			stream: pendingInput.stream,
 		});
@@ -1041,6 +1045,7 @@ export class TranscriptionController {
 							(result) =>
 								({
 									dispose: result.dispose,
+									source: "systemAudio",
 									sourceMode: policy.systemAudioCapability.sourceMode,
 									speaker: "them" as const,
 									stream: result.stream,
@@ -1051,6 +1056,7 @@ export class TranscriptionController {
 							.then((stream) =>
 								stream
 									? ({
+											source: "systemAudio",
 											sourceMode: policy.systemAudioCapability.sourceMode,
 											speaker: "them" as const,
 											stream,
