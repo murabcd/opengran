@@ -1,7 +1,6 @@
 import type { TranscriptUtterance } from "@/lib/transcript";
 import {
 	createInitialTranscriptionControllerState,
-	type SystemAudioRecordingPayload,
 	type TranscriptionControllerError,
 	type TranscriptionControllerState,
 } from "@/lib/transcription-session-types";
@@ -14,10 +13,6 @@ export type TranscriptionSessionEvent =
 	| {
 			type: "session.utterance_committed";
 			utterance: TranscriptUtterance;
-	  }
-	| {
-			type: "session.system_audio_recording_ready";
-			payload: SystemAudioRecordingPayload;
 	  }
 	| {
 			type: "session.permission_failure";

@@ -339,7 +339,6 @@ export const refineSystemAudioTranscript = async ({
 		if (
 			isSuspiciousRefinementTranscript({
 				candidateText: payload.text,
-				language,
 				referenceText: batchReferenceText,
 			})
 		) {

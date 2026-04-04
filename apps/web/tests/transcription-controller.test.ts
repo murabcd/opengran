@@ -514,7 +514,7 @@ describe("TranscriptionController", () => {
 		expect(controller.getSnapshot().liveTranscript.you.text).toBe("");
 	});
 
-	it("drops a committed turn when the transcription logprobs are very low", async () => {
+	it("keeps a committed turn even when the transcription logprobs are very low", async () => {
 		const { stream } = createMockStream();
 		const transportEvents: Array<
 			(event: RealtimeTranscriptionTransportEvent) => void
@@ -559,11 +559,12 @@ describe("TranscriptionController", () => {
 			type: "committed",
 		});
 
-		expect(utterances).toHaveLength(0);
+		expect(utterances).toHaveLength(1);
+		expect(utterances[0]?.text).toBe("hello hello hello hello hello hello");
 		expect(controller.getSnapshot().liveTranscript.you.text).toBe("");
 	});
 
-	it("drops only the failed turn and still emits later committed turns", async () => {
+	it("salvages interrupted non-placeholder text and still emits later committed turns", async () => {
 		const { stream } = createMockStream();
 		const transportEvents: Array<
 			(event: RealtimeTranscriptionTransportEvent) => void
@@ -624,8 +625,9 @@ describe("TranscriptionController", () => {
 		expect(controller.getSnapshot().phase).toBe("listening");
 		expect(controller.getSnapshot().isListening).toBe(true);
 		expect(controller.getSnapshot().liveTranscript.you.text).toBe("");
-		expect(utterances).toHaveLength(1);
-		expect(utterances[0]?.text).toBe("working turn");
+		expect(utterances).toHaveLength(2);
+		expect(utterances[0]?.text).toBe("bad live turn");
+		expect(utterances[1]?.text).toBe("working turn");
 	});
 
 	it("salvages a substantial interrupted system-audio turn from partial text", async () => {

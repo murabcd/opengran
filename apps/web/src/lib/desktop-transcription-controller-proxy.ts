@@ -3,18 +3,7 @@ import type {
 	TranscriptionSessionEvent,
 	TranscriptionSessionStore,
 } from "@/lib/transcription-session-store";
-import type {
-	SystemAudioRecordingPayload,
-	TranscriptionControllerState,
-} from "@/lib/transcription-session-types";
-
-type SerializedSystemAudioRecordingPayload = Omit<
-	SystemAudioRecordingPayload,
-	"blob"
-> & {
-	blobBase64: string;
-	mimeType: string;
-};
+import type { TranscriptionControllerState } from "@/lib/transcription-session-types";
 
 type SerializedDesktopTranscriptionSessionEvent =
 	| {
@@ -30,47 +19,13 @@ type SerializedDesktopTranscriptionSessionEvent =
 			};
 	  }
 	| {
-			type: "session.system_audio_recording_ready";
-			payload: SerializedSystemAudioRecordingPayload;
-	  }
-	| {
 			type: "session.utterance_committed";
 			utterance: TranscriptionControllerState["utterances"][number];
 	  };
 
-const decodeBase64ToBlob = (base64Value: string, mimeType: string) => {
-	const binaryValue = atob(base64Value);
-	const bytes = new Uint8Array(binaryValue.length);
-
-	for (let index = 0; index < binaryValue.length; index += 1) {
-		bytes[index] = binaryValue.charCodeAt(index);
-	}
-
-	return new Blob([bytes], {
-		type: mimeType,
-	});
-};
-
 const deserializeDesktopEvent = (
 	event: SerializedDesktopTranscriptionSessionEvent,
-): TranscriptionSessionEvent => {
-	if (event.type !== "session.system_audio_recording_ready") {
-		return event;
-	}
-
-	return {
-		type: event.type,
-		payload: {
-			blob: decodeBase64ToBlob(
-				event.payload.blobBase64,
-				event.payload.mimeType,
-			),
-			endedAt: event.payload.endedAt,
-			sourceMode: event.payload.sourceMode,
-			startedAt: event.payload.startedAt,
-		},
-	};
-};
+): TranscriptionSessionEvent => event;
 
 export class DesktopTranscriptionControllerProxy {
 	private readonly store: TranscriptionSessionStore;

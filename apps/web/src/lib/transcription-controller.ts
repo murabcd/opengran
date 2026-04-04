@@ -15,12 +15,10 @@ import {
 	type TranscriptSpeaker,
 	type TranscriptUtterance,
 } from "@/lib/transcript";
-import { isSuspiciousCommittedTranscriptText } from "@/lib/transcript-guard";
 import { createTranscriptionLogger } from "@/lib/transcription-logger";
 import { TranscriptionSessionStore } from "@/lib/transcription-session-store";
 import {
 	createInitialTranscriptionControllerState,
-	type SystemAudioRecordingPayload,
 	type TranscriptionControllerError,
 	type TranscriptionControllerState,
 } from "@/lib/transcription-session-types";
@@ -34,7 +32,7 @@ import {
 	resolveTranscriptionPolicy,
 	type TranscriptionPolicy,
 } from "@/lib/transcription-policy";
-import { shouldKeepInterruptedTranscriptTurn } from "../../../../packages/ai/src/transcription.mjs";
+import { isTranscriptPlaceholderText } from "../../../../packages/ai/src/transcription.mjs";
 
 type TranscriptTurnState = {
 	itemId: string;
@@ -57,7 +55,6 @@ type SpeakerRuntimeState = {
 		emittedItemIds: Set<string>;
 		lastCommittedItemId: string | null;
 		liveItemId: string | null;
-		recorder: MediaRecorder | null;
 		sessionId: string | null;
 		stream: MediaStream | null;
 		transport: RealtimeTranscriptionTransport | null;
@@ -106,7 +103,6 @@ const createSpeakerRuntimeState = (
 		emittedItemIds: new Set(),
 		lastCommittedItemId: null,
 		liveItemId: null,
-		recorder: null,
 		sessionId: null,
 		stream: null,
 		transport: null,
@@ -681,14 +677,6 @@ export class TranscriptionController {
 		speakerState.data.sessionId ??= this.currentSessionCorrelationId;
 		speakerState.data.stream = pendingInput.stream;
 		speakerState.data.transport = transport;
-
-		if (pendingInput.speaker === "them") {
-			this.startTrackRecording(
-				pendingInput.speaker,
-				pendingInput.stream,
-				pendingInput.sourceMode,
-			);
-		}
 	};
 
 	private handleTransportEvent = (
@@ -735,11 +723,9 @@ export class TranscriptionController {
 				existingTurn?.text ||
 				this.getState().liveTranscript[event.speaker].text ||
 				"";
-			const shouldKeepInterruptedText = shouldKeepInterruptedTranscriptTurn({
-				logprobs: existingTurn?.logprobs ?? null,
-				source: event.speaker === "them" ? "systemAudio" : "microphone",
-				text: interruptedText,
-			});
+			const shouldKeepInterruptedText = Boolean(
+				interruptedText.trim() && !isTranscriptPlaceholderText(interruptedText),
+			);
 			this.upsertTurn(event.speaker, event.itemId, {
 				completed: shouldKeepInterruptedText,
 				failed: !shouldKeepInterruptedText,
@@ -846,16 +832,7 @@ export class TranscriptionController {
 			}
 
 			const text = nextTurn.text.trim();
-			if (
-				!nextTurn.failed &&
-				text &&
-				!isSuspiciousCommittedTranscriptText({
-					language: this.config.lang,
-					logprobs: nextTurn.logprobs ?? null,
-					source: speaker === "them" ? "systemAudio" : "microphone",
-					text,
-				})
-			) {
+			if (!nextTurn.failed && text) {
 				this.appendUtterance({
 					endedAt: Date.now(),
 					id: `${state.sessionId ?? "session"}:${speaker}:${nextTurn.itemId}`,
@@ -875,80 +852,6 @@ export class TranscriptionController {
 		}
 	};
 
-	private startTrackRecording = (
-		speaker: TranscriptSpeaker,
-		stream: MediaStream,
-		sourceMode: SystemAudioCaptureSourceMode,
-	) => {
-		if (
-			speaker !== "them" ||
-			typeof MediaRecorder === "undefined" ||
-			stream.getAudioTracks().length === 0
-		) {
-			return;
-		}
-
-		const state = this.speakers[speaker].data;
-		const supportedMimeType = [
-			"audio/webm;codecs=opus",
-			"audio/webm",
-			"audio/mp4",
-		].find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
-		const recorder = supportedMimeType
-			? new MediaRecorder(stream, {
-					mimeType: supportedMimeType,
-				})
-			: new MediaRecorder(stream);
-		const recordedChunks: Array<{
-			blob: Blob;
-			endedAt: number;
-			startedAt: number;
-		}> = [];
-		const startedAt = Date.now();
-		let nextChunkStartedAt = startedAt;
-
-		recorder.addEventListener("dataavailable", (event) => {
-			if (event.data.size > 0) {
-				const endedAt = Date.now();
-				recordedChunks.push({
-					blob: event.data,
-					endedAt,
-					startedAt: nextChunkStartedAt,
-				});
-				nextChunkStartedAt = endedAt;
-			}
-		});
-
-		recorder.addEventListener("stop", () => {
-			state.recorder = null;
-
-			if (recordedChunks.length === 0) {
-				return;
-			}
-
-			const payload: SystemAudioRecordingPayload = {
-				blob: new Blob(
-					recordedChunks.map((chunk) => chunk.blob),
-					{
-						type: recorder.mimeType || supportedMimeType || "audio/webm",
-					},
-				),
-				chunks: recordedChunks,
-				endedAt: Date.now(),
-				sourceMode,
-				startedAt,
-			};
-
-			this.dependencies.store.dispatch({
-				type: "session.system_audio_recording_ready",
-				payload,
-			});
-		});
-
-		state.recorder = recorder;
-		recorder.start(1_000);
-	};
-
 	private stopSpeaker = async (speaker: TranscriptSpeaker) => {
 		const state = this.speakers[speaker].data;
 		const liveEntry = this.getState().liveTranscript[speaker];
@@ -962,10 +865,6 @@ export class TranscriptionController {
 				startedAt: liveEntry.startedAt ?? Date.now(),
 				text,
 			});
-		}
-
-		if (state.recorder && state.recorder.state !== "inactive") {
-			state.recorder.stop();
 		}
 
 		await Promise.allSettled([state.transport?.close(), state.dispose?.()]);

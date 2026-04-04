@@ -75,7 +75,7 @@ describe("transcription config", () => {
 		).toBe(false);
 	});
 
-	it("only drops low-confidence system-audio turns when they are also short", () => {
+	it("drops low-confidence short and medium system-audio turns more aggressively", () => {
 		expect(
 			shouldDropTranscriptForConfidence({
 				logprobs: Array.from({ length: 6 }, () => ({
@@ -97,8 +97,21 @@ describe("transcription config", () => {
 				source: "systemAudio",
 				text: "I am trying",
 			}),
-		).toBe(false);
+		).toBe(true);
 
+		expect(
+			shouldDropTranscriptForConfidence({
+				logprobs: Array.from({ length: 8 }, () => ({
+					logprob: -2.6,
+					token: "quality",
+				})),
+				source: "systemAudio",
+				text: "This should probably not survive the draft lane",
+			}),
+		).toBe(true);
+	});
+
+	it("keeps longer system-audio answer chunks unless confidence is catastrophic", () => {
 		expect(
 			shouldDropTranscriptForConfidence({
 				logprobs: Array.from({ length: 10 }, () => ({

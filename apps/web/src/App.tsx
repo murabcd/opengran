@@ -111,7 +111,6 @@ type AppLocationState = {
 	noteIdString: string | null;
 	shouldAutoStartNoteCapture: boolean;
 	shouldStopNoteCaptureWhenMeetingEnds: boolean;
-	shouldAutoGenerateNoteAfterCapture: boolean;
 	scheduledAutoStartNoteCaptureAt: string | null;
 	pendingCalendarEvent: UpcomingCalendarEvent | null;
 	canonicalPath: "/home" | "/chat" | "/shared" | "/note" | null;
@@ -432,14 +431,12 @@ const getScheduledAutoStartNoteCaptureAt = (url: URL): string | null => {
 };
 
 const createNoteSearch = ({
-	autoGenerateNotesOnStop = false,
 	autoStartCapture = false,
 	calendarEvent,
 	noteId,
 	scheduledAutoStartAt,
 	stopCaptureWhenMeetingEnds = false,
 }: {
-	autoGenerateNotesOnStop?: boolean;
 	autoStartCapture?: boolean;
 	calendarEvent?: UpcomingCalendarEvent | null;
 	noteId?: string | null;
@@ -458,10 +455,6 @@ const createNoteSearch = ({
 
 	if (stopCaptureWhenMeetingEnds) {
 		searchParams.set("meeting", "1");
-	}
-
-	if (autoGenerateNotesOnStop) {
-		searchParams.set("autogen", "1");
 	}
 
 	if (scheduledAutoStartAt?.trim()) {
@@ -546,7 +539,6 @@ const getAppLocationState = (url: URL): AppLocationState => {
 			noteIdString: null,
 			shouldAutoStartNoteCapture: false,
 			shouldStopNoteCaptureWhenMeetingEnds: false,
-			shouldAutoGenerateNoteAfterCapture: false,
 			scheduledAutoStartNoteCaptureAt: null,
 			pendingCalendarEvent: null,
 			canonicalPath: null,
@@ -558,8 +550,6 @@ const getAppLocationState = (url: URL): AppLocationState => {
 		view === "note" && url.searchParams.get("capture") === "1";
 	const shouldStopNoteCaptureWhenMeetingEnds =
 		view === "note" && url.searchParams.get("meeting") === "1";
-	const shouldAutoGenerateNoteAfterCapture =
-		view === "note" && url.searchParams.get("autogen") === "1";
 	const scheduledAutoStartNoteCaptureAt =
 		view === "note" ? getScheduledAutoStartNoteCaptureAt(url) : null;
 	const pendingCalendarEvent =
@@ -573,7 +563,6 @@ const getAppLocationState = (url: URL): AppLocationState => {
 		noteIdString: view === "note" ? noteIdString : null,
 		shouldAutoStartNoteCapture,
 		shouldStopNoteCaptureWhenMeetingEnds,
-		shouldAutoGenerateNoteAfterCapture,
 		scheduledAutoStartNoteCaptureAt,
 		pendingCalendarEvent,
 		canonicalPath:
@@ -587,7 +576,6 @@ const getAppLocationState = (url: URL): AppLocationState => {
 		canonicalSearch:
 			view === "note"
 				? createNoteSearch({
-						autoGenerateNotesOnStop: shouldAutoGenerateNoteAfterCapture,
 						autoStartCapture: shouldAutoStartNoteCapture,
 						calendarEvent: pendingCalendarEvent,
 						noteId: noteIdString,
@@ -1904,17 +1892,6 @@ const useAppShellState = ({
 		return getAppLocationState(new URL(window.location.href))
 			.shouldStopNoteCaptureWhenMeetingEnds;
 	});
-	const [
-		shouldAutoGenerateNoteAfterCapture,
-		setShouldAutoGenerateNoteAfterCapture,
-	] = React.useState(() => {
-		if (typeof window === "undefined") {
-			return false;
-		}
-
-		return getAppLocationState(new URL(window.location.href))
-			.shouldAutoGenerateNoteAfterCapture;
-	});
 	const [scheduledAutoStartNoteCaptureAt, setScheduledAutoStartNoteCaptureAt] =
 		React.useState<string | null>(() => {
 			if (typeof window === "undefined") {
@@ -2244,8 +2221,6 @@ const useAppShellState = ({
 				nextLocationState.shouldAutoStartNoteCapture;
 			const nextShouldStopNoteCaptureWhenMeetingEnds =
 				nextLocationState.shouldStopNoteCaptureWhenMeetingEnds;
-			const nextShouldAutoGenerateNoteAfterCapture =
-				nextLocationState.shouldAutoGenerateNoteAfterCapture;
 			const nextScheduledAutoStartNoteCaptureAt =
 				nextLocationState.scheduledAutoStartNoteCaptureAt;
 
@@ -2261,9 +2236,6 @@ const useAppShellState = ({
 			setShouldAutoStartNoteCapture(nextShouldAutoStartNoteCapture);
 			setShouldStopNoteCaptureWhenMeetingEnds(
 				nextShouldStopNoteCaptureWhenMeetingEnds,
-			);
-			setShouldAutoGenerateNoteAfterCapture(
-				nextShouldAutoGenerateNoteAfterCapture,
 			);
 			setScheduledAutoStartNoteCaptureAt(nextScheduledAutoStartNoteCaptureAt);
 			setPendingCalendarEvent(nextLocationState.pendingCalendarEvent);
@@ -2384,7 +2356,6 @@ const useAppShellState = ({
 			noteId: Id<"notes">,
 			options?: {
 				autoStartCapture?: boolean;
-				autoGenerateNotesOnStop?: boolean;
 				scheduledAutoStartAt?: string | null;
 				stopCaptureWhenMeetingEnds?: boolean;
 			},
@@ -2397,9 +2368,6 @@ const useAppShellState = ({
 			setShouldStopNoteCaptureWhenMeetingEnds(
 				options?.stopCaptureWhenMeetingEnds === true,
 			);
-			setShouldAutoGenerateNoteAfterCapture(
-				options?.autoGenerateNotesOnStop === true,
-			);
 			setScheduledAutoStartNoteCaptureAt(
 				options?.scheduledAutoStartAt?.trim() || null,
 			);
@@ -2409,7 +2377,6 @@ const useAppShellState = ({
 				null,
 				"",
 				`/note${createNoteSearch({
-					autoGenerateNotesOnStop: options?.autoGenerateNotesOnStop === true,
 					autoStartCapture: options?.autoStartCapture === true,
 					noteId,
 					scheduledAutoStartAt: options?.scheduledAutoStartAt,
@@ -2424,7 +2391,6 @@ const useAppShellState = ({
 	const handleCreateNote = React.useCallback(
 		(options?: {
 			autoStartCapture?: boolean;
-			autoGenerateNotesOnStop?: boolean;
 			calendarEvent?: UpcomingCalendarEvent | null;
 			stopCaptureWhenMeetingEnds?: boolean;
 		}) => {
@@ -2434,8 +2400,6 @@ const useAppShellState = ({
 
 			creatingNoteRef.current = true;
 			const shouldStartCapture = options?.autoStartCapture === true;
-			const shouldAutoGenerateNotesOnStop =
-				options?.autoGenerateNotesOnStop === true;
 			const shouldStopCaptureWhenMeetingEnds =
 				options?.stopCaptureWhenMeetingEnds === true;
 			const calendarEvent = options?.calendarEvent ?? null;
@@ -2467,7 +2431,6 @@ const useAppShellState = ({
 				.then((noteId) => {
 					setCurrentNoteTitle(calendarEvent?.title.trim() || "New note");
 					openNote(noteId, {
-						autoGenerateNotesOnStop: shouldAutoGenerateNotesOnStop,
 						autoStartCapture: shouldStartCapture,
 						scheduledAutoStartAt,
 						stopCaptureWhenMeetingEnds: shouldStopCaptureWhenMeetingEnds,
@@ -2496,7 +2459,6 @@ const useAppShellState = ({
 		setCurrentRouteNoteId(null);
 		setShouldAutoStartNoteCapture(true);
 		setShouldStopNoteCaptureWhenMeetingEnds(false);
-		setShouldAutoGenerateNoteAfterCapture(false);
 		setScheduledAutoStartNoteCaptureAt(null);
 		setPendingCalendarEvent(null);
 		setCurrentNoteEditorActions(null);
@@ -2506,7 +2468,6 @@ const useAppShellState = ({
 	const handleAutoStartNoteCaptureHandled = React.useCallback(() => {
 		setShouldAutoStartNoteCapture(false);
 		setShouldStopNoteCaptureWhenMeetingEnds(false);
-		setShouldAutoGenerateNoteAfterCapture(false);
 		setScheduledAutoStartNoteCaptureAt(null);
 
 		if (resolvedCurrentView !== "note" || !resolvedCurrentNoteId) {
@@ -2527,7 +2488,6 @@ const useAppShellState = ({
 			currentRouteNoteId === null
 		) {
 			handleCreateNote({
-				autoGenerateNotesOnStop: shouldAutoGenerateNoteAfterCapture,
 				autoStartCapture: shouldAutoStartNoteCapture,
 				calendarEvent: pendingCalendarEvent,
 				stopCaptureWhenMeetingEnds: shouldStopNoteCaptureWhenMeetingEnds,
@@ -2539,7 +2499,6 @@ const useAppShellState = ({
 		pendingCalendarEvent,
 		resolvedCurrentNoteId,
 		resolvedCurrentView,
-		shouldAutoGenerateNoteAfterCapture,
 		shouldAutoStartNoteCapture,
 		shouldStopNoteCaptureWhenMeetingEnds,
 	]);
@@ -2584,13 +2543,11 @@ const useAppShellState = ({
 		(
 			event: UpcomingCalendarEvent,
 			options?: {
-				autoGenerateNotesOnStop?: boolean;
 				autoStartCapture?: boolean;
 				stopCaptureWhenMeetingEnds?: boolean;
 			},
 		) => {
 			handleCreateNote({
-				autoGenerateNotesOnStop: options?.autoGenerateNotesOnStop ?? true,
 				autoStartCapture: options?.autoStartCapture,
 				calendarEvent: event,
 				stopCaptureWhenMeetingEnds: options?.stopCaptureWhenMeetingEnds ?? true,
@@ -2796,7 +2753,6 @@ const useAppShellState = ({
 		setActiveWorkspaceId,
 		setCurrentNoteEditorActions,
 		setCurrentNoteTitle,
-		shouldAutoGenerateNoteAfterCapture,
 		shouldAutoStartNoteCapture,
 		shouldStopNoteCaptureWhenMeetingEnds,
 		sharedNotes,
@@ -2942,9 +2898,6 @@ function AppShell({
 						onNoteEditorActionsChange={controller.setCurrentNoteEditorActions}
 						onAutoStartNoteCaptureHandled={
 							controller.handleAutoStartNoteCaptureHandled
-						}
-						shouldAutoGenerateNoteAfterCapture={
-							controller.shouldAutoGenerateNoteAfterCapture
 						}
 						shouldAutoStartNoteCapture={controller.shouldAutoStartNoteCapture}
 						shouldStopNoteCaptureWhenMeetingEnds={
@@ -3440,7 +3393,6 @@ function AppShellContent({
 	onNoteTitleChange,
 	onNoteEditorActionsChange,
 	onAutoStartNoteCaptureHandled,
-	shouldAutoGenerateNoteAfterCapture,
 	shouldAutoStartNoteCapture,
 	shouldStopNoteCaptureWhenMeetingEnds,
 	onGoHome,
@@ -3465,7 +3417,6 @@ function AppShellContent({
 	onOpenCalendarEventNote: (
 		event: UpcomingCalendarEvent,
 		options?: {
-			autoGenerateNotesOnStop?: boolean;
 			autoStartCapture?: boolean;
 			stopCaptureWhenMeetingEnds?: boolean;
 		},
@@ -3483,7 +3434,6 @@ function AppShellContent({
 	onNoteTitleChange: (title: string) => void;
 	onNoteEditorActionsChange: (actions: NoteEditorActions | null) => void;
 	onAutoStartNoteCaptureHandled: () => void;
-	shouldAutoGenerateNoteAfterCapture: boolean;
 	shouldAutoStartNoteCapture: boolean;
 	shouldStopNoteCaptureWhenMeetingEnds: boolean;
 	onGoHome: () => void;
@@ -3570,7 +3520,6 @@ function AppShellContent({
 			>
 				<NotePage
 					autoStartTranscription={shouldAutoStartNoteCapture}
-					autoGenerateNotesOnStop={shouldAutoGenerateNoteAfterCapture}
 					noteId={currentNoteId}
 					externalTitle={currentNoteTitle}
 					onAutoStartTranscriptionHandled={onAutoStartNoteCaptureHandled}
@@ -3657,7 +3606,6 @@ function HomeView({
 	onOpenCalendarEventNote: (
 		event: UpcomingCalendarEvent,
 		options?: {
-			autoGenerateNotesOnStop?: boolean;
 			autoStartCapture?: boolean;
 			stopCaptureWhenMeetingEnds?: boolean;
 		},
@@ -3767,7 +3715,6 @@ function HomeView({
 																		className="shrink-0"
 																		onClick={() => {
 																			void onOpenCalendarEventNote(event, {
-																				autoGenerateNotesOnStop: true,
 																				autoStartCapture: hasStarted,
 																				stopCaptureWhenMeetingEnds: true,
 																			});

@@ -29,6 +29,17 @@ export type TranscriptUtterance = {
 	endedAt: number;
 };
 
+export type TranscriptDisplayEntry = {
+	id: string;
+	isLive: boolean;
+	isProvisional: boolean;
+	speaker: TranscriptSpeaker;
+	startedAt: number;
+	endedAt: number;
+	text: string;
+	utteranceIds: string[];
+};
+
 type LiveTranscriptEntry = {
 	speaker: TranscriptLiveSpeaker;
 	startedAt: number | null;
@@ -41,6 +52,7 @@ export type LiveTranscriptState = Record<
 >;
 
 export const MAX_TRANSCRIPT_REFINEMENT_AUDIO_BYTES = 25 * 1024 * 1024;
+const TRANSCRIPT_DISPLAY_BLOCK_GAP_MS = 6_000;
 
 const STATIC_TRANSCRIPT_SPEAKER_LABELS: Record<TranscriptLiveSpeaker, string> =
 	{
@@ -96,6 +108,36 @@ export const compareTranscriptUtterances = (
 	return left.id.localeCompare(right.id);
 };
 
+const compareTranscriptDisplayEntries = (
+	left: TranscriptDisplayEntry,
+	right: TranscriptDisplayEntry,
+) => {
+	if (left.startedAt !== right.startedAt) {
+		return left.startedAt - right.startedAt;
+	}
+
+	if (left.endedAt !== right.endedAt) {
+		return left.endedAt - right.endedAt;
+	}
+
+	return left.id.localeCompare(right.id);
+};
+
+const joinTranscriptBlockText = (currentText: string, nextText: string) => {
+	const normalizedCurrentText = currentText.trim();
+	const normalizedNextText = nextText.trim();
+
+	if (!normalizedCurrentText) {
+		return normalizedNextText;
+	}
+
+	if (!normalizedNextText) {
+		return normalizedCurrentText;
+	}
+
+	return `${normalizedCurrentText} ${normalizedNextText}`;
+};
+
 const formatClockTime = (timestamp: number) =>
 	new Intl.DateTimeFormat(undefined, {
 		hour: "2-digit",
@@ -114,6 +156,94 @@ export const formatTranscriptUtterance = (
 	}
 
 	return `[${formatClockTime(utterance.startedAt)}] ${getTranscriptSpeakerLabel(utterance.speaker)}: ${trimmed}`;
+};
+
+export const createLiveTranscriptEntries = (
+	liveTranscript: LiveTranscriptState,
+): TranscriptDisplayEntry[] =>
+	Object.values(liveTranscript)
+		.filter((entry) => entry.text.trim())
+		.sort((left, right) => {
+			const leftStartedAt = left.startedAt ?? Number.MAX_SAFE_INTEGER;
+			const rightStartedAt = right.startedAt ?? Number.MAX_SAFE_INTEGER;
+
+			if (leftStartedAt !== rightStartedAt) {
+				return leftStartedAt - rightStartedAt;
+			}
+
+			return left.speaker.localeCompare(right.speaker);
+		})
+		.map((entry) => {
+			const startedAt = entry.startedAt ?? Date.now();
+
+			return {
+				endedAt: startedAt,
+				id: `live:${entry.speaker}:${startedAt}`,
+				isLive: true,
+				isProvisional: true,
+				speaker: entry.speaker,
+				startedAt,
+				text: entry.text.trim(),
+				utteranceIds: [],
+			};
+		});
+
+export const createTranscriptDisplayEntries = ({
+	liveTranscript,
+	utterances,
+}: {
+	liveTranscript: LiveTranscriptState;
+	utterances: TranscriptUtterance[];
+}): TranscriptDisplayEntry[] => {
+	const committedEntries: TranscriptDisplayEntry[] = [];
+
+	for (const utterance of [...utterances].sort(compareTranscriptUtterances)) {
+		const trimmedText = utterance.text.trim();
+
+		if (!trimmedText) {
+			continue;
+		}
+
+		const previousEntry = committedEntries.at(-1);
+
+		if (
+			previousEntry &&
+			!previousEntry.isLive &&
+			previousEntry.speaker === utterance.speaker &&
+			utterance.startedAt - previousEntry.endedAt <=
+				TRANSCRIPT_DISPLAY_BLOCK_GAP_MS
+		) {
+			previousEntry.endedAt = Math.max(
+				previousEntry.endedAt,
+				utterance.endedAt,
+			);
+			previousEntry.id = previousEntry.utteranceIds
+				.concat(utterance.id)
+				.join("|");
+			previousEntry.text = joinTranscriptBlockText(
+				previousEntry.text,
+				trimmedText,
+			);
+			previousEntry.utteranceIds.push(utterance.id);
+			continue;
+		}
+
+		committedEntries.push({
+			endedAt: utterance.endedAt,
+			id: utterance.id,
+			isLive: false,
+			isProvisional: false,
+			speaker: utterance.speaker,
+			startedAt: utterance.startedAt,
+			text: trimmedText,
+			utteranceIds: [utterance.id],
+		});
+	}
+
+	return [
+		...committedEntries,
+		...createLiveTranscriptEntries(liveTranscript),
+	].sort(compareTranscriptDisplayEntries);
 };
 
 const normalizeTranscriptText = (value: string) =>

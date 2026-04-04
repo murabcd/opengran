@@ -47,17 +47,11 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 	const completeTranscriptSessionMutation = useMutation(
 		api.transcriptSessions.completeSession,
 	);
-	const setTranscriptRefinementStatusMutation = useMutation(
-		api.transcriptSessions.setRefinementStatus,
-	);
 	const setTranscriptSessionSystemAudioSourceModeMutation = useMutation(
 		api.transcriptSessions.setSystemAudioSourceMode,
 	);
 	const markTranscriptSessionGeneratedMutation = useMutation(
 		api.transcriptSessions.markGenerated,
-	);
-	const replaceTranscriptSpeakerUtterancesMutation = useMutation(
-		api.transcriptSessions.replaceSpeakerUtterances,
 	);
 	const latestTranscriptSessionQuery = useQuery(
 		api.transcriptSessions.getLatestForNote,
@@ -151,24 +145,6 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 		[completeTranscriptSessionMutation],
 	);
 
-	const setRefinementStatus = React.useCallback(
-		async ({
-			error,
-			sessionId,
-			status,
-		}: {
-			error?: string;
-			sessionId: Id<"transcriptSessions">;
-			status: "idle" | "running" | "completed" | "failed";
-		}) =>
-			await setTranscriptRefinementStatusMutation({
-				sessionId,
-				status,
-				error,
-			}),
-		[setTranscriptRefinementStatusMutation],
-	);
-
 	const setSystemAudioSourceMode = React.useCallback(
 		async ({
 			sessionId,
@@ -182,32 +158,6 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 				systemAudioSourceMode,
 			}),
 		[setTranscriptSessionSystemAudioSourceModeMutation],
-	);
-
-	const replaceSpeakerUtterances = React.useCallback(
-		async ({
-			finalTranscript,
-			sessionId,
-			targetSpeakers,
-			targetUtteranceIds,
-			utterances,
-		}: {
-			finalTranscript?: string;
-			sessionId: Id<"transcriptSessions">;
-			targetSpeakers: string[];
-			targetUtteranceIds?: string[];
-			utterances: TranscriptUtterance[];
-		}) =>
-			await replaceTranscriptSpeakerUtterancesMutation({
-				sessionId,
-				targetSpeakers,
-				targetUtteranceIds,
-				utterances: utterances.map((utterance) =>
-					toTranscriptUtteranceInput(utterance, "refined"),
-				),
-				finalTranscript,
-			}),
-		[replaceTranscriptSpeakerUtterancesMutation],
 	);
 
 	const markGenerated = React.useCallback(
@@ -259,9 +209,7 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 			latestTranscriptSession,
 			loadDraft,
 			markGenerated,
-			replaceSpeakerUtterances,
 			saveDraft,
-			setRefinementStatus,
 			setSystemAudioSourceMode,
 			startSession,
 		}),
@@ -273,9 +221,7 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 			latestTranscriptSession,
 			loadDraft,
 			markGenerated,
-			replaceSpeakerUtterances,
 			saveDraft,
-			setRefinementStatus,
 			setSystemAudioSourceMode,
 			startSession,
 		],

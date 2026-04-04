@@ -1,74 +1,104 @@
 import { describe, expect, it } from "vitest";
 import {
-	createRefinedSpeakerUtterances,
-	shouldSuppressEchoUtterance,
-	type TranscriptUtterance,
+	createEmptyLiveTranscriptState,
+	createTranscriptDisplayEntries,
 } from "../src/lib/transcript";
 
-describe("transcript utilities", () => {
-	it("suppresses a microphone utterance that mirrors recent system audio", () => {
-		const utterances: TranscriptUtterance[] = [
-			{
-				id: "them-1",
-				speaker: "them",
-				text: "We should ship the transcript recovery work before expanding the feature.",
-				startedAt: 1_000,
-				endedAt: 4_000,
-			},
-		];
-		const candidate: TranscriptUtterance = {
-			id: "you-1",
-			speaker: "you",
-			text: "We should ship the transcript recovery work before expanding the feature.",
-			startedAt: 4_200,
-			endedAt: 5_200,
-		};
-
+describe("transcript display entries", () => {
+	it("groups adjacent same-speaker utterances into append-only committed blocks", () => {
 		expect(
-			shouldSuppressEchoUtterance({
-				candidate,
-				utterances,
+			createTranscriptDisplayEntries({
+				liveTranscript: createEmptyLiveTranscriptState(),
+				utterances: [
+					{
+						id: "1",
+						speaker: "them",
+						text: "First question.",
+						startedAt: 1_000,
+						endedAt: 2_000,
+					},
+					{
+						id: "2",
+						speaker: "them",
+						text: "Second question.",
+						startedAt: 4_000,
+						endedAt: 5_000,
+					},
+					{
+						id: "3",
+						speaker: "you",
+						text: "Answer.",
+						startedAt: 8_000,
+						endedAt: 9_000,
+					},
+				],
 			}),
-		).toBe(true);
+		).toEqual([
+			{
+				endedAt: 5_000,
+				id: "1|2",
+				isLive: false,
+				isProvisional: false,
+				speaker: "them",
+				startedAt: 1_000,
+				text: "First question. Second question.",
+				utteranceIds: ["1", "2"],
+			},
+			{
+				endedAt: 9_000,
+				id: "3",
+				isLive: false,
+				isProvisional: false,
+				speaker: "you",
+				startedAt: 8_000,
+				text: "Answer.",
+				utteranceIds: ["3"],
+			},
+		]);
 	});
 
-	it("maps refined text back onto the original speaker timing windows", () => {
-		const referenceUtterances: TranscriptUtterance[] = [
+	it("appends provisional live entries after committed blocks", () => {
+		expect(
+			createTranscriptDisplayEntries({
+				liveTranscript: {
+					...createEmptyLiveTranscriptState(),
+					them: {
+						speaker: "them",
+						startedAt: 10_000,
+						text: "Still speaking",
+					},
+				},
+				utterances: [
+					{
+						id: "1",
+						speaker: "them",
+						text: "Opening.",
+						startedAt: 1_000,
+						endedAt: 2_000,
+					},
+				],
+			}),
+		).toEqual([
 			{
-				id: "them-1",
-				speaker: "them",
-				text: "rough one",
-				startedAt: 1_000,
 				endedAt: 2_000,
+				id: "1",
+				isLive: false,
+				isProvisional: false,
+				speaker: "them",
+				startedAt: 1_000,
+				text: "Opening.",
+				utteranceIds: ["1"],
 			},
 			{
-				id: "them-2",
+				endedAt: 10_000,
+				id: "live:them:10000",
+				isLive: true,
+				isProvisional: true,
 				speaker: "them",
-				text: "rough two",
-				startedAt: 2_100,
-				endedAt: 3_000,
+				startedAt: 10_000,
+				text: "Still speaking",
+				utteranceIds: [],
 			},
-		];
-
-		const refinedUtterances = createRefinedSpeakerUtterances({
-			referenceUtterances,
-			refinedText:
-				"First refined sentence. Second refined sentence. Third refined sentence.",
-			speaker: "them",
-		});
-
-		expect(refinedUtterances).toHaveLength(2);
-		expect(refinedUtterances[0]).toMatchObject({
-			speaker: "them",
-			startedAt: 1_000,
-			endedAt: 2_000,
-		});
-		expect(refinedUtterances[1]).toMatchObject({
-			speaker: "them",
-			startedAt: 2_100,
-			endedAt: 3_000,
-		});
-		expect(refinedUtterances[0].text).toContain("First refined sentence.");
-		expect(refinedUtterances[1].text).toContain("Third refined sentence.");
+		]);
 	});
 });

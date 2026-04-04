@@ -1,7 +1,6 @@
 import {
 	isTranscriptPlaceholderText,
 	normalizeTranscriptText,
-	shouldDropTranscriptForConfidence,
 } from "../../../../packages/ai/src/transcription.mjs";
 
 const PROMPT_LEAK_PATTERNS = [
@@ -18,9 +17,6 @@ const PROMPT_LEAK_PATTERNS = [
 	"output nothing",
 	"context:",
 ] as const;
-
-const normalizeLanguage = (value?: string | null) =>
-	value?.split("-")[0]?.trim().toLowerCase() || null;
 
 const getWordCount = (value: string) =>
 	normalizeTranscriptText(value).split(" ").filter(Boolean).length;
@@ -49,66 +45,6 @@ const computeJaccardSimilarity = (left: string, right: string) => {
 	return union === 0 ? 0 : intersection / union;
 };
 
-const countLetterScripts = (value: string) => {
-	let cyrillic = 0;
-	let latin = 0;
-	let other = 0;
-
-	for (const character of value) {
-		if (/\p{Script=Cyrillic}/u.test(character)) {
-			cyrillic += 1;
-			continue;
-		}
-
-		if (/\p{Script=Latin}/u.test(character)) {
-			latin += 1;
-			continue;
-		}
-
-		if (/\p{L}/u.test(character)) {
-			other += 1;
-		}
-	}
-
-	return {
-		cyrillic,
-		latin,
-		other,
-		total: cyrillic + latin + other,
-	};
-};
-
-const hasConfiguredLanguageMismatch = ({
-	language,
-	text,
-}: {
-	language?: string | null;
-	text: string;
-}) => {
-	const normalizedLanguage = normalizeLanguage(language);
-	const wordCount = getWordCount(text);
-	const scripts = countLetterScripts(text);
-
-	if (scripts.total < 10 || wordCount < 2) {
-		return false;
-	}
-
-	if (normalizedLanguage === "ru" || normalizedLanguage === "uk") {
-		return (
-			scripts.cyrillic / scripts.total < 0.45 &&
-			scripts.latin > scripts.cyrillic
-		);
-	}
-
-	if (normalizedLanguage === "en") {
-		return (
-			scripts.latin / scripts.total < 0.45 && scripts.cyrillic > scripts.latin
-		);
-	}
-
-	return false;
-};
-
 export const containsTranscriptPromptLeakage = (value: string) => {
 	const normalizedValue = value.trim().toLowerCase();
 
@@ -122,18 +58,8 @@ export const containsTranscriptPromptLeakage = (value: string) => {
 };
 
 export const isSuspiciousCommittedTranscriptText = ({
-	logprobs,
-	language,
-	source,
 	text,
 }: {
-	logprobs?: Array<{
-		bytes?: number[];
-		logprob?: number;
-		token?: string;
-	}> | null;
-	language?: string | null;
-	source?: string | null;
 	text: string;
 }) => {
 	const trimmedText = text.trim();
@@ -150,46 +76,14 @@ export const isSuspiciousCommittedTranscriptText = ({
 		return true;
 	}
 
-	if (
-		shouldDropTranscriptForConfidence({
-			logprobs,
-			source,
-			text: trimmedText,
-		})
-	) {
-		return true;
-	}
-
-	return hasConfiguredLanguageMismatch({
-		language,
-		text: trimmedText,
-	});
+	return false;
 };
-
-export const sanitizeLiveTranscriptStateText = ({
-	language,
-	source,
-	text,
-}: {
-	language?: string | null;
-	source?: string | null;
-	text: string;
-}) =>
-	isSuspiciousCommittedTranscriptText({
-		language,
-		source,
-		text,
-	})
-		? ""
-		: text;
 
 export const isSuspiciousRefinementTranscript = ({
 	candidateText,
-	language,
 	referenceText,
 }: {
 	candidateText: string;
-	language?: string | null;
 	referenceText: string;
 }) => {
 	const trimmedCandidateText = candidateText.trim();
@@ -200,8 +94,6 @@ export const isSuspiciousRefinementTranscript = ({
 
 	if (
 		isSuspiciousCommittedTranscriptText({
-			language,
-			logprobs: null,
 			text: trimmedCandidateText,
 		})
 	) {

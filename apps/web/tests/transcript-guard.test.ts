@@ -14,25 +14,20 @@ describe("transcript guard", () => {
 		).toBe(true);
 	});
 
-	it("flags a long language-mismatched transcript when Russian is configured", () => {
+	it("does not flag transcript text only because it uses a different script", () => {
 		expect(
 			isSuspiciousCommittedTranscriptText({
-				language: "ru",
 				text: "Good morning, this is a long English sentence that should not appear in a Russian-only meeting.",
 			}),
-		).toBe(true);
+		).toBe(false);
 	});
 
-	it("flags a long low-confidence transcript from logprobs", () => {
+	it("does not flag text only because confidence is low", () => {
 		expect(
 			isSuspiciousCommittedTranscriptText({
-				logprobs: Array.from({ length: 8 }, () => ({
-					logprob: -3,
-					token: "hello",
-				})),
 				text: "hello hello hello hello hello hello hello hello",
 			}),
-		).toBe(true);
+		).toBe(false);
 	});
 
 	it("flags placeholder transcript text", () => {
@@ -43,55 +38,25 @@ describe("transcript guard", () => {
 		).toBe(true);
 	});
 
-	it("flags tiny low-confidence system audio turns", () => {
+	it("does not flag short committed turns only because they are short", () => {
 		expect(
 			isSuspiciousCommittedTranscriptText({
-				logprobs: [
-					{ logprob: -2.2, token: "trust" },
-					{ logprob: -2.5, token: "me" },
-				],
-				source: "systemAudio",
 				text: "Trust me",
-			}),
-		).toBe(true);
-	});
-
-	it("keeps short but plausible low-confidence system audio turns visible", () => {
-		expect(
-			isSuspiciousCommittedTranscriptText({
-				logprobs: [
-					{ logprob: -2.2, token: "i" },
-					{ logprob: -2.5, token: "am" },
-					{ logprob: -3.8, token: "trying" },
-				],
-				source: "systemAudio",
-				text: "I am trying",
 			}),
 		).toBe(false);
 	});
 
-	it("keeps longer low-confidence system audio turns visible", () => {
+	it("keeps longer captured turns visible", () => {
 		expect(
 			isSuspiciousCommittedTranscriptText({
-				logprobs: Array.from({ length: 8 }, () => ({
-					logprob: -2.6,
-					token: "idea",
-				})),
-				source: "systemAudio",
 				text: "But if you really struggle to come up with good ideas, it's okay to work somewhere else.",
 			}),
 		).toBe(false);
 	});
 
-	it("keeps short confident system audio turns", () => {
+	it("keeps short ordinary committed turns", () => {
 		expect(
 			isSuspiciousCommittedTranscriptText({
-				logprobs: [
-					{ logprob: -0.08, token: "What" },
-					{ logprob: -0.06, token: "you" },
-					{ logprob: -0.11, token: "got" },
-				],
-				source: "systemAudio",
 				text: "What you got?",
 			}),
 		).toBe(false);
@@ -102,7 +67,6 @@ describe("transcript guard", () => {
 			isSuspiciousRefinementTranscript({
 				candidateText:
 					"Согласно данным ВЦИОМ, россияне ожидают, что также повысить возраст выхода на пенсию.",
-				language: "ru",
 				referenceText:
 					"Мы обсуждали интеграцию HeadHunter, сообщения по статусам и настройки холодного поиска.",
 			}),
@@ -114,7 +78,6 @@ describe("transcript guard", () => {
 			isSuspiciousRefinementTranscript({
 				candidateText:
 					"Мы обсуждали интеграцию с HeadHunter, сообщения по статусам и настройки холодного поиска.",
-				language: "ru",
 				referenceText:
 					"Мы обсуждали интеграцию HeadHunter, сообщения по статусам и настройки холодного поиска.",
 			}),

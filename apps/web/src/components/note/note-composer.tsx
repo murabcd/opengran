@@ -80,7 +80,6 @@ type NoteComposerProps = {
 		text: string;
 	};
 	autoStartTranscription?: boolean;
-	autoGenerateNotesOnStop?: boolean;
 	onAutoStartTranscriptionHandled?: () => void;
 	onAddMessageToNote?: (text: string) => Promise<void> | void;
 	onEnhanceTranscript?: (transcript: string) => Promise<void>;
@@ -152,7 +151,6 @@ const createDraftChatId = (): string => crypto.randomUUID();
 const useNoteComposerController = ({
 	noteContext,
 	autoStartTranscription,
-	autoGenerateNotesOnStop,
 	onAutoStartTranscriptionHandled,
 	onEnhanceTranscript,
 	stopTranscriptionWhenMeetingEnds,
@@ -229,7 +227,6 @@ const useNoteComposerController = ({
 	const transcriptSession = useNoteTranscriptSession({
 		autoStartTranscription:
 			autoStartTranscription && isTranscriptionLanguageReady,
-		autoGenerateNotesOnStop,
 		noteId,
 		onAutoStartTranscriptionHandled,
 		onEnhanceTranscript,
@@ -402,8 +399,7 @@ const useNoteComposerController = ({
 		!transcriptSession.hasGeneratedLatestTranscript &&
 		!transcriptSession.isSpeechListening &&
 		!isChatOpen &&
-		!isTranscriptOpen &&
-		!transcriptSession.isRefiningTranscript;
+		!isTranscriptOpen;
 	const selectedNoteChat =
 		(noteChats ?? []).find((chat) => chat.chatId === currentChatId) ?? null;
 	const chatTitle =
@@ -770,7 +766,6 @@ const useNoteComposerController = ({
 		isChatOpen,
 		displayTranscriptEntries: transcriptSession.displayTranscriptEntries,
 		isGeneratingNotes: transcriptSession.isGeneratingNotes,
-		isRefiningTranscript: transcriptSession.isRefiningTranscript,
 		isMobile,
 		isSidebarPresentation,
 		isSpeechListening: transcriptSession.isSpeechListening,
@@ -783,7 +778,6 @@ const useNoteComposerController = ({
 		panelMode,
 		presentationMode,
 		transcriptViewportRef: transcriptSession.transcriptViewportRef,
-		transcriptRefinementError: transcriptSession.transcriptRefinementError,
 		reactionsByMessageId,
 		rootRef,
 		setPanelMode,
@@ -1329,20 +1323,14 @@ export function NoteComposer(props: NoteComposerProps) {
 						size="sm"
 						className="pointer-events-auto px-4 shadow-lg"
 						onClick={controller.handleGenerateNotes}
-						disabled={
-							controller.isGeneratingNotes || controller.isRefiningTranscript
-						}
+						disabled={controller.isGeneratingNotes}
 					>
 						{controller.isGeneratingNotes ? (
 							<LoaderCircle className="size-4 animate-spin" />
 						) : (
 							<Sparkles className="size-4" />
 						)}
-						{controller.isGeneratingNotes
-							? "Generating..."
-							: controller.isRefiningTranscript
-								? "Refining transcript..."
-								: "Generate notes"}
+						{controller.isGeneratingNotes ? "Generating..." : "Generate notes"}
 					</Button>
 				</div>
 			) : null}
@@ -1456,11 +1444,7 @@ function TranscriptPanelNoticeStack({
 	controller: NoteComposerController;
 	shouldRenderInlineComposer: boolean;
 }) {
-	if (
-		!controller.isRefiningTranscript &&
-		!controller.transcriptRefinementError &&
-		shouldRenderInlineComposer
-	) {
+	if (shouldRenderInlineComposer || !controller.isSpeechListening) {
 		return null;
 	}
 
@@ -1474,23 +1458,9 @@ function TranscriptPanelNoticeStack({
 						: "px-4 pb-4",
 			)}
 		>
-			{controller.isRefiningTranscript ? (
-				<div className="mb-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-					Refining the recorded system-audio transcript. Generate notes will
-					unlock when this pass finishes.
-				</div>
-			) : null}
-			{controller.transcriptRefinementError ? (
-				<div className="mb-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-					System-audio refinement failed. The live transcript was preserved.{" "}
-					{controller.transcriptRefinementError}
-				</div>
-			) : null}
-			{shouldRenderInlineComposer || !controller.isSpeechListening ? null : (
-				<div className="rounded-md bg-muted px-3 py-1.5 text-center text-xs text-muted-foreground">
-					Always get consent when transcribing others.
-				</div>
-			)}
+			<div className="rounded-md bg-muted px-3 py-1.5 text-center text-xs text-muted-foreground">
+				Always get consent when transcribing others.
+			</div>
 		</div>
 	);
 }

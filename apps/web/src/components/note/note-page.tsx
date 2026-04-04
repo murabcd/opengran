@@ -1013,7 +1013,6 @@ const useNotePageController = ({
 
 export function NotePage({
 	autoStartTranscription = false,
-	autoGenerateNotesOnStop = false,
 	noteId,
 	externalTitle,
 	onAutoStartTranscriptionHandled,
@@ -1022,7 +1021,6 @@ export function NotePage({
 	stopTranscriptionWhenMeetingEnds = false,
 }: {
 	autoStartTranscription?: boolean;
-	autoGenerateNotesOnStop?: boolean;
 	noteId: Id<"notes"> | null;
 	externalTitle?: string;
 	onAutoStartTranscriptionHandled?: () => void;
@@ -1087,7 +1085,6 @@ export function NotePage({
 							<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
 								<NoteComposer
 									autoStartTranscription={autoStartTranscription}
-									autoGenerateNotesOnStop={autoGenerateNotesOnStop}
 									noteContext={{
 										noteId: controller.noteId,
 										title: controller.title,

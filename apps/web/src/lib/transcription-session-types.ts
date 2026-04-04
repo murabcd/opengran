@@ -28,18 +28,6 @@ export type TranscriptionControllerError = {
 	message: string;
 };
 
-export type SystemAudioRecordingPayload = {
-	blob: Blob;
-	chunks?: Array<{
-		blob: Blob;
-		endedAt: number;
-		startedAt: number;
-	}>;
-	endedAt: number;
-	sourceMode: SystemAudioCaptureStatus["sourceMode"];
-	startedAt: number;
-};
-
 export type TranscriptionControllerState = {
 	autoStartKey: string | number | null;
 	error: TranscriptionControllerError | null;

@@ -119,16 +119,6 @@ declare global {
 				};
 		  }
 		| {
-				type: "session.system_audio_recording_ready";
-				payload: {
-					blobBase64: string;
-					endedAt: number;
-					mimeType: string;
-					sourceMode: "desktop-native" | "display-media" | "unsupported";
-					startedAt: number;
-				};
-		  }
-		| {
 				type: "session.utterance_committed";
 				utterance: DesktopTranscriptionControllerState["utterances"][number];
 		  };

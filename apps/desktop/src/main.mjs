@@ -37,9 +37,8 @@ import {
 	createRealtimeTranscriptionSession,
 	createRealtimeTranscriptionSessionOptions,
 	isLowConfidenceTranscriptLogprobs,
+	isTranscriptPlaceholderText,
 	normalizeTranscriptionLanguage,
-	shouldDropTranscriptForConfidence,
-	shouldKeepInterruptedTranscriptTurn,
 } from "../../../packages/ai/src/transcription.mjs";
 import { getDesktopAuthClient } from "./auth-client.mjs";
 import { loadRootEnv } from "./env.mjs";
@@ -443,7 +442,6 @@ const createCalendarEventNoteSearch = (event, options = {}) => {
 	const autoStartCapture = options.autoStartCapture === true;
 	const stopCaptureWhenMeetingEnds =
 		options.stopCaptureWhenMeetingEnds === true;
-	const autoGenerateNotesOnStop = options.autoGenerateNotesOnStop !== false;
 
 	if (autoStartCapture) {
 		searchParams.set("capture", "1");
@@ -451,10 +449,6 @@ const createCalendarEventNoteSearch = (event, options = {}) => {
 
 	if (stopCaptureWhenMeetingEnds) {
 		searchParams.set("meeting", "1");
-	}
-
-	if (autoGenerateNotesOnStop) {
-		searchParams.set("autogen", "1");
 	}
 
 	searchParams.set("calendarEventId", event.id);
@@ -486,7 +480,6 @@ const openCalendarEventNote = async (event, options = {}) => {
 	await showMainWindow({
 		pathname: "/note",
 		search: createCalendarEventNoteSearch(event, {
-			autoGenerateNotesOnStop: options.autoGenerateNotesOnStop !== false,
 			autoStartCapture:
 				options.autoStartCapture === true ||
 				(options.autoStartCapture == null && hasStarted),
@@ -813,7 +806,6 @@ const maybeShowScheduledMeetingNotifications = (events) => {
 			notification.on("click", () => {
 				void openCalendarEventNote(event, {
 					autoStartCapture: isStartingNow,
-					autoGenerateNotesOnStop: true,
 					openMeetingLink: true,
 					stopCaptureWhenMeetingEnds: true,
 				});
@@ -1520,7 +1512,6 @@ function createTranscriptionSpeakerRuntime(speaker) {
 		emittedItemIds: new Set(),
 		lastCommittedItemId: null,
 		liveItemId: null,
-		recording: null,
 		sessionId: null,
 		transportActive: false,
 		turns: new Map(),
@@ -2055,7 +2046,6 @@ const startDetectedMeetingNote = async () => {
 
 	if (detectedMeetingCalendarEvent) {
 		await openCalendarEventNote(detectedMeetingCalendarEvent, {
-			autoGenerateNotesOnStop: true,
 			autoStartCapture: true,
 			stopCaptureWhenMeetingEnds: true,
 		});
@@ -2064,7 +2054,7 @@ const startDetectedMeetingNote = async () => {
 
 	await showMainWindow({
 		pathname: "/note",
-		search: "?capture=1&meeting=1&autogen=1",
+		search: "?capture=1&meeting=1",
 	});
 };
 
@@ -2128,48 +2118,6 @@ const ensureDesktopMicrophonePermissionGranted = async () => {
 	throw new Error("Microphone access is required to start live transcription.");
 };
 
-const encodePcm16WavBase64 = ({ chunks, sampleRate }) => {
-	const pcmData = Buffer.concat(chunks);
-	const header = Buffer.alloc(44);
-	const byteRate = sampleRate * 2;
-
-	header.write("RIFF", 0, "ascii");
-	header.writeUInt32LE(36 + pcmData.length, 4);
-	header.write("WAVE", 8, "ascii");
-	header.write("fmt ", 12, "ascii");
-	header.writeUInt32LE(16, 16);
-	header.writeUInt16LE(1, 20);
-	header.writeUInt16LE(1, 22);
-	header.writeUInt32LE(sampleRate, 24);
-	header.writeUInt32LE(byteRate, 28);
-	header.writeUInt16LE(2, 32);
-	header.writeUInt16LE(16, 34);
-	header.write("data", 36, "ascii");
-	header.writeUInt32LE(pcmData.length, 40);
-
-	return Buffer.concat([header, pcmData]).toString("base64");
-};
-
-const emitSystemAudioRecordingReady = (recording) => {
-	if (!recording || recording.chunks.length === 0 || !recording.sampleRate) {
-		return;
-	}
-
-	emitTranscriptionSessionEvent({
-		type: "session.system_audio_recording_ready",
-		payload: {
-			blobBase64: encodePcm16WavBase64({
-				chunks: recording.chunks,
-				sampleRate: recording.sampleRate,
-			}),
-			endedAt: Date.now(),
-			mimeType: "audio/wav",
-			sourceMode: recording.sourceMode,
-			startedAt: recording.startedAt,
-		},
-	});
-};
-
 const emitTranscriptionOrderedTurns = (speaker) => {
 	const state = transcriptionSpeakers[speaker];
 
@@ -2195,15 +2143,7 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 						text,
 					})
 				: false;
-		const shouldDropForConfidence =
-			!nextTurn.failed && text
-				? shouldDropTranscriptForConfidence({
-						logprobs: nextTurn.logprobs ?? null,
-						source,
-						text,
-					})
-				: false;
-		const shouldEmit = !nextTurn.failed && text && !shouldDropForConfidence;
+		const shouldEmit = !nextTurn.failed && text;
 
 		if (shouldEmit) {
 			appendTranscriptionUtterance({
@@ -2217,15 +2157,8 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 
 		logDesktopTurnDebug("turn.ordered", {
 			itemId: nextTurn.itemId,
-			outcome: shouldEmit
-				? "emitted"
-				: nextTurn.failed
-					? "failed"
-					: !text
-						? "empty"
-						: "low_confidence",
-			retainedDespiteLowConfidence:
-				shouldEmit && isLowConfidence && !shouldDropForConfidence,
+			outcome: shouldEmit ? "emitted" : nextTurn.failed ? "failed" : "empty",
+			isLowConfidence,
 			previousItemId: nextTurn.previousItemId,
 			speaker,
 			...summarizeTranscriptTextForLog(text),
@@ -2242,9 +2175,7 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 					? "turn_emitted"
 					: nextTurn.failed
 						? "turn_failed"
-						: !text
-							? "turn_empty"
-							: "turn_low_confidence",
+						: "turn_empty",
 			});
 		}
 	}
@@ -3210,10 +3141,6 @@ const stopTranscriptionSpeaker = async (speaker) => {
 	const state = transcriptionSpeakers[speaker];
 	appendTranscriptionTailUtterance(speaker);
 
-	if (speaker === "them" && state.recording) {
-		emitSystemAudioRecordingReady(state.recording);
-	}
-
 	if (speaker === "you") {
 		await stopDesktopRealtimeTransport("you");
 		await stopMicrophoneCapture();
@@ -3319,11 +3246,9 @@ const handleDesktopRealtimeTransportEvent = async (event) => {
 			existingTurn?.text ||
 			latestTranscriptionSessionState.liveTranscript[event.speaker].text ||
 			"";
-		const shouldKeepInterruptedText = shouldKeepInterruptedTranscriptTurn({
-			logprobs: existingTurn?.logprobs ?? null,
-			source: event.speaker === "them" ? "systemAudio" : "microphone",
-			text: interruptedText,
-		});
+		const shouldKeepInterruptedText = Boolean(
+			interruptedText.trim() && !isTranscriptPlaceholderText(interruptedText),
+		);
 		logDesktopTurnDebug("transport.turn_failed", {
 			itemId: event.itemId,
 			keepInterruptedText: shouldKeepInterruptedText,
@@ -3447,15 +3372,6 @@ const connectDesktopTranscriptionSpeaker = async ({
 	state.activeSourceMode = sourceMode;
 	state.sessionId ??= currentTranscriptionSessionCorrelationId;
 	state.transportActive = true;
-
-	if (speaker === "them" && systemAudioCaptureSession?.sampleRate) {
-		state.recording = {
-			chunks: [],
-			sampleRate: systemAudioCaptureSession.sampleRate,
-			sourceMode,
-			startedAt: Date.now(),
-		};
-	}
 };
 
 const scheduleAutomaticSystemAudioAttachRetry = ({
@@ -3916,16 +3832,6 @@ const detachDesktopTranscriptionSystemAudio = async () => {
 			: latestTranscriptionSessionState.systemAudioStatus,
 	});
 };
-
-subscribeToCaptureEvents("systemAudio", (event) => {
-	const recording = transcriptionSpeakers.them.recording;
-
-	if (!recording || event.type !== "chunk" || !event.pcm16) {
-		return;
-	}
-
-	recording.chunks.push(Buffer.from(event.pcm16, "base64"));
-});
 
 const stopMicrophoneCapture = async () => {
 	if (!microphoneCaptureSession) {

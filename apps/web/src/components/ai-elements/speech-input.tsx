@@ -14,7 +14,6 @@ import type {
 	TranscriptUtterance,
 } from "@/lib/transcript";
 import { transcriptionSessionManager } from "@/lib/transcription-session-manager";
-import type { SystemAudioRecordingPayload } from "@/lib/transcription-session-types";
 
 type SpeechInputProps = ComponentProps<typeof Button> & {
 	autoStartKey?: string | number | null;
@@ -22,7 +21,6 @@ type SpeechInputProps = ComponentProps<typeof Button> & {
 	onListeningChange?: (isListening: boolean) => void;
 	onLiveTranscriptChange?: (state: LiveTranscriptState) => void;
 	onRecoveryStatusChange?: (status: TranscriptRecoveryStatus) => void;
-	onSystemAudioRecordingReady?: (payload: SystemAudioRecordingPayload) => void;
 	onSystemAudioStatusChange?: (status: SystemAudioCaptureStatus) => void;
 	onUtterance?: (utterance: TranscriptUtterance) => void;
 	scopeKey?: string | null;
@@ -37,7 +35,6 @@ export const SpeechInput = ({
 	onListeningChange,
 	onLiveTranscriptChange,
 	onRecoveryStatusChange,
-	onSystemAudioRecordingReady,
 	onSystemAudioStatusChange,
 	onUtterance,
 	scopeKey = null,
@@ -77,18 +74,6 @@ export const SpeechInput = ({
 			}
 		});
 	}, [onUtterance]);
-
-	useEffect(() => {
-		if (!onSystemAudioRecordingReady) {
-			return;
-		}
-
-		return transcriptionSessionManager.store.subscribeToEvents((event) => {
-			if (event.type === "session.system_audio_recording_ready") {
-				onSystemAudioRecordingReady(event.payload);
-			}
-		});
-	}, [onSystemAudioRecordingReady]);
 
 	return (
 		<div className="relative inline-flex items-center justify-center">

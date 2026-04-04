@@ -109,7 +109,6 @@ describe("SpeechInput", () => {
 		const onSystemAudioStatusChange = vi.fn();
 		const onRecoveryStatusChange = vi.fn();
 		const onUtterance = vi.fn();
-		const onSystemAudioRecordingReady = vi.fn();
 		const controls = {
 			detachSystemAudio: vi.fn(),
 			requestSystemAudio: vi.fn(),
@@ -146,7 +145,6 @@ describe("SpeechInput", () => {
 				onListeningChange={onListeningChange}
 				onLiveTranscriptChange={onLiveTranscriptChange}
 				onRecoveryStatusChange={onRecoveryStatusChange}
-				onSystemAudioRecordingReady={onSystemAudioRecordingReady}
 				onSystemAudioStatusChange={onSystemAudioStatusChange}
 				onUtterance={onUtterance}
 			/>,
@@ -159,11 +157,8 @@ describe("SpeechInput", () => {
 				scopeKey: "note:1",
 			});
 		});
-		expect(subscribeToEventsMock).toHaveBeenCalledTimes(2);
+		expect(subscribeToEventsMock).toHaveBeenCalledTimes(1);
 		const utteranceListener = subscribeToEventsMock.mock.calls[0]?.[0] as
-			| ((event: TranscriptionSessionEvent) => void)
-			| undefined;
-		const recordingListener = subscribeToEventsMock.mock.calls[1]?.[0] as
 			| ((event: TranscriptionSessionEvent) => void)
 			| undefined;
 		utteranceListener?.({
@@ -176,23 +171,9 @@ describe("SpeechInput", () => {
 				text: "hello",
 			},
 		});
-		recordingListener?.({
-			type: "session.system_audio_recording_ready",
-			payload: {
-				blob: new Blob(["audio"]),
-				endedAt: 2,
-				sourceMode: "display-media",
-				startedAt: 1,
-			},
-		});
 		expect(onUtterance).toHaveBeenCalledWith(
 			expect.objectContaining({
 				id: "u1",
-			}),
-		);
-		expect(onSystemAudioRecordingReady).toHaveBeenCalledWith(
-			expect.objectContaining({
-				sourceMode: "display-media",
 			}),
 		);
 		expect(onListeningChange).toHaveBeenCalledWith(false);

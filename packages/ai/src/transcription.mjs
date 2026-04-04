@@ -93,10 +93,10 @@ export const resolveRealtimeTranscriptionPrompt = ({
 			: null;
 	const prompt = [
 		languageName ? `The spoken language is ${languageName}.` : null,
-		"Transcribe only the words that are clearly audible in this segment.",
+		"Transcribe the spoken words in this segment as literally as possible.",
 		"Do not translate, paraphrase, summarize, or complete a thought beyond the audio.",
 		"Preserve punctuation and filler words when they are spoken.",
-		"If the audio is unclear or low-confidence, return an empty transcript instead of guessing.",
+		"Prefer partial spoken wording over invented wording when the audio is unclear.",
 		isSystemAudioSource(source)
 			? "This audio comes from direct system playback."
 			: null,
@@ -268,7 +268,14 @@ export const shouldDropTranscriptForConfidence = ({
 		return true;
 	}
 
+	const summary = summarizeTranscriptConfidence({
+		logprobs,
+		source,
+		text: normalizedText,
+	});
+
 	if (
+		!summary ||
 		!isLowConfidenceTranscriptLogprobs({
 			logprobs,
 			source,
@@ -278,10 +285,39 @@ export const shouldDropTranscriptForConfidence = ({
 		return false;
 	}
 
-	const wordCount = getTranscriptWordCount(normalizedText);
-
 	if (isSystemAudioSource(source)) {
-		return wordCount <= 2 && normalizedText.length < 16;
+		if (summary.wordCount <= 2) {
+			return true;
+		}
+
+		if (summary.wordCount <= 4) {
+			return (
+				summary.average < 0.58 ||
+				summary.lowTokenRatio >= 0.45 ||
+				summary.veryLowTokenRatio >= 0.22 ||
+				summary.minProbability < 0.025
+			);
+		}
+
+		if (summary.wordCount <= 10) {
+			return (
+				summary.average < 0.5 ||
+				summary.lowTokenRatio >= 0.48 ||
+				summary.veryLowTokenRatio >= 0.2 ||
+				summary.minProbability < 0.018
+			);
+		}
+
+		if (summary.wordCount <= 14) {
+			return (
+				summary.average < 0.38 &&
+				(summary.lowTokenRatio >= 0.58 ||
+					summary.veryLowTokenRatio >= 0.24 ||
+					summary.minProbability < 0.012)
+			);
+		}
+
+		return false;
 	}
 
 	return true;
@@ -293,25 +329,10 @@ export const shouldKeepInterruptedTranscriptTurn = ({
 	text,
 }) => {
 	const normalizedText = normalizeTranscriptText(text);
-	const wordCount = getTranscriptWordCount(normalizedText);
 
 	if (!normalizedText || isTranscriptPlaceholderText(normalizedText)) {
 		return false;
 	}
 
-	if (
-		isLowConfidenceTranscriptLogprobs({
-			logprobs,
-			source,
-			text: normalizedText,
-		})
-	) {
-		return false;
-	}
-
-	if (isSystemAudioSource(source)) {
-		return wordCount >= 5 || normalizedText.length >= 28;
-	}
-
-	return wordCount >= 4 || normalizedText.length >= 24;
+	return true;
 };
