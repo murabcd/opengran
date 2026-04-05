@@ -1214,12 +1214,16 @@ function NoteChatHeader({
 }
 
 function InlinePopoverFooterContainer({
+	className,
 	children,
 }: {
+	className?: string;
 	children: React.ReactNode;
 }) {
 	return (
-		<div className={INLINE_POPOVER_FOOTER_CONTAINER_CLASS}>{children}</div>
+		<div className={cn(INLINE_POPOVER_FOOTER_CONTAINER_CLASS, className)}>
+			{children}
+		</div>
 	);
 }
 
@@ -1232,6 +1236,7 @@ function ChatInlinePopoverFooter({
 	handleTextareaChange,
 	hasMessage,
 	isChatLoading,
+	isSidebarCompact = false,
 	message,
 	speechControls,
 	textareaRef,
@@ -1244,6 +1249,7 @@ function ChatInlinePopoverFooter({
 	handleTextareaChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
 	hasMessage: boolean;
 	isChatLoading: boolean;
+	isSidebarCompact?: boolean;
 	message: string;
 	speechControls: React.ReactNode;
 	textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -1261,10 +1267,19 @@ function ChatInlinePopoverFooter({
 				onFocus={activateInlineOnFocus ? handleComposerFocus : undefined}
 				onKeyDown={handleKeyDown}
 				placeholder={composerPlaceholder}
-				className="min-h-[40px] max-h-52 overflow-y-auto px-4 pt-2 pb-0 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+				className={cn(
+					"min-h-[40px] max-h-52 overflow-y-auto pt-2 pb-0 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0",
+					isSidebarCompact ? "px-3.5" : "px-4",
+				)}
 				rows={1}
 			/>
-			<InputGroupAddon align="block-end" className="gap-1 px-4 pb-2.5">
+			<InputGroupAddon
+				align="block-end"
+				className={cn(
+					"gap-1 pb-2.5",
+					isSidebarCompact ? "pl-3.5 pr-2.5" : "px-4",
+				)}
+			>
 				{speechControls}
 				<InputGroupButton
 					type="submit"
@@ -1289,7 +1304,7 @@ function TranscriptInlinePopoverFooter({
 	speechControls: React.ReactNode;
 }) {
 	return (
-		<InlinePopoverFooterContainer>
+		<InlinePopoverFooterContainer className="absolute inset-x-0 bottom-[6px] z-10 px-[6px] pb-0">
 			<div className="relative">
 				{isSpeechListening ? (
 					<div className="pointer-events-none absolute inset-x-4 bottom-full z-10 mb-2 rounded-lg bg-muted/70 px-4 py-1 text-center text-[11px] leading-4 text-muted-foreground/90">
@@ -1389,6 +1404,7 @@ function ChatComposerForm({
 				handleTextareaChange={controller.handleTextareaChange}
 				hasMessage={controller.hasMessage}
 				isChatLoading={controller.isChatLoading}
+				isSidebarCompact={controller.isSidebarPresentation}
 				message={controller.message}
 				speechControls={speechControls}
 				textareaRef={controller.textareaRef}
@@ -1475,9 +1491,20 @@ function NoteComposerChatPanelContent({
 	chatPanelHeader: React.ReactNode;
 }) {
 	const shouldRenderInlineComposer = controller.shouldShowInlinePanel;
+	const isFloatingComposer =
+		controller.presentationMode === "floating" && !shouldRenderInlineComposer;
+	const floatingFooterContainerClassName =
+		"absolute inset-x-0 bottom-[6px] z-10 px-[6px] pb-0";
+	const inlineFooterContainerClassName =
+		"absolute inset-x-0 bottom-[6px] z-10 px-[6px] pb-0";
 	const chatFooter = (
 		<ChatComposerForm
 			controller={controller}
+			formClassName={
+				controller.isSidebarPresentation
+					? "-mx-[2px] w-[calc(100%+4px)]"
+					: undefined
+			}
 			speechControls={
 				shouldRenderInlineComposer ? null : (
 					<div aria-hidden="true" className="h-7 w-[60px] shrink-0" />
@@ -1493,20 +1520,30 @@ function NoteComposerChatPanelContent({
 			<CardContent
 				className={cn(
 					"flex flex-1 overflow-hidden",
-					controller.isSidebarPresentation ? "px-2 pb-2" : "px-4 pb-4",
+					controller.isSidebarPresentation
+						? "px-2 pb-2"
+						: shouldRenderInlineComposer || isFloatingComposer
+							? "px-4 pb-[120px]"
+							: "px-4 pb-4",
 				)}
 			>
 				{chatPanelBody}
 			</CardContent>
 
-			{shouldRenderInlineComposer ? (
-				<InlinePopoverFooterContainer>
+			{shouldRenderInlineComposer || isFloatingComposer ? (
+				<InlinePopoverFooterContainer
+					className={
+						isFloatingComposer
+							? floatingFooterContainerClassName
+							: inlineFooterContainerClassName
+					}
+				>
 					{chatFooter}
 				</InlinePopoverFooterContainer>
 			) : (
 				<div
 					className={cn(
-						controller.isSidebarPresentation ? "px-2 pb-2" : "px-4 pb-4",
+						controller.isSidebarPresentation ? "px-2 pb-[6px]" : "px-4 pb-4",
 					)}
 				>
 					{chatFooter}
@@ -1530,7 +1567,11 @@ function NoteComposerTranscriptPanelContent({
 			<CardContent
 				className={cn(
 					"flex flex-1 overflow-hidden",
-					controller.isSidebarPresentation ? "px-2 pb-2" : "px-4 pb-4",
+					controller.isSidebarPresentation
+						? "px-2 pb-2"
+						: shouldRenderInlineComposer
+							? "px-4 pb-[120px]"
+							: "px-4 pb-4",
 				)}
 			>
 				<NoteTranscriptPanel controller={controller} />
@@ -1610,11 +1651,11 @@ function NoteComposerPanels({
 		return (
 			<div
 				ref={controller.inlinePanelRef}
-				className="absolute inset-x-0 -bottom-4 z-20"
+				className="absolute inset-x-0 -bottom-[6px] z-20"
 			>
 				<div className="relative flex items-end gap-3">
 					<Card
-						className="pointer-events-auto relative -mx-6 max-h-[calc(100dvh-6rem)] min-h-[20rem] w-[calc(100%+3rem)] gap-0 overflow-hidden py-0"
+						className="pointer-events-auto relative -mx-[6px] max-h-[calc(100dvh-6rem)] min-h-[20rem] w-[calc(100%+12px)] gap-0 overflow-hidden bg-sidebar py-0 text-sidebar-foreground ring-sidebar-border"
 						style={{
 							height: controller.inlinePanelHeight,
 							maxHeight: controller.getInlinePanelMaxHeight(),
@@ -1648,18 +1689,25 @@ function NoteComposerPanels({
 			style={
 				controller.presentationMode === "floating" && !controller.isMobile
 					? ({
-							"--sidebar-width": NOTE_CHAT_FLOATING_WIDTH,
+							"--sidebar-width": `calc(${NOTE_CHAT_FLOATING_WIDTH} - 20px)`,
 						} as React.CSSProperties)
 					: undefined
 			}
 			className={cn(
 				"flex flex-col",
 				controller.presentationMode === "floating"
-					? "md:right-2 md:top-auto md:bottom-2 md:h-[min(32rem,calc(100svh-2rem))]"
+					? "md:right-[18px] md:top-auto md:bottom-[5px] md:h-[min(32rem,calc(100svh-2rem))]"
 					: "border-l",
 			)}
 		>
-			<div className="flex h-full flex-col">{panelContent}</div>
+			<div
+				className={cn(
+					"flex h-full flex-col",
+					controller.presentationMode === "floating" && "relative",
+				)}
+			>
+				{panelContent}
+			</div>
 		</Sidebar>
 	);
 }

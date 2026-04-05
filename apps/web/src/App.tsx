@@ -3857,7 +3857,7 @@ function SharedView({
 								</EmptyMedia>
 								<EmptyTitle>No shared notes yet</EmptyTitle>
 								<EmptyDescription>
-									When you share a note with someone else, it will show up here
+									Share a note with someone else
 								</EmptyDescription>
 							</EmptyHeader>
 						</Empty>
