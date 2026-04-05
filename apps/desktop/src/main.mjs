@@ -77,6 +77,8 @@ const captureHealthTimeoutMs = 3_000;
 const desktopRealtimeConfigAckTimeoutMs = 1_500;
 const desktopRealtimeConnectTimeoutMs = 10_000;
 const desktopRealtimePendingAudioChunkLimit = 50;
+const desktopRealtimeStopFlushTimeoutMs = 1_500;
+const desktopRealtimeStopFlushSettleTimeoutMs = 750;
 const maxRecoveryAttempts = 3;
 const recoveryBackoffMs = [750, 1_500, 3_000];
 const systemAudioAttachRetryBackoffMs = [750, 1_500, 3_000];
@@ -2597,6 +2599,103 @@ const parseDesktopRealtimeTransportEvent = ({ event, speaker }) => {
 	return null;
 };
 
+const resolveDesktopRealtimeStopFlush = (session) => {
+	const stopFlush = session.stopFlush;
+
+	if (!stopFlush) {
+		return;
+	}
+
+	clearTimeout(stopFlush.timeoutId);
+	clearTimeout(stopFlush.settleTimeoutId);
+	session.stopFlush = null;
+	stopFlush.resolve();
+};
+
+const settleDesktopRealtimeStopFlush = (session) => {
+	const stopFlush = session.stopFlush;
+
+	if (!stopFlush) {
+		return;
+	}
+
+	clearTimeout(stopFlush.settleTimeoutId);
+	stopFlush.settleTimeoutId = setTimeout(() => {
+		resolveDesktopRealtimeStopFlush(session);
+	}, desktopRealtimeStopFlushSettleTimeoutMs);
+};
+
+const notifyDesktopRealtimeStopFlushEvent = (session, transportEvent) => {
+	const stopFlush = session?.stopFlush;
+
+	if (!stopFlush || !transportEvent) {
+		return;
+	}
+
+	if (transportEvent.type === "committed") {
+		stopFlush.targetItemId ??= transportEvent.itemId;
+		settleDesktopRealtimeStopFlush(session);
+		return;
+	}
+
+	if (
+		(transportEvent.type === "final" ||
+			transportEvent.type === "turn_failed") &&
+		(!stopFlush.targetItemId ||
+			transportEvent.itemId === stopFlush.targetItemId)
+	) {
+		resolveDesktopRealtimeStopFlush(session);
+	}
+};
+
+const flushDesktopRealtimeTransportOnStop = async (session) => {
+	if (
+		session.socket.readyState !== WebSocket.OPEN ||
+		!session.isConfigured ||
+		session.stopFlush
+	) {
+		return;
+	}
+
+	const targetItemId =
+		transcriptionSpeakers[session.speaker]?.liveItemId ?? null;
+
+	console.info("[desktop-realtime] flushing transport before stop", {
+		profile: session.profile,
+		source: session.source,
+		speaker: session.speaker,
+		targetItemId,
+	});
+
+	await new Promise((resolvePromise) => {
+		session.stopFlush = {
+			resolve: resolvePromise,
+			settleTimeoutId: null,
+			targetItemId,
+			timeoutId: setTimeout(() => {
+				resolveDesktopRealtimeStopFlush(session);
+			}, desktopRealtimeStopFlushTimeoutMs),
+		};
+
+		try {
+			session.socket.send(
+				JSON.stringify({
+					type: "input_audio_buffer.commit",
+				}),
+			);
+			settleDesktopRealtimeStopFlush(session);
+		} catch (error) {
+			console.warn("[desktop-realtime] failed to flush transport on stop", {
+				message: error instanceof Error ? error.message : String(error),
+				profile: session.profile,
+				source: session.source,
+				speaker: session.speaker,
+			});
+			resolveDesktopRealtimeStopFlush(session);
+		}
+	});
+};
+
 const stopDesktopRealtimeTransport = async (speaker) => {
 	const session = desktopRealtimeTransportSessions.get(speaker);
 
@@ -2610,6 +2709,7 @@ const stopDesktopRealtimeTransport = async (speaker) => {
 	session.unsubscribeCapture = null;
 	clearTimeout(session.openTimeout);
 	clearTimeout(session.configAckTimeout);
+	await flushDesktopRealtimeTransportOnStop(session);
 
 	await new Promise((resolvePromise) => {
 		const finalize = () => {
@@ -3050,6 +3150,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 				});
 
 				if (transportEvent) {
+					notifyDesktopRealtimeStopFlushEvent(session, transportEvent);
 					void handleDesktopRealtimeTransportEvent(transportEvent);
 				}
 			} catch (error) {
@@ -3182,13 +3283,14 @@ const appendTranscriptionTailUtterance = (speaker) => {
 
 const stopTranscriptionSpeaker = async (speaker) => {
 	const state = transcriptionSpeakers[speaker];
-	appendTranscriptionTailUtterance(speaker);
 
 	if (speaker === "you") {
 		await stopDesktopRealtimeTransport("you");
+		appendTranscriptionTailUtterance(speaker);
 		await stopMicrophoneCapture();
 	} else {
 		await stopDesktopRealtimeTransport("them");
+		appendTranscriptionTailUtterance(speaker);
 		await stopSystemAudioCapture();
 	}
 
