@@ -69,6 +69,47 @@ export declare function createRealtimeTranscriptionSession(options?: {
 	};
 };
 
+export declare function resolveDesktopRealtimeProfile(args?: {
+	source?: string | null;
+	speaker?: string | null;
+}): "default" | "semantic_low";
+
+export declare function createDesktopRealtimeTranscriptionSession(args?: {
+	language?: string | null;
+	source?: string | null;
+	speaker?: string | null;
+}): {
+	type: "transcription";
+	include: readonly ["item.input_audio_transcription.logprobs"];
+	audio: {
+		input: {
+			format: {
+				rate: 24000;
+				type: "audio/pcm";
+			};
+			noise_reduction: {
+				type: "near_field" | "far_field";
+			} | null;
+			turn_detection:
+				| {
+						type: "server_vad";
+						threshold: number;
+						prefix_padding_ms: number;
+						silence_duration_ms: number;
+				  }
+				| {
+						type: "semantic_vad";
+						eagerness: "low";
+				  };
+			transcription: {
+				model: "gpt-4o-transcribe";
+				prompt?: string;
+				language?: string;
+			};
+		};
+	};
+};
+
 export declare function summarizeTranscriptConfidence(args: {
 	logprobs?: Array<{
 		bytes?: number[];

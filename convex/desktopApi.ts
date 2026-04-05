@@ -32,8 +32,7 @@ import {
 	finalizeGeneratedChatTitle,
 } from "../packages/ai/src/chat-titles.mjs";
 import {
-	createRealtimeTranscriptionSession,
-	createRealtimeTranscriptionSessionOptions,
+	createDesktopRealtimeTranscriptionSession,
 	normalizeTranscriptionLanguage,
 	TRANSCRIPTION_MODEL,
 } from "../packages/ai/src/transcription.mjs";
@@ -608,10 +607,12 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 
 	const body = (await request.json().catch(() => ({}))) as {
 		lang?: string;
+		speaker?: string;
 		source?: string;
 	};
 	const language = normalizeTranscriptionLanguage(body.lang);
 	const requestId = crypto.randomUUID();
+	const speaker = trim(body.speaker);
 	const source = trim(body.source);
 	const sessionResponse = await fetch(
 		"https://api.openai.com/v1/realtime/client_secrets",
@@ -627,12 +628,11 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 					anchor: "created_at",
 					seconds: 600,
 				},
-				session: createRealtimeTranscriptionSession(
-					createRealtimeTranscriptionSessionOptions({
-						language,
-						source,
-					}),
-				),
+				session: createDesktopRealtimeTranscriptionSession({
+					language,
+					source,
+					speaker,
+				}),
 			}),
 		},
 	);

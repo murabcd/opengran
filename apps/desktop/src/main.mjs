@@ -34,11 +34,11 @@ import WebSocket from "ws";
 import { api } from "../../../convex/_generated/api.js";
 import { createPcm16Resampler } from "../../../packages/ai/src/pcm16-resampler.mjs";
 import {
-	createRealtimeTranscriptionSession,
-	createRealtimeTranscriptionSessionOptions,
+	createDesktopRealtimeTranscriptionSession,
 	isLowConfidenceTranscriptLogprobs,
 	isTranscriptPlaceholderText,
 	normalizeTranscriptionLanguage,
+	resolveDesktopRealtimeProfile,
 } from "../../../packages/ai/src/transcription.mjs";
 import { getDesktopAuthClient } from "./auth-client.mjs";
 import { loadRootEnv } from "./env.mjs";
@@ -2743,46 +2743,13 @@ const scheduleTranscriptionRollover = () => {
 	}, realtimeSessionRolloverMs);
 };
 
-const resolveDesktopRealtimeProfile = ({ source, speaker }) => {
-	if (source === "systemAudio" && speaker === "them") {
-		return "semantic_low";
-	}
-
-	return "default";
-};
-
 const createDesktopRealtimeSessionConfig = ({ lang, source, speaker }) => {
 	const language = normalizeTranscriptionLanguage(lang);
-	const profile = resolveDesktopRealtimeProfile({
+	return createDesktopRealtimeTranscriptionSession({
+		language,
 		source,
 		speaker,
 	});
-	const session = createRealtimeTranscriptionSession(
-		createRealtimeTranscriptionSessionOptions({
-			language,
-			source,
-		}),
-	);
-
-	if (profile === "semantic_low") {
-		session.audio.input.turn_detection = {
-			type: "semantic_vad",
-			eagerness: "low",
-		};
-	}
-
-	return {
-		...session,
-		audio: {
-			input: {
-				...session.audio.input,
-				format: {
-					rate: 24_000,
-					type: "audio/pcm",
-				},
-			},
-		},
-	};
 };
 
 const createDesktopRealtimeSessionUpdateEvent = ({
@@ -2825,6 +2792,7 @@ const createDesktopRealtimeClientSecret = async ({ lang, source, speaker }) => {
 				body: JSON.stringify({
 					lang,
 					source,
+					speaker,
 				}),
 			},
 		);

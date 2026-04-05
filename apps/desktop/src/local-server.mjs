@@ -36,8 +36,7 @@ import {
 	ENHANCED_NOTE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
 import {
-	createRealtimeTranscriptionSession,
-	createRealtimeTranscriptionSessionOptions,
+	createDesktopRealtimeTranscriptionSession,
 	normalizeTranscriptionLanguage,
 	TRANSCRIPTION_MODEL,
 } from "../../../packages/ai/src/transcription.mjs";
@@ -649,12 +648,12 @@ const handleChatRequest = async (request, response) => {
 
 const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 	if (shouldProxyHostedAiRequest()) {
-		const { lang, source } = await readJsonBody(request);
+		const { lang, source, speaker } = await readJsonBody(request);
 		await proxyHostedAiRequest({
 			path: "/api/realtime-transcription-session",
 			request,
 			response,
-			bodyOverride: JSON.stringify({ lang, source }),
+			bodyOverride: JSON.stringify({ lang, source, speaker }),
 			headersOverride: {
 				"content-type": "application/json",
 				"content-length": null,
@@ -663,7 +662,7 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 		return;
 	}
 
-	const { lang, source } = await readJsonBody(request);
+	const { lang, source, speaker } = await readJsonBody(request);
 	const language = normalizeTranscriptionLanguage(lang);
 	const requestId = crypto.randomUUID();
 
@@ -681,12 +680,11 @@ const handleRealtimeTranscriptionSessionRequest = async (request, response) => {
 					anchor: "created_at",
 					seconds: 600,
 				},
-				session: createRealtimeTranscriptionSession(
-					createRealtimeTranscriptionSessionOptions({
-						language,
-						source,
-					}),
-				),
+				session: createDesktopRealtimeTranscriptionSession({
+					language,
+					source,
+					speaker,
+				}),
 			}),
 		},
 	);

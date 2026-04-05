@@ -9,6 +9,7 @@ const systemAudioSources = new Set([
 	"system-audio",
 	"system_audio",
 ]);
+const themSpeakers = new Set(["them"]);
 
 const transcriptionLanguageNames = {
 	de: "German",
@@ -45,6 +46,13 @@ const isSystemAudioSource = (source) => {
 		typeof source === "string" ? source.trim().toLowerCase() : "";
 
 	return systemAudioSources.has(normalizedSource);
+};
+
+const isThemSpeaker = (speaker) => {
+	const normalizedSpeaker =
+		typeof speaker === "string" ? speaker.trim().toLowerCase() : "";
+
+	return themSpeakers.has(normalizedSpeaker);
 };
 
 export const normalizeTranscriptText = (value) =>
@@ -150,6 +158,54 @@ export const createRealtimeTranscriptionSession = ({
 		},
 	},
 });
+
+export const resolveDesktopRealtimeProfile = ({
+	source = null,
+	speaker = null,
+} = {}) => {
+	if (isSystemAudioSource(source) && isThemSpeaker(speaker)) {
+		return "semantic_low";
+	}
+
+	return "default";
+};
+
+export const createDesktopRealtimeTranscriptionSession = ({
+	language = null,
+	source = null,
+	speaker = null,
+} = {}) => {
+	const profile = resolveDesktopRealtimeProfile({
+		source,
+		speaker,
+	});
+	const session = createRealtimeTranscriptionSession(
+		createRealtimeTranscriptionSessionOptions({
+			language,
+			source,
+		}),
+	);
+
+	if (profile === "semantic_low") {
+		session.audio.input.turn_detection = {
+			type: "semantic_vad",
+			eagerness: "low",
+		};
+	}
+
+	return {
+		...session,
+		audio: {
+			input: {
+				...session.audio.input,
+				format: {
+					rate: 24_000,
+					type: "audio/pcm",
+				},
+			},
+		},
+	};
+};
 
 const clampProbability = (logprob) => {
 	if (typeof logprob !== "number" || Number.isNaN(logprob)) {
