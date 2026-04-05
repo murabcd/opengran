@@ -36,7 +36,6 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
 	Check,
-	FileText,
 	Globe,
 	Link2,
 	Lock,
@@ -750,13 +749,10 @@ function NoteRenameEditor({
 				<DialogHeader>
 					<DialogTitle>Rename note</DialogTitle>
 					<DialogDescription>
-						Update the note title and press Enter or click Rename to save.
+						Enter a new title for this note.
 					</DialogDescription>
 				</DialogHeader>
-				<div className="flex items-center gap-2">
-					<div className="bg-muted/30 flex size-8 items-center justify-center rounded-lg border">
-						<FileText className="text-muted-foreground size-5" />
-					</div>
+				<div>
 					<NoteTitleEditInput
 						focusOnMount
 						commitOnBlur={false}
