@@ -5,15 +5,18 @@ import {
 	SidebarContent,
 	SidebarFooter,
 	SidebarHeader,
+	useSidebar,
 } from "@workspace/ui/components/sidebar";
 import {
 	FileText,
 	Home,
+	Inbox,
 	MessageCircle,
 	Search,
 	UsersRound,
 } from "lucide-react";
 import * as React from "react";
+import { InboxSheet } from "@/components/inbox/inbox-sheet";
 import { NavMain } from "@/components/nav/nav-main";
 import { NavNotes } from "@/components/nav/nav-notes";
 import { NavTrash } from "@/components/nav/nav-trash";
@@ -54,12 +57,18 @@ const navigation = [
 		view: "chat",
 		icon: MessageCircle,
 	},
+	{
+		title: "Inbox",
+		action: "inbox",
+		icon: Inbox,
+	},
 ] as const;
 
 export function AppSidebar({
 	workspaces,
 	activeWorkspaceId,
 	currentView,
+	inboxOpen,
 	user,
 	chats,
 	notes,
@@ -67,6 +76,7 @@ export function AppSidebar({
 	onWorkspaceSelect,
 	onWorkspaceCreate,
 	onViewChange,
+	onInboxOpenChange,
 	settingsOpen,
 	settingsPage = "Profile",
 	onSettingsOpenChange,
@@ -83,7 +93,8 @@ export function AppSidebar({
 }: React.ComponentProps<typeof Sidebar> & {
 	workspaces: Array<WorkspaceRecord>;
 	activeWorkspaceId: Id<"workspaces"> | null;
-	currentView: "home" | "chat" | "shared" | "note" | "notFound";
+	currentView: "home" | "chat" | "inbox" | "shared" | "note" | "notFound";
+	inboxOpen: boolean;
 	user: {
 		name: string;
 		email: string;
@@ -94,7 +105,8 @@ export function AppSidebar({
 	sharedNotes: Array<Doc<"notes">> | undefined;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
 	onWorkspaceCreate: (input: { name: string }) => Promise<WorkspaceRecord>;
-	onViewChange: (view: "home" | "chat" | "shared" | "note") => void;
+	onViewChange: (view: "home" | "chat" | "inbox" | "shared" | "note") => void;
+	onInboxOpenChange: (open: boolean) => void;
 	settingsOpen: boolean;
 	settingsPage?: SettingsPage;
 	onSettingsOpenChange: (open: boolean, page?: SettingsPage) => void;
@@ -108,6 +120,7 @@ export function AppSidebar({
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
+	const { isMobile, state } = useSidebar();
 	const [searchOpen, setSearchOpen] = React.useState(false);
 	const [trashOpen, setTrashOpen] = React.useState(false);
 	const [templatesOpen, setTemplatesOpen] = React.useState(false);
@@ -121,9 +134,12 @@ export function AppSidebar({
 		() =>
 			navigation.map((item) => ({
 				...item,
-				isActive: item.action === "view" && item.view === currentView,
+				isActive:
+					item.action === "inbox"
+						? inboxOpen
+						: item.action === "view" && item.view === currentView,
 			})),
-		[currentView],
+		[currentView, inboxOpen],
 	);
 	const searchItems: SearchCommandItem[] = [
 		...(notes ?? []).map((note) => ({
@@ -166,6 +182,7 @@ export function AppSidebar({
 							items={navItems}
 							onViewChange={onViewChange}
 							onSearchOpen={() => setSearchOpen(true)}
+							onInboxToggle={() => onInboxOpenChange(!inboxOpen)}
 						/>
 					</div>
 				</SidebarHeader>
@@ -234,6 +251,12 @@ export function AppSidebar({
 				onPageChange={(page) => onSettingsOpenChange(true, page)}
 			/>
 			<TemplatesDialog open={templatesOpen} onOpenChange={setTemplatesOpen} />
+			<InboxSheet
+				open={inboxOpen}
+				onOpenChange={onInboxOpenChange}
+				sidebarState={state}
+				isMobile={isMobile}
+			/>
 		</>
 	);
 }

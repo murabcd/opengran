@@ -104,7 +104,7 @@ type AppUser = {
 	avatar: string;
 };
 
-type AppView = "home" | "chat" | "shared" | "note" | "notFound";
+type AppView = "home" | "chat" | "inbox" | "shared" | "note" | "notFound";
 type AppLocationState = {
 	view: AppView;
 	chatId: string | null;
@@ -113,7 +113,7 @@ type AppLocationState = {
 	shouldStopNoteCaptureWhenMeetingEnds: boolean;
 	scheduledAutoStartNoteCaptureAt: string | null;
 	pendingCalendarEvent: UpcomingCalendarEvent | null;
-	canonicalPath: "/home" | "/chat" | "/shared" | "/note" | null;
+	canonicalPath: "/home" | "/chat" | "/inbox" | "/shared" | "/note" | null;
 	canonicalSearch: string;
 };
 type SocialAuthProvider = "github" | "google";
@@ -514,9 +514,11 @@ const getAppLocationState = (url: URL): AppLocationState => {
 				? "note"
 				: url.hash === "#chat"
 					? "chat"
-					: url.hash === "#shared"
-						? "shared"
-						: null
+					: url.hash === "#inbox"
+						? "inbox"
+						: url.hash === "#shared"
+							? "shared"
+							: null
 			: null;
 	const pathView =
 		pathname === "/"
@@ -527,9 +529,11 @@ const getAppLocationState = (url: URL): AppLocationState => {
 					? "note"
 					: pathname === "/chat"
 						? "chat"
-						: pathname === "/shared"
-							? "shared"
-							: null;
+						: pathname === "/inbox"
+							? "inbox"
+							: pathname === "/shared"
+								? "shared"
+								: null;
 	const view = hashView ?? pathView;
 
 	if (view === null) {
@@ -570,9 +574,11 @@ const getAppLocationState = (url: URL): AppLocationState => {
 				? "/home"
 				: view === "chat"
 					? "/chat"
-					: view === "shared"
-						? "/shared"
-						: "/note",
+					: view === "inbox"
+						? "/inbox"
+						: view === "shared"
+							? "/shared"
+							: "/note",
 		canonicalSearch:
 			view === "note"
 				? createNoteSearch({
@@ -1823,7 +1829,15 @@ const useAppShellState = ({
 			return "home";
 		}
 
-		return getAppLocationState(new URL(window.location.href)).view;
+		const initialView = getAppLocationState(new URL(window.location.href)).view;
+		return initialView === "inbox" ? "home" : initialView;
+	});
+	const [inboxOpen, setInboxOpen] = React.useState(() => {
+		if (typeof window === "undefined") {
+			return false;
+		}
+
+		return getAppLocationState(new URL(window.location.href)).view === "inbox";
 	});
 	const [isDesktopMac, setIsDesktopMac] = React.useState(initialDesktopMac);
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -2215,7 +2229,8 @@ const useAppShellState = ({
 				: url;
 			const nextLocationState = getAppLocationState(contentUrl);
 			const nextChatId = nextLocationState.chatId;
-			const nextView = nextLocationState.view;
+			const nextInboxOpen = nextLocationState.view === "inbox";
+			const nextView = nextInboxOpen ? "home" : nextLocationState.view;
 			const nextNoteIdString = nextLocationState.noteIdString;
 			const nextShouldAutoStartNoteCapture =
 				nextLocationState.shouldAutoStartNoteCapture;
@@ -2224,6 +2239,7 @@ const useAppShellState = ({
 			const nextScheduledAutoStartNoteCaptureAt =
 				nextLocationState.scheduledAutoStartNoteCaptureAt;
 
+			setInboxOpen(nextInboxOpen);
 			setCurrentView(nextView);
 			setCurrentChatId(nextChatId);
 			setChatComposerId(
@@ -2244,10 +2260,14 @@ const useAppShellState = ({
 
 			const nextPath = nextSettingsOpen
 				? getSettingsPath(nextSettingsPage ?? "Profile")
-				: nextLocationState.canonicalPath;
+				: nextInboxOpen
+					? "/home"
+					: nextLocationState.canonicalPath;
 			const nextSearch = nextSettingsOpen
 				? ""
-				: nextLocationState.canonicalSearch;
+				: nextInboxOpen
+					? ""
+					: nextLocationState.canonicalSearch;
 			const nextHash = "";
 			if (
 				nextPath &&
@@ -2317,6 +2337,7 @@ const useAppShellState = ({
 	}, []);
 
 	const openFreshChat = React.useCallback(() => {
+		setInboxOpen(false);
 		setCurrentView("chat");
 		setSettingsOpen(false);
 		setCurrentChatId(null);
@@ -2326,11 +2347,18 @@ const useAppShellState = ({
 
 	const handleViewChange = React.useCallback(
 		(view: AppView) => {
+			if (view === "inbox") {
+				setInboxOpen(true);
+				setSettingsOpen(false);
+				return;
+			}
+
 			if (view === "chat") {
 				openFreshChat();
 				return;
 			}
 
+			setInboxOpen(false);
 			setCurrentView(view);
 			setSettingsOpen(false);
 			setCurrentNoteEditorActions(null);
@@ -2351,6 +2379,13 @@ const useAppShellState = ({
 		[openFreshChat, resolvedCurrentNoteId],
 	);
 
+	const handleInboxOpenChange = React.useCallback((open: boolean) => {
+		setInboxOpen(open);
+		if (open) {
+			setSettingsOpen(false);
+		}
+	}, []);
+
 	const openNote = React.useCallback(
 		(
 			noteId: Id<"notes">,
@@ -2360,6 +2395,7 @@ const useAppShellState = ({
 				stopCaptureWhenMeetingEnds?: boolean;
 			},
 		) => {
+			setInboxOpen(false);
 			setCurrentView("note");
 			setSettingsOpen(false);
 			setCurrentNoteId(noteId);
@@ -2566,6 +2602,7 @@ const useAppShellState = ({
 				return;
 			}
 
+			setInboxOpen(false);
 			const currentUrl = new URL(window.location.href);
 			if (getSettingsPageFromPath(currentUrl.pathname) === null) {
 				lastNonSettingsLocationRef.current = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
@@ -2659,6 +2696,7 @@ const useAppShellState = ({
 		[handleViewChange, resolvedCurrentNoteId],
 	);
 	const handleOpenChat = React.useCallback((chatId: string) => {
+		setInboxOpen(false);
 		setCurrentView("chat");
 		setSettingsOpen(false);
 		setCurrentChatId(chatId);
@@ -2727,6 +2765,7 @@ const useAppShellState = ({
 		currentNoteTitle,
 		currentView: resolvedCurrentView,
 		currentWeekdayLabel,
+		inboxOpen,
 		handleAutoStartNoteCaptureHandled,
 		handleChatPersisted,
 		handleChatRemoved,
@@ -2734,6 +2773,7 @@ const useAppShellState = ({
 		handleQuickNote,
 		handleNewChat,
 		handleNoteTrashed,
+		handleInboxOpenChange,
 		handleOpenCalendarEventNote,
 		handleOpenCalendarSettings,
 		handleOpenChat,
@@ -2821,6 +2861,7 @@ function AppShell({
 					workspaces={controller.workspaces}
 					activeWorkspaceId={controller.activeWorkspaceId}
 					currentView={controller.currentView}
+					inboxOpen={controller.inboxOpen}
 					user={controller.user}
 					chats={controller.chats}
 					notes={controller.notes}
@@ -2828,6 +2869,7 @@ function AppShell({
 					onWorkspaceSelect={controller.setActiveWorkspaceId}
 					onWorkspaceCreate={controller.handleWorkspaceCreate}
 					onViewChange={controller.handleViewChange}
+					onInboxOpenChange={controller.handleInboxOpenChange}
 					settingsOpen={controller.settingsOpen}
 					settingsPage={controller.settingsPage}
 					onSettingsOpenChange={controller.handleSettingsOpenChange}
@@ -3248,6 +3290,10 @@ function AppShellHeaderActions({
 				New chat
 			</Button>
 		);
+	}
+
+	if (currentView === "inbox") {
+		return null;
 	}
 
 	if (currentView !== "note" || !currentNoteId) {

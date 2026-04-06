@@ -12,7 +12,7 @@ import { SidebarCollapsibleGroup } from "@/components/nav/sidebar-collapsible-gr
 type NavItem = {
 	title: string;
 	icon: LucideIcon;
-	action: "search" | "view" | "disabled";
+	action: "search" | "view" | "inbox" | "disabled";
 	view?: "home" | "chat" | "shared";
 	isActive?: boolean;
 };
@@ -22,11 +22,13 @@ export function NavMain({
 	items,
 	onViewChange,
 	onSearchOpen,
+	onInboxToggle,
 }: {
 	className?: string;
 	items: NavItem[];
 	onViewChange: (view: "home" | "chat" | "shared" | "note") => void;
 	onSearchOpen: () => void;
+	onInboxToggle: () => void;
 }) {
 	React.useEffect(() => {
 		const down = (event: KeyboardEvent) => {
@@ -58,6 +60,11 @@ export function NavMain({
 								onClick={() => {
 									if (searchItem.action === "search") {
 										onSearchOpen();
+										return;
+									}
+
+									if (searchItem.action === "inbox") {
+										onInboxToggle();
 										return;
 									}
 
@@ -96,6 +103,11 @@ export function NavMain({
 								<button
 									type="button"
 									onClick={() => {
+										if (item.action === "inbox") {
+											onInboxToggle();
+											return;
+										}
+
 										if (item.action !== "view" || !item.view) {
 											return;
 										}
