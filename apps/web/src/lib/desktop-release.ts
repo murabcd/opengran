@@ -1,0 +1,66 @@
+const GITHUB_OWNER = "murabcd";
+const GITHUB_REPO = "opengran";
+
+export const DESKTOP_RELEASES_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
+export const DESKTOP_LATEST_RELEASE_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
+
+export type GitHubReleaseAsset = {
+	name: string;
+	browser_download_url: string;
+};
+
+type GitHubLatestReleaseResponse = {
+	assets?: GitHubReleaseAsset[];
+	html_url?: string;
+};
+
+const DESKTOP_ASSET_EXTENSIONS = [".dmg", ".zip"];
+
+export const pickDesktopReleaseAsset = (
+	assets: GitHubLatestReleaseResponse["assets"],
+) => {
+	if (!assets?.length) {
+		return null;
+	}
+
+	for (const extension of DESKTOP_ASSET_EXTENSIONS) {
+		const preferredAsset = assets.find((asset) =>
+			asset.name.toLowerCase().endsWith(extension),
+		);
+
+		if (preferredAsset) {
+			return preferredAsset;
+		}
+	}
+
+	return null;
+};
+
+export const resolveLatestDesktopDownloadUrl = async (
+	fetchImpl: typeof fetch = fetch,
+) => {
+	try {
+		const response = await fetchImpl(DESKTOP_LATEST_RELEASE_API_URL, {
+			headers: {
+				Accept: "application/vnd.github+json",
+			},
+		});
+
+		if (!response.ok) {
+			throw new Error(
+				`GitHub latest release lookup failed: ${response.status}`,
+			);
+		}
+
+		const release = (await response.json()) as GitHubLatestReleaseResponse;
+		const preferredAsset = pickDesktopReleaseAsset(release.assets);
+
+		return (
+			preferredAsset?.browser_download_url ??
+			release.html_url ??
+			DESKTOP_RELEASES_URL
+		);
+	} catch {
+		return DESKTOP_RELEASES_URL;
+	}
+};

@@ -20,6 +20,7 @@ import {
 } from "@workspace/ui/components/sidebar";
 import { useTheme } from "@workspace/ui/components/theme-provider";
 import {
+	ArrowDownToLine,
 	ChevronsUpDown,
 	LayoutTemplate,
 	LogOut,
@@ -27,7 +28,10 @@ import {
 	Settings,
 	Sun,
 } from "lucide-react";
+import * as React from "react";
+import { toast } from "sonner";
 import { getAvatarSrc } from "@/lib/avatar";
+import { resolveLatestDesktopDownloadUrl } from "@/lib/desktop-release";
 
 export function NavUser({
 	user,
@@ -48,6 +52,9 @@ export function NavUser({
 }) {
 	const { isMobile } = useSidebar();
 	const { theme, setTheme } = useTheme();
+	const [preparingDesktopDownload, setPreparingDesktopDownload] =
+		React.useState(false);
+	const desktopDownloadInFlightRef = React.useRef(false);
 	const initials = user.name
 		.split(" ")
 		.map((part) => part[0])
@@ -61,6 +68,33 @@ export function NavUser({
 	const nextTheme = isDarkTheme ? "light" : "dark";
 	const ThemeIcon = isDarkTheme ? Sun : Moon;
 	const themeLabel = isDarkTheme ? "Light theme" : "Dark theme";
+	const isDesktopApp =
+		typeof window !== "undefined" && Boolean(window.openGranDesktop);
+
+	const handleDesktopDownload = React.useCallback(async () => {
+		if (desktopDownloadInFlightRef.current) {
+			return;
+		}
+
+		desktopDownloadInFlightRef.current = true;
+		setPreparingDesktopDownload(true);
+
+		try {
+			const downloadUrl = await resolveLatestDesktopDownloadUrl();
+
+			if (window.openGranDesktop?.openExternalUrl) {
+				await window.openGranDesktop.openExternalUrl(downloadUrl);
+				return;
+			}
+
+			window.location.assign(downloadUrl);
+		} catch {
+			toast.error("Failed to open the latest desktop download");
+		} finally {
+			desktopDownloadInFlightRef.current = false;
+			setPreparingDesktopDownload(false);
+		}
+	}, []);
 
 	return (
 		<SidebarMenu>
@@ -106,6 +140,18 @@ export function NavUser({
 							<LayoutTemplate />
 							Manage templates
 						</DropdownMenuItem>
+						{!isDesktopApp ? (
+							<DropdownMenuItem
+								className="h-8 gap-2 px-2"
+								onSelect={() => void handleDesktopDownload()}
+								disabled={preparingDesktopDownload}
+							>
+								<ArrowDownToLine />
+								{preparingDesktopDownload
+									? "Preparing download..."
+									: "Download desktop app"}
+							</DropdownMenuItem>
+						) : null}
 						<DropdownMenuItem
 							className="h-8 gap-2 px-2"
 							onClick={onSettingsOpen}
