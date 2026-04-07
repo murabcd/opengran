@@ -566,7 +566,7 @@ function InboxPanel({
 						<div key={item._id} className="border-b">
 							<button
 								type="button"
-								className="w-full px-3 py-3 text-left transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								className="w-full cursor-pointer px-3 py-3 text-left transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 								onClick={() => {
 									void handleMarkItemRead(item).catch((error) => {
 										toast.error(
@@ -613,6 +613,7 @@ function InboxPanel({
 								<Button
 									type="button"
 									variant="outline"
+									className="cursor-pointer"
 									onClick={() => {
 										void handleOpenItem(item).catch((error) => {
 											toast.error(
