@@ -2,6 +2,7 @@ import { Kbd } from "@workspace/ui/components/kbd";
 import {
 	SidebarGroup,
 	SidebarMenu,
+	SidebarMenuBadge,
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from "@workspace/ui/components/sidebar";
@@ -15,6 +16,7 @@ type NavItem = {
 	action: "search" | "view" | "inbox" | "disabled";
 	view?: "home" | "chat" | "shared";
 	isActive?: boolean;
+	badge?: number;
 };
 
 export function NavMain({
@@ -119,10 +121,19 @@ export function NavMain({
 									<span>{item.title}</span>
 								</button>
 							</SidebarMenuButton>
+							{item.badge ? (
+								<SidebarMenuBadge className="top-1 rounded-full bg-destructive/15 text-destructive peer-hover/menu-button:text-destructive peer-data-active/menu-button:text-destructive dark:text-red-500">
+									{formatBadgeCount(item.badge)}
+								</SidebarMenuBadge>
+							) : null}
 						</SidebarMenuItem>
 					))}
 				</SidebarMenu>
 			</SidebarCollapsibleGroup>
 		</SidebarGroup>
 	);
+}
+
+function formatBadgeCount(value: number) {
+	return value > 99 ? "99+" : String(value);
 }

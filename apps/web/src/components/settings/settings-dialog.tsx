@@ -24,6 +24,11 @@ import {
 } from "@workspace/ui/components/breadcrumb";
 import { Button } from "@workspace/ui/components/button";
 import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from "@workspace/ui/components/collapsible";
+import {
 	Dialog,
 	DialogContent,
 	DialogDescription,
@@ -38,6 +43,12 @@ import {
 } from "@workspace/ui/components/field";
 import { Icons } from "@workspace/ui/components/icons";
 import { Input } from "@workspace/ui/components/input";
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupInput,
+} from "@workspace/ui/components/input-group";
 import { Label } from "@workspace/ui/components/label";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import {
@@ -65,6 +76,9 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import {
 	Bell,
 	CalendarDays,
+	Check,
+	ChevronDown,
+	Copy,
 	Database,
 	FolderKanban,
 	ImageUp,
@@ -76,9 +90,11 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
+import { writeTextToClipboard } from "@/components/note/share-note";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { authClient } from "@/lib/auth-client";
 import { getAvatarSrc } from "@/lib/avatar";
+import { loadRuntimeConfig } from "@/lib/runtime-config";
 import {
 	getTranscriptionLanguageSelectValue,
 	OTHER_TRANSCRIPTION_LANGUAGE_OPTIONS,
@@ -1502,6 +1518,7 @@ function ConnectionsSettings() {
 	const {
 		activeWorkspaceId,
 		handleConnectJira,
+		handleCopyJiraWebhookUrl,
 		handleConnectYandexTracker,
 		handleJiraDialogOpenChange,
 		handleYandexTrackerDialogOpenChange,
@@ -1511,7 +1528,9 @@ function ConnectionsSettings() {
 		isSavingYandexTrackerConnection,
 		isYandexTrackerDialogOpen,
 		isYandexTrackerFormValid,
+		jiraConnection,
 		jiraFormState,
+		jiraWebhookUrl,
 		setJiraBaseUrl,
 		setJiraEmail,
 		setJiraToken,
@@ -1558,6 +1577,11 @@ function ConnectionsSettings() {
 				}}
 				isFormValid={isJiraFormValid}
 				isSaving={isSavingJiraConnection}
+				onCopyWebhookUrl={() => {
+					void handleCopyJiraWebhookUrl();
+				}}
+				showSyncSettings={Boolean(jiraConnection)}
+				webhookUrl={jiraWebhookUrl}
 			/>
 		</div>
 	);
@@ -1578,10 +1602,17 @@ function useConnectionsSettingsController() {
 		api.appConnectionActions.connectYandexTracker,
 	);
 	const connectJira = useAction(api.appConnectionActions.connectJira);
+	const prepareJiraMentionSync = useAction(
+		api.appConnectionActions.prepareJiraMentionSync,
+	);
 	const [state, dispatch] = useReducer(
 		connectionsSettingsReducer,
 		initialConnectionsSettingsState,
 	);
+	const [convexSiteUrl, setConvexSiteUrl] = useState<string | null>(null);
+	const [isPreparingJiraMentionSync, setIsPreparingJiraMentionSync] =
+		useState(false);
+	const lastPreparedJiraSyncKeyRef = useRef<string | null>(null);
 	const {
 		isYandexTrackerDialogOpen,
 		isJiraDialogOpen,
@@ -1590,6 +1621,55 @@ function useConnectionsSettingsController() {
 		yandexTrackerFormState,
 		jiraFormState,
 	} = state;
+
+	useEffect(() => {
+		let isMounted = true;
+
+		void loadRuntimeConfig()
+			.then((config) => {
+				if (isMounted) {
+					setConvexSiteUrl(config.convexSiteUrl);
+				}
+			})
+			.catch(() => {});
+
+		return () => {
+			isMounted = false;
+		};
+	}, []);
+
+	useEffect(() => {
+		if (!activeWorkspaceId || !jiraConnection) {
+			lastPreparedJiraSyncKeyRef.current = null;
+			return;
+		}
+
+		if (jiraConnection.webhookSecret && jiraConnection.accountId) {
+			return;
+		}
+
+		const syncKey = `${activeWorkspaceId}:${jiraConnection.sourceId}`;
+
+		if (lastPreparedJiraSyncKeyRef.current === syncKey) {
+			return;
+		}
+
+		lastPreparedJiraSyncKeyRef.current = syncKey;
+		setIsPreparingJiraMentionSync(true);
+
+		void prepareJiraMentionSync({ workspaceId: activeWorkspaceId })
+			.catch((error) => {
+				lastPreparedJiraSyncKeyRef.current = null;
+				toast.error(
+					error instanceof Error
+						? withoutTrailingPeriod(error.message)
+						: "Failed to prepare Jira mention sync",
+				);
+			})
+			.finally(() => {
+				setIsPreparingJiraMentionSync(false);
+			});
+	}, [activeWorkspaceId, prepareJiraMentionSync, jiraConnection]);
 
 	const handleYandexTrackerDialogOpenChange = (open: boolean) => {
 		dispatch({ type: "setIsYandexTrackerDialogOpen", value: open });
@@ -1705,6 +1785,16 @@ function useConnectionsSettingsController() {
 		jiraFormState.email.trim().length > 0 &&
 		jiraFormState.token.trim().length > 0;
 
+	const jiraWebhookUrl =
+		convexSiteUrl && jiraConnection?.webhookSecret
+			? (() => {
+					const url = new URL("/api/webhooks/jira", convexSiteUrl);
+					url.searchParams.set("sourceId", jiraConnection.sourceId);
+					url.searchParams.set("secret", jiraConnection.webhookSecret);
+					return url.toString();
+				})()
+			: null;
+
 	const toolConnections: ToolConnectionRowProps[] = [
 		{
 			icon: (
@@ -1722,19 +1812,57 @@ function useConnectionsSettingsController() {
 		},
 	];
 
+	const handleCopyJiraWebhookUrl = async () => {
+		if (!jiraWebhookUrl) {
+			toast.error("Jira webhook URL is not ready yet");
+			return;
+		}
+
+		try {
+			await writeTextToClipboard(jiraWebhookUrl);
+			toast.success("Jira webhook URL copied");
+		} catch (error) {
+			console.error("Failed to copy Jira webhook URL", error);
+			toast.error("Failed to copy Jira webhook URL");
+		}
+	};
+
+	const handleOpenJiraWebhookSettings = async () => {
+		if (!jiraConnection?.baseUrl) {
+			return;
+		}
+
+		const url = new URL(
+			"/plugins/servlet/webhooks",
+			jiraConnection.baseUrl,
+		).toString();
+
+		if (window.openGranDesktop?.openExternalUrl) {
+			await window.openGranDesktop.openExternalUrl(url);
+			return;
+		}
+
+		window.open(url, "_blank", "noopener,noreferrer");
+	};
+
 	return {
 		activeWorkspaceId,
 		handleConnectJira,
+		handleCopyJiraWebhookUrl,
 		handleConnectYandexTracker,
 		handleJiraDialogOpenChange,
+		handleOpenJiraWebhookSettings,
 		handleYandexTrackerDialogOpenChange,
 		isJiraDialogOpen,
 		isJiraFormValid,
+		isPreparingJiraMentionSync,
 		isSavingJiraConnection,
 		isSavingYandexTrackerConnection,
 		isYandexTrackerDialogOpen,
 		isYandexTrackerFormValid,
+		jiraConnection,
 		jiraFormState,
+		jiraWebhookUrl,
 		setJiraBaseUrl: (baseUrl: string) =>
 			dispatch({
 				type: "patchJiraFormState",
@@ -1784,6 +1912,52 @@ function ToolConnectionsSection({
 				))}
 			</div>
 		</Field>
+	);
+}
+
+function JiraSyncSection({
+	onCopyWebhookUrl,
+	webhookUrl,
+}: {
+	onCopyWebhookUrl: () => void;
+	webhookUrl: string | null;
+}) {
+	const [isCopied, setIsCopied] = useState(false);
+
+	return (
+		<FieldGroup className="gap-4">
+			<Field>
+				<Label className={SETTINGS_LABEL_CLASSNAME}>Webhook URL</Label>
+				<InputGroup>
+					<InputGroupInput
+						value={webhookUrl ?? "Preparing Jira mention sync..."}
+						readOnly
+						disabled={!webhookUrl}
+					/>
+					<InputGroupAddon align="inline-end">
+						<InputGroupButton
+							aria-label="Copy webhook URL"
+							title="Copy webhook URL"
+							size="icon-xs"
+							onClick={() => {
+								if (!webhookUrl) {
+									return;
+								}
+
+								onCopyWebhookUrl();
+								setIsCopied(true);
+								window.setTimeout(() => {
+									setIsCopied(false);
+								}, 1200);
+							}}
+							disabled={!webhookUrl}
+						>
+							{isCopied ? <Check /> : <Copy />}
+						</InputGroupButton>
+					</InputGroupAddon>
+				</InputGroup>
+			</Field>
+		</FieldGroup>
 	);
 }
 
@@ -1932,22 +2106,28 @@ function JiraDialog({
 	open,
 	onOpenChange,
 	formState,
+	onCopyWebhookUrl,
 	onBaseUrlChange,
 	onEmailChange,
 	onTokenChange,
 	onConnect,
+	showSyncSettings,
 	isFormValid,
 	isSaving,
+	webhookUrl,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	formState: JiraConnectionFormState;
+	onCopyWebhookUrl: () => void;
 	onBaseUrlChange: (baseUrl: string) => void;
 	onEmailChange: (email: string) => void;
 	onTokenChange: (token: string) => void;
 	onConnect: () => void;
+	showSyncSettings: boolean;
 	isFormValid: boolean;
 	isSaving: boolean;
+	webhookUrl: string | null;
 }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -1995,6 +2175,26 @@ function JiraDialog({
 						/>
 					</Field>
 				</FieldGroup>
+				{showSyncSettings ? (
+					<Collapsible className="mt-4">
+						<CollapsibleTrigger asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								className="group w-full justify-between px-0 text-foreground hover:!bg-transparent hover:text-foreground active:!bg-transparent aria-expanded:!bg-transparent aria-expanded:hover:!bg-transparent focus-visible:!bg-transparent"
+							>
+								Sync settings
+								<ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
+							</Button>
+						</CollapsibleTrigger>
+						<CollapsibleContent className="pt-4">
+							<JiraSyncSection
+								onCopyWebhookUrl={onCopyWebhookUrl}
+								webhookUrl={webhookUrl}
+							/>
+						</CollapsibleContent>
+					</Collapsible>
+				) : null}
 				<div className="flex justify-end gap-2 pt-2">
 					<Button
 						type="button"

@@ -16,6 +16,8 @@ import type * as calendarPreferences from "../calendarPreferences.js";
 import type * as chats from "../chats.js";
 import type * as desktopApi from "../desktopApi.js";
 import type * as http from "../http.js";
+import type * as inboxItems from "../inboxItems.js";
+import type * as jiraWebhook from "../jiraWebhook.js";
 import type * as notes from "../notes.js";
 import type * as notificationPreferences from "../notificationPreferences.js";
 import type * as onboarding from "../onboarding.js";
@@ -40,6 +42,8 @@ declare const fullApi: ApiFromModules<{
   chats: typeof chats;
   desktopApi: typeof desktopApi;
   http: typeof http;
+  inboxItems: typeof inboxItems;
+  jiraWebhook: typeof jiraWebhook;
   notes: typeof notes;
   notificationPreferences: typeof notificationPreferences;
   onboarding: typeof onboarding;

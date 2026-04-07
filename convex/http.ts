@@ -8,6 +8,7 @@ import {
 	handleRealtimeTranscriptionSessionRequest,
 	handleRefineTranscriptAudioRequest,
 } from "./desktopApi";
+import { handleJiraWebhookRequest } from "./jiraWebhook";
 
 const http = httpRouter();
 
@@ -49,6 +50,14 @@ http.route({
 	method: "POST",
 	handler: httpAction(
 		async (_ctx, request) => await handleRefineTranscriptAudioRequest(request),
+	),
+});
+
+http.route({
+	path: "/api/webhooks/jira",
+	method: "POST",
+	handler: httpAction(
+		async (ctx, request) => await handleJiraWebhookRequest(ctx, request),
 	),
 });
 

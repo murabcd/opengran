@@ -32,6 +32,9 @@ const appConnectionStatusValidator = v.union(
 	v.literal("disconnected"),
 );
 
+const inboxItemProviderValidator = v.literal("jira");
+const inboxItemKindValidator = v.literal("jira-mention");
+
 const appConnectionOrgTypeValidator = v.union(
 	v.literal("x-org-id"),
 	v.literal("x-cloud-org-id"),
@@ -284,8 +287,12 @@ export default defineSchema({
 		orgId: v.optional(v.string()),
 		token: v.optional(v.string()),
 		email: v.optional(v.string()),
+		accountId: v.optional(v.string()),
 		password: v.optional(v.string()),
 		baseUrl: v.optional(v.string()),
+		webhookSecret: v.optional(v.string()),
+		lastWebhookReceivedAt: v.optional(v.number()),
+		lastMentionSyncAt: v.optional(v.number()),
 		serverAddress: v.optional(v.string()),
 		calendarHomePath: v.optional(v.string()),
 		createdAt: v.number(),
@@ -309,6 +316,52 @@ export default defineSchema({
 			"ownerTokenIdentifier",
 			"workspaceId",
 			"status",
+			"updatedAt",
+		]),
+	inboxItems: defineTable({
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		provider: inboxItemProviderValidator,
+		kind: inboxItemKindValidator,
+		externalId: v.string(),
+		issueKey: v.string(),
+		issueSummary: v.optional(v.string()),
+		title: v.string(),
+		preview: v.string(),
+		url: v.string(),
+		actorDisplayName: v.optional(v.string()),
+		actorAvatarUrl: v.optional(v.string()),
+		occurredAt: v.number(),
+		isRead: v.boolean(),
+		readAt: v.optional(v.number()),
+		isArchived: v.boolean(),
+		archivedAt: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_owner_ws_arch_occurredAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"isArchived",
+			"occurredAt",
+		])
+		.index("by_owner_ws_arch_read_occurredAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"isArchived",
+			"isRead",
+			"occurredAt",
+		])
+		.index("by_owner_ws_provider_externalId", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"provider",
+			"externalId",
+		])
+		.index("by_owner_upd", ["ownerTokenIdentifier", "updatedAt"])
+		.index("by_owner_ws_upd", [
+			"ownerTokenIdentifier",
+			"workspaceId",
 			"updatedAt",
 		]),
 	transcriptSessions: defineTable({

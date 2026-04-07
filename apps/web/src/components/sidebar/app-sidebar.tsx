@@ -7,6 +7,7 @@ import {
 	SidebarHeader,
 	useSidebar,
 } from "@workspace/ui/components/sidebar";
+import { useQuery } from "convex/react";
 import {
 	FileText,
 	Home,
@@ -31,6 +32,7 @@ import { TemplatesDialog } from "@/components/templates/templates-dialog";
 import { WorkspaceSwitcher } from "@/components/workspaces/workspace-switcher";
 import { getChatId } from "@/lib/chat";
 import type { WorkspaceRecord } from "@/lib/workspaces";
+import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
 const navigation = [
@@ -125,10 +127,32 @@ export function AppSidebar({
 	const [trashOpen, setTrashOpen] = React.useState(false);
 	const [templatesOpen, setTemplatesOpen] = React.useState(false);
 	const [draftUser, setDraftUser] = React.useState(user);
+	const [optimisticReadInboxItemIds, setOptimisticReadInboxItemIds] =
+		React.useState(() => new Set<string>());
+	const inboxItems = useQuery(
+		api.inboxItems.list,
+		activeWorkspaceId
+			? { workspaceId: activeWorkspaceId, view: "unread" }
+			: "skip",
+	);
+	const unreadInboxCount =
+		inboxItems?.filter(
+			(item) => !optimisticReadInboxItemIds.has(String(item._id)),
+		).length ?? 0;
 
 	React.useEffect(() => {
 		setDraftUser(user);
 	}, [user]);
+
+	React.useEffect(() => {
+		const workspaceScope = activeWorkspaceId ?? "no-workspace";
+
+		if (!workspaceScope) {
+			return;
+		}
+
+		setOptimisticReadInboxItemIds(new Set());
+	}, [activeWorkspaceId]);
 
 	const navItems = React.useMemo(
 		() =>
@@ -138,8 +162,12 @@ export function AppSidebar({
 					item.action === "inbox"
 						? inboxOpen
 						: item.action === "view" && item.view === currentView,
+				badge:
+					item.action === "inbox" && unreadInboxCount > 0
+						? unreadInboxCount
+						: undefined,
 			})),
-		[currentView, inboxOpen],
+		[currentView, inboxOpen, unreadInboxCount],
 	);
 	const searchItems: SearchCommandItem[] = [
 		...(notes ?? []).map((note) => ({
@@ -256,6 +284,28 @@ export function AppSidebar({
 				onOpenChange={onInboxOpenChange}
 				sidebarState={state}
 				isMobile={isMobile}
+				onMarkItemsRead={(itemIds) => {
+					setOptimisticReadInboxItemIds((current) => {
+						const next = new Set(current);
+						for (const itemId of itemIds) {
+							next.add(itemId);
+						}
+						return next;
+					});
+				}}
+				onMarkAllRead={() => {
+					if (!inboxItems) {
+						return;
+					}
+
+					setOptimisticReadInboxItemIds((current) => {
+						const next = new Set(current);
+						for (const item of inboxItems) {
+							next.add(String(item._id));
+						}
+						return next;
+					});
+				}}
 			/>
 		</>
 	);

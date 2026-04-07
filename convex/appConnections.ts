@@ -42,6 +42,10 @@ const jiraConnectionSettingsValidator = v.object({
 	displayName: v.string(),
 	baseUrl: v.string(),
 	email: v.string(),
+	accountId: v.optional(v.string()),
+	webhookSecret: v.optional(v.string()),
+	lastWebhookReceivedAt: v.optional(v.number()),
+	lastMentionSyncAt: v.optional(v.number()),
 });
 
 const yandexCalendarCredentialsValidator = v.union(
@@ -89,6 +93,19 @@ const chatToolConnectionValidator = v.union(
 const APP_SOURCE_PREFIX = "app:";
 const REMOVE_ALL_APP_CONNECTIONS_BATCH_SIZE = 100;
 
+const jiraWebhookConnectionValidator = v.union(
+	v.object({
+		connectionId: v.id("appConnections"),
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		baseUrl: v.string(),
+		email: v.string(),
+		token: v.string(),
+		accountId: v.optional(v.string()),
+	}),
+	v.null(),
+);
+
 type YandexTrackerConnectionSettings = {
 	sourceId: string;
 	provider: "yandex-tracker";
@@ -115,6 +132,10 @@ type JiraConnectionSettings = {
 	displayName: string;
 	baseUrl: string;
 	email: string;
+	accountId?: string;
+	webhookSecret?: string;
+	lastWebhookReceivedAt?: number;
+	lastMentionSyncAt?: number;
 };
 
 type AppConnectionSource = {
@@ -197,6 +218,9 @@ const getJiraPreview = (connection: Doc<"appConnections">) => {
 			: connection.baseUrl;
 	}
 };
+
+const generateWebhookSecret = () =>
+	`${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
 
 const getOwnedConnection = async (
 	ctx: QueryCtx | MutationCtx,
@@ -443,6 +467,85 @@ export const getJira = query({
 			displayName: connection.displayName,
 			baseUrl: connection.baseUrl,
 			email: connection.email,
+			...(connection.accountId ? { accountId: connection.accountId } : {}),
+			...(connection.webhookSecret
+				? { webhookSecret: connection.webhookSecret }
+				: {}),
+			...(connection.lastWebhookReceivedAt
+				? { lastWebhookReceivedAt: connection.lastWebhookReceivedAt }
+				: {}),
+			...(connection.lastMentionSyncAt
+				? { lastMentionSyncAt: connection.lastMentionSyncAt }
+				: {}),
+		};
+	},
+});
+
+export const getOwnedJiraConnectionInternal = internalQuery({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+	},
+	returns: jiraWebhookConnectionValidator,
+	handler: async (ctx, args) => {
+		const connection = await getOwnedJiraConnection(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+
+		if (!connection || !connection.baseUrl || !connection.email || !connection.token) {
+			return null;
+		}
+
+		return {
+			connectionId: connection._id,
+			ownerTokenIdentifier: connection.ownerTokenIdentifier,
+			workspaceId: connection.workspaceId,
+			baseUrl: connection.baseUrl,
+			email: connection.email,
+			token: connection.token,
+			...(connection.accountId ? { accountId: connection.accountId } : {}),
+		};
+	},
+});
+
+export const getJiraWebhookConnection = internalQuery({
+	args: {
+		sourceId: v.string(),
+		webhookSecret: v.string(),
+	},
+	returns: jiraWebhookConnectionValidator,
+	handler: async (ctx, args) => {
+		const connectionId = normalizeConnectionId(ctx, args.sourceId);
+
+		if (!connectionId) {
+			return null;
+		}
+
+		const connection = await ctx.db.get(connectionId);
+
+		if (
+			!connection ||
+			connection.provider !== "jira" ||
+			connection.status !== "connected" ||
+			!connection.baseUrl ||
+			!connection.email ||
+			!connection.token ||
+			!connection.webhookSecret ||
+			connection.webhookSecret !== args.webhookSecret
+		) {
+			return null;
+		}
+
+		return {
+			connectionId: connection._id,
+			ownerTokenIdentifier: connection.ownerTokenIdentifier,
+			workspaceId: connection.workspaceId,
+			baseUrl: connection.baseUrl,
+			email: connection.email,
+			token: connection.token,
+			...(connection.accountId ? { accountId: connection.accountId } : {}),
 		};
 	},
 });
@@ -741,6 +844,81 @@ export const upsertYandexCalendar = internalMutation({
 	},
 });
 
+export const ensureJiraSyncMetadata = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		accountId: v.optional(v.string()),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		await requireOwnedWorkspace(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+		const connection = await getOwnedJiraConnection(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+
+		if (!connection) {
+			return null;
+		}
+
+		const patch: Partial<Doc<"appConnections">> = {};
+
+		if (!connection.webhookSecret) {
+			patch.webhookSecret = generateWebhookSecret();
+		}
+
+		if (args.accountId && connection.accountId !== args.accountId) {
+			patch.accountId = args.accountId;
+		}
+
+		if (Object.keys(patch).length > 0) {
+			patch.updatedAt = Date.now();
+			await ctx.db.patch(connection._id, patch);
+		}
+
+		return null;
+	},
+});
+
+export const recordJiraWebhookActivity = internalMutation({
+	args: {
+		connectionId: v.id("appConnections"),
+		lastWebhookReceivedAt: v.number(),
+		lastMentionSyncAt: v.optional(v.number()),
+		accountId: v.optional(v.string()),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const connection = await ctx.db.get(args.connectionId);
+
+		if (!connection || connection.provider !== "jira") {
+			return null;
+		}
+
+		const patch: Partial<Doc<"appConnections">> = {
+			lastWebhookReceivedAt: args.lastWebhookReceivedAt,
+			updatedAt: Date.now(),
+		};
+
+		if (args.lastMentionSyncAt) {
+			patch.lastMentionSyncAt = args.lastMentionSyncAt;
+		}
+
+		if (args.accountId && connection.accountId !== args.accountId) {
+			patch.accountId = args.accountId;
+		}
+
+		await ctx.db.patch(connection._id, patch);
+		return null;
+	},
+});
+
 export const upsertJira = internalMutation({
 	args: {
 		ownerTokenIdentifier: v.string(),
@@ -748,6 +926,7 @@ export const upsertJira = internalMutation({
 		baseUrl: v.string(),
 		email: v.string(),
 		token: v.string(),
+		accountId: v.optional(v.string()),
 	},
 	returns: jiraConnectionSettingsValidator,
 	handler: async (ctx, args): Promise<JiraConnectionSettings> => {
@@ -760,6 +939,7 @@ export const upsertJira = internalMutation({
 		const baseUrl = args.baseUrl.trim();
 		const email = args.email.trim().toLowerCase();
 		const token = args.token.trim();
+		const accountId = args.accountId?.trim() || undefined;
 		const existingConnection = await getOwnedJiraConnection(
 			ctx,
 			args.ownerTokenIdentifier,
@@ -767,14 +947,23 @@ export const upsertJira = internalMutation({
 		);
 
 		if (existingConnection) {
-			await ctx.db.patch(existingConnection._id, {
+			const webhookSecret =
+				existingConnection.webhookSecret ?? generateWebhookSecret();
+			const patch: Partial<Doc<"appConnections">> = {
 				status: "connected",
 				displayName: "Jira",
 				baseUrl,
 				email,
 				token,
+				webhookSecret,
 				updatedAt: now,
-			});
+			};
+
+			if (accountId) {
+				patch.accountId = accountId;
+			}
+
+			await ctx.db.patch(existingConnection._id, patch);
 
 			return {
 				sourceId: toAppSourceId(existingConnection._id),
@@ -783,9 +972,14 @@ export const upsertJira = internalMutation({
 				displayName: "Jira",
 				baseUrl,
 				email,
+				webhookSecret,
+				lastWebhookReceivedAt: existingConnection.lastWebhookReceivedAt,
+				lastMentionSyncAt: existingConnection.lastMentionSyncAt,
+				...(accountId ? { accountId } : {}),
 			};
 		}
 
+		const webhookSecret = generateWebhookSecret();
 		const id = await ctx.db.insert("appConnections", {
 			ownerTokenIdentifier: args.ownerTokenIdentifier,
 			workspaceId: args.workspaceId,
@@ -795,6 +989,8 @@ export const upsertJira = internalMutation({
 			baseUrl,
 			email,
 			token,
+			webhookSecret,
+			...(accountId ? { accountId } : {}),
 			createdAt: now,
 			updatedAt: now,
 		});
@@ -806,6 +1002,8 @@ export const upsertJira = internalMutation({
 			displayName: "Jira",
 			baseUrl,
 			email,
+			webhookSecret,
+			...(accountId ? { accountId } : {}),
 		};
 	},
 });

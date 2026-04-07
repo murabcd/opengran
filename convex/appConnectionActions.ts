@@ -40,6 +40,10 @@ const jiraConnectionResultValidator = v.object({
 	displayName: v.string(),
 	baseUrl: v.string(),
 	email: v.string(),
+	accountId: v.optional(v.string()),
+	webhookSecret: v.optional(v.string()),
+	lastWebhookReceivedAt: v.optional(v.number()),
+	lastMentionSyncAt: v.optional(v.number()),
 });
 
 type YandexTrackerConnectionResult = {
@@ -68,6 +72,14 @@ type JiraConnectionResult = {
 	displayName: string;
 	baseUrl: string;
 	email: string;
+	accountId?: string;
+	webhookSecret?: string;
+	lastWebhookReceivedAt?: number;
+	lastMentionSyncAt?: number;
+};
+
+type JiraCurrentUserResponse = {
+	accountId?: unknown;
 };
 
 const TRACKER_API_BASE_URL =
@@ -249,12 +261,79 @@ export const connectJira = action({
 			});
 		}
 
+		const currentUser = (await response.json().catch(() => null)) as
+			| JiraCurrentUserResponse
+			| null;
+		const accountId =
+			currentUser && typeof currentUser.accountId === "string"
+				? currentUser.accountId
+				: undefined;
+
 		return await ctx.runMutation(internal.appConnections.upsertJira, {
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,
 			baseUrl,
 			email,
 			token,
+			...(accountId ? { accountId } : {}),
 		});
+	},
+});
+
+export const prepareJiraMentionSync = action({
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const identity = await requireIdentity(ctx);
+		const connection = await ctx.runQuery(
+			internal.appConnections.getOwnedJiraConnectionInternal,
+			{
+				ownerTokenIdentifier: identity.tokenIdentifier,
+				workspaceId: args.workspaceId,
+			},
+		);
+
+		if (!connection) {
+			return null;
+		}
+
+		let accountId = connection.accountId;
+
+		if (!accountId) {
+			const response = await fetch(`${connection.baseUrl}/rest/api/3/myself`, {
+				headers: {
+					Authorization: getJiraAuthHeader(connection.email, connection.token),
+					Accept: "application/json",
+				},
+			});
+
+			if (!response.ok) {
+				const responseText = await response.text().catch(() => "");
+				throw new ConvexError({
+					code: "JIRA_CONNECTION_FAILED",
+					message: responseText.trim()
+						? `Failed to prepare Jira sync: ${responseText.trim()}`
+						: `Failed to prepare Jira sync (${response.status}).`,
+				});
+			}
+
+			const currentUser = (await response.json().catch(() => null)) as
+				| JiraCurrentUserResponse
+				| null;
+			accountId =
+				currentUser && typeof currentUser.accountId === "string"
+					? currentUser.accountId
+					: undefined;
+		}
+
+		await ctx.runMutation(internal.appConnections.ensureJiraSyncMetadata, {
+			ownerTokenIdentifier: identity.tokenIdentifier,
+			workspaceId: args.workspaceId,
+			...(accountId ? { accountId } : {}),
+		});
+
+		return null;
 	},
 });
