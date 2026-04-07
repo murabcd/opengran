@@ -44,7 +44,7 @@ export function SearchCommand({
 			description="Search notes and chats..."
 			className="top-1/2 max-w-[calc(100%-2rem)] -translate-y-1/2 rounded-lg sm:max-w-lg"
 		>
-			<Command className="**:[[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 **:[[cmdk-input-wrapper]_svg]:size-5 **:[[cmdk-input]]:h-12 **:[[cmdk-item]]:h-8 **:[[cmdk-item]]:px-2 **:[[cmdk-item]_svg]:size-5">
+			<Command className="**:[[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 **:[[cmdk-group-heading]]:px-1.5 **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 **:[[cmdk-input-wrapper]_svg]:size-5 **:[[cmdk-input]]:h-12">
 				<div className="relative min-w-0">
 					<CommandInput
 						placeholder="Search notes and chats..."
@@ -64,41 +64,54 @@ export function SearchCommand({
 					{noteItems.length > 0 ? (
 						<CommandGroup heading="Notes">
 							{noteItems.map((item) => (
-								<CommandItem
+								<SearchCommandRow
 									key={item.id}
-									value={`${item.kind} ${item.id} ${item.title} ${item.preview ?? ""}`}
+									item={item}
 									onSelect={() => {
 										onOpenChange(false);
 										onSelectItem(item.id);
 									}}
-									className="cursor-pointer"
-								>
-									<item.icon className="size-4" />
-									<div className="min-w-0 flex-1 truncate">{item.title}</div>
-								</CommandItem>
+								/>
 							))}
 						</CommandGroup>
 					) : null}
 					{chatItems.length > 0 ? (
 						<CommandGroup heading="Chats">
 							{chatItems.map((item) => (
-								<CommandItem
+								<SearchCommandRow
 									key={item.id}
-									value={`${item.kind} ${item.id} ${item.title} ${item.preview ?? ""}`}
+									item={item}
 									onSelect={() => {
 										onOpenChange(false);
 										onSelectItem(item.id);
 									}}
-									className="cursor-pointer"
-								>
-									<item.icon className="size-4" />
-									<div className="min-w-0 flex-1 truncate">{item.title}</div>
-								</CommandItem>
+								/>
 							))}
 						</CommandGroup>
 					) : null}
 				</CommandList>
 			</Command>
 		</CommandDialog>
+	);
+}
+
+function SearchCommandRow({
+	item,
+	onSelect,
+}: {
+	item: SearchCommandItem;
+	onSelect: () => void;
+}) {
+	return (
+		<CommandItem
+			value={`${item.kind} ${item.id} ${item.title} ${item.preview ?? ""}`}
+			onSelect={onSelect}
+			className="h-8 cursor-pointer gap-1.5 rounded-md px-1.5"
+		>
+			<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+				<item.icon className="size-4" />
+			</div>
+			<div className="min-w-0 flex-1 truncate">{item.title}</div>
+		</CommandItem>
 	);
 }
