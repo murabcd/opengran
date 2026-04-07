@@ -284,6 +284,7 @@ export function AppSidebar({
 				onOpenChange={onInboxOpenChange}
 				sidebarState={state}
 				isMobile={isMobile}
+				desktopSafeTop={desktopSafeTop}
 				onMarkItemsRead={(itemIds) => {
 					setOptimisticReadInboxItemIds((current) => {
 						const next = new Set(current);

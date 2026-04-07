@@ -70,6 +70,7 @@ export function InboxSheet({
 	onOpenChange,
 	sidebarState,
 	isMobile,
+	desktopSafeTop = false,
 	onMarkItemsRead,
 	onMarkAllRead,
 }: {
@@ -77,6 +78,7 @@ export function InboxSheet({
 	onOpenChange: (open: boolean) => void;
 	sidebarState: "expanded" | "collapsed";
 	isMobile: boolean;
+	desktopSafeTop?: boolean;
 	onMarkItemsRead?: (itemIds: string[]) => void;
 	onMarkAllRead?: () => void;
 }) {
@@ -111,8 +113,10 @@ export function InboxSheet({
 					}}
 				>
 					<div
+						data-app-region={desktopSafeTop ? "no-drag" : undefined}
 						className={cn(
 							"pointer-events-auto flex h-svh w-[16rem] flex-col border-r bg-background text-foreground transition-transform duration-200 ease-linear",
+							desktopSafeTop && "pt-8",
 							open ? "translate-x-0" : "-translate-x-full",
 						)}
 					>
@@ -257,6 +261,7 @@ function InboxPaneHeader({
 
 	return (
 		<div
+			data-app-region={!isMobile ? "no-drag" : undefined}
 			className={cn(
 				"flex w-full items-center justify-between",
 				!isMobile && "h-12 px-2",
@@ -285,14 +290,20 @@ function InboxPaneHeader({
 									type="button"
 									variant="ghost"
 									size="icon"
-									className="size-8 text-muted-foreground hover:bg-transparent hover:text-foreground active:translate-y-0 active:bg-transparent"
+									className="size-8 rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground active:translate-y-0 active:bg-accent/50"
 									aria-label="Inbox actions"
+									data-app-region={!isMobile ? "no-drag" : undefined}
 								>
 									<MoreHorizontal className="size-4" />
 								</Button>
 							</DropdownMenuTrigger>
 						</TooltipTrigger>
-						<TooltipContent>Inbox actions</TooltipContent>
+						<TooltipContent
+							sideOffset={8}
+							className="pointer-events-none select-none"
+						>
+							Inbox actions
+						</TooltipContent>
 					</Tooltip>
 					<DropdownMenuContent align="end" className="min-w-44">
 						<DropdownMenuItem
@@ -334,14 +345,20 @@ function InboxPaneHeader({
 									type="button"
 									variant="ghost"
 									size="icon"
-									className="size-8 text-muted-foreground hover:bg-transparent hover:text-foreground active:translate-y-0 active:bg-transparent"
+									className="size-8 rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground active:translate-y-0 active:bg-accent/50"
 									aria-label="Filter inbox"
+									data-app-region={!isMobile ? "no-drag" : undefined}
 								>
 									<SlidersHorizontal className="size-4" />
 								</Button>
 							</DropdownMenuTrigger>
 						</TooltipTrigger>
-						<TooltipContent>Filter inbox</TooltipContent>
+						<TooltipContent
+							sideOffset={8}
+							className="pointer-events-none select-none"
+						>
+							Filter inbox
+						</TooltipContent>
 					</Tooltip>
 					<DropdownMenuContent align="end" className="min-w-44">
 						{INBOX_VIEW_OPTIONS.map((option) => {
@@ -563,10 +580,13 @@ function InboxPanel({
 						item.isRead || optimisticReadItemIds.has(String(item._id));
 
 					return (
-						<div key={item._id} className="border-b">
+						<div
+							key={item._id}
+							className="group border-b transition-colors hover:bg-accent/20"
+						>
 							<button
 								type="button"
-								className="w-full cursor-pointer px-3 py-3 text-left transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								className="w-full cursor-pointer px-3 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 								onClick={() => {
 									void handleMarkItemRead(item).catch((error) => {
 										toast.error(
@@ -613,7 +633,7 @@ function InboxPanel({
 								<Button
 									type="button"
 									variant="outline"
-									className="cursor-pointer"
+									className="relative z-10 cursor-pointer"
 									onClick={() => {
 										void handleOpenItem(item).catch((error) => {
 											toast.error(
