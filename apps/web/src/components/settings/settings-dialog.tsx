@@ -1125,6 +1125,8 @@ function useCalendarSettingsController() {
 		googleAccount?.scopes.includes(
 			"https://www.googleapis.com/auth/calendar.readonly",
 		) ?? false;
+	const isGoogleCalendarConnected = Boolean(googleAccount && hasCalendarScope);
+	const isYandexCalendarConnected = Boolean(yandexCalendarConnection);
 	const googleCalendarAction = getGoogleCalendarAction({
 		googleAccount,
 		hasCalendarScope,
@@ -1285,8 +1287,13 @@ function useCalendarSettingsController() {
 		{
 			icon: <Icons.googleLogo className="size-5 shrink-0" />,
 			name: "Google Calendar",
-			checked: calendarVisibility.showGoogleCalendar,
-			switchDisabled: isSavingCalendarPreferences,
+			checked:
+				isGoogleCalendarConnected && calendarVisibility.showGoogleCalendar,
+			switchDisabled:
+				isSavingCalendarPreferences ||
+				isLoadingAccounts ||
+				!isGoogleCalendarConnected ||
+				!calendarVisibility.showGoogleCalendar,
 			onCheckedChange: (checked) => {
 				void handleCalendarVisibilityChange({
 					showGoogleCalendar: checked,
@@ -1306,8 +1313,9 @@ function useCalendarSettingsController() {
 		{
 			icon: <Icons.yandexCalendarLogo className="size-5 shrink-0" />,
 			name: "Yandex Calendar",
-			checked: calendarVisibility.showYandexCalendar,
-			switchDisabled: isSavingCalendarPreferences,
+			checked:
+				isYandexCalendarConnected && calendarVisibility.showYandexCalendar,
+			switchDisabled: isSavingCalendarPreferences || !isYandexCalendarConnected,
 			onCheckedChange: (checked) => {
 				void handleCalendarVisibilityChange({
 					showGoogleCalendar: calendarVisibility.showGoogleCalendar,
