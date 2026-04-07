@@ -565,74 +565,76 @@ function TemplatesEditor({
 	templatesCount: number;
 }) {
 	return (
-		<ScrollArea
-			className="flex flex-1"
-			viewportClassName="flex flex-col gap-6 p-4 pt-0"
-		>
+		<ScrollArea className="min-h-0 flex-1" viewportClassName="p-4 pt-0">
 			{selectedTemplate ? (
-				<FieldGroup className="gap-2">
-					<Field>
-						<Label
-							htmlFor="template-meeting-context"
-							className="text-xs text-muted-foreground"
-						>
-							Meeting context
-						</Label>
-						<Textarea
-							id="template-meeting-context"
-							value={selectedTemplate.meetingContext}
-							onChange={(event) => onMeetingContextChange(event.target.value)}
-							className="h-32 resize-none border-border/70 bg-background/30 text-sm leading-6"
-						/>
-					</Field>
-					<Field>
-						<Label className="text-xs text-muted-foreground">Sections</Label>
-						<DndContext
-							sensors={sensors}
-							collisionDetection={closestCenter}
-							onDragEnd={onSectionDragEnd}
-						>
-							<SortableContext
-								items={selectedTemplate.sections.map((section) => section.id)}
-								strategy={verticalListSortingStrategy}
+				<div className="py-4">
+					<FieldGroup className="gap-6">
+						<Field>
+							<Label
+								htmlFor="template-meeting-context"
+								className="text-xs text-muted-foreground"
 							>
-								{selectedTemplate.sections.map((section) => (
-									<SortableTemplateSectionCard
-										key={section.id}
-										section={section}
-										canRemove={selectedTemplate.sections.length > 1}
-										onTitleChange={onTitleChange}
-										onPromptChange={onPromptChange}
-										onRemove={onRemoveSection}
-									/>
-								))}
-							</SortableContext>
-						</DndContext>
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							className="w-fit"
-							onClick={onAddSection}
-						>
-							<Plus />
-							Add section
+								Meeting context
+							</Label>
+							<Textarea
+								id="template-meeting-context"
+								value={selectedTemplate.meetingContext}
+								onChange={(event) => onMeetingContextChange(event.target.value)}
+								className="h-32 resize-none border-border/70 bg-background/30 text-sm leading-6"
+							/>
+						</Field>
+						<Field>
+							<Label className="text-xs text-muted-foreground">Sections</Label>
+							<DndContext
+								sensors={sensors}
+								collisionDetection={closestCenter}
+								onDragEnd={onSectionDragEnd}
+							>
+								<SortableContext
+									items={selectedTemplate.sections.map((section) => section.id)}
+									strategy={verticalListSortingStrategy}
+								>
+									{selectedTemplate.sections.map((section) => (
+										<SortableTemplateSectionCard
+											key={section.id}
+											section={section}
+											canRemove={selectedTemplate.sections.length > 1}
+											onTitleChange={onTitleChange}
+											onPromptChange={onPromptChange}
+											onRemove={onRemoveSection}
+										/>
+									))}
+								</SortableContext>
+							</DndContext>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								className="w-fit"
+								onClick={onAddSection}
+							>
+								<Plus />
+								Add section
+							</Button>
+						</Field>
+					</FieldGroup>
+					<div className="flex justify-end gap-2 pt-6">
+						<Button variant="ghost" onClick={onCancel} disabled={isSaving}>
+							Cancel
 						</Button>
-					</Field>
-				</FieldGroup>
+						<Button
+							onClick={onSave}
+							disabled={isSaving || templatesCount === 0}
+						>
+							{isSaving ? "Saving..." : "Save"}
+						</Button>
+					</div>
+				</div>
 			) : (
-				<div className="text-sm text-muted-foreground">
+				<div className="py-4 text-sm text-muted-foreground">
 					Loading templates...
 				</div>
 			)}
-			<div className="flex justify-end gap-2 pb-1">
-				<Button variant="ghost" onClick={onCancel} disabled={isSaving}>
-					Cancel
-				</Button>
-				<Button onClick={onSave} disabled={isSaving || templatesCount === 0}>
-					{isSaving ? "Saving..." : "Save"}
-				</Button>
-			</div>
 		</ScrollArea>
 	);
 }
