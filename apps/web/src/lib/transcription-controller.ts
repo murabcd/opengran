@@ -78,6 +78,12 @@ type PendingInputStream = {
 	stream: MediaStream;
 };
 
+type TranscriptionControllerConfig = {
+	autoStartKey: string | number | null;
+	lang?: string;
+	scopeKey: string | null;
+};
+
 export type TranscriptionControllerDependencies = {
 	connectTransport: typeof connectRealtimeTranscriptionTransport;
 	createBrowserSystemAudioStream: typeof createBrowserSystemAudioStream;
@@ -230,7 +236,7 @@ export class TranscriptionController {
 
 	private activePolicy: TranscriptionPolicy | null = null;
 
-	private config: Required<TranscriptionControllerOptions> = {
+	private config: TranscriptionControllerConfig = {
 		autoStartKey: null,
 		lang: undefined,
 		scopeKey: null,
@@ -537,13 +543,20 @@ export class TranscriptionController {
 
 			await this.dependencies.ensureMicrophonePermission();
 
-			const microphoneStream =
+			const microphoneInputStream =
 				await this.dependencies.createMicrophoneInputStream();
 			const microphoneInput: PendingInputStream = {
+				dispose:
+					"dispose" in microphoneInputStream
+						? microphoneInputStream.dispose
+						: undefined,
 				source: "microphone",
 				sourceMode: "unsupported",
 				speaker: "you",
-				stream: microphoneStream,
+				stream:
+					"stream" in microphoneInputStream
+						? microphoneInputStream.stream
+						: microphoneInputStream,
 			};
 			pendingStreams.push(microphoneInput);
 

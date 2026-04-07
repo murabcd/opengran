@@ -4,9 +4,11 @@ import {
 	consumeStream,
 	createIdGenerator,
 	generateText,
+	type InferUITools,
 	pipeAgentUIStreamToResponse,
 	stepCountIs,
 	ToolLoopAgent,
+	type ToolSet,
 	tool,
 	type UIMessage,
 	validateUIMessages,
@@ -574,21 +576,19 @@ export const handleChatRequest = async (
 			? `\n\nThe selected app source for this chat is Jira (${jiraConnection.displayName}). Treat it as the preferred source for project history, tickets, tasks, comments, assignees, and status. If the user's request could be answered from Jira, search Jira first before saying the context is unavailable.`
 			: ""
 	}`;
-	const enabledTools = {
-		...(webSearchEnabled
-			? {
-					web_search: openai.tools.webSearch({
-						searchContextSize: "medium",
-						userLocation: {
-							type: "approximate",
-							country: "US",
-						},
-					}),
-				}
-			: {}),
-		...trackerTools,
-		...jiraTools,
-	};
+	const enabledTools: ToolSet = {};
+
+	if (webSearchEnabled) {
+		enabledTools.web_search = openai.tools.webSearch({
+			searchContextSize: "medium",
+			userLocation: {
+				type: "approximate",
+				country: "US",
+			},
+		});
+	}
+
+	Object.assign(enabledTools, trackerTools, jiraTools);
 
 	const agent = new ToolLoopAgent({
 		model: openai(resolvedModel.model),
@@ -596,12 +596,17 @@ export const handleChatRequest = async (
 		tools: Object.keys(enabledTools).length > 0 ? enabledTools : undefined,
 		stopWhen: Object.keys(enabledTools).length > 0 ? stepCountIs(5) : undefined,
 	});
+	const agentMessages = chatMessages as unknown as UIMessage<
+		unknown,
+		never,
+		InferUITools<typeof enabledTools>
+	>[];
 
 	await pipeAgentUIStreamToResponse({
 		response,
 		agent,
-		uiMessages: chatMessages,
-		originalMessages: chatMessages,
+		uiMessages: agentMessages,
+		originalMessages: agentMessages,
 		generateMessageId,
 		consumeSseStream: consumeStream,
 		sendSources: true,

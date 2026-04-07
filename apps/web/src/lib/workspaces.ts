@@ -5,7 +5,7 @@ import {
 	TrendingUp,
 	Users,
 } from "lucide-react";
-import type { Id } from "../../../convex/_generated/dataModel";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 const workspaceRoleValues = [
 	"startup-generalist",

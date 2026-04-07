@@ -13,11 +13,7 @@ const createBrowserMicrophoneInputStream = async () =>
 export const createMicrophoneInputStream = async () => {
 	const desktopApi = window.openGranDesktop;
 
-	if (
-		desktopApi?.getMeta &&
-		desktopApi.startMicrophoneCapture &&
-		desktopApi.onMicrophoneCaptureEvent
-	) {
+	if (desktopApi?.getMeta) {
 		try {
 			const { platform } = await desktopApi.getMeta();
 

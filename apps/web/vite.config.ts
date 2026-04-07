@@ -14,7 +14,7 @@ const envFileName =
 		: ".env.local";
 const envFilePath = path.resolve(workspaceRoot, envFileName);
 
-const parseEnvLine = (line) => {
+const parseEnvLine = (line: string) => {
 	const trimmed = line.trim();
 
 	if (!trimmed || trimmed.startsWith("#")) {

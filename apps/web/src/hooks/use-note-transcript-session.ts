@@ -427,35 +427,32 @@ export const useNoteTranscriptSession = ({
 	}, [transcriptDraftKey, transcriptSessionRepository.loadDraft]);
 
 	React.useEffect(() => {
-		const latestServerTranscript = latestTranscriptSession
-			? createTranscriptText(latestTranscriptSession.utterances) ||
-				latestTranscriptSession.finalTranscript
+		const latestSession = latestTranscriptSession;
+		const latestServerTranscript = latestSession
+			? createTranscriptText(latestSession.utterances) ||
+				latestSession.finalTranscript
 			: "";
+		const latestSessionUpdatedAt = latestSession?.updatedAt ?? null;
 		const hasNewerServerSnapshot =
 			loadedTranscriptDraftUpdatedAtRef.current !== null &&
-			latestTranscriptSession?.updatedAt >
-				loadedTranscriptDraftUpdatedAtRef.current;
-		const hasMoreServerUtterances = Boolean(
-			latestTranscriptSession &&
-				latestTranscriptSession.utterances.length > transcriptUtterances.length,
-		);
+			latestSessionUpdatedAt !== null &&
+			latestSessionUpdatedAt > loadedTranscriptDraftUpdatedAtRef.current;
+		const hasMoreServerUtterances =
+			latestSession !== null &&
+			latestSession.utterances.length > transcriptUtterances.length;
 		const hasLongerServerTranscript =
 			latestServerTranscript.length > pendingGenerateTranscript.trim().length;
 		const shouldHydrateFromServer =
 			!hasHydratedStoredTranscriptSessionRef.current &&
 			!isSpeechListening &&
-			Boolean(latestTranscriptSession) &&
+			latestSession !== null &&
 			(!hasLoadedTranscriptDraftContentRef.current ||
-				latestTranscriptSession.generatedNoteAt !== null ||
+				latestSession?.generatedNoteAt !== null ||
 				hasNewerServerSnapshot ||
 				hasMoreServerUtterances ||
 				hasLongerServerTranscript);
 
-		if (
-			!isTranscriptDraftReady ||
-			!shouldHydrateFromServer ||
-			!latestTranscriptSession
-		) {
+		if (!isTranscriptDraftReady || !shouldHydrateFromServer || !latestSession) {
 			return;
 		}
 

@@ -59,6 +59,24 @@ import {
 	writeTextToClipboard,
 } from "./share-note";
 
+const ensureNoteHasRequiredFields = <T extends Doc<"notes">>(
+	note: T,
+	options?: { isStarred?: boolean },
+) =>
+	({
+		...note,
+		isStarred: options?.isStarred ?? note.isStarred ?? false,
+		templateSlug: note.templateSlug ?? undefined,
+		visibility: note.visibility ?? "private",
+	}) as T & {
+		isStarred: boolean;
+		templateSlug: string | undefined;
+		visibility: "private" | "public";
+	};
+
+const normalizeNoteList = <T extends Doc<"notes">>(notes: Array<T>) =>
+	notes.map((note) => ensureNoteHasRequiredFields(note));
+
 function useNoteStarControl(noteId: Id<"notes">) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const [isUpdatingStar, setIsUpdatingStar] = React.useState(false);
@@ -68,8 +86,8 @@ function useNoteStarControl(noteId: Id<"notes">) {
 	);
 	const toggleStar = useMutation(api.notes.toggleStar).withOptimisticUpdate(
 		(localStore, args) => {
-			const updateNoteList = (
-				notes: Array<Doc<"notes">> | undefined,
+			const updateNoteList = <T extends Doc<"notes">>(
+				notes: Array<T> | undefined,
 				query: typeof api.notes.list | typeof api.notes.listShared,
 			) => {
 				if (notes === undefined) {
@@ -81,11 +99,10 @@ function useNoteStarControl(noteId: Id<"notes">) {
 					{ workspaceId: args.workspaceId },
 					notes.map((item) =>
 						item._id === args.id
-							? {
-									...item,
+							? ensureNoteHasRequiredFields(item, {
 									isStarred: !(item.isStarred ?? false),
-								}
-							: item,
+								})
+							: ensureNoteHasRequiredFields(item),
 					),
 				);
 			};
@@ -254,7 +271,7 @@ function useNoteActionsMenu({
 				localStore.setQuery(
 					api.notes.list,
 					{ workspaceId: args.workspaceId },
-					notes.filter((item) => item._id !== args.id),
+					normalizeNoteList(notes.filter((item) => item._id !== args.id)),
 				);
 			}
 
@@ -262,7 +279,7 @@ function useNoteActionsMenu({
 				localStore.setQuery(
 					api.notes.listShared,
 					{ workspaceId: args.workspaceId },
-					sharedNotes.filter((item) => item._id !== args.id),
+					normalizeNoteList(sharedNotes.filter((item) => item._id !== args.id)),
 				);
 			}
 
@@ -288,7 +305,7 @@ function useNoteActionsMenu({
 				localStore.setQuery(
 					api.notes.getLatest,
 					{ workspaceId: args.workspaceId },
-					nextLatest,
+					nextLatest ? ensureNoteHasRequiredFields(nextLatest) : null,
 				);
 			}
 

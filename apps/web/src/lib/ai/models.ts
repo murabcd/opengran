@@ -1,4 +1,4 @@
-interface ChatModel {
+export interface ChatModel {
 	id: string;
 	name: string;
 	model: string;
@@ -24,15 +24,17 @@ export const chatModels: Array<ChatModel> = [
 
 const DEFAULT_CHAT_MODEL = "gpt-5.4";
 
-export const defaultChatModel = chatModels.find(
+const resolvedDefaultChatModel = chatModels.find(
 	(model) => model.id === DEFAULT_CHAT_MODEL,
 );
 
-if (!defaultChatModel) {
+if (!resolvedDefaultChatModel) {
 	throw new Error(
 		`Default chat model "${DEFAULT_CHAT_MODEL}" is not configured.`,
 	);
 }
+
+export const defaultChatModel: ChatModel = resolvedDefaultChatModel;
 
 export const findChatModel = (value?: string | null) =>
 	chatModels.find((model) => model.id === value || model.model === value);

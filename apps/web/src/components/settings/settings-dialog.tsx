@@ -917,7 +917,9 @@ function PreferencesSettings() {
 	const { preferences, isLoadingPreferences, isSavingLaunchAtLogin } = state;
 
 	useEffect(() => {
-		if (!window.openGranDesktop) {
+		const desktopBridge = window.openGranDesktop;
+
+		if (!desktopBridge) {
 			return;
 		}
 
@@ -925,7 +927,7 @@ function PreferencesSettings() {
 
 		const loadPreferences = async () => {
 			try {
-				const nextPreferences = await window.openGranDesktop.getPreferences();
+				const nextPreferences = await desktopBridge.getPreferences();
 				if (!isCancelled) {
 					dispatch({ type: "loadSucceeded", value: nextPreferences });
 				}

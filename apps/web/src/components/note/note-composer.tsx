@@ -805,6 +805,11 @@ function NoteSpeechControls({
 	transcriptionLanguageReady: boolean;
 	transcriptionLanguage?: string | null;
 }) {
+	const speechLanguage =
+		typeof transcriptionLanguage === "string"
+			? transcriptionLanguage
+			: undefined;
+
 	return (
 		<div className="flex items-center gap-1">
 			<SpeechInput
@@ -812,7 +817,7 @@ function NoteSpeechControls({
 				size="icon-sm"
 				autoStartKey={autoStartKey}
 				disabled={!transcriptionLanguageReady}
-				lang={transcriptionLanguage}
+				lang={speechLanguage}
 				scopeKey={captureScopeKey}
 				className="shrink-0 rounded-full border-input/50 !bg-transparent text-muted-foreground shadow-none hover:!bg-muted hover:text-foreground"
 			/>

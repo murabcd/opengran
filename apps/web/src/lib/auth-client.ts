@@ -11,15 +11,15 @@ const createConfiguredAuthClient = (baseURL: string) =>
 		plugins: [convexClient(), crossDomainClient()],
 	});
 
-export type AuthClient = ReturnType<typeof createConfiguredAuthClient>;
+type WebAuthClient = ReturnType<typeof createConfiguredAuthClient>;
+export type AuthSession = WebAuthClient["$Infer"]["Session"];
+export type AuthClient = WebAuthClient;
 
 export let authClient!: AuthClient;
 
 export function initializeAuthClient(baseURL: string, isDesktop = false) {
 	authClient = isDesktop
-		? (desktopAuthClient as AuthClient)
+		? (desktopAuthClient as unknown as AuthClient)
 		: createConfiguredAuthClient(baseURL);
 	return authClient;
 }
-
-export type AuthSession = AuthClient["$Infer"]["Session"];

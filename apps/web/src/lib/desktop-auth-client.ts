@@ -1,8 +1,13 @@
 import * as React from "react";
 
 type DesktopSessionData = {
-	user: Record<string, unknown>;
-	session: Record<string, unknown>;
+	user: Record<string, unknown> & {
+		email?: string | null;
+		name?: string | null;
+	};
+	session: Record<string, unknown> & {
+		token?: string | null;
+	};
 } | null;
 
 type SessionState = {
@@ -18,8 +23,82 @@ const defaultSessionState: SessionState = {
 };
 
 const listeners = new Set<() => void>();
-let sessionState = { ...defaultSessionState };
-let pendingSessionRefresh = null;
+let sessionState: SessionState = { ...defaultSessionState };
+let pendingSessionRefresh: Promise<SessionRefreshResult> | null = null;
+
+type SessionRefreshResult = {
+	data: DesktopSessionData;
+	error: {
+		message: string;
+		status: number;
+		statusText: string;
+	} | null;
+};
+
+type DesktopAuthFetchOptions = {
+	path: string;
+	method?: string;
+	body?: unknown;
+	headers?: HeadersInit;
+	throw?: boolean;
+};
+
+type SessionRefreshOptions = {
+	headers?: HeadersInit;
+};
+
+type SignInSocialArgs = {
+	provider: "google" | "github";
+	scopes?: string[];
+	callbackURL?: string;
+	errorCallbackURL?: string;
+	disableRedirect?: boolean;
+};
+
+type ConvexFetchOptions = {
+	fetchOptions?: {
+		headers?: HeadersInit;
+	};
+};
+
+type OneTimeTokenVerifyArgs = {
+	token: string;
+	fetchOptions?: {
+		headers?: HeadersInit;
+	};
+};
+
+type DesktopFetchOptions = {
+	method?: string;
+	headers?: HeadersInit;
+	body?: unknown;
+	throw?: boolean;
+};
+
+const normalizeHeaders = (
+	headers?: HeadersInit,
+): Record<string, string> | undefined => {
+	if (!headers) {
+		return undefined;
+	}
+
+	if (headers instanceof Headers) {
+		return Object.fromEntries(headers.entries());
+	}
+
+	return Array.isArray(headers) ? Object.fromEntries(headers) : headers;
+};
+
+const isDesktopSessionData = (
+	value: unknown,
+): value is {
+	session: Record<string, unknown>;
+	user: Record<string, unknown>;
+} =>
+	typeof value === "object" &&
+	value !== null &&
+	"session" in value &&
+	"user" in value;
 
 const notifyListeners = () => {
 	for (const listener of listeners) {
@@ -27,7 +106,7 @@ const notifyListeners = () => {
 	}
 };
 
-const setSessionState = (nextState) => {
+const setSessionState = (nextState: SessionState) => {
 	sessionState = nextState;
 	notifyListeners();
 };
@@ -38,7 +117,7 @@ const desktopAuthFetch = async ({
 	body,
 	headers,
 	throw: shouldThrow,
-} = {}) => {
+}: DesktopAuthFetchOptions) => {
 	if (!window.openGranDesktop?.authFetch) {
 		throw new Error("Desktop auth bridge is not available.");
 	}
@@ -47,12 +126,14 @@ const desktopAuthFetch = async ({
 		path,
 		method,
 		body,
-		headers,
+		headers: normalizeHeaders(headers),
 		throw: shouldThrow,
 	});
 };
 
-const refreshDesktopSession = async ({ headers } = {}) => {
+const refreshDesktopSession = async ({
+	headers,
+}: SessionRefreshOptions = {}): Promise<SessionRefreshResult> => {
 	if (pendingSessionRefresh) {
 		return pendingSessionRefresh;
 	}
@@ -68,11 +149,8 @@ const refreshDesktopSession = async ({ headers } = {}) => {
 		method: "GET",
 		headers,
 	})
-		.then((data) => {
-			const nextData =
-				data && typeof data === "object" && data.session && data.user
-					? data
-					: null;
+		.then((data: unknown) => {
+			const nextData = isDesktopSessionData(data) ? data : null;
 
 			setSessionState({
 				data: nextData,
@@ -85,7 +163,7 @@ const refreshDesktopSession = async ({ headers } = {}) => {
 				error: null,
 			};
 		})
-		.catch((error) => {
+		.catch((error: unknown) => {
 			const nextError =
 				error instanceof Error ? error : new Error("Failed to fetch session.");
 
@@ -111,8 +189,15 @@ const refreshDesktopSession = async ({ headers } = {}) => {
 	return pendingSessionRefresh;
 };
 
+const fetchConvexEndpoint = async (path: string, headers?: HeadersInit) =>
+	await desktopAuthFetch({
+		path,
+		method: "GET",
+		headers,
+	});
+
 const useDesktopSession = () => {
-	const [state, setState] = React.useState(sessionState);
+	const [state, setState] = React.useState<SessionState>(sessionState);
 
 	React.useEffect(() => {
 		const listener = () => {
@@ -134,7 +219,7 @@ const useDesktopSession = () => {
 
 export const desktopAuthClient = {
 	useSession: useDesktopSession,
-	getSession: async ({ fetchOptions } = {}) =>
+	getSession: async ({ fetchOptions }: ConvexFetchOptions = {}) =>
 		await refreshDesktopSession({
 			headers: fetchOptions?.headers,
 		}),
@@ -152,7 +237,7 @@ export const desktopAuthClient = {
 		});
 		return { data: null, error: null };
 	},
-	$fetch: async (path, options = {}) =>
+	$fetch: async (path: string, options: DesktopFetchOptions = {}) =>
 		await desktopAuthFetch({
 			path,
 			method: options.method,
@@ -167,7 +252,7 @@ export const desktopAuthClient = {
 			callbackURL,
 			errorCallbackURL,
 			disableRedirect,
-		}) => {
+		}: SignInSocialArgs) => {
 			const resolvedCallbackURL =
 				callbackURL ??
 				(window.openGranDesktop
@@ -207,12 +292,23 @@ export const desktopAuthClient = {
 		},
 	},
 	convex: {
-		token: async ({ fetchOptions } = {}) => ({
-			data: await desktopAuthFetch({
-				path: "/convex/token",
-				method: "GET",
-				headers: fetchOptions?.headers,
-			}),
+		token: async ({ fetchOptions }: ConvexFetchOptions = {}) => ({
+			data: await fetchConvexEndpoint("/convex/token", fetchOptions?.headers),
+			error: null,
+		}),
+		jwks: async ({ fetchOptions }: ConvexFetchOptions = {}) => ({
+			data: await fetchConvexEndpoint("/convex/jwks", fetchOptions?.headers),
+			error: null,
+		}),
+		getJwks: async ({ fetchOptions }: ConvexFetchOptions = {}) => ({
+			data: await fetchConvexEndpoint("/convex/jwks", fetchOptions?.headers),
+			error: null,
+		}),
+		getOpenIdConfig: async ({ fetchOptions }: ConvexFetchOptions = {}) => ({
+			data: await fetchConvexEndpoint(
+				"/convex/.well-known/openid-configuration",
+				fetchOptions?.headers,
+			),
 			error: null,
 		}),
 	},
@@ -221,7 +317,7 @@ export const desktopAuthClient = {
 	},
 	crossDomain: {
 		oneTimeToken: {
-			verify: async ({ token, fetchOptions } = {}) => {
+			verify: async ({ token, fetchOptions }: OneTimeTokenVerifyArgs) => {
 				const data = await desktopAuthFetch({
 					path: "/cross-domain/one-time-token/verify",
 					method: "POST",
@@ -230,13 +326,12 @@ export const desktopAuthClient = {
 				});
 
 				void refreshDesktopSession({
-					headers:
-						data && typeof data === "object" && "session" in data
-							? {
-									...(fetchOptions?.headers ?? {}),
-									Authorization: `Bearer ${String(data.session?.token ?? "")}`,
-								}
-							: fetchOptions?.headers,
+					headers: isDesktopSessionData(data)
+						? {
+								...(fetchOptions?.headers ?? {}),
+								Authorization: `Bearer ${String(data.session?.token ?? "")}`,
+							}
+						: fetchOptions?.headers,
 				});
 
 				return {

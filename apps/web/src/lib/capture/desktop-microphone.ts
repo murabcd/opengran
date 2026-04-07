@@ -56,13 +56,15 @@ export const createDesktopMicrophoneInputStream =
 			const activeSources = new Set<AudioBufferSourceNode>();
 			const restartDelaysMs = [250, 750, 1_500] as const;
 
-			const scheduleChunkPlayback = (samples: Float32Array) => {
+			const scheduleChunkPlayback = (
+				samples: Float32Array<ArrayBufferLike>,
+			) => {
 				if (samples.length === 0 || hasDisposed) {
 					return;
 				}
 
 				const buffer = audioContext.createBuffer(1, samples.length, sampleRate);
-				buffer.copyToChannel(samples, 0);
+				buffer.copyToChannel(new Float32Array(samples), 0);
 
 				const sourceNode = audioContext.createBufferSource();
 				sourceNode.buffer = buffer;

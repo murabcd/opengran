@@ -833,11 +833,14 @@ const useNotePageController = ({
 				return true;
 			} catch (error) {
 				try {
-					await setNoteTemplate({
-						workspaceId: activeWorkspaceId,
-						id: nextNoteIdRef.current ?? noteId,
-						templateSlug: previousTemplateSlug,
-					});
+					const workspaceId = activeWorkspaceId;
+					if (workspaceId) {
+						await setNoteTemplate({
+							workspaceId,
+							id: nextNoteIdRef.current ?? noteId,
+							templateSlug: previousTemplateSlug,
+						});
+					}
 				} catch (revertError) {
 					console.error("Failed to revert note template", revertError);
 				}

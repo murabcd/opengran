@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { ChatMessages } from "@/components/chat/messages";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
-import { defaultChatModel, findChatModel } from "@/lib/ai/models";
+import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
 import type { WorkspaceRecord } from "@/lib/workspaces";
@@ -62,7 +62,9 @@ const useChatPageController = ({
 	const [confirmTrashChatId, setConfirmTrashChatId] = React.useState<
 		string | null
 	>(null);
-	const [selectedModel, setSelectedModel] = React.useState(defaultChatModel);
+	const [selectedModel, setSelectedModel] = React.useState(
+		defaultChatModel ?? chatModels[0],
+	);
 	const [mentionPopoverOpen, setMentionPopoverOpen] = React.useState(false);
 	const [documentSearchTerm, setDocumentSearchTerm] = React.useState("");
 	const [mentions, setMentions] = React.useState<string[]>([]);

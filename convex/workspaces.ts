@@ -24,7 +24,6 @@ const workspaceFields = {
 	updatedAt: v.number(),
 };
 
-const workspaceValidator = v.object(workspaceFields);
 const workspaceResponseValidator = v.object({
 	...workspaceFields,
 	iconUrl: v.union(v.string(), v.null()),
