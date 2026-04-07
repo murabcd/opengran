@@ -1,7 +1,4 @@
-import {
-	isTranscriptPlaceholderText,
-	normalizeTranscriptText,
-} from "../../../../packages/ai/src/transcription.mjs";
+import { isTranscriptPlaceholderText } from "../../../../packages/ai/src/transcription.mjs";
 
 const PROMPT_LEAK_PATTERNS = [
 	"transcribe speech verbatim",
@@ -17,33 +14,6 @@ const PROMPT_LEAK_PATTERNS = [
 	"output nothing",
 	"context:",
 ] as const;
-
-const getWordCount = (value: string) =>
-	normalizeTranscriptText(value).split(" ").filter(Boolean).length;
-
-const getTokenSet = (value: string) =>
-	new Set(normalizeTranscriptText(value).split(" ").filter(Boolean));
-
-const computeJaccardSimilarity = (left: string, right: string) => {
-	const leftTokens = getTokenSet(left);
-	const rightTokens = getTokenSet(right);
-
-	if (leftTokens.size === 0 || rightTokens.size === 0) {
-		return 0;
-	}
-
-	let intersection = 0;
-
-	for (const token of leftTokens) {
-		if (rightTokens.has(token)) {
-			intersection += 1;
-		}
-	}
-
-	const union = leftTokens.size + rightTokens.size - intersection;
-
-	return union === 0 ? 0 : intersection / union;
-};
 
 export const containsTranscriptPromptLeakage = (value: string) => {
 	const normalizedValue = value.trim().toLowerCase();
@@ -77,57 +47,4 @@ export const isSuspiciousCommittedTranscriptText = ({
 	}
 
 	return false;
-};
-
-export const isSuspiciousRefinementTranscript = ({
-	candidateText,
-	referenceText,
-}: {
-	candidateText: string;
-	referenceText: string;
-}) => {
-	const trimmedCandidateText = candidateText.trim();
-
-	if (!trimmedCandidateText) {
-		return true;
-	}
-
-	if (
-		isSuspiciousCommittedTranscriptText({
-			text: trimmedCandidateText,
-		})
-	) {
-		return true;
-	}
-
-	const trimmedReferenceText = referenceText.trim();
-
-	if (!trimmedReferenceText) {
-		return false;
-	}
-
-	const overlap = computeJaccardSimilarity(
-		trimmedCandidateText,
-		trimmedReferenceText,
-	);
-	const candidateWords = getWordCount(trimmedCandidateText);
-	const referenceWords = getWordCount(trimmedReferenceText);
-	const normalizedCandidateLength =
-		normalizeTranscriptText(trimmedCandidateText).length;
-	const normalizedReferenceLength =
-		normalizeTranscriptText(trimmedReferenceText).length;
-	const isFarLonger =
-		candidateWords >=
-			Math.max(referenceWords + 10, Math.ceil(referenceWords * 1.8)) ||
-		normalizedCandidateLength > normalizedReferenceLength * 2.2 + 80;
-	const isSevereTopicDrift =
-		candidateWords >= 8 && referenceWords >= 8 && overlap < 0.05;
-
-	return (
-		isSevereTopicDrift ||
-		(candidateWords >= 8 &&
-			referenceWords >= 6 &&
-			overlap < 0.12 &&
-			isFarLonger)
-	);
 };

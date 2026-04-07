@@ -6,7 +6,6 @@ import {
 	handleChatRequest,
 	handleEnhanceNoteRequest,
 	handleRealtimeTranscriptionSessionRequest,
-	handleRefineTranscriptAudioRequest,
 } from "./desktopApi";
 import { handleJiraWebhookRequest } from "./jiraWebhook";
 
@@ -42,14 +41,6 @@ http.route({
 	handler: httpAction(
 		async (_ctx, request) =>
 			await handleRealtimeTranscriptionSessionRequest(request),
-	),
-});
-
-http.route({
-	path: "/api/refine-transcript-audio",
-	method: "POST",
-	handler: httpAction(
-		async (_ctx, request) => await handleRefineTranscriptAudioRequest(request),
 	),
 });
 

@@ -74,7 +74,6 @@ const transcriptionSessionEventChannel = "app:transcription-session-event";
 const meetingDetectionStateChannel = "app:meeting-detection-state";
 const desktopNavigationChannel = "app:navigate";
 const captureHealthTimeoutMs = 3_000;
-const desktopRealtimeConfigAckTimeoutMs = 1_500;
 const desktopRealtimeConnectTimeoutMs = 10_000;
 const desktopRealtimePendingAudioChunkLimit = 50;
 const desktopRealtimeStopFlushTimeoutMs = 1_500;
@@ -2649,11 +2648,7 @@ const notifyDesktopRealtimeStopFlushEvent = (session, transportEvent) => {
 };
 
 const flushDesktopRealtimeTransportOnStop = async (session) => {
-	if (
-		session.socket.readyState !== WebSocket.OPEN ||
-		!session.isConfigured ||
-		session.stopFlush
-	) {
+	if (session.socket.readyState !== WebSocket.OPEN || session.stopFlush) {
 		return;
 	}
 
@@ -2708,7 +2703,6 @@ const stopDesktopRealtimeTransport = async (speaker) => {
 	session.unsubscribeCapture?.();
 	session.unsubscribeCapture = null;
 	clearTimeout(session.openTimeout);
-	clearTimeout(session.configAckTimeout);
 	await flushDesktopRealtimeTransportOnStop(session);
 
 	await new Promise((resolvePromise) => {
@@ -2751,19 +2745,6 @@ const createDesktopRealtimeSessionConfig = ({ lang, source, speaker }) => {
 		speaker,
 	});
 };
-
-const createDesktopRealtimeSessionUpdateEvent = ({
-	lang,
-	source,
-	speaker,
-}) => ({
-	type: "session.update",
-	session: createDesktopRealtimeSessionConfig({
-		lang,
-		source,
-		speaker,
-	}),
-});
 
 const sendDesktopRealtimeAudioChunk = ({ audio, socket }) => {
 	socket.send(
@@ -2911,8 +2892,6 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 			},
 		);
 		const session = {
-			configAckTimeout: null,
-			isConfigured: false,
 			isClosing: false,
 			openTimeout: setTimeout(() => {
 				if (didResolve) {
@@ -2921,7 +2900,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 
 				rejectPromise(
 					new Error(
-						"Timed out while configuring desktop realtime transcription.",
+						"Timed out while connecting desktop realtime transcription.",
 					),
 				);
 				socket.terminate();
@@ -2940,8 +2919,21 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 			speaker,
 		});
 
+		const flushPendingAudio = () => {
+			if (socket.readyState !== WebSocket.OPEN) {
+				return;
+			}
+
+			for (const pendingAudio of session.pendingAudio) {
+				sendDesktopRealtimeAudioChunk({
+					audio: pendingAudio,
+					socket,
+				});
+			}
+			session.pendingAudio = [];
+		};
+
 		const finalizeStartError = (error) => {
-			clearTimeout(session.configAckTimeout);
 			console.warn("[desktop-realtime] transport start failed", {
 				didResolve,
 				message: error instanceof Error ? error.message : String(error),
@@ -2978,7 +2970,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 					return;
 				}
 
-				if (!session.isConfigured || socket.readyState !== WebSocket.OPEN) {
+				if (socket.readyState !== WebSocket.OPEN) {
 					session.pendingAudio.push(audio);
 					if (
 						session.pendingAudio.length > desktopRealtimePendingAudioChunkLimit
@@ -3013,94 +3005,20 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 				source,
 				speaker,
 			});
+			clearTimeout(session.openTimeout);
+			flushPendingAudio();
 
-			try {
-				socket.send(
-					JSON.stringify(
-						createDesktopRealtimeSessionUpdateEvent({
-							lang,
-							source,
-							speaker,
-						}),
-					),
-				);
-			} catch (error) {
-				finalizeStartError(
-					error instanceof Error
-						? error
-						: new Error("Failed to initialize desktop realtime transcription."),
-				);
-				return;
-			}
-
-			session.configAckTimeout = setTimeout(() => {
-				if (didResolve || session.isClosing || session.isConfigured) {
-					return;
-				}
-
-				console.warn(
-					"[desktop-realtime] session config ack timed out; continuing with client secret defaults",
-					{
-						profile,
-						source,
-						speaker,
-					},
-				);
-
-				session.isConfigured = true;
-				clearTimeout(session.openTimeout);
-
-				for (const pendingAudio of session.pendingAudio) {
-					if (socket.readyState !== WebSocket.OPEN) {
-						break;
-					}
-
-					sendDesktopRealtimeAudioChunk({
-						audio: pendingAudio,
-						socket,
-					});
-				}
-				session.pendingAudio = [];
-
+			if (!didResolve) {
 				didResolve = true;
 				resolvePromise({
 					ok: true,
 				});
-			}, desktopRealtimeConfigAckTimeoutMs);
+			}
 		});
 
 		socket.on("message", (rawValue) => {
 			try {
 				const payload = JSON.parse(String(rawValue));
-
-				if (
-					payload?.type === "session.updated" ||
-					payload?.type === "transcription_session.updated"
-				) {
-					clearTimeout(session.configAckTimeout);
-					clearTimeout(session.openTimeout);
-					session.isConfigured = true;
-
-					for (const pendingAudio of session.pendingAudio) {
-						if (socket.readyState !== WebSocket.OPEN) {
-							break;
-						}
-
-						sendDesktopRealtimeAudioChunk({
-							audio: pendingAudio,
-							socket,
-						});
-					}
-					session.pendingAudio = [];
-
-					if (!didResolve) {
-						didResolve = true;
-						resolvePromise({
-							ok: true,
-						});
-					}
-					return;
-				}
 
 				if (payload?.type === "error" && !didResolve) {
 					finalizeStartError(
@@ -3131,7 +3049,6 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 
 		socket.on("error", (error) => {
 			clearTimeout(session.openTimeout);
-			clearTimeout(session.configAckTimeout);
 			console.warn("[desktop-realtime] socket error", {
 				didResolve,
 				isClosing: session.isClosing,
@@ -3146,7 +3063,6 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 
 		socket.on("close", (code, reasonBuffer) => {
 			clearTimeout(session.openTimeout);
-			clearTimeout(session.configAckTimeout);
 			session.unsubscribeCapture?.();
 			session.unsubscribeCapture = null;
 

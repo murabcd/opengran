@@ -34,7 +34,6 @@ import {
 import {
 	createDesktopRealtimeTranscriptionSession,
 	normalizeTranscriptionLanguage,
-	TRANSCRIPTION_MODEL,
 } from "../packages/ai/src/transcription.mjs";
 
 type ChatRequestBody = {
@@ -79,7 +78,6 @@ type ApplyTemplateRequestBody = {
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
 const MAX_NOTE_CONTEXT_LENGTH = 16_000;
-const MAX_AUDIO_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const CHAT_TITLE_MODEL = "gpt-5.4-nano";
 const APP_SOURCE_PREFIX = "app:";
 const WORKSPACE_SOURCE_PREFIX = "workspace:";
@@ -837,92 +835,4 @@ export const handleApplyTemplateRequest = async (request: Request) => {
 			},
 		},
 	);
-};
-
-export const handleRefineTranscriptAudioRequest = async (request: Request) => {
-	if (!process.env.OPENAI_API_KEY) {
-		return jsonResponse(500, {
-			error: "OPENAI_API_KEY is not configured.",
-		});
-	}
-
-	const formData = await request.formData();
-	const audioValue = formData.get("audio");
-	const langValue = formData.get("lang");
-	const language =
-		typeof langValue === "string"
-			? normalizeTranscriptionLanguage(langValue)
-			: null;
-
-	if (!(audioValue instanceof File)) {
-		return jsonResponse(400, {
-			error: "Audio file is required.",
-		});
-	}
-
-	if (audioValue.size === 0) {
-		return jsonResponse(400, {
-			error: "Audio file is empty.",
-		});
-	}
-
-	if (audioValue.size > MAX_AUDIO_FILE_SIZE_BYTES) {
-		return jsonResponse(413, {
-			error: "Audio file exceeds the 25 MB transcription limit.",
-		});
-	}
-
-	const openAiFormData = new FormData();
-	openAiFormData.append(
-		"file",
-		audioValue,
-		audioValue.name || "system-audio.webm",
-	);
-	openAiFormData.append("model", TRANSCRIPTION_MODEL);
-	openAiFormData.append("response_format", "json");
-
-	if (language) {
-		openAiFormData.append("language", language);
-	}
-
-	const requestId = crypto.randomUUID();
-	const transcriptionResponse = await fetch(
-		"https://api.openai.com/v1/audio/transcriptions",
-		{
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-				"X-Client-Request-Id": requestId,
-			},
-			body: openAiFormData,
-		},
-	);
-
-	logOpenAiResponseMetadata({
-		context: "convex.http.audio.transcriptions",
-		requestId,
-		response: transcriptionResponse,
-	});
-
-	const payload = (await transcriptionResponse.json().catch(() => ({}))) as {
-		error?: {
-			message?: string;
-		};
-		text?: string;
-	};
-
-	if (!transcriptionResponse.ok || !payload.text?.trim()) {
-		return jsonResponse(
-			transcriptionResponse.ok ? 502 : transcriptionResponse.status,
-			{
-				error:
-					payload.error?.message ||
-					"Failed to refine the system audio transcript.",
-			},
-		);
-	}
-
-	return jsonResponse(200, {
-		text: payload.text.trim(),
-	});
 };

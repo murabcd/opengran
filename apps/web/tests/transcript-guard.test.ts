@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
 	containsTranscriptPromptLeakage,
 	isSuspiciousCommittedTranscriptText,
-	isSuspiciousRefinementTranscript,
 } from "../src/lib/transcript-guard";
 
 describe("transcript guard", () => {
@@ -58,28 +57,6 @@ describe("transcript guard", () => {
 		expect(
 			isSuspiciousCommittedTranscriptText({
 				text: "What you got?",
-			}),
-		).toBe(false);
-	});
-
-	it("flags a refinement result that diverges heavily from the reference transcript", () => {
-		expect(
-			isSuspiciousRefinementTranscript({
-				candidateText:
-					"Согласно данным ВЦИОМ, россияне ожидают, что также повысить возраст выхода на пенсию.",
-				referenceText:
-					"Мы обсуждали интеграцию HeadHunter, сообщения по статусам и настройки холодного поиска.",
-			}),
-		).toBe(true);
-	});
-
-	it("keeps a close Russian refinement when it stays near the source transcript", () => {
-		expect(
-			isSuspiciousRefinementTranscript({
-				candidateText:
-					"Мы обсуждали интеграцию с HeadHunter, сообщения по статусам и настройки холодного поиска.",
-				referenceText:
-					"Мы обсуждали интеграцию HeadHunter, сообщения по статусам и настройки холодного поиска.",
 			}),
 		).toBe(false);
 	});

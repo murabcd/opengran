@@ -51,7 +51,6 @@ export type LiveTranscriptState = Record<
 	LiveTranscriptEntry
 >;
 
-export const MAX_TRANSCRIPT_REFINEMENT_AUDIO_BYTES = 25 * 1024 * 1024;
 const TRANSCRIPT_DISPLAY_BLOCK_GAP_MS = 6_000;
 
 const STATIC_TRANSCRIPT_SPEAKER_LABELS: Record<TranscriptLiveSpeaker, string> =

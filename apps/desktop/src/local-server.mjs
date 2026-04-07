@@ -38,7 +38,6 @@ import {
 import {
 	createDesktopRealtimeTranscriptionSession,
 	normalizeTranscriptionLanguage,
-	TRANSCRIPTION_MODEL,
 } from "../../../packages/ai/src/transcription.mjs";
 
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
@@ -65,7 +64,6 @@ const fallbackChatModel = chatModels[0];
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
 const CHAT_TITLE_MODEL = "gpt-5.4-nano";
-const MAX_AUDIO_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const preferredExtensionBridgePorts = Array.from(
 	{ length: 20 },
 	(_value, index) => 42831 + index,
@@ -471,27 +469,6 @@ const setExtensionBridgeHeaders = (response) => {
 	response.setHeader("Cache-Control", "no-store");
 };
 
-const createFormDataRequest = (request) =>
-	new Request("http://127.0.0.1/api/refine-transcript-audio", {
-		method: request.method,
-		headers: new Headers(
-			Object.entries(request.headers).flatMap(([key, value]) => {
-				if (value == null) {
-					return [];
-				}
-
-				return Array.isArray(value)
-					? value.map((entry) => [key, entry])
-					: [[key, value]];
-			}),
-		),
-		body:
-			request.method === "GET" || request.method === "HEAD"
-				? undefined
-				: Readable.toWeb(request),
-		duplex: "half",
-	});
-
 const handleChatRequest = async (request, response) => {
 	if (shouldProxyHostedAiRequest()) {
 		await proxyHostedAiRequest({
@@ -883,98 +860,6 @@ const handleApplyTemplateRequest = async (request, response) => {
 	}
 };
 
-const handleRefineTranscriptAudioRequest = async (request, response) => {
-	if (shouldProxyHostedAiRequest()) {
-		await proxyHostedAiRequest({
-			path: "/api/refine-transcript-audio",
-			request,
-			response,
-		});
-		return;
-	}
-
-	const formData = await createFormDataRequest(request).formData();
-	const audioValue = formData.get("audio");
-	const langValue = formData.get("lang");
-	const language =
-		typeof langValue === "string"
-			? normalizeTranscriptionLanguage(langValue)
-			: null;
-
-	if (!(audioValue instanceof File)) {
-		sendJson(response, 400, {
-			error: "Audio file is required.",
-		});
-		return;
-	}
-
-	if (audioValue.size === 0) {
-		sendJson(response, 400, {
-			error: "Audio file is empty.",
-		});
-		return;
-	}
-
-	if (audioValue.size > MAX_AUDIO_FILE_SIZE_BYTES) {
-		sendJson(response, 413, {
-			error: "Audio file exceeds the 25 MB transcription limit.",
-		});
-		return;
-	}
-
-	const openAiFormData = new FormData();
-	openAiFormData.append(
-		"file",
-		audioValue,
-		audioValue.name || "system-audio.webm",
-	);
-	openAiFormData.append("model", TRANSCRIPTION_MODEL);
-	openAiFormData.append("response_format", "json");
-	if (language) {
-		openAiFormData.append("language", language);
-	}
-	const requestId = crypto.randomUUID();
-
-	const transcriptionResponse = await fetch(
-		"https://api.openai.com/v1/audio/transcriptions",
-		{
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-				"X-Client-Request-Id": requestId,
-			},
-			body: openAiFormData,
-		},
-	);
-
-	logOpenAiResponseMetadata({
-		context: "desktop.local_server.audio.transcriptions",
-		requestId,
-		response: transcriptionResponse,
-	});
-	const payload =
-		/** @type {{ error?: { message?: string }, text?: string }} */ (
-			await transcriptionResponse.json().catch(() => ({}))
-		);
-
-	if (!transcriptionResponse.ok || !payload?.text?.trim()) {
-		sendJson(
-			response,
-			transcriptionResponse.ok ? 502 : transcriptionResponse.status,
-			{
-				error:
-					payload?.error?.message ||
-					"Failed to refine the system audio transcript.",
-			},
-		);
-		return;
-	}
-
-	sendJson(response, 200, {
-		text: payload.text.trim(),
-	});
-};
-
 const resolveAssetPath = (requestPath, distDir, basePath = "/") => {
 	const normalizedBasePath =
 		basePath === "/" ? "/" : `/${basePath.replace(/^\/+|\/+$/g, "")}`;
@@ -1073,8 +958,7 @@ export const startLocalServer = async ({
 			requestPath === "/api/chat" ||
 			requestPath === "/api/apply-template" ||
 			requestPath === "/api/realtime-transcription-session" ||
-			requestPath === "/api/enhance-note" ||
-			requestPath === "/api/refine-transcript-audio"
+			requestPath === "/api/enhance-note"
 		) {
 			if (!isAuthorizedLocalAppRequest(request, localServerOrigin)) {
 				sendJson(response, 403, {
@@ -1147,24 +1031,6 @@ export const startLocalServer = async ({
 					error instanceof Error ? error.message : "Unexpected server error.";
 				sendJson(response, 500, { error: message });
 			});
-			return;
-		}
-
-		if (requestPath === "/api/refine-transcript-audio") {
-			if (request.method !== "POST") {
-				response.statusCode = 405;
-				response.setHeader("Content-Type", "application/json");
-				response.end(JSON.stringify({ error: "Method not allowed." }));
-				return;
-			}
-
-			void handleRefineTranscriptAudioRequest(request, response).catch(
-				(error) => {
-					const message =
-						error instanceof Error ? error.message : "Unexpected server error.";
-					sendJson(response, 500, { error: message });
-				},
-			);
 			return;
 		}
 

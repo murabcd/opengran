@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
+	createDesktopRealtimeTranscriptionSession,
 	createRealtimeTranscriptionSession,
 	createRealtimeTranscriptionSessionOptions,
 	normalizeTranscriptionLanguage,
@@ -31,9 +32,13 @@ const readJsonBody = async (request: IncomingMessage) => {
 
 	return JSON.parse(rawBody) as {
 		lang?: string;
+		speaker?: string;
 		source?: string;
 	};
 };
+
+const trim = (value: unknown) =>
+	typeof value === "string" ? value.trim() : undefined;
 
 const logOpenAiResponseMetadata = ({
 	context,
@@ -67,9 +72,11 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 		return;
 	}
 
-	const { lang, source } = await readJsonBody(request);
+	const { lang, source, speaker: rawSpeaker } = await readJsonBody(request);
 	const language = normalizeTranscriptionLanguage(lang);
 	const requestId = randomUUID();
+	const speaker = trim(rawSpeaker);
+	const normalizedSource = trim(source);
 
 	const sessionResponse = await fetch(
 		"https://api.openai.com/v1/realtime/client_secrets",
@@ -85,12 +92,18 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 					anchor: "created_at",
 					seconds: 600,
 				},
-				session: createRealtimeTranscriptionSession(
-					createRealtimeTranscriptionSessionOptions({
-						language,
-						source,
-					}),
-				),
+				session: speaker
+					? createDesktopRealtimeTranscriptionSession({
+							language,
+							source: normalizedSource,
+							speaker,
+						})
+					: createRealtimeTranscriptionSession(
+							createRealtimeTranscriptionSessionOptions({
+								language,
+								source: normalizedSource,
+							}),
+						),
 			}),
 		},
 	);

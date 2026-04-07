@@ -31,10 +31,6 @@ vi.mock("../src/hooks/use-transcription-session", () => ({
 	useTranscriptionSession: useTranscriptionSessionMock,
 }));
 
-vi.mock("../src/lib/transcript-refinement-service", () => ({
-	refineSystemAudioTranscript: vi.fn(),
-}));
-
 vi.mock("../src/lib/transcription-session-manager", () => ({
 	transcriptionSessionManager: {
 		controller: {
