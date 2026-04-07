@@ -792,7 +792,11 @@ function AppearanceSettings() {
 								)?.label ?? "Auto-detect"}
 							</SelectValue>
 						</SelectTrigger>
-						<SelectContent align="end" className="max-h-80">
+						<SelectContent
+							align="end"
+							className="max-h-80"
+							showScrollButtons={false}
+						>
 							<SelectGroup>
 								<SelectLabel>Suggested</SelectLabel>
 								{PRIMARY_TRANSCRIPTION_LANGUAGE_OPTIONS.map(
