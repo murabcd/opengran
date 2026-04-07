@@ -39,6 +39,8 @@ import {
 	isTranscriptPlaceholderText,
 	normalizeTranscriptionLanguage,
 	resolveDesktopRealtimeProfile,
+	shouldDropTranscriptForConfidence,
+	summarizeTranscriptConfidence,
 } from "../../../packages/ai/src/transcription.mjs";
 import { getDesktopAuthClient } from "./auth-client.mjs";
 import { loadRootEnv } from "./env.mjs";
@@ -1648,12 +1650,48 @@ const countLoggedTranscriptWords = (value) =>
 
 const summarizeTranscriptTextForLog = (value) => {
 	const text = typeof value === "string" ? value.trim() : "";
+	const wordCount = countLoggedTranscriptWords(text);
 
 	return {
+		isOversizedTurn: wordCount >= 80,
 		textLength: text.length,
 		textPreview: text.slice(0, 160),
-		wordCount: countLoggedTranscriptWords(text),
+		turnSizeBucket:
+			wordCount >= 80
+				? "very_long"
+				: wordCount >= 40
+					? "long"
+					: wordCount >= 15
+						? "medium"
+						: wordCount > 0
+							? "short"
+							: "empty",
+		wordCount,
 	};
+};
+
+const summarizeTranscriptConfidenceForLog = ({ logprobs, source, text }) => {
+	const summary = summarizeTranscriptConfidence({
+		logprobs,
+		source,
+		text,
+	});
+
+	return summary
+		? {
+				confidenceAverage: summary.average,
+				confidenceLowTokenRatio: summary.lowTokenRatio,
+				confidenceMinProbability: summary.minProbability,
+				confidenceTokenCount: summary.tokenCount,
+				confidenceVeryLowTokenRatio: summary.veryLowTokenRatio,
+			}
+		: {
+				confidenceAverage: null,
+				confidenceLowTokenRatio: null,
+				confidenceMinProbability: null,
+				confidenceTokenCount: 0,
+				confidenceVeryLowTokenRatio: null,
+			};
 };
 
 const logDesktopTurnDebug = (event, details = {}) => {
@@ -2136,6 +2174,14 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 
 		const text = nextTurn.text.trim();
 		const source = speaker === "them" ? "systemAudio" : "microphone";
+		const shouldDropForConfidence =
+			source === "systemAudio" && !nextTurn.failed && text
+				? shouldDropTranscriptForConfidence({
+						logprobs: nextTurn.logprobs ?? null,
+						source,
+						text,
+					})
+				: false;
 		const isLowConfidence =
 			!nextTurn.failed && text
 				? isLowConfidenceTranscriptLogprobs({
@@ -2144,7 +2190,7 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 						text,
 					})
 				: false;
-		const shouldEmit = !nextTurn.failed && text;
+		const shouldEmit = !nextTurn.failed && text && !shouldDropForConfidence;
 
 		if (shouldEmit) {
 			appendTranscriptionUtterance({
@@ -2158,10 +2204,22 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 
 		logDesktopTurnDebug("turn.ordered", {
 			itemId: nextTurn.itemId,
-			outcome: shouldEmit ? "emitted" : nextTurn.failed ? "failed" : "empty",
+			outcome: shouldEmit
+				? "emitted"
+				: shouldDropForConfidence
+					? "dropped_low_confidence"
+					: nextTurn.failed
+						? "failed"
+						: "empty",
 			isLowConfidence,
+			shouldDropForConfidence,
 			previousItemId: nextTurn.previousItemId,
 			speaker,
+			...summarizeTranscriptConfidenceForLog({
+				logprobs: nextTurn.logprobs ?? null,
+				source,
+				text,
+			}),
 			...summarizeTranscriptTextForLog(text),
 		});
 
@@ -3316,15 +3374,21 @@ const handleDesktopRealtimeTransportEvent = async (event) => {
 
 	if (event.type === "final") {
 		const existingTurn = state.turns.get(event.itemId);
+		const finalText =
+			event.text ||
+			existingTurn?.text ||
+			latestTranscriptionSessionState.liveTranscript[event.speaker].text;
+		const source = event.speaker === "them" ? "systemAudio" : "microphone";
 		logDesktopTurnDebug("transport.final", {
 			itemId: event.itemId,
 			liveItemId: state.liveItemId,
 			speaker: event.speaker,
-			...summarizeTranscriptTextForLog(
-				event.text ||
-					existingTurn?.text ||
-					latestTranscriptionSessionState.liveTranscript[event.speaker].text,
-			),
+			...summarizeTranscriptConfidenceForLog({
+				logprobs: event.logprobs ?? existingTurn?.logprobs ?? null,
+				source,
+				text: finalText,
+			}),
+			...summarizeTranscriptTextForLog(finalText),
 		});
 		upsertTranscriptionTurn(event.speaker, event.itemId, {
 			completed: true,

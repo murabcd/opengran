@@ -49,6 +49,23 @@ describe("transcription config", () => {
 		);
 	});
 
+	it("uses faster server vad for them on system audio across realtime sessions", () => {
+		const session = createRealtimeTranscriptionSession(
+			createRealtimeTranscriptionSessionOptions({
+				language: "en",
+				source: "systemAudio",
+				speaker: "them",
+			}),
+		);
+
+		expect(session.audio.input.turn_detection).toEqual({
+			type: "server_vad",
+			threshold: 0.5,
+			prefix_padding_ms: 300,
+			silence_duration_ms: 400,
+		});
+	});
+
 	it("uses stricter low-confidence thresholds for system audio", () => {
 		expect(
 			isLowConfidenceTranscriptLogprobs({
@@ -109,6 +126,43 @@ describe("transcription config", () => {
 				text: "This should probably not survive the draft lane",
 			}),
 		).toBe(true);
+	});
+
+	it("keeps short and medium system-audio turns when confidence is noisy but still plausible", () => {
+		expect(
+			shouldDropTranscriptForConfidence({
+				logprobs: [0.58, 0.42, 0.34, 0.0019].map((probability) => ({
+					logprob: Math.log(probability),
+					token: "segment",
+				})),
+				source: "systemAudio",
+				text: "It was a supernumerary",
+			}),
+		).toBe(false);
+
+		expect(
+			shouldDropTranscriptForConfidence({
+				logprobs: [0.7, 0.47, 0.42, 0.18, 0.024].map((probability) => ({
+					logprob: Math.log(probability),
+					token: "segment",
+				})),
+				source: "systemAudio",
+				text: "It is a real challenge",
+			}),
+		).toBe(false);
+
+		expect(
+			shouldDropTranscriptForConfidence({
+				logprobs: [0.55, 0.52, 0.48, 0.4, 0.35, 0.02, 0.0018].map(
+					(probability) => ({
+						logprob: Math.log(probability),
+						token: "segment",
+					}),
+				),
+				source: "systemAudio",
+				text: "and critically not just a language scientist",
+			}),
+		).toBe(false);
 	});
 
 	it("keeps longer system-audio answer chunks unless confidence is catastrophic", () => {

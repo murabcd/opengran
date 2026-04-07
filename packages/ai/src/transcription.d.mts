@@ -20,11 +20,23 @@ export declare function resolveRealtimeTranscriptionPrompt(args?: {
 export declare function createRealtimeTranscriptionSessionOptions(args?: {
 	language?: string | null;
 	source?: string | null;
+	speaker?: string | null;
 }): {
 	language: string | null;
 	noiseReductionType: "near_field" | null;
 	prompt: string | null;
 	silenceDurationMs: number;
+	turnDetection:
+		| {
+				type: "server_vad";
+				threshold: number;
+				prefix_padding_ms: number;
+				silence_duration_ms: number;
+		  }
+		| {
+				type: "semantic_vad";
+				eagerness: "high";
+		  };
 };
 
 export declare function normalizeTranscriptionLanguage(
@@ -46,6 +58,18 @@ export declare function createRealtimeTranscriptionSession(options?: {
 	noiseReductionType?: "near_field" | "far_field" | null;
 	prompt?: string | null;
 	silenceDurationMs?: number;
+	turnDetection?:
+		| {
+				type: "server_vad";
+				threshold: number;
+				prefix_padding_ms: number;
+				silence_duration_ms: number;
+		  }
+		| {
+				type: "semantic_vad";
+				eagerness: "high";
+		  }
+		| null;
 }): {
 	type: "transcription";
 	include: readonly ["item.input_audio_transcription.logprobs"];
@@ -72,7 +96,7 @@ export declare function createRealtimeTranscriptionSession(options?: {
 export declare function resolveDesktopRealtimeProfile(args?: {
 	source?: string | null;
 	speaker?: string | null;
-}): "default" | "semantic_low";
+}): "default" | "server_vad_fast";
 
 export declare function createDesktopRealtimeTranscriptionSession(args?: {
 	language?: string | null;
@@ -99,7 +123,7 @@ export declare function createDesktopRealtimeTranscriptionSession(args?: {
 				  }
 				| {
 						type: "semantic_vad";
-						eagerness: "low";
+						eagerness: "high";
 				  };
 			transcription: {
 				model: "gpt-4o-transcribe";

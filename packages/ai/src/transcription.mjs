@@ -90,6 +90,16 @@ export const resolveRealtimeSilenceDurationMs = (source) =>
 export const normalizeTranscriptionLanguage = (value) =>
 	value?.split("-")[0]?.trim().toLowerCase() || null;
 
+const createServerVadTurnDetection = (silenceDurationMs = 200) => ({
+	type: "server_vad",
+	threshold: 0.5,
+	prefix_padding_ms: 300,
+	silence_duration_ms: silenceDurationMs,
+});
+
+const createSystemAudioFastTurnDetection = () =>
+	createServerVadTurnDetection(400);
+
 export const resolveRealtimeTranscriptionPrompt = ({
 	language = null,
 	source = null,
@@ -119,6 +129,7 @@ export const resolveRealtimeTranscriptionPrompt = ({
 export const createRealtimeTranscriptionSessionOptions = ({
 	language = null,
 	source = null,
+	speaker = null,
 } = {}) => ({
 	language,
 	noiseReductionType: resolveRealtimeNoiseReductionType(source),
@@ -127,6 +138,10 @@ export const createRealtimeTranscriptionSessionOptions = ({
 		source,
 	}),
 	silenceDurationMs: resolveRealtimeSilenceDurationMs(source),
+	turnDetection:
+		isSystemAudioSource(source) && isThemSpeaker(speaker)
+			? createSystemAudioFastTurnDetection()
+			: createServerVadTurnDetection(resolveRealtimeSilenceDurationMs(source)),
 });
 
 export const createRealtimeTranscriptionSession = ({
@@ -134,6 +149,7 @@ export const createRealtimeTranscriptionSession = ({
 	noiseReductionType = "near_field",
 	prompt = null,
 	silenceDurationMs = 200,
+	turnDetection = null,
 } = {}) => ({
 	type: "transcription",
 	include: REALTIME_TRANSCRIPTION_INCLUDE_FIELDS,
@@ -144,12 +160,8 @@ export const createRealtimeTranscriptionSession = ({
 						type: noiseReductionType,
 					}
 				: null,
-			turn_detection: {
-				type: "server_vad",
-				threshold: 0.5,
-				prefix_padding_ms: 300,
-				silence_duration_ms: silenceDurationMs,
-			},
+			turn_detection:
+				turnDetection ?? createServerVadTurnDetection(silenceDurationMs),
 			transcription: {
 				model: TRANSCRIPTION_MODEL,
 				...(prompt ? { prompt } : {}),
@@ -164,7 +176,7 @@ export const resolveDesktopRealtimeProfile = ({
 	speaker = null,
 } = {}) => {
 	if (isSystemAudioSource(source) && isThemSpeaker(speaker)) {
-		return "semantic_low";
+		return "server_vad_fast";
 	}
 
 	return "default";
@@ -175,23 +187,13 @@ export const createDesktopRealtimeTranscriptionSession = ({
 	source = null,
 	speaker = null,
 } = {}) => {
-	const profile = resolveDesktopRealtimeProfile({
-		source,
-		speaker,
-	});
 	const session = createRealtimeTranscriptionSession(
 		createRealtimeTranscriptionSessionOptions({
 			language,
 			source,
+			speaker,
 		}),
 	);
-
-	if (profile === "semantic_low") {
-		session.audio.input.turn_detection = {
-			type: "semantic_vad",
-			eagerness: "low",
-		};
-	}
 
 	return {
 		...session,
@@ -343,33 +345,38 @@ export const shouldDropTranscriptForConfidence = ({
 
 	if (isSystemAudioSource(source)) {
 		if (summary.wordCount <= 2) {
-			return true;
+			return (
+				summary.average < 0.14 ||
+				summary.lowTokenRatio >= 1 ||
+				summary.veryLowTokenRatio >= 0.8 ||
+				summary.minProbability < 0.0005
+			);
 		}
 
 		if (summary.wordCount <= 4) {
 			return (
-				summary.average < 0.58 ||
-				summary.lowTokenRatio >= 0.45 ||
-				summary.veryLowTokenRatio >= 0.22 ||
-				summary.minProbability < 0.025
+				summary.average < 0.2 ||
+				summary.lowTokenRatio >= 0.85 ||
+				summary.veryLowTokenRatio >= 0.5 ||
+				summary.minProbability < 0.0005
 			);
 		}
 
 		if (summary.wordCount <= 10) {
 			return (
-				summary.average < 0.5 ||
-				summary.lowTokenRatio >= 0.48 ||
-				summary.veryLowTokenRatio >= 0.2 ||
-				summary.minProbability < 0.018
+				summary.average < 0.16 ||
+				summary.lowTokenRatio >= 0.9 ||
+				summary.veryLowTokenRatio >= 0.55 ||
+				summary.minProbability < 0.0004
 			);
 		}
 
 		if (summary.wordCount <= 14) {
 			return (
-				summary.average < 0.38 &&
-				(summary.lowTokenRatio >= 0.58 ||
-					summary.veryLowTokenRatio >= 0.24 ||
-					summary.minProbability < 0.012)
+				summary.average < 0.14 &&
+				(summary.lowTokenRatio >= 0.92 ||
+					summary.veryLowTokenRatio >= 0.58 ||
+					summary.minProbability < 0.0003)
 			);
 		}
 

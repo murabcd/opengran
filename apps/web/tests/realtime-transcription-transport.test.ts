@@ -8,6 +8,7 @@ const createMockStream = () =>
 
 const originalFetch = globalThis.fetch;
 const originalRTCPeerConnection = globalThis.RTCPeerConnection;
+const originalWindow = globalThis.window;
 
 class MockDataChannel {
 	addEventListener = vi.fn();
@@ -57,6 +58,7 @@ describe("connectRealtimeTranscriptionTransport", () => {
 	afterEach(() => {
 		globalThis.fetch = originalFetch;
 		globalThis.RTCPeerConnection = originalRTCPeerConnection;
+		globalThis.window = originalWindow;
 		vi.restoreAllMocks();
 	});
 
@@ -80,6 +82,7 @@ describe("connectRealtimeTranscriptionTransport", () => {
 		globalThis.fetch = fetchMock as typeof fetch;
 		globalThis.RTCPeerConnection =
 			MockPeerConnection as unknown as typeof RTCPeerConnection;
+		globalThis.window = globalThis as typeof globalThis & Window;
 
 		const transport = await connectRealtimeTranscriptionTransport({
 			lang: "en",
@@ -101,13 +104,16 @@ describe("connectRealtimeTranscriptionTransport", () => {
 			1,
 			"/api/realtime-transcription-session",
 			expect.objectContaining({
-				body: JSON.stringify({
-					lang: "en",
-					source: "systemAudio",
-				}),
 				method: "POST",
 			}),
 		);
+		expect(
+			JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")),
+		).toEqual({
+			lang: "en",
+			source: "systemAudio",
+			speaker: "them",
+		});
 
 		await transport.close();
 	});

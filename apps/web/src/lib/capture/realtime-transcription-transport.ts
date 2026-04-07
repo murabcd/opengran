@@ -87,6 +87,7 @@ export type RealtimeTranscriptionSource = "microphone" | "systemAudio";
 const createRealtimeSession = async (
 	lang?: string,
 	source?: RealtimeTranscriptionSource,
+	speaker?: TranscriptSpeaker,
 ): Promise<RealtimeSessionPayload> => {
 	const language = normalizeTranscriptionLanguage(lang);
 
@@ -98,6 +99,7 @@ const createRealtimeSession = async (
 		body: JSON.stringify({
 			...(language ? { lang: language } : {}),
 			...(source ? { source } : {}),
+			...(speaker ? { speaker } : {}),
 		}),
 	});
 
@@ -178,7 +180,7 @@ export const connectRealtimeTranscriptionTransport = async ({
 	speaker: TranscriptSpeaker;
 }): Promise<RealtimeTranscriptionTransport> => {
 	const [{ clientSecret }, peerConnection] = await Promise.all([
-		createRealtimeSession(lang, source),
+		createRealtimeSession(lang, source, speaker),
 		Promise.resolve(new RTCPeerConnection()),
 	]);
 	let hasClosed = false;

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
-	createDesktopRealtimeTranscriptionSession,
 	createRealtimeTranscriptionSession,
 	createRealtimeTranscriptionSessionOptions,
 	normalizeTranscriptionLanguage,
@@ -92,18 +91,13 @@ export const handleRealtimeTranscriptionSessionRequest = async (
 					anchor: "created_at",
 					seconds: 600,
 				},
-				session: speaker
-					? createDesktopRealtimeTranscriptionSession({
-							language,
-							source: normalizedSource,
-							speaker,
-						})
-					: createRealtimeTranscriptionSession(
-							createRealtimeTranscriptionSessionOptions({
-								language,
-								source: normalizedSource,
-							}),
-						),
+				session: createRealtimeTranscriptionSession(
+					createRealtimeTranscriptionSessionOptions({
+						language,
+						source: normalizedSource,
+						speaker,
+					}),
+				),
 			}),
 		},
 	);
