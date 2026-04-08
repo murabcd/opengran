@@ -438,6 +438,63 @@ describe("TranscriptionController", () => {
 		expect(transport.close).toHaveBeenCalledTimes(1);
 	});
 
+	it("stopping does not salvage placeholder system-audio partial text", async () => {
+		const { stream } = createMockStream();
+		const transportEvents: Array<
+			(event: RealtimeTranscriptionTransportEvent) => void
+		> = [];
+		const createMicrophoneInputStream = vi.fn(async () => stream);
+		const createBrowserSystemAudioStream = vi.fn(async () => stream);
+		const connectTransport = vi.fn(
+			async (args: {
+				onEvent: (event: RealtimeTranscriptionTransportEvent) => void;
+			}) => {
+				transportEvents.push(args.onEvent);
+				return {
+					close: vi.fn(async () => {}),
+				} satisfies RealtimeTranscriptionTransport;
+			},
+		);
+		const controller = createController({
+			connectTransport,
+			createBrowserSystemAudioStream,
+			createMicrophoneInputStream,
+			resolvePolicy: vi.fn(async () =>
+				createPolicy({
+					platform: "browser",
+					systemAudioCapability: {
+						isSupported: true,
+						shouldAutoBootstrap: false,
+						sourceMode: "display-media",
+					},
+				}),
+			),
+		});
+		const utterances: TranscriptionControllerState["utterances"] = [];
+		controller.subscribeToEvents((event) => {
+			if (event.type === "session.utterance_committed") {
+				utterances.push(event.utterance);
+			}
+		});
+
+		await controller.start();
+		await controller.requestSystemAudio();
+
+		transportEvents[1]?.({
+			itemId: "turn-1",
+			speaker: "them",
+			textDelta: "music",
+			type: "partial",
+		});
+
+		expect(controller.getSnapshot().liveTranscript.them.text).toBe("music");
+
+		await controller.stop();
+
+		expect(utterances).toHaveLength(0);
+		expect(controller.getSnapshot().liveTranscript.them.text).toBe("");
+	});
+
 	it("stops stale startup work when the note scope changes mid-start", async () => {
 		const transportDeferred = createDeferred<RealtimeTranscriptionTransport>();
 		const { track, stream } = createMockStream();

@@ -101,7 +101,7 @@ export declare function createRealtimeTranscriptionSession(options?: {
 export declare function resolveDesktopRealtimeProfile(args?: {
 	source?: string | null;
 	speaker?: string | null;
-}): "default" | "server_vad_fast";
+}): "default";
 
 export declare function createDesktopRealtimeTranscriptionSession(args?: {
 	language?: string | null;

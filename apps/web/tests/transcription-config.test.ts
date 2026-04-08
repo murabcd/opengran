@@ -7,9 +7,14 @@ import {
 	resolveRealtimeNoiseReductionType,
 	resolveRealtimeSilenceDurationMs,
 	resolveRealtimeTranscriptionPrompt,
+	TRANSCRIPTION_MODEL,
 } from "../../../packages/ai/src/transcription.mjs";
 
 describe("transcription config", () => {
+	it("uses the current recommended OpenAI transcription model", () => {
+		expect(TRANSCRIPTION_MODEL).toBe("gpt-4o-transcribe");
+	});
+
 	it("does not apply microphone noise reduction to system audio", () => {
 		expect(resolveRealtimeNoiseReductionType("systemAudio")).toBeNull();
 		expect(resolveRealtimeNoiseReductionType("system-audio")).toBeNull();
@@ -43,13 +48,17 @@ describe("transcription config", () => {
 			}),
 		);
 
+		expect(session.audio.input.turn_detection.type).toBe("server_vad");
+		if (session.audio.input.turn_detection.type !== "server_vad") {
+			throw new Error("Expected server_vad turn detection for system audio");
+		}
 		expect(session.audio.input.turn_detection.silence_duration_ms).toBe(450);
 		expect(session.audio.input.transcription.prompt).toContain(
 			"Do not translate, paraphrase, summarize, or complete a thought beyond the audio.",
 		);
 	});
 
-	it("uses faster server vad for them on system audio across realtime sessions", () => {
+	it("uses standard server vad for them on system audio across realtime sessions", () => {
 		const session = createRealtimeTranscriptionSession(
 			createRealtimeTranscriptionSessionOptions({
 				language: "en",
@@ -62,14 +71,14 @@ describe("transcription config", () => {
 			type: "server_vad",
 			threshold: 0.5,
 			prefix_padding_ms: 300,
-			silence_duration_ms: 400,
+			silence_duration_ms: 450,
 		});
 		expect(
 			resolveDesktopRealtimeProfile({
 				source: "systemAudio",
 				speaker: "them",
 			}),
-		).toBe("server_vad_fast");
+		).toBe("default");
 	});
 
 	it("uses stricter low-confidence thresholds for system audio", () => {

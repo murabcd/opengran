@@ -9,7 +9,6 @@ const systemAudioSources = new Set([
 	"system-audio",
 	"system_audio",
 ]);
-const themSpeakers = new Set(["them"]);
 
 const transcriptionLanguageNames = {
 	de: "German",
@@ -46,13 +45,6 @@ const isSystemAudioSource = (source) => {
 		typeof source === "string" ? source.trim().toLowerCase() : "";
 
 	return systemAudioSources.has(normalizedSource);
-};
-
-const isThemSpeaker = (speaker) => {
-	const normalizedSpeaker =
-		typeof speaker === "string" ? speaker.trim().toLowerCase() : "";
-
-	return themSpeakers.has(normalizedSpeaker);
 };
 
 export const normalizeTranscriptText = (value) =>
@@ -97,9 +89,6 @@ const createServerVadTurnDetection = (silenceDurationMs = 200) => ({
 	silence_duration_ms: silenceDurationMs,
 });
 
-const createSystemAudioFastTurnDetection = () =>
-	createServerVadTurnDetection(400);
-
 export const resolveRealtimeTranscriptionPrompt = ({
 	language = null,
 	source = null,
@@ -138,10 +127,9 @@ export const createRealtimeTranscriptionSessionOptions = ({
 		source,
 	}),
 	silenceDurationMs: resolveRealtimeSilenceDurationMs(source),
-	turnDetection:
-		isSystemAudioSource(source) && isThemSpeaker(speaker)
-			? createSystemAudioFastTurnDetection()
-			: createServerVadTurnDetection(resolveRealtimeSilenceDurationMs(source)),
+	turnDetection: createServerVadTurnDetection(
+		resolveRealtimeSilenceDurationMs(source),
+	),
 });
 
 export const createRealtimeTranscriptionSession = ({
@@ -175,10 +163,6 @@ export const resolveDesktopRealtimeProfile = ({
 	source = null,
 	speaker = null,
 } = {}) => {
-	if (isSystemAudioSource(source) && isThemSpeaker(speaker)) {
-		return "server_vad_fast";
-	}
-
 	return "default";
 };
 

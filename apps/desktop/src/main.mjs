@@ -39,6 +39,7 @@ import {
 	isTranscriptPlaceholderText,
 	normalizeTranscriptionLanguage,
 	resolveDesktopRealtimeProfile,
+	shouldKeepInterruptedTranscriptTurn,
 	summarizeTranscriptConfidence,
 } from "../../../packages/ai/src/transcription.mjs";
 import { getDesktopAuthClient } from "./auth-client.mjs";
@@ -3217,9 +3218,15 @@ const configureDesktopTranscriptionSession = ({
 const appendTranscriptionTailUtterance = (speaker) => {
 	const state = transcriptionSpeakers[speaker];
 	const liveEntry = latestTranscriptionSessionState.liveTranscript[speaker];
+	const source = speaker === "them" ? "systemAudio" : "microphone";
 	const text = liveEntry.text.trim();
 
-	if (!text) {
+	if (
+		!shouldKeepInterruptedTranscriptTurn({
+			source,
+			text,
+		})
+	) {
 		return;
 	}
 
@@ -3338,13 +3345,16 @@ const handleDesktopRealtimeTransportEvent = async (event) => {
 
 	if (event.type === "turn_failed") {
 		const existingTurn = state.turns.get(event.itemId);
+		const source = event.speaker === "them" ? "systemAudio" : "microphone";
 		const interruptedText =
 			existingTurn?.text ||
 			latestTranscriptionSessionState.liveTranscript[event.speaker].text ||
 			"";
-		const shouldKeepInterruptedText = Boolean(
-			interruptedText.trim() && !isTranscriptPlaceholderText(interruptedText),
-		);
+		const shouldKeepInterruptedText = shouldKeepInterruptedTranscriptTurn({
+			logprobs: existingTurn?.logprobs ?? null,
+			source,
+			text: interruptedText,
+		});
 		logDesktopTurnDebug("transport.turn_failed", {
 			itemId: event.itemId,
 			keepInterruptedText: shouldKeepInterruptedText,
