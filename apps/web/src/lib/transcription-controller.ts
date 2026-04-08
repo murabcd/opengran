@@ -33,10 +33,7 @@ import {
 	resolveTranscriptionPolicy,
 	type TranscriptionPolicy,
 } from "@/lib/transcription-policy";
-import {
-	isTranscriptPlaceholderText,
-	shouldDropTranscriptForConfidence,
-} from "../../../../packages/ai/src/transcription.mjs";
+import { isTranscriptPlaceholderText } from "../../../../packages/ai/src/transcription.mjs";
 
 type TranscriptTurnState = {
 	itemId: string;
@@ -852,27 +849,7 @@ export class TranscriptionController {
 			}
 
 			const text = nextTurn.text.trim();
-			if (!nextTurn.failed && text) {
-				const shouldDropForConfidence =
-					speaker === "them"
-						? shouldDropTranscriptForConfidence({
-								logprobs: nextTurn.logprobs ?? null,
-								source: "systemAudio",
-								text,
-							})
-						: false;
-
-				if (shouldDropForConfidence) {
-					state.emittedItemIds.add(nextTurn.itemId);
-					state.lastCommittedItemId = nextTurn.itemId;
-
-					if (state.liveItemId === nextTurn.itemId) {
-						state.liveItemId = null;
-						this.clearLiveTranscript(speaker);
-					}
-					continue;
-				}
-
+			if (!nextTurn.failed && text && !isTranscriptPlaceholderText(text)) {
 				this.appendUtterance({
 					endedAt: Date.now(),
 					id: `${state.sessionId ?? "session"}:${speaker}:${nextTurn.itemId}`,

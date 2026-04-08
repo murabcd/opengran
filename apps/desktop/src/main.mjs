@@ -39,7 +39,6 @@ import {
 	isTranscriptPlaceholderText,
 	normalizeTranscriptionLanguage,
 	resolveDesktopRealtimeProfile,
-	shouldDropTranscriptForConfidence,
 	summarizeTranscriptConfidence,
 } from "../../../packages/ai/src/transcription.mjs";
 import { getDesktopAuthClient } from "./auth-client.mjs";
@@ -2174,14 +2173,7 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 
 		const text = nextTurn.text.trim();
 		const source = speaker === "them" ? "systemAudio" : "microphone";
-		const shouldDropForConfidence =
-			source === "systemAudio" && !nextTurn.failed && text
-				? shouldDropTranscriptForConfidence({
-						logprobs: nextTurn.logprobs ?? null,
-						source,
-						text,
-					})
-				: false;
+		const isPlaceholder = text ? isTranscriptPlaceholderText(text) : false;
 		const isLowConfidence =
 			!nextTurn.failed && text
 				? isLowConfidenceTranscriptLogprobs({
@@ -2190,7 +2182,7 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 						text,
 					})
 				: false;
-		const shouldEmit = !nextTurn.failed && text && !shouldDropForConfidence;
+		const shouldEmit = !nextTurn.failed && text && !isPlaceholder;
 
 		if (shouldEmit) {
 			appendTranscriptionUtterance({
@@ -2206,13 +2198,13 @@ const emitTranscriptionOrderedTurns = (speaker) => {
 			itemId: nextTurn.itemId,
 			outcome: shouldEmit
 				? "emitted"
-				: shouldDropForConfidence
-					? "dropped_low_confidence"
+				: isPlaceholder
+					? "placeholder"
 					: nextTurn.failed
 						? "failed"
 						: "empty",
 			isLowConfidence,
-			shouldDropForConfidence,
+			shouldDropForConfidence: false,
 			previousItemId: nextTurn.previousItemId,
 			speaker,
 			...summarizeTranscriptConfidenceForLog({
@@ -2908,6 +2900,7 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 			"Desktop realtime transcription transport is only available on macOS.",
 		);
 	}
+	const language = normalizeTranscriptionLanguage(lang);
 
 	if (!process.env.OPENAI_API_KEY && !canUseHostedDesktopAi()) {
 		throw new Error(
@@ -2968,10 +2961,19 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 			socket,
 			source,
 			speaker,
+			language,
 			unsubscribeCapture: null,
 		};
 
+		logDesktopTurnDebug("transport.session_started", {
+			language,
+			profile,
+			source,
+			speaker,
+		});
+
 		console.info("[desktop-realtime] starting transport", {
+			language,
 			profile,
 			source,
 			speaker,
@@ -3058,7 +3060,14 @@ const startDesktopRealtimeTransport = async ({ lang, source, speaker }) => {
 		desktopRealtimeTransportSessions.set(speaker, session);
 
 		socket.on("open", () => {
+			logDesktopTurnDebug("transport.session_open", {
+				language,
+				profile,
+				source,
+				speaker,
+			});
 			console.info("[desktop-realtime] transport open", {
+				language,
 				profile,
 				source,
 				speaker,

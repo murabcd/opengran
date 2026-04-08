@@ -575,7 +575,7 @@ describe("TranscriptionController", () => {
 		expect(controller.getSnapshot().liveTranscript.you.text).toBe("");
 	});
 
-	it("drops a low-confidence committed system-audio turn", async () => {
+	it("keeps a low-confidence committed system-audio turn in the draft lane", async () => {
 		const { stream } = createMockStream();
 		const transportEvents: Array<
 			(event: RealtimeTranscriptionTransportEvent) => void
@@ -634,7 +634,8 @@ describe("TranscriptionController", () => {
 			type: "committed",
 		});
 
-		expect(utterances).toHaveLength(0);
+		expect(utterances).toHaveLength(1);
+		expect(utterances[0]?.text).toBe("hello hello hello");
 		expect(controller.getSnapshot().liveTranscript.them.text).toBe("");
 	});
 

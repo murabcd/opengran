@@ -3,10 +3,10 @@ import {
 	createRealtimeTranscriptionSession,
 	createRealtimeTranscriptionSessionOptions,
 	isLowConfidenceTranscriptLogprobs,
+	resolveDesktopRealtimeProfile,
 	resolveRealtimeNoiseReductionType,
 	resolveRealtimeSilenceDurationMs,
 	resolveRealtimeTranscriptionPrompt,
-	shouldDropTranscriptForConfidence,
 } from "../../../packages/ai/src/transcription.mjs";
 
 describe("transcription config", () => {
@@ -64,6 +64,12 @@ describe("transcription config", () => {
 			prefix_padding_ms: 300,
 			silence_duration_ms: 400,
 		});
+		expect(
+			resolveDesktopRealtimeProfile({
+				source: "systemAudio",
+				speaker: "them",
+			}),
+		).toBe("server_vad_fast");
 	});
 
 	it("uses stricter low-confidence thresholds for system audio", () => {
@@ -88,92 +94,6 @@ describe("transcription config", () => {
 				],
 				source: "systemAudio",
 				text: "hello world today",
-			}),
-		).toBe(false);
-	});
-
-	it("drops low-confidence short and medium system-audio turns more aggressively", () => {
-		expect(
-			shouldDropTranscriptForConfidence({
-				logprobs: Array.from({ length: 6 }, () => ({
-					logprob: -2.8,
-					token: "watch",
-				})),
-				source: "systemAudio",
-				text: "Watch this",
-			}),
-		).toBe(true);
-
-		expect(
-			shouldDropTranscriptForConfidence({
-				logprobs: [
-					{ logprob: -2.8, token: "i" },
-					{ logprob: -2.7, token: "am" },
-					{ logprob: -2.9, token: "trying" },
-				],
-				source: "systemAudio",
-				text: "I am trying",
-			}),
-		).toBe(true);
-
-		expect(
-			shouldDropTranscriptForConfidence({
-				logprobs: Array.from({ length: 8 }, () => ({
-					logprob: -2.6,
-					token: "quality",
-				})),
-				source: "systemAudio",
-				text: "This should probably not survive the draft lane",
-			}),
-		).toBe(true);
-	});
-
-	it("keeps short and medium system-audio turns when confidence is noisy but still plausible", () => {
-		expect(
-			shouldDropTranscriptForConfidence({
-				logprobs: [0.58, 0.42, 0.34, 0.0019].map((probability) => ({
-					logprob: Math.log(probability),
-					token: "segment",
-				})),
-				source: "systemAudio",
-				text: "It was a supernumerary",
-			}),
-		).toBe(false);
-
-		expect(
-			shouldDropTranscriptForConfidence({
-				logprobs: [0.7, 0.47, 0.42, 0.18, 0.024].map((probability) => ({
-					logprob: Math.log(probability),
-					token: "segment",
-				})),
-				source: "systemAudio",
-				text: "It is a real challenge",
-			}),
-		).toBe(false);
-
-		expect(
-			shouldDropTranscriptForConfidence({
-				logprobs: [0.55, 0.52, 0.48, 0.4, 0.35, 0.02, 0.0018].map(
-					(probability) => ({
-						logprob: Math.log(probability),
-						token: "segment",
-					}),
-				),
-				source: "systemAudio",
-				text: "and critically not just a language scientist",
-			}),
-		).toBe(false);
-	});
-
-	it("keeps longer system-audio answer chunks unless confidence is catastrophic", () => {
-		expect(
-			shouldDropTranscriptForConfidence({
-				logprobs: Array.from({ length: 10 }, () => ({
-					logprob: -2.8,
-					token: "ideas",
-				})),
-				source: "systemAudio",
-				text: "But if you really struggle to come up with good ideas, it's totally okay to go work somewhere else",
 			}),
 		).toBe(false);
 	});

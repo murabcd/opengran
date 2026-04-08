@@ -78,12 +78,17 @@ export declare function createRealtimeTranscriptionSession(options?: {
 			noise_reduction: {
 				type: "near_field" | "far_field";
 			} | null;
-			turn_detection: {
-				type: "server_vad";
-				threshold: number;
-				prefix_padding_ms: number;
-				silence_duration_ms: number;
-			};
+			turn_detection:
+				| {
+						type: "server_vad";
+						threshold: number;
+						prefix_padding_ms: number;
+						silence_duration_ms: number;
+				  }
+					| {
+							type: "semantic_vad";
+							eagerness: "high";
+					  };
 			transcription: {
 				model: "gpt-4o-transcribe";
 				prompt?: string;
@@ -121,10 +126,10 @@ export declare function createDesktopRealtimeTranscriptionSession(args?: {
 						prefix_padding_ms: number;
 						silence_duration_ms: number;
 				  }
-				| {
-						type: "semantic_vad";
-						eagerness: "high";
-				  };
+					| {
+							type: "semantic_vad";
+							eagerness: "high";
+					  };
 			transcription: {
 				model: "gpt-4o-transcribe";
 				prompt?: string;
