@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import CoreAudio
 import Dispatch
 import Foundation
 
@@ -148,6 +149,9 @@ final class MicrophoneCapture: @unchecked Sendable {
 	private var hasInstalledTap = false
 	private var engineConfigurationObserver: NSObjectProtocol?
 	private var hasHandledRouteChange = false
+	private(set) var voiceProcessingEnabled = false
+	private(set) var voiceProcessingOutputEnabled = false
+	private(set) var routeDebugInfo: [String: Any] = [:]
 
 	init(
 		encoder: PcmChunkEncoder,
@@ -163,6 +167,9 @@ final class MicrophoneCapture: @unchecked Sendable {
 		try stop()
 		logger.log("[helper] microphone start() entered")
 		hasHandledRouteChange = false
+		voiceProcessingEnabled = false
+		voiceProcessingOutputEnabled = false
+		routeDebugInfo = [:]
 
 		let authorizationStatus = AVCaptureDevice.authorizationStatus(for: .audio)
 		guard authorizationStatus == .authorized else {
@@ -171,7 +178,53 @@ final class MicrophoneCapture: @unchecked Sendable {
 
 		let nextEngine = AVAudioEngine()
 		let inputNode = nextEngine.inputNode
+		let outputNode = nextEngine.outputNode
+		let inputFormatBeforeVoiceProcessing = inputNode.outputFormat(forBus: 0)
+		let outputFormatBeforeVoiceProcessing = outputNode.inputFormat(forBus: 0)
+		let inputDevice = Self.defaultInputDevice()
+		let outputDevice = Self.defaultOutputDevice()
+
+		if #available(macOS 10.15, *) {
+			do {
+				try inputNode.setVoiceProcessingEnabled(true)
+				inputNode.isVoiceProcessingBypassed = false
+
+				if #available(macOS 14.0, *) {
+					inputNode.voiceProcessingOtherAudioDuckingConfiguration =
+						AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
+							enableAdvancedDucking: false,
+							duckingLevel: .min
+						)
+				}
+
+				voiceProcessingEnabled = inputNode.isVoiceProcessingEnabled
+				voiceProcessingOutputEnabled = outputNode.isVoiceProcessingEnabled
+				logger.log(
+					"[helper] microphone voice processing input=\(voiceProcessingEnabled) output=\(voiceProcessingOutputEnabled)"
+				)
+			} catch {
+				logger.log(
+					"[helper] microphone voice processing unavailable: \(error.localizedDescription)"
+				)
+			}
+		}
+
 		let inputFormat = inputNode.outputFormat(forBus: 0)
+		let outputFormat = outputNode.inputFormat(forBus: 0)
+		routeDebugInfo = [
+			"devicesMatch": inputDevice["uid"] as? String == outputDevice["uid"] as? String,
+			"inputDevice": inputDevice,
+			"inputFormatBeforeVoiceProcessing": Self.describeFormat(
+				inputFormatBeforeVoiceProcessing
+			),
+			"inputFormatAfterVoiceProcessing": Self.describeFormat(inputFormat),
+			"outputDevice": outputDevice,
+			"outputFormatBeforeVoiceProcessing": Self.describeFormat(
+				outputFormatBeforeVoiceProcessing
+			),
+			"outputFormatAfterVoiceProcessing": Self.describeFormat(outputFormat),
+		]
+		logger.log("[helper] microphone route \(routeDebugInfo)")
 
 		guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
 			throw MicrophoneCaptureError.invalidInputFormat
@@ -238,6 +291,107 @@ final class MicrophoneCapture: @unchecked Sendable {
 		logger.log("[helper] microphone engine configuration changed")
 		routeChangeHandler()
 	}
+
+	private static func propertyAddress(
+		selector: AudioObjectPropertySelector,
+		scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
+		element: AudioObjectPropertyElement = kAudioObjectPropertyElementMain
+	) -> AudioObjectPropertyAddress {
+		AudioObjectPropertyAddress(
+			mSelector: selector,
+			mScope: scope,
+			mElement: element
+		)
+	}
+
+	private static func defaultInputDevice() -> [String: Any] {
+		describeDefaultDevice(selector: kAudioHardwarePropertyDefaultInputDevice)
+	}
+
+	private static func defaultOutputDevice() -> [String: Any] {
+		describeDefaultDevice(selector: kAudioHardwarePropertyDefaultOutputDevice)
+	}
+
+	private static func describeDefaultDevice(
+		selector: AudioObjectPropertySelector
+	) -> [String: Any] {
+		var address = propertyAddress(selector: selector)
+		var deviceID = AudioDeviceID(0)
+		var dataSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+		let status = AudioObjectGetPropertyData(
+			AudioObjectID(kAudioObjectSystemObject),
+			&address,
+			0,
+			nil,
+			&dataSize,
+			&deviceID
+		)
+
+		guard status == noErr, deviceID != 0 else {
+			return [
+				"id": 0,
+				"lookupStatus": Int(status),
+				"name": NSNull(),
+				"uid": NSNull(),
+			]
+		}
+
+		return [
+			"id": Int(deviceID),
+			"lookupStatus": Int(status),
+			"name": deviceName(for: deviceID) ?? NSNull(),
+			"uid": deviceUID(for: deviceID) ?? NSNull(),
+		]
+	}
+
+	private static func deviceName(for deviceID: AudioDeviceID) -> String? {
+		var address = propertyAddress(selector: kAudioObjectPropertyName)
+		var unmanagedName: Unmanaged<CFString>?
+		var dataSize = UInt32(MemoryLayout<CFString?>.size)
+		let status = AudioObjectGetPropertyData(
+			deviceID,
+			&address,
+			0,
+			nil,
+			&dataSize,
+			&unmanagedName
+		)
+
+		guard status == noErr, let unmanagedName else {
+			return nil
+		}
+
+		return unmanagedName.takeRetainedValue() as String
+	}
+
+	private static func deviceUID(for deviceID: AudioDeviceID) -> String? {
+		var address = propertyAddress(selector: kAudioDevicePropertyDeviceUID)
+		var unmanagedUID: Unmanaged<CFString>?
+		var dataSize = UInt32(MemoryLayout<CFString?>.size)
+		let status = AudioObjectGetPropertyData(
+			deviceID,
+			&address,
+			0,
+			nil,
+			&dataSize,
+			&unmanagedUID
+		)
+
+		guard status == noErr, let unmanagedUID else {
+			return nil
+		}
+
+		return unmanagedUID.takeRetainedValue() as String
+	}
+
+	private static func describeFormat(_ format: AVAudioFormat) -> [String: Any] {
+		[
+			"channelCount": Int(format.channelCount),
+			"commonFormat": format.commonFormat.rawValue,
+			"isInterleaved": format.isInterleaved,
+			"sampleRate": format.sampleRate,
+		]
+	}
 }
 
 @main
@@ -289,7 +443,10 @@ enum MicrophoneCaptureCLI {
 			emitter.send(event: [
 				"type": "ready",
 				"channels": Int(format.channelCount),
+				"route": capture.routeDebugInfo,
 				"sampleRate": Int(format.sampleRate.rounded()),
+				"voiceProcessingEnabled": capture.voiceProcessingEnabled,
+				"voiceProcessingOutputEnabled": capture.voiceProcessingOutputEnabled,
 			])
 			withExtendedLifetime(signalSources) {
 				dispatchMain()

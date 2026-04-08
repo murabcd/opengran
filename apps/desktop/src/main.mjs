@@ -4271,6 +4271,17 @@ const startMicrophoneCapture = async () => {
 			}
 
 			console.info("[microphone] helper reported ready", payload);
+			logDesktopTurnDebug("microphone.helper_ready", {
+				channels: payload?.channels ?? null,
+				route:
+					payload?.route && typeof payload.route === "object"
+						? payload.route
+						: null,
+				sampleRate: payload?.sampleRate ?? null,
+				voiceProcessingEnabled: payload?.voiceProcessingEnabled === true,
+				voiceProcessingOutputEnabled:
+					payload?.voiceProcessingOutputEnabled === true,
+			});
 			didResolve = true;
 			resolvePromise(payload);
 		};
@@ -4360,7 +4371,14 @@ const startMicrophoneCapture = async () => {
 				resetHealthTimeout();
 				resolveStart({
 					channels: Number(event.channels) || 1,
+					route:
+						event?.route && typeof event.route === "object"
+							? event.route
+							: null,
 					sampleRate: session.sampleRate,
+					voiceProcessingEnabled: event?.voiceProcessingEnabled === true,
+					voiceProcessingOutputEnabled:
+						event?.voiceProcessingOutputEnabled === true,
 				});
 				return;
 			}
