@@ -1,4 +1,5 @@
 export const TRANSCRIPTION_MODEL = "gpt-4o-transcribe";
+export const AUDIO_TRANSCRIPTION_SAMPLE_RATE = 24_000;
 
 export const REALTIME_TRANSCRIPTION_INCLUDE_FIELDS = [
 	"item.input_audio_transcription.logprobs",
@@ -185,7 +186,7 @@ export const createDesktopRealtimeTranscriptionSession = ({
 			input: {
 				...session.audio.input,
 				format: {
-					rate: 24_000,
+					rate: AUDIO_TRANSCRIPTION_SAMPLE_RATE,
 					type: "audio/pcm",
 				},
 			},

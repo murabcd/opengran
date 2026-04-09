@@ -3294,6 +3294,10 @@ const handleDesktopRealtimeTransportEvent = async (event) => {
 
 	if (event.type === "committed") {
 		const existingTurn = state.turns.get(event.itemId);
+		const startedAt =
+			existingTurn?.startedAt ??
+			latestTranscriptionSessionState.liveTranscript[event.speaker].startedAt ??
+			Date.now();
 		logDesktopTurnDebug("transport.committed", {
 			hasExistingTurn: Boolean(existingTurn),
 			itemId: event.itemId,
@@ -3305,7 +3309,9 @@ const handleDesktopRealtimeTransportEvent = async (event) => {
 		});
 		upsertTranscriptionTurn(event.speaker, event.itemId, {
 			previousItemId: event.previousItemId,
+			startedAt,
 		});
+
 		emitTranscriptionOrderedTurns(event.speaker);
 		return;
 	}
@@ -3398,6 +3404,7 @@ const handleDesktopRealtimeTransportEvent = async (event) => {
 			existingTurn?.text ||
 			latestTranscriptionSessionState.liveTranscript[event.speaker].text;
 		const source = event.speaker === "them" ? "systemAudio" : "microphone";
+
 		logDesktopTurnDebug("transport.final", {
 			itemId: event.itemId,
 			liveItemId: state.liveItemId,

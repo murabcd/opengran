@@ -201,8 +201,8 @@ final class SystemAudioCapture: @unchecked Sendable {
 		tapDescription.processes = Self.currentProcessObjectID().map { [$0] } ?? []
 		tapDescription.isPrivate = true
 		tapDescription.muteBehavior = .unmuted
-		tapDescription.isMixdown = true
-		tapDescription.isMono = true
+		tapDescription.isMixdown = false
+		tapDescription.isMono = false
 		tapDescription.isExclusive = true
 		tapDescription.deviceUID = outputUID
 		tapDescription.stream = 0
