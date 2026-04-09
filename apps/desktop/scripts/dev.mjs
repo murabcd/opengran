@@ -32,6 +32,12 @@ const waitForUrl = async (targetUrl) => {
 
 await waitForUrl(rendererUrl);
 
+if (process.platform === "darwin") {
+	console.warn(
+		"[desktop:dev] Running the raw Electron bundle in development. Dock and app-switcher icon surfaces may show the default Electron icon when meeting widget all-workspaces mode is used. Use `bun run dev:desktop:native` to validate native OpenGran icon behavior.",
+	);
+}
+
 const child = spawn(electronBinary, ["."], {
 	cwd: packageRoot,
 	stdio: "inherit",

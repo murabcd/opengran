@@ -9,6 +9,7 @@ import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const useChatMock = vi.fn();
+const useMutationMock = vi.fn();
 const useQueryMock = vi.fn();
 const useNoteTranscriptSessionMock = vi.fn();
 const useSidebarMock = vi.fn();
@@ -22,6 +23,7 @@ vi.mock("ai", () => ({
 }));
 
 vi.mock("convex/react", () => ({
+	useMutation: useMutationMock,
 	useQuery: useQueryMock,
 }));
 
@@ -177,6 +179,7 @@ describe("NoteComposer", () => {
 		});
 
 		useQueryMock.mockReturnValue(undefined);
+		useMutationMock.mockReturnValue(vi.fn());
 		useChatMock.mockReturnValue({
 			error: undefined,
 			messages: [],

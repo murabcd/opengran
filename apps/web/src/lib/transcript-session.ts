@@ -1,16 +1,18 @@
 import {
 	compareTranscriptUtterances,
-	formatTranscriptUtterance,
+	createEmptyLiveTranscriptState,
+	createTranscriptBlocksText,
+	createTranscriptDisplayEntries,
 	type TranscriptUtterance,
 } from "@/lib/transcript";
 
 export const createTranscriptText = (utterances: TranscriptUtterance[]) =>
-	[...utterances]
-		.sort(compareTranscriptUtterances)
-		.map(formatTranscriptUtterance)
-		.filter(Boolean)
-		.join("\n\n")
-		.trim();
+	createTranscriptBlocksText(
+		createTranscriptDisplayEntries({
+			liveTranscript: createEmptyLiveTranscriptState(),
+			utterances: [...utterances].sort(compareTranscriptUtterances),
+		}),
+	);
 
 export const replaceTranscriptUtterancesLocally = ({
 	currentUtterances,

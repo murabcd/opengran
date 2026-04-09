@@ -21,6 +21,7 @@ import {
 	SelectItem,
 	SelectLabel,
 	SelectTrigger,
+	SelectValue,
 } from "@workspace/ui/components/select";
 import { Sidebar, useSidebar } from "@workspace/ui/components/sidebar";
 import {
@@ -31,9 +32,11 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import {
+	ArrowDown,
 	ArrowUp,
+	AudioWaveform,
 	Check,
 	ChevronUp,
 	Copy,
@@ -43,9 +46,10 @@ import {
 	PanelRightDashed,
 	PanelTopBottomDashed,
 	Plus,
-	Sparkles,
+	SlidersHorizontal,
 	ThumbsDown,
 	ThumbsUp,
+	WandSparkles,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -56,6 +60,13 @@ import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { getChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
+import { formatTranscriptElapsed } from "@/lib/transcript";
+import {
+	getTranscriptionLanguageSelectValue,
+	OTHER_TRANSCRIPTION_LANGUAGE_OPTIONS,
+	PRIMARY_TRANSCRIPTION_LANGUAGE_OPTIONS,
+	parseTranscriptionLanguageSelectValue,
+} from "@/lib/transcription-languages";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { SpeechInput } from "../ai-elements/speech-input";
@@ -219,11 +230,35 @@ const useNoteComposerController = ({
 				}
 			: "skip",
 	);
+	const updateUserPreferences = useMutation(api.userPreferences.update);
 	const userPreferences = useQuery(api.userPreferences.get, {});
+	const [isSavingTranscriptionLanguage, setIsSavingTranscriptionLanguage] =
+		React.useState(false);
 	const isTranscriptionLanguageReady = userPreferences !== undefined;
 	const transcriptionLanguage = isTranscriptionLanguageReady
 		? (userPreferences?.transcriptionLanguage ?? null)
 		: undefined;
+	const transcriptionLanguageSelectValue = getTranscriptionLanguageSelectValue(
+		transcriptionLanguage,
+	);
+
+	const handleTranscriptionLanguageChange = React.useCallback(
+		async (value: string) => {
+			setIsSavingTranscriptionLanguage(true);
+
+			try {
+				await updateUserPreferences({
+					transcriptionLanguage: parseTranscriptionLanguageSelectValue(value),
+				});
+			} catch (error) {
+				console.error("Failed to update transcription language", error);
+				toast.error("Failed to update transcription language");
+			} finally {
+				setIsSavingTranscriptionLanguage(false);
+			}
+		},
+		[updateUserPreferences],
+	);
 	const transcriptSession = useNoteTranscriptSession({
 		autoStartTranscription:
 			autoStartTranscription && isTranscriptionLanguageReady,
@@ -744,6 +779,7 @@ const useNoteComposerController = ({
 		closeRightSidebar,
 		composerPlaceholder,
 		currentChatId,
+		exportTranscript: transcriptSession.exportTranscript,
 		fullTranscript: transcriptSession.fullTranscript,
 		groupedNoteChats,
 		handleComposerFocus,
@@ -758,6 +794,8 @@ const useNoteComposerController = ({
 		handleSubmit,
 		handleTextareaChange,
 		hasMessage,
+		isTranscriptViewportAtBottom:
+			transcriptSession.isTranscriptViewportAtBottom,
 		systemAudioStatus: transcriptSession.systemAudioStatus,
 		recoveryStatus: transcriptSession.recoveryStatus,
 		inlinePanelRef,
@@ -780,10 +818,29 @@ const useNoteComposerController = ({
 		transcriptViewportRef: transcriptSession.transcriptViewportRef,
 		reactionsByMessageId,
 		rootRef,
+		scrollTranscriptToBottom: transcriptSession.scrollTranscriptToBottom,
 		setPanelMode,
 		setReactionsByMessageId,
 		shouldShowInlinePanel,
 		textareaRef,
+		handleTranscriptionLanguageChange,
+		isSavingTranscriptionLanguage,
+		canOpenTranscriptSoundSettings:
+			typeof window !== "undefined" && !!window.openGranDesktop,
+		handleOpenTranscriptSoundSettings: async () => {
+			if (typeof window === "undefined" || !window.openGranDesktop) {
+				return;
+			}
+
+			try {
+				await window.openGranDesktop.openSoundSettings();
+			} catch (error) {
+				console.error("Failed to open sound settings", error);
+				toast.error("Failed to open sound settings");
+			}
+		},
+		transcriptionLanguageSelectValue,
+		transcriptStartedAt: transcriptSession.transcriptStartedAt,
 		transcriptionLanguageReady: isTranscriptionLanguageReady,
 		transcriptionLanguage,
 		handleInlinePanelResizeStart,
@@ -841,6 +898,68 @@ function NoteSpeechControls({
 	);
 }
 
+function TranscriptLanguageSelector({
+	className,
+	controller,
+}: {
+	className?: string;
+	controller: NoteComposerController;
+}) {
+	return (
+		<Select
+			value={controller.transcriptionLanguageSelectValue}
+			onValueChange={(value) => {
+				void controller.handleTranscriptionLanguageChange(value);
+			}}
+		>
+			<SelectTrigger
+				size="sm"
+				className={cn(
+					"h-7 w-fit min-w-0 cursor-pointer gap-1 rounded-full border-transparent !bg-transparent pr-2 text-xs text-muted-foreground shadow-none hover:!bg-muted",
+					className,
+				)}
+				aria-label="Select transcription language"
+				disabled={
+					!controller.transcriptionLanguageReady ||
+					controller.isSavingTranscriptionLanguage
+				}
+			>
+				<SelectValue>
+					{getTranscriptionLanguageSelectValue(
+						controller.transcriptionLanguage,
+					) === controller.transcriptionLanguageSelectValue
+						? ([
+								...PRIMARY_TRANSCRIPTION_LANGUAGE_OPTIONS,
+								...OTHER_TRANSCRIPTION_LANGUAGE_OPTIONS,
+							].find(
+								(option) =>
+									option.value === controller.transcriptionLanguageSelectValue,
+							)?.label ?? "Auto-detect")
+						: "Auto-detect"}
+				</SelectValue>
+			</SelectTrigger>
+			<SelectContent align="end" className="max-h-80" showScrollButtons={false}>
+				<SelectGroup>
+					<SelectLabel>Suggested</SelectLabel>
+					{PRIMARY_TRANSCRIPTION_LANGUAGE_OPTIONS.map(({ value, label }) => (
+						<SelectItem key={value} value={value} className="cursor-pointer">
+							<span>{label}</span>
+						</SelectItem>
+					))}
+				</SelectGroup>
+				<SelectGroup>
+					<SelectLabel>More languages</SelectLabel>
+					{OTHER_TRANSCRIPTION_LANGUAGE_OPTIONS.map(({ value, label }) => (
+						<SelectItem key={value} value={value} className="cursor-pointer">
+							<span>{label}</span>
+						</SelectItem>
+					))}
+				</SelectGroup>
+			</SelectContent>
+		</Select>
+	);
+}
+
 function NoteChatMessages({
 	chatError,
 	chatMessages,
@@ -892,13 +1011,11 @@ function NoteChatMessages({
 					>
 						<div
 							className={cn(
-								"max-w-[85%] rounded-lg px-4 py-3 text-sm",
+								"max-w-[85%] rounded-lg px-3 py-2 text-sm",
 								chatMessage.role === "user"
 									? "bg-secondary text-secondary-foreground"
 									: "bg-transparent px-0 py-0 text-foreground",
-								isStreamingAssistantMessage &&
-									!text &&
-									"text-right text-muted-foreground",
+								isStreamingAssistantMessage && !text && "text-muted-foreground",
 							)}
 						>
 							{isStreamingAssistantMessage && !text ? (
@@ -1302,9 +1419,11 @@ function ChatInlinePopoverFooter({
 }
 
 function TranscriptInlinePopoverFooter({
+	controller,
 	isSpeechListening,
 	speechControls,
 }: {
+	controller: NoteComposerController;
 	isSpeechListening: boolean;
 	speechControls: React.ReactNode;
 }) {
@@ -1312,7 +1431,7 @@ function TranscriptInlinePopoverFooter({
 		<InlinePopoverFooterContainer className="absolute inset-x-0 bottom-[6px] z-10 px-[6px] pb-0">
 			<div className="relative">
 				{isSpeechListening ? (
-					<div className="pointer-events-none absolute inset-x-4 bottom-full z-10 mb-2 rounded-lg bg-muted/70 px-4 py-1 text-center text-[11px] leading-4 text-muted-foreground/90">
+					<div className="pointer-events-none absolute inset-x-4 bottom-full z-10 mb-2 rounded-lg bg-muted px-4 py-1 text-center text-[11px] leading-4 text-muted-foreground">
 						Always get consent when transcribing others.
 					</div>
 				) : null}
@@ -1324,7 +1443,10 @@ function TranscriptInlinePopoverFooter({
 					/>
 					<InputGroupAddon align="block-end" className="gap-1 px-4 pb-2.5">
 						{speechControls}
-						<div aria-hidden="true" className="ml-auto size-8 shrink-0" />
+						<TranscriptLanguageSelector
+							className="ml-auto"
+							controller={controller}
+						/>
 					</InputGroupAddon>
 				</InputGroup>
 			</div>
@@ -1348,7 +1470,7 @@ export function NoteComposer(props: NoteComposerProps) {
 						{controller.isGeneratingNotes ? (
 							<LoaderCircle className="size-4 animate-spin" />
 						) : (
-							<Sparkles className="size-4" />
+							<WandSparkles className="size-4" />
 						)}
 						{controller.isGeneratingNotes ? "Generating..." : "Generate notes"}
 					</Button>
@@ -1423,6 +1545,19 @@ function TranscriptPanelHeader({
 }: {
 	controller: NoteComposerController;
 }) {
+	const [isTranscriptCopied, setIsTranscriptCopied] = React.useState(false);
+	const transcriptCopiedTimeoutRef = React.useRef<ReturnType<
+		typeof globalThis.setTimeout
+	> | null>(null);
+
+	React.useEffect(() => {
+		return () => {
+			if (transcriptCopiedTimeoutRef.current !== null) {
+				globalThis.clearTimeout(transcriptCopiedTimeoutRef.current);
+			}
+		};
+	}, []);
+
 	return (
 		<CardHeader
 			className={cn(
@@ -1432,27 +1567,86 @@ function TranscriptPanelHeader({
 		>
 			<div className="text-sm font-medium text-foreground">Live transcript</div>
 			<div className="flex items-center gap-1">
-				<Button
-					type="button"
-					variant="ghost"
-					size="icon-sm"
-					className={cn(controller.isSidebarPresentation ? "-mr-1" : "-mr-1.5")}
-					onClick={async () => {
-						if (!controller.fullTranscript) {
-							return;
-						}
+				{controller.canOpenTranscriptSoundSettings ? (
+					<Tooltip>
+						<DropdownMenu>
+							<TooltipTrigger asChild>
+								<DropdownMenuTrigger asChild>
+									<Button
+										type="button"
+										variant="ghost"
+										size="icon-sm"
+										className={cn(
+											controller.isSidebarPresentation ? "-mr-1" : "-mr-1.5",
+										)}
+										aria-label="Transcript settings"
+									>
+										<SlidersHorizontal className="size-4" />
+									</Button>
+								</DropdownMenuTrigger>
+							</TooltipTrigger>
+							<DropdownMenuContent align="end" className="w-56">
+								<DropdownMenuItem
+									onClick={() => {
+										void controller.handleOpenTranscriptSoundSettings();
+									}}
+								>
+									<AudioWaveform className="size-4" />
+									Sound settings
+								</DropdownMenuItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
+						<TooltipContent align="end">Transcript settings</TooltipContent>
+					</Tooltip>
+				) : null}
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-sm"
+							className={cn(
+								controller.isSidebarPresentation ? "-mr-1" : "-mr-1.5",
+							)}
+							aria-label="Copy transcript"
+							onClick={async () => {
+								if (!controller.exportTranscript) {
+									return;
+								}
 
-						try {
-							await navigator.clipboard.writeText(controller.fullTranscript);
-							toast.success("Transcript copied");
-						} catch (error) {
-							console.error("Failed to copy transcript", error);
-							toast.error("Failed to copy transcript");
-						}
-					}}
-				>
-					<Copy className="size-4" />
-				</Button>
+								try {
+									await navigator.clipboard.writeText(
+										controller.exportTranscript,
+									);
+									if (transcriptCopiedTimeoutRef.current !== null) {
+										globalThis.clearTimeout(transcriptCopiedTimeoutRef.current);
+									}
+									setIsTranscriptCopied(true);
+									transcriptCopiedTimeoutRef.current = globalThis.setTimeout(
+										() => {
+											setIsTranscriptCopied(false);
+											transcriptCopiedTimeoutRef.current = null;
+										},
+										2000,
+									);
+									toast.success("Transcript copied");
+								} catch (error) {
+									console.error("Failed to copy transcript", error);
+									toast.error("Failed to copy transcript");
+								}
+							}}
+						>
+							{isTranscriptCopied ? (
+								<Check className="size-4" />
+							) : (
+								<Copy className="size-4" />
+							)}
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent align="end">
+						{isTranscriptCopied ? "Copied" : "Copy transcript"}
+					</TooltipContent>
+				</Tooltip>
 			</div>
 		</CardHeader>
 	);
@@ -1589,11 +1783,23 @@ function NoteComposerTranscriptPanelContent({
 
 			{shouldRenderInlineComposer ? (
 				<TranscriptInlinePopoverFooter
+					controller={controller}
 					isSpeechListening={controller.isSpeechListening}
 					speechControls={
 						<NoteComposerSpeechControls controller={controller} />
 					}
 				/>
+			) : null}
+
+			{!shouldRenderInlineComposer ? (
+				<div
+					className={cn(
+						"flex items-center justify-end",
+						controller.isSidebarPresentation ? "px-2 pb-2" : "px-4 pb-4",
+					)}
+				>
+					<TranscriptLanguageSelector controller={controller} />
+				</div>
 			) : null}
 		</>
 	);
@@ -1753,35 +1959,64 @@ function NoteTranscriptPanel({
 	}
 
 	return (
-		<ScrollArea
-			className="min-h-0 w-full flex-1"
-			viewportClassName="flex flex-col gap-4 pr-4"
-			viewportRef={controller.transcriptViewportRef}
-		>
-			<div className={cn("flex flex-col gap-4")}>
-				{controller.displayTranscriptEntries.map((utterance) => (
-					<div
-						key={utterance.id}
-						className={cn(
-							"flex w-full transition-opacity",
-							utterance.isLive && "opacity-75",
-							utterance.speaker === "you" ? "justify-end" : "justify-start",
-						)}
-					>
-						<div
-							className={cn(
-								"max-w-[85%] text-sm leading-6",
-								utterance.speaker === "you"
-									? "rounded-lg bg-secondary px-4 py-3 text-right text-secondary-foreground"
-									: "text-foreground",
-							)}
-						>
-							<p className="whitespace-pre-wrap">{utterance.text}</p>
+		<div className="relative flex min-h-0 w-full flex-1 flex-col">
+			<ScrollArea
+				className="min-h-0 w-full flex-1"
+				viewportClassName="flex flex-col gap-4 pr-4"
+				viewportRef={controller.transcriptViewportRef}
+			>
+				<div className={cn("flex flex-col gap-4")}>
+					{controller.displayTranscriptEntries.map((utterance) => (
+						<div key={utterance.id} className="flex flex-col gap-2">
+							{controller.transcriptStartedAt != null ? (
+								<div className="flex justify-center">
+									<p className="text-[11px] font-medium tabular-nums text-muted-foreground">
+										{formatTranscriptElapsed(
+											utterance.startedAt - controller.transcriptStartedAt,
+										)}
+									</p>
+								</div>
+							) : null}
+							<div
+								className={cn(
+									"flex w-full transition-colors",
+									utterance.speaker === "you" ? "justify-end" : "justify-start",
+								)}
+							>
+								<div
+									className={cn(
+										"max-w-[85%] text-sm leading-6",
+										utterance.speaker === "you"
+											? utterance.isLive
+												? "rounded-lg bg-secondary/70 px-4 py-3 text-left text-muted-foreground"
+												: "rounded-lg bg-secondary px-4 py-3 text-left text-secondary-foreground"
+											: utterance.isLive
+												? "text-muted-foreground"
+												: "text-foreground",
+									)}
+								>
+									<p className="whitespace-pre-wrap">{utterance.text}</p>
+								</div>
+							</div>
 						</div>
-					</div>
-				))}
-			</div>
-		</ScrollArea>
+					))}
+				</div>
+			</ScrollArea>
+			{!controller.isTranscriptViewportAtBottom &&
+			controller.displayTranscriptEntries.length > 0 ? (
+				<div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center">
+					<Button
+						type="button"
+						variant="secondary"
+						size="icon"
+						className="pointer-events-auto size-9 rounded-full border border-border/60 shadow-md"
+						onClick={() => controller.scrollTranscriptToBottom()}
+					>
+						<ArrowDown className="size-4" />
+					</Button>
+				</div>
+			) : null}
+		</div>
 	);
 }
 

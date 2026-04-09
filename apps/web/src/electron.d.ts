@@ -169,6 +169,9 @@ declare global {
 			openPermissionSettings: (permissionId: DesktopPermissionId) => Promise<{
 				ok: boolean;
 			}>;
+			openSoundSettings: () => Promise<{
+				ok: boolean;
+			}>;
 			setLaunchAtLogin: (enabled: boolean) => Promise<DesktopPreferences>;
 			getTranscriptionSessionState: () => Promise<DesktopTranscriptionControllerState>;
 			getMeetingDetectionState: () => Promise<DesktopMeetingDetectionState>;

@@ -145,6 +145,20 @@ const formatClockTime = (timestamp: number) =>
 		hour12: false,
 	}).format(new Date(timestamp));
 
+const formatTranscriptDate = (timestamp: number) =>
+	new Intl.DateTimeFormat(undefined, {
+		day: "numeric",
+		month: "short",
+	}).format(new Date(timestamp));
+
+export const formatTranscriptElapsed = (elapsedMs: number) => {
+	const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+
+	return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
+
 export const formatTranscriptUtterance = (
 	utterance: Pick<TranscriptUtterance, "speaker" | "text" | "startedAt">,
 ) => {
@@ -155,6 +169,43 @@ export const formatTranscriptUtterance = (
 	}
 
 	return `[${formatClockTime(utterance.startedAt)}] ${getTranscriptSpeakerLabel(utterance.speaker)}: ${trimmed}`;
+};
+
+export const formatTranscriptDisplayEntry = (
+	entry: Pick<TranscriptDisplayEntry, "speaker" | "text">,
+) => {
+	const trimmed = entry.text.trim();
+
+	if (!trimmed) {
+		return "";
+	}
+
+	return `${getTranscriptSpeakerLabel(entry.speaker)}: ${trimmed}`;
+};
+
+export const createTranscriptBlocksText = (
+	entries: Array<Pick<TranscriptDisplayEntry, "speaker" | "text">>,
+) =>
+	entries.map(formatTranscriptDisplayEntry).filter(Boolean).join("\n\n").trim();
+
+export const createTranscriptExportText = ({
+	entries,
+	startedAt,
+}: {
+	entries: Array<Pick<TranscriptDisplayEntry, "speaker" | "text">>;
+	startedAt?: number | null;
+}) => {
+	const body = createTranscriptBlocksText(entries);
+
+	if (!body) {
+		return "";
+	}
+
+	if (startedAt == null) {
+		return body;
+	}
+
+	return `Date: ${formatTranscriptDate(startedAt)}\n\nTranscript:\n\n${body}`;
 };
 
 export const createLiveTranscriptEntries = (

@@ -218,6 +218,7 @@ let systemAudioCaptureStartRequestId = 0;
 let systemAudioPermissionState = "prompt";
 let meetingWidgetWindow = null;
 let latestMeetingWidgetSize = { width: 360, height: 104 };
+let cachedDockIconImage;
 let meetingWidgetAutoHideTimeoutId = null;
 let hasPlayedMeetingWidgetSoundForVisiblePrompt = false;
 let hasPendingUpdateDownload = false;
@@ -279,12 +280,42 @@ const setTrayStatusLabel = (value) => {
 	refreshTrayMenu();
 };
 
+const getDockIconImage = () => {
+	if (cachedDockIconImage !== undefined) {
+		return cachedDockIconImage;
+	}
+
+	const icon = nativeImage.createFromPath(dockIconPath);
+	if (icon.isEmpty()) {
+		console.warn(`Dock icon is missing or invalid at ${dockIconPath}.`);
+		cachedDockIconImage = null;
+		return cachedDockIconImage;
+	}
+
+	cachedDockIconImage = icon;
+	return cachedDockIconImage;
+};
+
+const applyDockIcon = () => {
+	if (process.platform !== "darwin") {
+		return;
+	}
+
+	const icon = getDockIconImage();
+	if (!icon) {
+		return;
+	}
+
+	app.dock?.setIcon(icon);
+};
+
 const ensureDockVisible = () => {
 	if (process.platform !== "darwin") {
 		return;
 	}
 
 	app.dock?.show();
+	applyDockIcon();
 };
 
 const ensureDockHidden = () => {
@@ -1225,6 +1256,7 @@ const ensureMeetingWidgetWindow = async () => {
 		alwaysOnTop: true,
 		focusable: true,
 		title: "OpenGran meeting widget",
+		icon: dockIconPath,
 		webPreferences: {
 			preload: join(runtimeDir, "preload.cjs"),
 			contextIsolation: true,
@@ -1317,6 +1349,7 @@ const ensureUpdateWindow = async () => {
 		maximizable: false,
 		show: false,
 		title: "software update",
+		icon: dockIconPath,
 		titleBarStyle: "hiddenInset",
 		backgroundColor: "#181a1f",
 		trafficLightPosition: { x: 16, y: 18 },
@@ -4847,6 +4880,7 @@ const createMainWindow = async (targetUrl) => {
 		minWidth: minimumWindowSize.width,
 		minHeight: minimumWindowSize.height,
 		title: "OpenGran",
+		icon: dockIconPath,
 		backgroundColor: "#f7f7f5",
 		autoHideMenuBar: true,
 		titleBarStyle: isMac ? "hiddenInset" : "default",
@@ -5145,6 +5179,18 @@ const openPermissionSettings = async (permissionId) => {
 	return { ok: true };
 };
 
+const openSoundSettings = async () => {
+	if (process.platform !== "darwin") {
+		throw new Error("Sound settings are only available on macOS.");
+	}
+
+	await shell.openExternal(
+		"x-apple.systempreferences:com.apple.Sound-Settings.extension",
+	);
+
+	return { ok: true };
+};
+
 ipcMain.handle("app:get-meta", () => ({
 	name: app.getName(),
 	version: app.getVersion(),
@@ -5313,6 +5359,10 @@ ipcMain.handle("app:open-permission-settings", async (_event, permissionId) => {
 	}
 
 	return await openPermissionSettings(permissionId);
+});
+
+ipcMain.handle("app:open-sound-settings", async () => {
+	return await openSoundSettings();
 });
 
 ipcMain.handle("app:set-launch-at-login", async (_event, enabled) => {
@@ -5900,9 +5950,7 @@ if (!singleInstanceLock) {
 			});
 		});
 
-		if (process.platform === "darwin") {
-			app.dock?.setIcon(dockIconPath);
-		}
+		applyDockIcon();
 
 		await loadTraySettings();
 		await loadLastNavigation();

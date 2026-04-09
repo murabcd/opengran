@@ -6,9 +6,10 @@ import {
 	createEmptyLiveTranscriptState,
 	createLiveTranscriptEntries,
 	createSystemAudioCaptureStatus,
+	createTranscriptBlocksText,
 	createTranscriptDisplayEntries,
+	createTranscriptExportText,
 	createTranscriptRecoveryStatus,
-	formatTranscriptUtterance,
 	type LiveTranscriptState,
 	type TranscriptUtterance,
 } from "@/lib/transcript";
@@ -51,7 +52,11 @@ export const useNoteTranscriptSession = ({
 	const [pendingAutoStartKey, setPendingAutoStartKey] = React.useState<
 		string | null
 	>(null);
-	const { containerRef: transcriptViewportRef } = useStickyScrollToBottom();
+	const {
+		containerRef: transcriptViewportRef,
+		isAtBottom: isTranscriptViewportAtBottom,
+		scrollToBottom: scrollTranscriptToBottom,
+	} = useStickyScrollToBottom();
 	const previousSpeechListeningRef = React.useRef(false);
 	const previousNoteIdRef = React.useRef(noteId);
 	const lastQueuedAutoStartKeyRef = React.useRef<string | null>(null);
@@ -65,6 +70,7 @@ export const useNoteTranscriptSession = ({
 	const loadedTranscriptDraftUpdatedAtRef = React.useRef<number | null>(null);
 	const lastAudioActivityAtRef = React.useRef(Date.now());
 	const transcriptUtterancesRef = React.useRef<TranscriptUtterance[]>([]);
+	const listeningStartedAtRef = React.useRef<number | null>(null);
 	const transcriptSessionStartPromiseRef =
 		React.useRef<Promise<Id<"transcriptSessions"> | null> | null>(null);
 	const activeTranscriptSessionIdRef =
@@ -133,20 +139,43 @@ export const useNoteTranscriptSession = ({
 		[liveTranscript, orderedTranscriptUtterances],
 	);
 
-	const fullTranscript = [
-		...orderedTranscriptUtterances,
-		...liveTranscriptEntries.map((entry) => ({
-			id: `live:${entry.speaker}`,
-			speaker: entry.speaker,
-			text: entry.text,
-			startedAt: entry.startedAt ?? Date.now(),
-			endedAt: entry.startedAt ?? Date.now(),
-		})),
-	]
-		.map(formatTranscriptUtterance)
-		.filter(Boolean)
-		.join("\n\n")
-		.trim();
+	const transcriptStartedAt = React.useMemo(() => {
+		const committedStartedAt =
+			orderedTranscriptUtterances[0]?.startedAt ?? null;
+		const liveStartedAt = liveTranscriptEntries.reduce<number | null>(
+			(currentValue, entry) => {
+				if (entry.startedAt == null) {
+					return currentValue;
+				}
+
+				return currentValue == null
+					? entry.startedAt
+					: Math.min(currentValue, entry.startedAt);
+			},
+			null,
+		);
+
+		return (
+			committedStartedAt ??
+			liveStartedAt ??
+			listeningStartedAtRef.current ??
+			null
+		);
+	}, [liveTranscriptEntries, orderedTranscriptUtterances]);
+
+	const fullTranscript = React.useMemo(
+		() => createTranscriptBlocksText(displayTranscriptEntries),
+		[displayTranscriptEntries],
+	);
+
+	const exportTranscript = React.useMemo(
+		() =>
+			createTranscriptExportText({
+				entries: displayTranscriptEntries,
+				startedAt: transcriptStartedAt,
+			}),
+		[displayTranscriptEntries, transcriptStartedAt],
+	);
 
 	const hasPendingGenerateTranscript = Boolean(
 		pendingGenerateTranscript.trim(),
@@ -266,6 +295,7 @@ export const useNoteTranscriptSession = ({
 			setPendingGenerateTranscript("");
 			setIsTranscriptDraftReady(false);
 			setActiveTranscriptSessionId(null);
+			listeningStartedAtRef.current = null;
 			hasRestoredTranscriptDraftRef.current = false;
 			hasHydratedStoredTranscriptSessionRef.current = false;
 			hasLoadedTranscriptDraftContentRef.current = false;
@@ -517,6 +547,7 @@ export const useNoteTranscriptSession = ({
 
 	React.useEffect(() => {
 		if (isSpeechListening && !previousSpeechListeningRef.current) {
+			listeningStartedAtRef.current = Date.now();
 			setPendingGenerateTranscript("");
 			hasRequestedAutomaticStopRef.current = false;
 			lastAudioActivityAtRef.current = Date.now();
@@ -720,6 +751,7 @@ export const useNoteTranscriptSession = ({
 		activeTranscriptSessionId,
 		autoStartKey: pendingAutoStartKey,
 		captureScopeKey,
+		exportTranscript,
 		fullTranscript,
 		handleGenerateNotes,
 		hasGeneratedLatestTranscript,
@@ -731,7 +763,10 @@ export const useNoteTranscriptSession = ({
 		liveTranscriptEntries,
 		orderedTranscriptUtterances,
 		recoveryStatus,
+		scrollTranscriptToBottom,
 		systemAudioStatus,
+		isTranscriptViewportAtBottom,
+		transcriptStartedAt,
 		transcriptViewportRef,
 	};
 };

@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 		ipcRenderer.invoke("app:request-permission", permissionId),
 	openPermissionSettings: (permissionId) =>
 		ipcRenderer.invoke("app:open-permission-settings", permissionId),
+	openSoundSettings: () => ipcRenderer.invoke("app:open-sound-settings"),
 	setLaunchAtLogin: (enabled) =>
 		ipcRenderer.invoke("app:set-launch-at-login", enabled),
 	getTranscriptionSessionState: () =>

@@ -78,7 +78,7 @@ export const resolveRealtimeNoiseReductionType = (source) => {
 };
 
 export const resolveRealtimeSilenceDurationMs = (source) =>
-	isSystemAudioSource(source) ? 450 : 200;
+	isSystemAudioSource(source) ? 300 : 200;
 
 export const normalizeTranscriptionLanguage = (value) =>
 	value?.split("-")[0]?.trim().toLowerCase() || null;

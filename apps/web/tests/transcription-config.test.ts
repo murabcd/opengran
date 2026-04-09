@@ -32,7 +32,7 @@ describe("transcription config", () => {
 	});
 
 	it("uses source-aware prompting and VAD settings for system audio", () => {
-		expect(resolveRealtimeSilenceDurationMs("systemAudio")).toBe(450);
+		expect(resolveRealtimeSilenceDurationMs("systemAudio")).toBe(300);
 		expect(resolveRealtimeSilenceDurationMs("microphone")).toBe(200);
 		expect(
 			resolveRealtimeTranscriptionPrompt({
@@ -52,7 +52,7 @@ describe("transcription config", () => {
 		if (session.audio.input.turn_detection.type !== "server_vad") {
 			throw new Error("Expected server_vad turn detection for system audio");
 		}
-		expect(session.audio.input.turn_detection.silence_duration_ms).toBe(450);
+		expect(session.audio.input.turn_detection.silence_duration_ms).toBe(300);
 		expect(session.audio.input.transcription.prompt).toContain(
 			"Do not translate, paraphrase, summarize, or complete a thought beyond the audio.",
 		);
@@ -71,7 +71,7 @@ describe("transcription config", () => {
 			type: "server_vad",
 			threshold: 0.5,
 			prefix_padding_ms: 300,
-			silence_duration_ms: 450,
+			silence_duration_ms: 300,
 		});
 		expect(
 			resolveDesktopRealtimeProfile({
