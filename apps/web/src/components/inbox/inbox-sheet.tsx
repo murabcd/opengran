@@ -1,5 +1,11 @@
 "use client";
 
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbList,
+	BreadcrumbPage,
+} from "@workspace/ui/components/breadcrumb";
 import { Button } from "@workspace/ui/components/button";
 import {
 	DropdownMenu,
@@ -45,6 +51,10 @@ import {
 import * as React from "react";
 import { toast } from "sonner";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
+import {
+	DESKTOP_INBOX_PANEL_WIDTH,
+	DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+} from "@/lib/desktop-chrome";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
@@ -84,7 +94,7 @@ export function InboxSheet({
 }) {
 	const sidebarOffset =
 		sidebarState === "collapsed" ? SIDEBAR_WIDTH_ICON : SIDEBAR_WIDTH;
-	const panelWidth = "16rem";
+	const panelWidth = DESKTOP_INBOX_PANEL_WIDTH;
 	const [view, setView] = React.useState<InboxView>("all");
 	const [markAllReadRequestId, setMarkAllReadRequestId] = React.useState(0);
 	const [archiveReadRequestId, setArchiveReadRequestId] = React.useState(0);
@@ -106,6 +116,7 @@ export function InboxSheet({
 				) : null}
 				<div
 					aria-hidden={!open}
+					data-app-region={desktopSafeTop && open ? "no-drag" : undefined}
 					className="pointer-events-none fixed inset-y-0 z-30 hidden overflow-hidden md:block"
 					style={{
 						left: sidebarOffset,
@@ -113,16 +124,18 @@ export function InboxSheet({
 					}}
 				>
 					<div
-						data-app-region={desktopSafeTop ? "no-drag" : undefined}
+						data-app-region={desktopSafeTop && open ? "no-drag" : undefined}
 						className={cn(
-							"pointer-events-auto flex h-svh w-[16rem] flex-col border-r bg-background text-foreground transition-transform duration-200 ease-linear",
-							desktopSafeTop && "pt-8",
-							open ? "translate-x-0" : "-translate-x-full",
+							"flex h-svh w-[16rem] flex-col border-r bg-background text-foreground transition-transform duration-200 ease-linear",
+							open
+								? "pointer-events-auto translate-x-0"
+								: "pointer-events-none -translate-x-full",
 						)}
 					>
-						<div className="p-2">
+						<div className="px-2">
 							<InboxPaneHeader
 								isMobile={false}
+								open={open}
 								view={view}
 								onViewChange={setView}
 								onMarkAllRead={() => {
@@ -164,6 +177,7 @@ export function InboxSheet({
 			>
 				<InboxPaneHeader
 					isMobile
+					open={open}
 					view={view}
 					onViewChange={setView}
 					onMarkAllRead={() => {
@@ -191,6 +205,7 @@ export function InboxSheet({
 
 function InboxPaneHeader({
 	isMobile = false,
+	open = true,
 	view,
 	onViewChange,
 	onMarkAllRead,
@@ -198,6 +213,7 @@ function InboxPaneHeader({
 	onClearArchived,
 }: {
 	isMobile?: boolean;
+	open?: boolean;
 	view: InboxView;
 	onViewChange: (view: InboxView) => void;
 	onMarkAllRead: () => void;
@@ -261,19 +277,30 @@ function InboxPaneHeader({
 
 	return (
 		<div
-			data-app-region={!isMobile ? "no-drag" : undefined}
+			data-app-region={!isMobile && open ? "no-drag" : undefined}
 			className={cn(
 				"flex w-full items-center justify-between",
-				!isMobile && "h-12 px-2",
+				!isMobile && "h-10 px-2",
 				isMobile && "border-b px-4 py-3",
 			)}
 		>
 			{isMobile ? (
 				<SheetTitle className="text-sm font-medium">Inbox</SheetTitle>
 			) : (
-				<h2 className="text-sm font-medium text-foreground">Inbox</h2>
+				<Breadcrumb className={DESKTOP_MAIN_HEADER_CONTENT_CLASS}>
+					<BreadcrumbList className="gap-0">
+						<BreadcrumbItem>
+							<BreadcrumbPage>Inbox</BreadcrumbPage>
+						</BreadcrumbItem>
+					</BreadcrumbList>
+				</Breadcrumb>
 			)}
-			<div className="flex items-center gap-0.5">
+			<div
+				className={cn(
+					"flex items-center gap-0.5",
+					!isMobile && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+				)}
+			>
 				<DropdownMenu
 					open={actionsOpen}
 					onOpenChange={(open) => {
@@ -289,10 +316,9 @@ function InboxPaneHeader({
 								<Button
 									type="button"
 									variant="ghost"
-									size="icon"
-									className="size-8 rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground active:translate-y-0 active:bg-accent/50"
+									size="icon-sm"
 									aria-label="Inbox actions"
-									data-app-region={!isMobile ? "no-drag" : undefined}
+									data-app-region={!isMobile && open ? "no-drag" : undefined}
 								>
 									<MoreHorizontal className="size-4" />
 								</Button>
@@ -344,10 +370,9 @@ function InboxPaneHeader({
 								<Button
 									type="button"
 									variant="ghost"
-									size="icon"
-									className="size-8 rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground active:translate-y-0 active:bg-accent/50"
+									size="icon-sm"
 									aria-label="Filter inbox"
-									data-app-region={!isMobile ? "no-drag" : undefined}
+									data-app-region={!isMobile && open ? "no-drag" : undefined}
 								>
 									<SlidersHorizontal className="size-4" />
 								</Button>

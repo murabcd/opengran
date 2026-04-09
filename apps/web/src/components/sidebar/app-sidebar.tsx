@@ -228,6 +228,7 @@ export function AppSidebar({
 							onCreateWorkspace={onWorkspaceCreate}
 						/>
 					</div>
+					{desktopSafeTop ? <div aria-hidden="true" className="h-3" /> : null}
 					<div data-app-region={desktopSafeTop ? "no-drag" : undefined}>
 						<NavMain
 							className="px-0"

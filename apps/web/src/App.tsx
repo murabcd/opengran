@@ -94,6 +94,7 @@ import { type AuthSession, authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
 import {
 	DESKTOP_AUTH_SAFE_TOP_CLASS,
+	DESKTOP_INBOX_PANEL_WIDTH,
 	DESKTOP_MAIN_HEADER_CLASS,
 	DESKTOP_MAIN_HEADER_CONTENT_CLASS,
 	DESKTOP_MAIN_HEADER_LEADING_CLASS,
@@ -2893,6 +2894,7 @@ function AppShell({
 				<AppShellInset reserveRightSidebar={controller.currentView === "note"}>
 					<AppShellHeader
 						isDesktopMac={controller.isDesktopMac}
+						inboxOpen={controller.inboxOpen}
 						breadcrumbSectionLabel={controller.breadcrumbSectionLabel}
 						breadcrumbDetailLabel={controller.breadcrumbDetailLabel}
 						onBreadcrumbSectionClick={controller.handleBreadcrumbSectionClick}
@@ -2962,6 +2964,7 @@ function AppShell({
 
 type AppShellHeaderProps = {
 	isDesktopMac: boolean;
+	inboxOpen: boolean;
 	breadcrumbSectionLabel: string;
 	breadcrumbDetailLabel: string | null;
 	onBreadcrumbSectionClick: () => void;
@@ -2978,6 +2981,7 @@ type AppShellHeaderProps = {
 
 function AppShellHeader({
 	isDesktopMac,
+	inboxOpen,
 	breadcrumbSectionLabel,
 	breadcrumbDetailLabel,
 	onBreadcrumbSectionClick,
@@ -3091,15 +3095,24 @@ function AppShellHeader({
 
 	return (
 		<header
-			data-app-region={isDesktopMac ? "drag" : undefined}
 			className={cn(
-				"sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between bg-background/95 px-4 backdrop-blur transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 md:px-6",
+				"sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between bg-background/95 px-4 backdrop-blur transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 md:px-6 relative",
 				isDesktopMac && DESKTOP_MAIN_HEADER_CLASS,
 			)}
 		>
+			{isDesktopMac ? (
+				<div
+					aria-hidden="true"
+					data-app-region="drag"
+					className="absolute inset-y-0 right-0"
+					style={{
+						left: inboxOpen ? DESKTOP_INBOX_PANEL_WIDTH : 0,
+					}}
+				/>
+			) : null}
 			<div
 				className={cn(
-					"flex min-w-0 flex-1 items-center gap-2 pr-4",
+					"relative z-10 flex min-w-0 flex-1 items-center gap-2 pr-4",
 					isDesktopMac && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
 					isDesktopMac &&
 						sidebarState === "collapsed" &&
@@ -3151,7 +3164,7 @@ function AppShellHeader({
 			</div>
 			<div
 				className={cn(
-					"ml-auto shrink-0",
+					"relative z-10 ml-auto shrink-0",
 					isDesktopMac && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
 				)}
 			>
