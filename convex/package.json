@@ -1,4 +1,10 @@
 {
-	"private": true,
-	"type": "module"
+  "name": "convex",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bunx vitest --config ./vitest.config.ts",
+    "test:once": "bunx vitest run --config ./vitest.config.ts",
+    "typecheck": "bunx tsc --noEmit -p ./tsconfig.json"
+  }
 }

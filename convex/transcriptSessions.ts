@@ -4,6 +4,10 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
 
+type TranscriptSessionStatus = "capturing" | "completed" | "failed";
+type TranscriptRefinementStatus = "idle" | "running" | "completed" | "failed";
+type SystemAudioSourceMode = "desktop-native" | "display-media" | "unsupported";
+
 const transcriptSessionStatusValidator = v.union(
 	v.literal("capturing"),
 	v.literal("completed"),
@@ -32,22 +36,26 @@ const transcriptUtteranceInputValidator = v.object({
 	endedAt: v.number(),
 });
 
+const transcriptSessionHotFields = {
+	status: transcriptSessionStatusValidator,
+	refinementStatus: transcriptRefinementStatusValidator,
+	refinementError: v.optional(v.string()),
+	systemAudioSourceMode: v.optional(systemAudioSourceModeValidator),
+	endedAt: v.optional(v.number()),
+	generatedNoteAt: v.optional(v.number()),
+	updatedAt: v.number(),
+	lastRefinedAt: v.optional(v.number()),
+};
+
 const transcriptSessionFields = {
 	_id: v.id("transcriptSessions"),
 	_creationTime: v.number(),
 	ownerTokenIdentifier: v.string(),
 	noteId: v.id("notes"),
-	status: transcriptSessionStatusValidator,
-	refinementStatus: transcriptRefinementStatusValidator,
-	refinementError: v.optional(v.string()),
-	systemAudioSourceMode: v.optional(systemAudioSourceModeValidator),
 	startedAt: v.number(),
-	endedAt: v.optional(v.number()),
 	finalTranscript: v.optional(v.string()),
-	generatedNoteAt: v.optional(v.number()),
 	createdAt: v.number(),
-	updatedAt: v.number(),
-	lastRefinedAt: v.optional(v.number()),
+	...transcriptSessionHotFields,
 };
 
 const transcriptUtteranceFields = {
@@ -68,6 +76,17 @@ const transcriptUtteranceFields = {
 
 const transcriptSessionValidator = v.object(transcriptSessionFields);
 const transcriptUtteranceValidator = v.object(transcriptUtteranceFields);
+
+type HydratedTranscriptSession = Doc<"transcriptSessions"> & {
+	status: TranscriptSessionStatus;
+	refinementStatus: TranscriptRefinementStatus;
+	refinementError?: string;
+	systemAudioSourceMode?: SystemAudioSourceMode;
+	endedAt?: number;
+	generatedNoteAt?: number;
+	updatedAt: number;
+	lastRefinedAt?: number;
+};
 
 const transcriptSessionWithUtterancesValidator = v.union(
 	v.object({
@@ -147,6 +166,56 @@ const listSessionUtterances = async (
 	return utterances;
 };
 
+const getTranscriptSessionState = async (
+	ctx: QueryCtx | MutationCtx,
+	sessionId: Id<"transcriptSessions">,
+) =>
+	await ctx.db
+		.query("transcriptSessionStates")
+		.withIndex("by_sessionId", (q) => q.eq("sessionId", sessionId))
+		.unique();
+
+const requireTranscriptSessionState = async (
+	ctx: QueryCtx | MutationCtx,
+	sessionId: Id<"transcriptSessions">,
+) => {
+	const state = await getTranscriptSessionState(ctx, sessionId);
+
+	if (!state) {
+		throw new ConvexError({
+			code: "TRANSCRIPT_SESSION_STATE_NOT_FOUND",
+			message: "Transcript session state not found.",
+		});
+	}
+
+	return state;
+};
+
+const hydrateTranscriptSession = (
+	session: Doc<"transcriptSessions">,
+	state: Doc<"transcriptSessionStates">,
+): HydratedTranscriptSession => ({
+	...session,
+	status: state.status,
+	refinementStatus: state.refinementStatus,
+	refinementError: state.refinementError,
+	systemAudioSourceMode: state.systemAudioSourceMode,
+	endedAt: state.endedAt,
+	generatedNoteAt: state.generatedNoteAt,
+	updatedAt: state.updatedAt,
+	lastRefinedAt: state.lastRefinedAt,
+});
+
+const patchTranscriptSessionState = async (
+	ctx: MutationCtx,
+	sessionId: Id<"transcriptSessions">,
+	patch: Partial<Doc<"transcriptSessionStates">>,
+) => {
+	const state = await requireTranscriptSessionState(ctx, sessionId);
+
+	await ctx.db.patch(state._id, patch);
+};
+
 const listNoteSessions = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
@@ -156,13 +225,22 @@ const listNoteSessions = async (
 
 	for await (const session of ctx.db
 		.query("transcriptSessions")
-		.withIndex("by_ownerTokenIdentifier_and_noteId_and_updatedAt", (q) =>
+		.withIndex("by_ownerTokenIdentifier_and_noteId_and_startedAt", (q) =>
 			q.eq("ownerTokenIdentifier", ownerTokenIdentifier).eq("noteId", noteId),
 		)) {
 		sessions.push(session);
 	}
 
-	return sessions.sort((left, right) => {
+	const mergedSessions = await Promise.all(
+		sessions.map(async (session) =>
+			hydrateTranscriptSession(
+				session,
+				await requireTranscriptSessionState(ctx, session._id),
+			),
+		),
+	);
+
+	return mergedSessions.sort((left, right) => {
 		if (left.startedAt !== right.startedAt) {
 			return left.startedAt - right.startedAt;
 		}
@@ -259,6 +337,12 @@ const deleteSessionCascade = async (
 		}
 	}
 
+	const state = await getTranscriptSessionState(ctx, sessionId);
+
+	if (state) {
+		await ctx.db.delete(state._id);
+	}
+
 	await ctx.db.delete(sessionId);
 };
 
@@ -338,22 +422,30 @@ export const startSession = mutation({
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
 		await requireOwnedNote(ctx, ownerTokenIdentifier, args.noteId);
 		const now = Date.now();
+		const sessionId = await ctx.db.insert("transcriptSessions", {
+			ownerTokenIdentifier,
+			noteId: args.noteId,
+			startedAt: now,
+			finalTranscript: undefined,
+			createdAt: now,
+		});
 
-		return await ctx.db.insert("transcriptSessions", {
+		await ctx.db.insert("transcriptSessionStates", {
+			sessionId,
 			ownerTokenIdentifier,
 			noteId: args.noteId,
 			status: "capturing",
 			refinementStatus: "idle",
 			refinementError: undefined,
 			systemAudioSourceMode: args.systemAudioSourceMode,
-			startedAt: now,
 			endedAt: undefined,
-			finalTranscript: undefined,
 			generatedNoteAt: undefined,
 			createdAt: now,
 			updatedAt: now,
 			lastRefinedAt: undefined,
 		});
+
+		return sessionId;
 	},
 });
 
@@ -411,7 +503,7 @@ export const appendUtterance = mutation({
 			});
 		}
 
-		await ctx.db.patch(args.sessionId, {
+		await patchTranscriptSessionState(ctx, session._id, {
 			updatedAt: now,
 		});
 
@@ -428,14 +520,20 @@ export const completeSession = mutation({
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		await requireOwnedSession(ctx, ownerTokenIdentifier, args.sessionId);
+		const session = await requireOwnedSession(
+			ctx,
+			ownerTokenIdentifier,
+			args.sessionId,
+		);
 		const now = Date.now();
 
-		await ctx.db.patch(args.sessionId, {
+		await patchTranscriptSessionState(ctx, session._id, {
 			status: args.status ?? "completed",
 			endedAt: now,
-			finalTranscript: args.finalTranscript?.trim() || undefined,
 			updatedAt: now,
+		});
+		await ctx.db.patch(args.sessionId, {
+			finalTranscript: args.finalTranscript?.trim() || undefined,
 		});
 
 		return null;
@@ -451,10 +549,14 @@ export const setRefinementStatus = mutation({
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		await requireOwnedSession(ctx, ownerTokenIdentifier, args.sessionId);
+		const session = await requireOwnedSession(
+			ctx,
+			ownerTokenIdentifier,
+			args.sessionId,
+		);
 		const now = Date.now();
 
-		await ctx.db.patch(args.sessionId, {
+		await patchTranscriptSessionState(ctx, session._id, {
 			refinementStatus: args.status,
 			refinementError: args.error?.trim() || undefined,
 			updatedAt: now,
@@ -476,10 +578,14 @@ export const setSystemAudioSourceMode = mutation({
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		await requireOwnedSession(ctx, ownerTokenIdentifier, args.sessionId);
+		const session = await requireOwnedSession(
+			ctx,
+			ownerTokenIdentifier,
+			args.sessionId,
+		);
 		const now = Date.now();
 
-		await ctx.db.patch(args.sessionId, {
+		await patchTranscriptSessionState(ctx, session._id, {
 			systemAudioSourceMode: args.systemAudioSourceMode,
 			updatedAt: now,
 		});
@@ -495,10 +601,14 @@ export const markGenerated = mutation({
 	returns: v.null(),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		await requireOwnedSession(ctx, ownerTokenIdentifier, args.sessionId);
+		const session = await requireOwnedSession(
+			ctx,
+			ownerTokenIdentifier,
+			args.sessionId,
+		);
 		const now = Date.now();
 
-		await ctx.db.patch(args.sessionId, {
+		await patchTranscriptSessionState(ctx, session._id, {
 			generatedNoteAt: now,
 			updatedAt: now,
 		});
@@ -558,12 +668,14 @@ export const replaceSpeakerUtterances = mutation({
 			});
 		}
 
-		await ctx.db.patch(args.sessionId, {
+		await patchTranscriptSessionState(ctx, session._id, {
 			refinementStatus: "completed",
 			refinementError: undefined,
-			finalTranscript: args.finalTranscript?.trim() || undefined,
 			lastRefinedAt: now,
 			updatedAt: now,
+		});
+		await ctx.db.patch(args.sessionId, {
+			finalTranscript: args.finalTranscript?.trim() || undefined,
 		});
 
 		return null;
@@ -579,7 +691,7 @@ export const removeForNote = internalMutation({
 	handler: async (ctx, args) => {
 		const sessions = await ctx.db
 			.query("transcriptSessions")
-			.withIndex("by_ownerTokenIdentifier_and_noteId_and_updatedAt", (q) =>
+			.withIndex("by_ownerTokenIdentifier_and_noteId_and_startedAt", (q) =>
 				q
 					.eq("ownerTokenIdentifier", args.ownerTokenIdentifier)
 					.eq("noteId", args.noteId),
@@ -613,7 +725,7 @@ export const removeAllForOwner = internalMutation({
 	handler: async (ctx, args) => {
 		const sessions = await ctx.db
 			.query("transcriptSessions")
-			.withIndex("by_ownerTokenIdentifier_and_updatedAt", (q) =>
+			.withIndex("by_ownerTokenIdentifier_and_startedAt", (q) =>
 				q.eq("ownerTokenIdentifier", args.ownerTokenIdentifier),
 			)
 			.take(50);

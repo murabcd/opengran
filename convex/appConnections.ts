@@ -138,6 +138,11 @@ type JiraConnectionSettings = {
 	lastMentionSyncAt?: number;
 };
 
+type ConnectionActivitySnapshot = {
+	lastWebhookReceivedAt?: number;
+	lastMentionSyncAt?: number;
+};
+
 type AppConnectionSource = {
 	id: string;
 	title: string;
@@ -197,10 +202,10 @@ const toAppSourceId = (id: Id<"appConnections">) => `${APP_SOURCE_PREFIX}${id}`;
 
 const getProviderPreview = (connection: Doc<"appConnections">) =>
 	connection.provider === "yandex-calendar"
-		? connection.email ?? "Yandex Calendar"
+		? (connection.email ?? "Yandex Calendar")
 		: connection.provider === "jira"
 			? getJiraPreview(connection)
-		: `${connection.orgType === "x-org-id" ? "Yandex 360" : "Yandex Cloud"} • Org ${connection.orgId}`;
+			: `${connection.orgType === "x-org-id" ? "Yandex 360" : "Yandex Cloud"} • Org ${connection.orgId}`;
 
 const getJiraPreview = (connection: Doc<"appConnections">) => {
 	if (!connection.baseUrl) {
@@ -209,9 +214,7 @@ const getJiraPreview = (connection: Doc<"appConnections">) => {
 
 	try {
 		const hostname = new URL(connection.baseUrl).hostname;
-		return connection.email
-			? `${hostname} • ${connection.email}`
-			: hostname;
+		return connection.email ? `${hostname} • ${connection.email}` : hostname;
 	} catch {
 		return connection.email
 			? `${connection.baseUrl} • ${connection.email}`
@@ -267,6 +270,69 @@ const getOwnedJiraConnection = async (
 	ownerTokenIdentifier: string,
 	workspaceId: Id<"workspaces">,
 ) => await getOwnedConnection(ctx, ownerTokenIdentifier, workspaceId, "jira");
+
+const getConnectionActivity = async (
+	ctx: QueryCtx | MutationCtx,
+	connectionId: Id<"appConnections">,
+) =>
+	await ctx.db
+		.query("appConnectionActivities")
+		.withIndex("by_connectionId", (q) => q.eq("connectionId", connectionId))
+		.unique();
+
+const getConnectionActivitySnapshot = async (
+	ctx: QueryCtx | MutationCtx,
+	connectionId: Id<"appConnections">,
+): Promise<ConnectionActivitySnapshot> => {
+	const activity = await getConnectionActivity(ctx, connectionId);
+
+	return {
+		lastWebhookReceivedAt: activity?.lastWebhookReceivedAt,
+		lastMentionSyncAt: activity?.lastMentionSyncAt,
+	};
+};
+
+const upsertConnectionActivity = async (
+	ctx: MutationCtx,
+	connection: Doc<"appConnections">,
+	patch: ConnectionActivitySnapshot,
+) => {
+	const activity = await getConnectionActivity(ctx, connection._id);
+	const now = Date.now();
+
+	if (activity) {
+		await ctx.db.patch(activity._id, {
+			...patch,
+			updatedAt: now,
+		});
+		return;
+	}
+
+	await ctx.db.insert("appConnectionActivities", {
+		connectionId: connection._id,
+		ownerTokenIdentifier: connection.ownerTokenIdentifier,
+		workspaceId: connection.workspaceId,
+		...(patch.lastWebhookReceivedAt
+			? { lastWebhookReceivedAt: patch.lastWebhookReceivedAt }
+			: {}),
+		...(patch.lastMentionSyncAt
+			? { lastMentionSyncAt: patch.lastMentionSyncAt }
+			: {}),
+		createdAt: now,
+		updatedAt: now,
+	});
+};
+
+const deleteConnectionActivity = async (
+	ctx: MutationCtx,
+	connectionId: Id<"appConnections">,
+) => {
+	const activity = await getConnectionActivity(ctx, connectionId);
+
+	if (activity) {
+		await ctx.db.delete(activity._id);
+	}
+};
 
 const toChatToolConnection = (
 	connection: Doc<"appConnections"> | null,
@@ -338,16 +404,20 @@ export const listSources = query({
 	returns: v.array(appConnectionSourceValidator),
 	handler: async (ctx, args): Promise<AppConnectionSource[]> => {
 		const identity = await requireIdentity(ctx);
-		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
 		const connections = await ctx.db
 			.query("appConnections")
 			.withIndex(
 				"by_ownerTokenIdentifier_and_workspaceId_and_status_and_updatedAt",
 				(q) =>
-				q
-					.eq("ownerTokenIdentifier", identity.tokenIdentifier)
-					.eq("workspaceId", args.workspaceId)
-					.eq("status", "connected"),
+					q
+						.eq("ownerTokenIdentifier", identity.tokenIdentifier)
+						.eq("workspaceId", args.workspaceId)
+						.eq("status", "connected"),
 			)
 			.order("desc")
 			.take(20);
@@ -381,18 +451,18 @@ export const getYandexTracker = query({
 	returns: v.union(yandexTrackerConnectionSettingsValidator, v.null()),
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
-		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
 		const connection = await getOwnedYandexTrackerConnection(
 			ctx,
 			identity.tokenIdentifier,
 			args.workspaceId,
 		);
 
-		if (
-			!connection ||
-			!connection.orgType ||
-			!connection.orgId
-		) {
+		if (!connection || !connection.orgType || !connection.orgId) {
 			return null;
 		}
 
@@ -414,7 +484,11 @@ export const getYandexCalendar = query({
 	returns: v.union(yandexCalendarConnectionSettingsValidator, v.null()),
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
-		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
 		const connection = await getOwnedYandexCalendarConnection(
 			ctx,
 			identity.tokenIdentifier,
@@ -449,7 +523,11 @@ export const getJira = query({
 	returns: v.union(jiraConnectionSettingsValidator, v.null()),
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
-		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
 		const connection = await getOwnedJiraConnection(
 			ctx,
 			identity.tokenIdentifier,
@@ -459,6 +537,8 @@ export const getJira = query({
 		if (!connection || !connection.baseUrl || !connection.email) {
 			return null;
 		}
+
+		const activity = await getConnectionActivitySnapshot(ctx, connection._id);
 
 		return {
 			sourceId: toAppSourceId(connection._id),
@@ -471,11 +551,11 @@ export const getJira = query({
 			...(connection.webhookSecret
 				? { webhookSecret: connection.webhookSecret }
 				: {}),
-			...(connection.lastWebhookReceivedAt
-				? { lastWebhookReceivedAt: connection.lastWebhookReceivedAt }
+			...(activity.lastWebhookReceivedAt
+				? { lastWebhookReceivedAt: activity.lastWebhookReceivedAt }
 				: {}),
-			...(connection.lastMentionSyncAt
-				? { lastMentionSyncAt: connection.lastMentionSyncAt }
+			...(activity.lastMentionSyncAt
+				? { lastMentionSyncAt: activity.lastMentionSyncAt }
 				: {}),
 		};
 	},
@@ -494,7 +574,12 @@ export const getOwnedJiraConnectionInternal = internalQuery({
 			args.workspaceId,
 		);
 
-		if (!connection || !connection.baseUrl || !connection.email || !connection.token) {
+		if (
+			!connection ||
+			!connection.baseUrl ||
+			!connection.email ||
+			!connection.token
+		) {
 			return null;
 		}
 
@@ -558,11 +643,16 @@ export const getSelectedForChat = query({
 	returns: v.array(chatToolConnectionValidator),
 	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
 		const identity = await requireIdentity(ctx);
-		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
 		const normalizedIds = args.sourceIds
 			.map((sourceId) => normalizeConnectionId(ctx, sourceId))
-			.filter((id, index, values): id is Id<"appConnections"> =>
-				Boolean(id) && values.indexOf(id) === index,
+			.filter(
+				(id, index, values): id is Id<"appConnections"> =>
+					Boolean(id) && values.indexOf(id) === index,
 			);
 
 		if (normalizedIds.length === 0) {
@@ -594,16 +684,20 @@ export const getAllForChat = query({
 	returns: v.array(chatToolConnectionValidator),
 	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
 		const identity = await requireIdentity(ctx);
-		await requireOwnedWorkspace(ctx, identity.tokenIdentifier, args.workspaceId);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
 		const connections = await ctx.db
 			.query("appConnections")
 			.withIndex(
 				"by_ownerTokenIdentifier_and_workspaceId_and_status_and_updatedAt",
 				(q) =>
-				q
-					.eq("ownerTokenIdentifier", identity.tokenIdentifier)
-					.eq("workspaceId", args.workspaceId)
-					.eq("status", "connected"),
+					q
+						.eq("ownerTokenIdentifier", identity.tokenIdentifier)
+						.eq("workspaceId", args.workspaceId)
+						.eq("status", "connected"),
 			)
 			.order("desc")
 			.take(20);
@@ -668,7 +762,12 @@ const deleteConnectionBatchForOwner = async (
 		)
 		.take(REMOVE_ALL_APP_CONNECTIONS_BATCH_SIZE);
 
-	await Promise.all(connections.map((connection) => ctx.db.delete(connection._id)));
+	await Promise.all(
+		connections.map(async (connection) => {
+			await deleteConnectionActivity(ctx, connection._id);
+			await ctx.db.delete(connection._id);
+		}),
+	);
 
 	return {
 		deletedCount: connections.length,
@@ -690,7 +789,12 @@ const deleteConnectionBatchForWorkspace = async (
 		)
 		.take(REMOVE_ALL_APP_CONNECTIONS_BATCH_SIZE);
 
-	await Promise.all(connections.map((connection) => ctx.db.delete(connection._id)));
+	await Promise.all(
+		connections.map(async (connection) => {
+			await deleteConnectionActivity(ctx, connection._id);
+			await ctx.db.delete(connection._id);
+		}),
+	);
 
 	return {
 		deletedCount: connections.length,
@@ -776,10 +880,7 @@ export const upsertYandexCalendar = internalMutation({
 		calendarHomePath: v.string(),
 	},
 	returns: yandexCalendarConnectionSettingsValidator,
-	handler: async (
-		ctx,
-		args,
-	): Promise<YandexCalendarConnectionSettings> => {
+	handler: async (ctx, args): Promise<YandexCalendarConnectionSettings> => {
 		await requireOwnedWorkspace(
 			ctx,
 			args.ownerTokenIdentifier,
@@ -901,20 +1002,20 @@ export const recordJiraWebhookActivity = internalMutation({
 			return null;
 		}
 
-		const patch: Partial<Doc<"appConnections">> = {
+		await upsertConnectionActivity(ctx, connection, {
 			lastWebhookReceivedAt: args.lastWebhookReceivedAt,
-			updatedAt: Date.now(),
-		};
-
-		if (args.lastMentionSyncAt) {
-			patch.lastMentionSyncAt = args.lastMentionSyncAt;
-		}
+			...(args.lastMentionSyncAt
+				? { lastMentionSyncAt: args.lastMentionSyncAt }
+				: {}),
+		});
 
 		if (args.accountId && connection.accountId !== args.accountId) {
-			patch.accountId = args.accountId;
+			await ctx.db.patch(connection._id, {
+				accountId: args.accountId,
+				updatedAt: Date.now(),
+			});
 		}
 
-		await ctx.db.patch(connection._id, patch);
 		return null;
 	},
 });
@@ -949,6 +1050,10 @@ export const upsertJira = internalMutation({
 		if (existingConnection) {
 			const webhookSecret =
 				existingConnection.webhookSecret ?? generateWebhookSecret();
+			const activity = await getConnectionActivitySnapshot(
+				ctx,
+				existingConnection._id,
+			);
 			const patch: Partial<Doc<"appConnections">> = {
 				status: "connected",
 				displayName: "Jira",
@@ -973,8 +1078,12 @@ export const upsertJira = internalMutation({
 				baseUrl,
 				email,
 				webhookSecret,
-				lastWebhookReceivedAt: existingConnection.lastWebhookReceivedAt,
-				lastMentionSyncAt: existingConnection.lastMentionSyncAt,
+				...(activity.lastWebhookReceivedAt
+					? { lastWebhookReceivedAt: activity.lastWebhookReceivedAt }
+					: {}),
+				...(activity.lastMentionSyncAt
+					? { lastMentionSyncAt: activity.lastMentionSyncAt }
+					: {}),
 				...(accountId ? { accountId } : {}),
 			};
 		}
@@ -1022,10 +1131,14 @@ export const removeAllForWorkspace = internalMutation({
 		);
 
 		if (result.hasMore) {
-			await ctx.scheduler.runAfter(0, internal.appConnections.removeAllForWorkspace, {
-				ownerTokenIdentifier: args.ownerTokenIdentifier,
-				workspaceId: args.workspaceId,
-			});
+			await ctx.scheduler.runAfter(
+				0,
+				internal.appConnections.removeAllForWorkspace,
+				{
+					ownerTokenIdentifier: args.ownerTokenIdentifier,
+					workspaceId: args.workspaceId,
+				},
+			);
 		}
 
 		return null;
@@ -1044,9 +1157,13 @@ export const removeAllForOwner = internalMutation({
 		);
 
 		if (result.hasMore) {
-			await ctx.scheduler.runAfter(0, internal.appConnections.removeAllForOwner, {
-				ownerTokenIdentifier: args.ownerTokenIdentifier,
-			});
+			await ctx.scheduler.runAfter(
+				0,
+				internal.appConnections.removeAllForOwner,
+				{
+					ownerTokenIdentifier: args.ownerTokenIdentifier,
+				},
+			);
 		}
 
 		return null;

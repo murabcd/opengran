@@ -291,8 +291,6 @@ export default defineSchema({
 		password: v.optional(v.string()),
 		baseUrl: v.optional(v.string()),
 		webhookSecret: v.optional(v.string()),
-		lastWebhookReceivedAt: v.optional(v.number()),
-		lastMentionSyncAt: v.optional(v.number()),
 		serverAddress: v.optional(v.string()),
 		calendarHomePath: v.optional(v.string()),
 		createdAt: v.number(),
@@ -318,6 +316,15 @@ export default defineSchema({
 			"status",
 			"updatedAt",
 		]),
+	appConnectionActivities: defineTable({
+		connectionId: v.id("appConnections"),
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		lastWebhookReceivedAt: v.optional(v.number()),
+		lastMentionSyncAt: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_connectionId", ["connectionId"]),
 	inboxItems: defineTable({
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),
@@ -367,6 +374,23 @@ export default defineSchema({
 	transcriptSessions: defineTable({
 		ownerTokenIdentifier: v.string(),
 		noteId: v.id("notes"),
+		startedAt: v.number(),
+		finalTranscript: v.optional(v.string()),
+		createdAt: v.number(),
+	})
+		.index("by_ownerTokenIdentifier_and_noteId_and_startedAt", [
+			"ownerTokenIdentifier",
+			"noteId",
+			"startedAt",
+		])
+		.index("by_ownerTokenIdentifier_and_startedAt", [
+			"ownerTokenIdentifier",
+			"startedAt",
+		]),
+	transcriptSessionStates: defineTable({
+		sessionId: v.id("transcriptSessions"),
+		ownerTokenIdentifier: v.string(),
+		noteId: v.id("notes"),
 		status: transcriptSessionStatusValidator,
 		refinementStatus: transcriptRefinementStatusValidator,
 		refinementError: v.optional(v.string()),
@@ -377,23 +401,12 @@ export default defineSchema({
 				v.literal("unsupported"),
 			),
 		),
-		startedAt: v.number(),
 		endedAt: v.optional(v.number()),
-		finalTranscript: v.optional(v.string()),
 		generatedNoteAt: v.optional(v.number()),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 		lastRefinedAt: v.optional(v.number()),
-	})
-		.index("by_ownerTokenIdentifier_and_noteId_and_updatedAt", [
-			"ownerTokenIdentifier",
-			"noteId",
-			"updatedAt",
-		])
-		.index("by_ownerTokenIdentifier_and_updatedAt", [
-			"ownerTokenIdentifier",
-			"updatedAt",
-		]),
+	}).index("by_sessionId", ["sessionId"]),
 	transcriptUtterances: defineTable({
 		sessionId: v.id("transcriptSessions"),
 		ownerTokenIdentifier: v.string(),
