@@ -218,7 +218,7 @@ export function AppSidebar({
 					<div
 						data-app-region={desktopSafeTop ? "no-drag" : undefined}
 						className={
-							desktopSafeTop && currentView === "home" ? "mt-4" : undefined
+							desktopSafeTop && currentView !== "notFound" ? "mt-4" : undefined
 						}
 					>
 						<WorkspaceSwitcher
