@@ -13,7 +13,7 @@ const createConfiguredAuthClient = (baseURL: string) =>
 
 type WebAuthClient = ReturnType<typeof createConfiguredAuthClient>;
 export type AuthSession = WebAuthClient["$Infer"]["Session"];
-export type AuthClient = WebAuthClient;
+type AuthClient = WebAuthClient;
 
 export let authClient!: AuthClient;
 

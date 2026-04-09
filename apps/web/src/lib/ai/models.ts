@@ -1,4 +1,4 @@
-export interface ChatModel {
+interface ChatModel {
 	id: string;
 	name: string;
 	model: string;

@@ -2,9 +2,9 @@ const GITHUB_OWNER = "murabcd";
 const GITHUB_REPO = "opengran";
 
 export const DESKTOP_RELEASES_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
-export const DESKTOP_LATEST_RELEASE_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
+const DESKTOP_LATEST_RELEASE_API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
 
-export type GitHubReleaseAsset = {
+type GitHubReleaseAsset = {
 	name: string;
 	browser_download_url: string;
 };

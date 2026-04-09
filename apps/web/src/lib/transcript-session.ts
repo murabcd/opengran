@@ -13,19 +13,3 @@ export const createTranscriptText = (utterances: TranscriptUtterance[]) =>
 			utterances: [...utterances].sort(compareTranscriptUtterances),
 		}),
 	);
-
-export const replaceTranscriptUtterancesLocally = ({
-	currentUtterances,
-	nextUtterances,
-	targetUtteranceIds,
-}: {
-	currentUtterances: TranscriptUtterance[];
-	nextUtterances: TranscriptUtterance[];
-	targetUtteranceIds: string[];
-}) =>
-	[
-		...currentUtterances.filter(
-			(utterance) => !targetUtteranceIds.includes(utterance.id),
-		),
-		...nextUtterances,
-	].sort(compareTranscriptUtterances);
