@@ -1,3 +1,4 @@
+import { Icons } from "@workspace/ui/components/icons";
 import {
 	SidebarMenu,
 	SidebarMenuAction,
@@ -5,7 +6,7 @@ import {
 	SidebarMenuItem,
 } from "@workspace/ui/components/sidebar";
 import { Skeleton } from "@workspace/ui/components/skeleton";
-import { FileText, LoaderCircle, MoreHorizontal } from "lucide-react";
+import { FileText, MoreHorizontal } from "lucide-react";
 import * as React from "react";
 import { SidebarCollapsibleGroup } from "@/components/nav/sidebar-collapsible-group";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
@@ -154,7 +155,7 @@ function SidebarNotesList({
 									onClick={() => onNoteSelect(note._id)}
 								>
 									{isRecording ? (
-										<LoaderCircle className="size-4 animate-spin [animation-duration:1.6s]" />
+										<Icons.sidebarRecordingSpinner />
 									) : (
 										<FileText />
 									)}
