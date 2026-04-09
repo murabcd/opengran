@@ -2,6 +2,9 @@ import * as React from "react";
 
 type Theme = "dark" | "light" | "system";
 type ResolvedTheme = "dark" | "light";
+type DesktopThemeBridge = {
+	setNativeTheme?: (theme: Theme) => Promise<unknown>;
+};
 
 type ThemeProviderProps = {
 	children: React.ReactNode;
@@ -118,6 +121,22 @@ export function ThemeProvider({
 			mediaQuery.removeEventListener("change", handleChange);
 		};
 	}, [theme, applyTheme]);
+
+	React.useEffect(() => {
+		const desktopBridge = (
+			window as typeof window & {
+				openGranDesktop?: DesktopThemeBridge;
+			}
+		).openGranDesktop;
+
+		if (!desktopBridge?.setNativeTheme) {
+			return;
+		}
+
+		void desktopBridge.setNativeTheme(theme).catch((error: unknown) => {
+			console.error("Failed to sync native desktop theme", error);
+		});
+	}, [theme]);
 
 	React.useEffect(() => {
 		const handleStorageChange = (event: StorageEvent) => {

@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("openGranDesktop", {
 	authFetch: (request) => ipcRenderer.invoke("app:auth-fetch", request),
 	getPermissionsStatus: () => ipcRenderer.invoke("app:get-permissions-status"),
 	getPreferences: () => ipcRenderer.invoke("app:get-preferences"),
+	setNativeTheme: (themeSource) =>
+		ipcRenderer.invoke("app:set-native-theme", themeSource),
 	getAuthCallbackUrl: () => ipcRenderer.invoke("app:get-auth-callback-url"),
 	getShareBaseUrl: () => ipcRenderer.invoke("app:get-share-base-url"),
 	setActiveWorkspaceId: (workspaceId) =>

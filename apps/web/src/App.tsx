@@ -41,6 +41,7 @@ import { Separator } from "@workspace/ui/components/separator";
 import {
 	SidebarProvider,
 	SidebarTrigger,
+	useSidebar,
 } from "@workspace/ui/components/sidebar";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import {
@@ -91,6 +92,12 @@ import {
 } from "@/hooks/use-active-workspace";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
+import {
+	DESKTOP_AUTH_SAFE_TOP_CLASS,
+	DESKTOP_MAIN_HEADER_CLASS,
+	DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+	DESKTOP_MAIN_HEADER_LEADING_CLASS,
+} from "@/lib/desktop-chrome";
 import {
 	getSuggestedWorkspaceName,
 	type WorkspaceRecord,
@@ -1472,7 +1479,7 @@ function OnboardingStepLayout({
 			data-app-region={isDesktopMac ? "drag" : undefined}
 			className={cn(
 				"flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6 md:p-10",
-				isDesktopMac && "pt-20 md:pt-24",
+				isDesktopMac && DESKTOP_AUTH_SAFE_TOP_CLASS,
 				className,
 			)}
 		>
@@ -1640,7 +1647,7 @@ function AuthBootstrapScreen({ isDesktopMac }: { isDesktopMac: boolean }) {
 			data-app-region={isDesktopMac ? "drag" : undefined}
 			className={cn(
 				"min-h-svh bg-background",
-				isDesktopMac && "pt-20 md:pt-24",
+				isDesktopMac && DESKTOP_AUTH_SAFE_TOP_CLASS,
 			)}
 		/>
 	);
@@ -2985,6 +2992,7 @@ function AppShellHeader({
 	onNewChat,
 }: AppShellHeaderProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
+	const { state: sidebarState } = useSidebar();
 	const breadcrumbRenameInitialTitleRef = React.useRef(
 		currentNoteTitle || "New note",
 	);
@@ -3086,16 +3094,23 @@ function AppShellHeader({
 			data-app-region={isDesktopMac ? "drag" : undefined}
 			className={cn(
 				"sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between bg-background/95 px-4 backdrop-blur transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 md:px-6",
-				isDesktopMac && "h-20 pt-8",
+				isDesktopMac && DESKTOP_MAIN_HEADER_CLASS,
 			)}
 		>
 			<div
-				data-app-region={isDesktopMac ? "no-drag" : undefined}
-				className="flex min-w-0 flex-1 items-center gap-2 pr-4"
+				className={cn(
+					"flex min-w-0 flex-1 items-center gap-2 pr-4",
+					isDesktopMac && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+					isDesktopMac &&
+						sidebarState === "collapsed" &&
+						DESKTOP_MAIN_HEADER_LEADING_CLASS,
+				)}
 			>
 				<Tooltip>
 					<TooltipTrigger asChild>
-						<SidebarTrigger className="-ml-1" />
+						<SidebarTrigger
+							data-app-region={isDesktopMac ? "no-drag" : undefined}
+						/>
 					</TooltipTrigger>
 					<TooltipContent side="bottom" align="start" sideOffset={8}>
 						<div className="flex items-center gap-2">
@@ -3113,6 +3128,7 @@ function AppShellHeader({
 				<AppShellBreadcrumbs
 					breadcrumbSectionLabel={breadcrumbSectionLabel}
 					breadcrumbDetailLabel={breadcrumbDetailLabel}
+					isDesktopMac={isDesktopMac}
 					onBreadcrumbSectionClick={onBreadcrumbSectionClick}
 					canRenameCurrentNote={canRenameCurrentNote}
 					titleEditOpen={titleEditOpen}
@@ -3134,8 +3150,10 @@ function AppShellHeader({
 				/>
 			</div>
 			<div
-				data-app-region={isDesktopMac ? "no-drag" : undefined}
-				className="ml-auto shrink-0"
+				className={cn(
+					"ml-auto shrink-0",
+					isDesktopMac && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+				)}
 			>
 				<AppShellHeaderActions
 					currentView={currentView}
@@ -3143,6 +3161,7 @@ function AppShellHeader({
 					currentNoteTitle={currentNoteTitle}
 					currentNoteTemplateSlug={currentNoteTemplateSlug}
 					currentNoteEditorActions={currentNoteEditorActions}
+					isDesktopMac={isDesktopMac}
 					onCreateNote={onCreateNote}
 					onNoteTrashed={onNoteTrashed}
 					onNewChat={onNewChat}
@@ -3155,6 +3174,7 @@ function AppShellHeader({
 function AppShellBreadcrumbs({
 	breadcrumbSectionLabel,
 	breadcrumbDetailLabel,
+	isDesktopMac,
 	onBreadcrumbSectionClick,
 	canRenameCurrentNote,
 	titleEditOpen,
@@ -3167,6 +3187,7 @@ function AppShellBreadcrumbs({
 }: {
 	breadcrumbSectionLabel: string;
 	breadcrumbDetailLabel: string | null;
+	isDesktopMac: boolean;
 	onBreadcrumbSectionClick: () => void;
 	canRenameCurrentNote: boolean;
 	titleEditOpen: boolean;
@@ -3186,6 +3207,7 @@ function AppShellBreadcrumbs({
 							<BreadcrumbLink asChild>
 								<button
 									type="button"
+									data-app-region={isDesktopMac ? "no-drag" : undefined}
 									className="cursor-pointer truncate"
 									onClick={onBreadcrumbSectionClick}
 								>
@@ -3206,6 +3228,7 @@ function AppShellBreadcrumbs({
 												<button
 													type="button"
 													aria-current="page"
+													data-app-region={isDesktopMac ? "no-drag" : undefined}
 													className="line-clamp-1 -mx-1 -my-0.5 cursor-pointer rounded px-1 py-0.5 text-left"
 													onClick={onOpenTitleEditor}
 												>
@@ -3260,6 +3283,7 @@ function AppShellHeaderActions({
 	currentNoteTitle,
 	currentNoteTemplateSlug,
 	currentNoteEditorActions,
+	isDesktopMac,
 	onCreateNote,
 	onNoteTrashed,
 	onNewChat,
@@ -3270,13 +3294,18 @@ function AppShellHeaderActions({
 	| "currentNoteTitle"
 	| "currentNoteTemplateSlug"
 	| "currentNoteEditorActions"
+	| "isDesktopMac"
 	| "onCreateNote"
 	| "onNoteTrashed"
 	| "onNewChat"
 >) {
 	if (currentView === "home") {
 		return (
-			<Button variant="outline" onClick={onCreateNote}>
+			<Button
+				variant="outline"
+				data-app-region={isDesktopMac ? "no-drag" : undefined}
+				onClick={onCreateNote}
+			>
 				<Plus />
 				Quick note
 			</Button>
@@ -3285,7 +3314,11 @@ function AppShellHeaderActions({
 
 	if (currentView === "chat") {
 		return (
-			<Button variant="outline" onClick={onNewChat}>
+			<Button
+				variant="outline"
+				data-app-region={isDesktopMac ? "no-drag" : undefined}
+				onClick={onNewChat}
+			>
 				<Plus />
 				New chat
 			</Button>
@@ -3301,7 +3334,10 @@ function AppShellHeaderActions({
 	}
 
 	return (
-		<div className="flex items-center gap-2">
+		<div
+			className="flex items-center gap-2"
+			data-app-region={isDesktopMac ? "no-drag" : undefined}
+		>
 			{currentNoteEditorActions?.canShowTemplateSelect ? (
 				<NoteTemplateSelect
 					disabled={!currentNoteEditorActions}
@@ -4243,7 +4279,7 @@ function AuthScreen({
 			data-app-region={isDesktopMac ? "drag" : undefined}
 			className={cn(
 				"flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6 md:p-10",
-				isDesktopMac && "pt-20 md:pt-24",
+				isDesktopMac && DESKTOP_AUTH_SAFE_TOP_CLASS,
 			)}
 		>
 			<LoginForm

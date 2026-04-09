@@ -23,6 +23,7 @@ import {
 	ipcMain,
 	Menu,
 	nativeImage,
+	nativeTheme,
 	powerMonitor,
 	screen,
 	shell,
@@ -117,6 +118,45 @@ const defaultLastNavigation = {
 	pathname: "/home",
 	search: "",
 };
+const getMainWindowBackgroundColor = () => {
+	const shouldUseDarkColors =
+		nativeTheme.themeSource === "dark" ||
+		(nativeTheme.themeSource === "system" &&
+			nativeTheme.shouldUseDarkColors === true);
+
+	return shouldUseDarkColors ? "#18181b" : "#f7f7f5";
+};
+
+const applyDesktopThemeSource = (themeSource) => {
+	if (
+		themeSource !== "light" &&
+		themeSource !== "dark" &&
+		themeSource !== "system"
+	) {
+		throw new Error("Desktop theme source must be light, dark, or system.");
+	}
+
+	nativeTheme.themeSource = themeSource;
+
+	if (mainWindow && !mainWindow.isDestroyed()) {
+		mainWindow.setBackgroundColor(getMainWindowBackgroundColor());
+	}
+
+	return {
+		ok: true,
+		themeSource: nativeTheme.themeSource,
+		usesDarkColors: nativeTheme.shouldUseDarkColors === true,
+	};
+};
+
+nativeTheme.on("updated", () => {
+	if (!mainWindow || mainWindow.isDestroyed()) {
+		return;
+	}
+
+	mainWindow.setBackgroundColor(getMainWindowBackgroundColor());
+});
+
 const createInitialTrayCalendarState = () => ({
 	status: "idle",
 	events: [],
@@ -1255,6 +1295,7 @@ const ensureMeetingWidgetWindow = async () => {
 		skipTaskbar: true,
 		alwaysOnTop: true,
 		focusable: true,
+		acceptFirstMouse: true,
 		title: "OpenGran meeting widget",
 		icon: dockIconPath,
 		webPreferences: {
@@ -4881,9 +4922,10 @@ const createMainWindow = async (targetUrl) => {
 		minHeight: minimumWindowSize.height,
 		title: "OpenGran",
 		icon: dockIconPath,
-		backgroundColor: "#f7f7f5",
+		backgroundColor: getMainWindowBackgroundColor(),
 		autoHideMenuBar: true,
 		titleBarStyle: isMac ? "hiddenInset" : "default",
+		trafficLightPosition: isMac ? { x: 16, y: 14 } : undefined,
 		webPreferences: {
 			preload: join(runtimeDir, "preload.cjs"),
 			contextIsolation: true,
@@ -5203,6 +5245,10 @@ ipcMain.handle("app:get-runtime-config", async () => {
 
 ipcMain.handle("app:get-preferences", async () => {
 	return getDesktopPreferences();
+});
+
+ipcMain.handle("app:set-native-theme", async (_event, themeSource) => {
+	return applyDesktopThemeSource(themeSource);
 });
 
 ipcMain.handle("app:auth-fetch", async (_event, request) => {

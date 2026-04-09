@@ -39,6 +39,8 @@ declare global {
 		canLaunchAtLogin: boolean;
 	}
 
+	type DesktopThemeSource = "dark" | "light" | "system";
+
 	type DesktopTranscriptionControllerPhase =
 		| "idle"
 		| "starting"
@@ -144,6 +146,11 @@ declare global {
 			}) => Promise<unknown>;
 			getPermissionsStatus: () => Promise<DesktopPermissionsStatus>;
 			getPreferences: () => Promise<DesktopPreferences>;
+			setNativeTheme: (themeSource: DesktopThemeSource) => Promise<{
+				ok: boolean;
+				themeSource: DesktopThemeSource;
+				usesDarkColors: boolean;
+			}>;
 			getAuthCallbackUrl: () => Promise<{
 				url: string;
 			}>;

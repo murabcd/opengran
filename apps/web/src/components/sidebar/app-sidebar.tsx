@@ -215,7 +215,12 @@ export function AppSidebar({
 					data-app-region={desktopSafeTop ? "drag" : undefined}
 					className={desktopSafeTop ? "pt-8" : undefined}
 				>
-					<div data-app-region={desktopSafeTop ? "no-drag" : undefined}>
+					<div
+						data-app-region={desktopSafeTop ? "no-drag" : undefined}
+						className={
+							desktopSafeTop && currentView === "home" ? "mt-4" : undefined
+						}
+					>
 						<WorkspaceSwitcher
 							workspaces={workspaces}
 							activeWorkspaceId={activeWorkspaceId}
