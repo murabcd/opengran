@@ -5,7 +5,7 @@ import {
 	SidebarMenuItem,
 } from "@workspace/ui/components/sidebar";
 import { Skeleton } from "@workspace/ui/components/skeleton";
-import { FileText, MoreHorizontal } from "lucide-react";
+import { FileText, LoaderCircle, MoreHorizontal } from "lucide-react";
 import * as React from "react";
 import { SidebarCollapsibleGroup } from "@/components/nav/sidebar-collapsible-group";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
@@ -26,6 +26,7 @@ export function NavNotes({
 	showStarred = true,
 	currentNoteId,
 	currentNoteTitle,
+	recordingNoteId = null,
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
@@ -36,6 +37,7 @@ export function NavNotes({
 	showStarred?: boolean;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
+	recordingNoteId?: Id<"notes"> | null;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
@@ -62,6 +64,7 @@ export function NavNotes({
 						notes={starredNotes}
 						currentNoteId={currentNoteId}
 						currentNoteTitle={currentNoteTitle}
+						recordingNoteId={recordingNoteId}
 						onNoteSelect={onNoteSelect}
 						onNoteTitleChange={onNoteTitleChange}
 						onNoteTrashed={onNoteTrashed}
@@ -84,6 +87,7 @@ export function NavNotes({
 							notes={visibleNotes}
 							currentNoteId={currentNoteId}
 							currentNoteTitle={currentNoteTitle}
+							recordingNoteId={recordingNoteId}
 							onNoteSelect={onNoteSelect}
 							onNoteTitleChange={onNoteTitleChange}
 							onNoteTrashed={onNoteTrashed}
@@ -114,6 +118,7 @@ function SidebarNotesList({
 	notes,
 	currentNoteId,
 	currentNoteTitle,
+	recordingNoteId,
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
@@ -121,6 +126,7 @@ function SidebarNotesList({
 	notes: Array<Doc<"notes">>;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
+	recordingNoteId: Id<"notes"> | null;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
@@ -129,6 +135,7 @@ function SidebarNotesList({
 		<SidebarMenu>
 			{notes.map((note) => {
 				const isActive = note._id === currentNoteId;
+				const isRecording = note._id === recordingNoteId;
 				const title =
 					isActive && currentNoteTitle?.trim()
 						? currentNoteTitle
@@ -146,7 +153,11 @@ function SidebarNotesList({
 									isActive={isActive}
 									onClick={() => onNoteSelect(note._id)}
 								>
-									<FileText />
+									{isRecording ? (
+										<LoaderCircle className="size-4 animate-spin [animation-duration:1.6s]" />
+									) : (
+										<FileText />
+									)}
 									<span>{title}</span>
 								</SidebarMenuButton>
 							}

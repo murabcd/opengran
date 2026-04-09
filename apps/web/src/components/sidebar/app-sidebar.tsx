@@ -30,6 +30,7 @@ import {
 import { NavUser } from "@/components/sidebar/nav-user";
 import { TemplatesDialog } from "@/components/templates/templates-dialog";
 import { WorkspaceSwitcher } from "@/components/workspaces/workspace-switcher";
+import { useTranscriptionSession } from "@/hooks/use-transcription-session";
 import { getChatId } from "@/lib/chat";
 import type { WorkspaceRecord } from "@/lib/workspaces";
 import { api } from "../../../../../convex/_generated/api";
@@ -129,6 +130,7 @@ export function AppSidebar({
 	const [draftUser, setDraftUser] = React.useState(user);
 	const [optimisticReadInboxItemIds, setOptimisticReadInboxItemIds] =
 		React.useState(() => new Set<string>());
+	const transcriptionSession = useTranscriptionSession();
 	const inboxItems = useQuery(
 		api.inboxItems.list,
 		activeWorkspaceId
@@ -139,6 +141,23 @@ export function AppSidebar({
 		inboxItems?.filter(
 			(item) => !optimisticReadInboxItemIds.has(String(item._id)),
 		).length ?? 0;
+	const recordingNoteId = React.useMemo(() => {
+		if (!transcriptionSession.isListening) {
+			return null;
+		}
+
+		const scopeKey = transcriptionSession.scopeKey;
+		if (!scopeKey?.startsWith("note:")) {
+			return null;
+		}
+
+		const scopedNoteId = scopeKey.slice("note:".length);
+		if (!scopedNoteId || scopedNoteId === "draft") {
+			return null;
+		}
+
+		return scopedNoteId as Id<"notes">;
+	}, [transcriptionSession.isListening, transcriptionSession.scopeKey]);
 
 	React.useEffect(() => {
 		setDraftUser(user);
@@ -223,6 +242,7 @@ export function AppSidebar({
 							showStarred={false}
 							currentNoteId={currentView === "note" ? currentNoteId : null}
 							currentNoteTitle={currentNoteTitle}
+							recordingNoteId={recordingNoteId}
 							onNoteSelect={onNoteSelect}
 							onNoteTitleChange={onNoteTitleChange}
 							onNoteTrashed={onNoteTrashed}
@@ -232,6 +252,7 @@ export function AppSidebar({
 						notes={notes}
 						currentNoteId={currentView === "note" ? currentNoteId : null}
 						currentNoteTitle={currentNoteTitle}
+						recordingNoteId={recordingNoteId}
 						onNoteSelect={onNoteSelect}
 						onNoteTitleChange={onNoteTitleChange}
 						onNoteTrashed={onNoteTrashed}
