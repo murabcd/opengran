@@ -2046,27 +2046,34 @@ const useAppShellState = ({
 		currentRouteNoteId !== null &&
 		currentNoteId === null &&
 		normalizedRouteNoteId === null;
+	const listedSelectedNote =
+		currentView === "note" && resolvedCurrentNoteId
+			? (notes?.find((note) => note._id === resolvedCurrentNoteId) ??
+				(notes === undefined ? undefined : null))
+			: undefined;
 	const selectedNote = useQuery(
 		api.notes.get,
 		currentView === "note" &&
 			!hasInvalidCurrentNoteRoute &&
 			resolvedCurrentNoteId &&
-			resolvedActiveWorkspaceId
+			resolvedActiveWorkspaceId &&
+			!listedSelectedNote
 			? {
 					workspaceId: resolvedActiveWorkspaceId,
 					id: resolvedCurrentNoteId,
 				}
 			: "skip",
 	);
+	const resolvedSelectedNote = listedSelectedNote ?? selectedNote;
 	const isResolvingCurrentNote =
 		isResolvingCurrentNoteRouteId ||
 		(currentView === "note" &&
 			resolvedCurrentNoteId !== null &&
-			selectedNote === undefined);
+			resolvedSelectedNote === undefined);
 	const hasMissingCurrentNote =
 		currentView === "note" &&
 		resolvedCurrentNoteId !== null &&
-		selectedNote === null;
+		resolvedSelectedNote === null;
 	const resolvedCurrentView =
 		hasInvalidCurrentNoteRoute || hasMissingCurrentNote
 			? "notFound"
@@ -2324,15 +2331,15 @@ const useAppShellState = ({
 	}, []);
 
 	React.useEffect(() => {
-		if (selectedNote) {
-			setCurrentNoteTitle(selectedNote.title);
+		if (resolvedSelectedNote) {
+			setCurrentNoteTitle(resolvedSelectedNote.title);
 			return;
 		}
 
 		if (resolvedCurrentView === "note") {
 			setCurrentNoteTitle("");
 		}
-	}, [resolvedCurrentView, selectedNote]);
+	}, [resolvedCurrentView, resolvedSelectedNote]);
 
 	React.useEffect(() => {
 		void window.openGranDesktop
@@ -2753,7 +2760,7 @@ const useAppShellState = ({
 		chats?.find((chat) => getChatId(chat) === currentChatId)?.title || "Chat";
 	const isSharedNote =
 		resolvedCurrentView === "note" &&
-		(selectedNote?.visibility === "public" ||
+		(resolvedSelectedNote?.visibility === "public" ||
 			sharedNotes?.some((note) => note._id === resolvedCurrentNoteId) === true);
 	const initialChatMessages = React.useMemo(
 		() => toStoredChatMessages(selectedChatMessages ?? []),
@@ -2796,7 +2803,7 @@ const useAppShellState = ({
 		isSigningOut,
 		notes,
 		openNote,
-		selectedNote,
+		selectedNote: resolvedSelectedNote,
 		settingsOpen,
 		settingsPage,
 		setActiveWorkspaceId,
@@ -2810,19 +2817,17 @@ const useAppShellState = ({
 		user,
 		workspaces,
 		isResolvingCurrentNoteRoute: isResolvingCurrentNote,
-		currentNoteTemplateSlug: selectedNote?.templateSlug ?? null,
-		breadcrumbDetailLabel: isResolvingCurrentNote
-			? null
-			: resolvedCurrentView === "notFound"
+		currentNoteTemplateSlug: resolvedSelectedNote?.templateSlug ?? null,
+		breadcrumbDetailLabel:
+			resolvedCurrentView === "notFound"
 				? null
-				: resolvedCurrentView === "note"
+				: resolvedCurrentView === "note" && !isResolvingCurrentNote
 					? getNoteDisplayTitle(currentNoteTitle)
 					: resolvedCurrentView === "chat" && currentChatId
 						? currentChatTitle
 						: null,
-		breadcrumbSectionLabel: isResolvingCurrentNote
-			? "Loading note"
-			: resolvedCurrentView === "notFound"
+		breadcrumbSectionLabel:
+			resolvedCurrentView === "notFound"
 				? "Page Not Found"
 				: resolvedCurrentView === "chat"
 					? "Chat"
@@ -2911,7 +2916,6 @@ function AppShell({
 					/>
 					<AppShellContent
 						currentView={controller.currentView}
-						isResolvingNoteRoute={controller.isResolvingCurrentNoteRoute}
 						currentDate={controller.currentDate}
 						currentDayOfMonth={controller.currentDayOfMonth}
 						currentMonthLabel={controller.currentMonthLabel}
@@ -2925,6 +2929,7 @@ function AppShell({
 						sharedNotes={controller.sharedNotes}
 						currentNoteId={controller.currentNoteId}
 						currentNoteTitle={controller.currentNoteTitle}
+						selectedNote={controller.selectedNote}
 						user={controller.user}
 						onOpenNote={controller.openNote}
 						onNoteTrashed={controller.handleNoteTrashed}
@@ -3451,7 +3456,6 @@ function NoteHeaderActionsMenu({
 
 function AppShellContent({
 	currentView,
-	isResolvingNoteRoute,
 	currentDate,
 	currentDayOfMonth,
 	currentMonthLabel,
@@ -3463,6 +3467,7 @@ function AppShellContent({
 	sharedNotes,
 	currentNoteId,
 	currentNoteTitle,
+	selectedNote,
 	user,
 	onOpenNote,
 	onNoteTrashed,
@@ -3486,7 +3491,6 @@ function AppShellContent({
 	onGoHome,
 }: {
 	currentView: AppView;
-	isResolvingNoteRoute: boolean;
 	currentDate: Date;
 	currentDayOfMonth: number;
 	currentMonthLabel: string;
@@ -3498,6 +3502,7 @@ function AppShellContent({
 	sharedNotes: Array<Doc<"notes">> | undefined;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle: string;
+	selectedNote: Doc<"notes"> | null | undefined;
 	user: AppUser;
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
@@ -3543,14 +3548,6 @@ function AppShellContent({
 
 	if (currentView === "notFound") {
 		return <NotFoundView onGoHome={onGoHome} />;
-	}
-
-	if (currentView === "note" && isResolvingNoteRoute) {
-		return (
-			<div className="flex flex-1 items-center justify-center px-8 py-10">
-				<p className="text-sm text-muted-foreground">Loading note...</p>
-			</div>
-		);
 	}
 
 	if (currentView === "home") {
@@ -3609,6 +3606,7 @@ function AppShellContent({
 				<NotePage
 					autoStartTranscription={shouldAutoStartNoteCapture}
 					noteId={currentNoteId}
+					note={selectedNote}
 					externalTitle={currentNoteTitle}
 					onAutoStartTranscriptionHandled={onAutoStartNoteCaptureHandled}
 					onTitleChange={onNoteTitleChange}

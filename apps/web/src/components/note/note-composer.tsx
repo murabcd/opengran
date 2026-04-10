@@ -321,6 +321,8 @@ const useNoteComposerController = ({
 		stopTranscriptionWhenMeetingEnds,
 		transcriptionLanguage,
 	});
+	const isCurrentNoteSpeechListening =
+		transcriptSession.isCurrentNoteSpeechListening;
 
 	const transport = React.useMemo(
 		() =>
@@ -486,7 +488,7 @@ const useNoteComposerController = ({
 		transcriptSession.hasPendingGenerateTranscript &&
 		!transcriptSession.hasGeneratedLatestTranscript &&
 		noteContext.templateSlug !== ENHANCED_NOTE_TEMPLATE_SLUG &&
-		!transcriptSession.isSpeechListening &&
+		!isCurrentNoteSpeechListening &&
 		!isChatOpen &&
 		!isTranscriptOpen;
 	const selectedNoteChat =
@@ -597,23 +599,17 @@ const useNoteComposerController = ({
 	);
 
 	React.useEffect(() => {
-		if (
-			transcriptSession.isSpeechListening &&
-			!previousSpeechListeningRef.current
-		) {
+		if (isCurrentNoteSpeechListening && !previousSpeechListeningRef.current) {
 			closeRightSidebar();
 		}
 
-		if (
-			!transcriptSession.isSpeechListening &&
-			previousSpeechListeningRef.current
-		) {
+		if (!isCurrentNoteSpeechListening && previousSpeechListeningRef.current) {
 			closeRightSidebar();
 			setPanelMode(null);
 		}
 
-		previousSpeechListeningRef.current = transcriptSession.isSpeechListening;
-	}, [closeRightSidebar, transcriptSession.isSpeechListening]);
+		previousSpeechListeningRef.current = isCurrentNoteSpeechListening;
+	}, [closeRightSidebar, isCurrentNoteSpeechListening]);
 
 	React.useEffect(() => {
 		if (presentationMode === "inline") {
@@ -854,7 +850,7 @@ const useNoteComposerController = ({
 
 	return {
 		autoStartKey: transcriptSession.autoStartKey,
-		captureScopeKey: transcriptSession.captureScopeKey,
+		currentNoteScopeKey: transcriptSession.currentNoteScopeKey,
 		canGenerateNotes,
 		chatError,
 		chatMessages,
@@ -890,7 +886,7 @@ const useNoteComposerController = ({
 		isGeneratingNotes: transcriptSession.isGeneratingNotes,
 		isMobile,
 		isSidebarPresentation,
-		isSpeechListening: transcriptSession.isSpeechListening,
+		isSpeechListening: isCurrentNoteSpeechListening,
 		isRecipeLoading: recipeData === undefined,
 		isTranscriptOpen,
 		liveTranscriptEntries: transcriptSession.liveTranscriptEntries,
@@ -939,14 +935,14 @@ const useNoteComposerController = ({
 
 function NoteSpeechControls({
 	autoStartKey,
-	captureScopeKey,
+	currentNoteScopeKey,
 	isTranscriptOpen,
 	onToggleTranscript,
 	transcriptionLanguageReady,
 	transcriptionLanguage,
 }: {
 	autoStartKey?: string | number | null;
-	captureScopeKey: string;
+	currentNoteScopeKey: string;
 	isTranscriptOpen: boolean;
 	onToggleTranscript: () => void;
 	transcriptionLanguageReady: boolean;
@@ -965,7 +961,7 @@ function NoteSpeechControls({
 				autoStartKey={autoStartKey}
 				disabled={!transcriptionLanguageReady}
 				lang={speechLanguage}
-				scopeKey={captureScopeKey}
+				scopeKey={currentNoteScopeKey}
 				className="shrink-0 rounded-full border-input/50 !bg-transparent text-muted-foreground shadow-none hover:!bg-muted hover:text-foreground"
 			/>
 
@@ -1719,7 +1715,7 @@ function NoteComposerSpeechControls({
 	return (
 		<NoteSpeechControls
 			autoStartKey={controller.autoStartKey}
-			captureScopeKey={controller.captureScopeKey}
+			currentNoteScopeKey={controller.currentNoteScopeKey}
 			isTranscriptOpen={controller.isTranscriptOpen}
 			onToggleTranscript={() => {
 				controller.closeRightSidebar();

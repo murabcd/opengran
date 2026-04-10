@@ -18,7 +18,7 @@ import {
 } from "@workspace/ui/components/sidebar";
 import type { LucideIcon } from "lucide-react";
 
-export type ManageDialogNavigationItem = {
+type ManageDialogNavigationItem = {
 	id: string;
 	icon: LucideIcon;
 	label: string;

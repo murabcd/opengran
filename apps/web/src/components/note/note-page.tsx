@@ -2,7 +2,7 @@ import type { JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import * as React from "react";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
@@ -181,11 +181,13 @@ export type NoteEditorActions = {
 
 const useNotePageController = ({
 	noteId,
+	note,
 	externalTitle,
 	onTitleChange,
 	onEditorActionsChange,
 }: {
 	noteId: Id<"notes"> | null;
+	note?: Doc<"notes"> | null;
 	externalTitle?: string;
 	onTitleChange?: (title: string) => void;
 	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
@@ -241,15 +243,6 @@ const useNotePageController = ({
 			searchableText: string;
 		};
 	} | null>(null);
-	const note = useQuery(
-		api.notes.get,
-		noteId && activeWorkspaceId
-			? {
-					workspaceId: activeWorkspaceId,
-					id: noteId,
-				}
-			: "skip",
-	);
 	const shouldPreserveStructuredNoteTitle = Boolean(note?.calendarEventKey);
 	const saveNote = useMutation(api.notes.save);
 	const setNoteTemplate = useMutation(
@@ -420,6 +413,14 @@ const useNotePageController = ({
 			lastSavedSnapshotRef.current = null;
 			latestSaveRequestIdRef.current = 0;
 			queuedSaveRef.current = null;
+
+			if (editor && (!noteId || note === undefined)) {
+				setTitle("");
+				onTitleChange?.("");
+				setContent(EMPTY_DOCUMENT_STRING);
+				setSearchableText("");
+				editor.commands.setContent(EMPTY_DOCUMENT, { emitUpdate: false });
+			}
 		}
 
 		if (!editor || !noteId || note === undefined || hasHydratedRef.current) {
@@ -1078,6 +1079,7 @@ const useNotePageController = ({
 export function NotePage({
 	autoStartTranscription = false,
 	noteId,
+	note,
 	externalTitle,
 	onAutoStartTranscriptionHandled,
 	onTitleChange,
@@ -1086,6 +1088,7 @@ export function NotePage({
 }: {
 	autoStartTranscription?: boolean;
 	noteId: Id<"notes"> | null;
+	note?: Doc<"notes"> | null;
 	externalTitle?: string;
 	onAutoStartTranscriptionHandled?: () => void;
 	onTitleChange?: (title: string) => void;
@@ -1094,6 +1097,7 @@ export function NotePage({
 }) {
 	const controller = useNotePageController({
 		noteId,
+		note,
 		externalTitle,
 		onTitleChange,
 		onEditorActionsChange,

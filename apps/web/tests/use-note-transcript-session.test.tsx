@@ -782,4 +782,194 @@ describe("useNoteTranscriptSession", () => {
 			expect(result.current.captureScopeKey).toBe("note:note-1");
 		});
 	});
+
+	it("keeps the active note capture latched while opening another note", async () => {
+		const completeSessionMock = vi.fn().mockResolvedValue(null);
+		const startSessionMock = vi.fn().mockResolvedValue("session-10");
+		useTranscriptSessionRepositoryMock.mockImplementation((repoNoteId) => ({
+			appendUtterance: vi.fn(),
+			clearDraft: vi.fn(),
+			completeSession: completeSessionMock,
+			isLatestTranscriptSessionLoading: false,
+			latestTranscriptSession: null,
+			loadDraft: vi.fn().mockResolvedValue(null),
+			markGenerated: vi.fn(),
+			saveDraft: vi.fn(),
+			setSystemAudioSourceMode: vi.fn(),
+			startSession: startSessionMock,
+			repoNoteId,
+		}));
+		setTranscriptionSessionState({
+			isListening: true,
+			phase: "listening",
+			scopeKey: "note:note-1",
+		});
+
+		const { useNoteTranscriptSession } = await import(
+			"../src/hooks/use-note-transcript-session"
+		);
+
+		const { result, rerender } = renderHook(
+			({ noteId }: { noteId: string | null }) =>
+				useNoteTranscriptSession({
+					noteId: noteId as never,
+				}),
+			{
+				initialProps: {
+					noteId: "note-1",
+				},
+			},
+		);
+
+		await waitFor(() => {
+			expect(result.current.isSpeechListening).toBe(true);
+		});
+		await waitFor(() => {
+			expect(startSessionMock).toHaveBeenCalledWith({
+				noteId: "note-1",
+				systemAudioSourceMode: undefined,
+			});
+		});
+
+		rerender({
+			noteId: "note-2",
+		});
+
+		await waitFor(() => {
+			expect(result.current.captureScopeKey).toBe("note:note-1");
+		});
+		expect(result.current.isSpeechListening).toBe(true);
+		expect(completeSessionMock).not.toHaveBeenCalled();
+		expect(startSessionMock).toHaveBeenCalledTimes(1);
+
+		setTranscriptionSessionState({
+			isListening: false,
+			phase: "idle",
+			scopeKey: "note:note-1",
+		});
+		rerender({
+			noteId: "note-2",
+		});
+
+		await waitFor(() => {
+			expect(result.current.captureScopeKey).toBe("note:note-2");
+		});
+	});
+
+	it("rehydrates a remounted composer onto the active note capture scope", async () => {
+		const completeSessionMock = vi.fn().mockResolvedValue(null);
+		const startSessionMock = vi.fn().mockResolvedValue("session-11");
+		useTranscriptSessionRepositoryMock.mockImplementation(() => ({
+			appendUtterance: vi.fn(),
+			clearDraft: vi.fn(),
+			completeSession: completeSessionMock,
+			isLatestTranscriptSessionLoading: false,
+			latestTranscriptSession: null,
+			loadDraft: vi.fn().mockResolvedValue(null),
+			markGenerated: vi.fn(),
+			saveDraft: vi.fn(),
+			setSystemAudioSourceMode: vi.fn(),
+			startSession: startSessionMock,
+		}));
+		setTranscriptionSessionState({
+			isListening: true,
+			phase: "listening",
+			scopeKey: "note:note-1",
+		});
+
+		const { useNoteTranscriptSession } = await import(
+			"../src/hooks/use-note-transcript-session"
+		);
+
+		const { result } = renderHook(() =>
+			useNoteTranscriptSession({
+				noteId: "note-2" as never,
+			}),
+		);
+
+		await waitFor(() => {
+			expect(result.current.captureScopeKey).toBe("note:note-1");
+		});
+		expect(result.current.isSpeechListening).toBe(true);
+		expect(completeSessionMock).not.toHaveBeenCalled();
+	});
+
+	it("shows the opened note's stored transcript while another note owns the active capture", async () => {
+		useTranscriptSessionRepositoryMock.mockImplementation((repoNoteId) => ({
+			appendUtterance: vi.fn(),
+			clearDraft: vi.fn(),
+			completeSession: vi.fn().mockResolvedValue(null),
+			isLatestTranscriptSessionLoading: false,
+			latestTranscriptSession:
+				repoNoteId === "note-2"
+					? {
+							sessionId: "session-note-2",
+							finalTranscript: "",
+							generatedNoteAt: null,
+							refinementError: null,
+							refinementStatus: "idle",
+							updatedAt: 2,
+							utterances: [
+								{
+									endedAt: 2,
+									id: "utt-note-2",
+									speaker: "you",
+									startedAt: 1,
+									text: "stored note two text",
+								},
+							],
+						}
+					: {
+							sessionId: "session-note-1",
+							finalTranscript: "",
+							generatedNoteAt: null,
+							refinementError: null,
+							refinementStatus: "idle",
+							updatedAt: 1,
+							utterances: [
+								{
+									endedAt: 2,
+									id: "utt-note-1",
+									speaker: "you",
+									startedAt: 1,
+									text: "active note one text",
+								},
+							],
+						},
+			loadDraft: vi.fn().mockResolvedValue(null),
+			markGenerated: vi.fn(),
+			saveDraft: vi.fn(),
+			setSystemAudioSourceMode: vi.fn(),
+			startSession: vi.fn().mockResolvedValue("session-12"),
+		}));
+		setTranscriptionSessionState({
+			isListening: true,
+			phase: "listening",
+			scopeKey: "note:note-1",
+		});
+
+		const { useNoteTranscriptSession } = await import(
+			"../src/hooks/use-note-transcript-session"
+		);
+
+		const { result } = renderHook(() =>
+			useNoteTranscriptSession({
+				noteId: "note-2" as never,
+			}),
+		);
+
+		await waitFor(() => {
+			expect(result.current.captureScopeKey).toBe("note:note-1");
+		});
+		expect(result.current.isCurrentNoteSpeechListening).toBe(false);
+		expect(result.current.fullTranscript).toContain("stored note two text");
+		expect(result.current.fullTranscript).not.toContain("active note one text");
+		expect(result.current.displayTranscriptEntries).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					text: "stored note two text",
+				}),
+			]),
+		);
+	});
 });

@@ -12,8 +12,7 @@ const LOG_LEVELS: Record<TranscriptionLogLevel, number> = {
 	error: 40,
 };
 
-const resolveMinimumLogLevel = (): TranscriptionLogLevel =>
-	import.meta.env.DEV ? "debug" : "info";
+const resolveMinimumLogLevel = (): TranscriptionLogLevel => "warn";
 
 export type TranscriptionLogger = {
 	debug: (event: string, details?: Record<string, unknown>) => void;

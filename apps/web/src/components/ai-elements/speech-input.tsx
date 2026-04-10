@@ -5,13 +5,17 @@ import { cn } from "@workspace/ui/lib/utils";
 import { MicIcon, SquareIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 import { useEffect } from "react";
-import { useTranscriptionControls } from "@/hooks/use-transcription-controls";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
 import type {
 	LiveTranscriptState,
 	SystemAudioCaptureStatus,
 	TranscriptRecoveryStatus,
 	TranscriptUtterance,
+} from "@/lib/transcript";
+import {
+	createEmptyLiveTranscriptState,
+	createSystemAudioCaptureStatus,
+	createTranscriptRecoveryStatus,
 } from "@/lib/transcript";
 import { transcriptionSessionManager } from "@/lib/transcription-session-manager";
 
@@ -41,27 +45,54 @@ export const SpeechInput = ({
 	...props
 }: SpeechInputProps) => {
 	const session = useTranscriptionSession();
-	const controls = useTranscriptionControls({
+	const isScopedSession = session.scopeKey === scopeKey;
+	const isScopedListening = isScopedSession ? session.isListening : false;
+	const isScopedConnecting = isScopedSession ? session.isConnecting : false;
+	const hasActiveSessionInDifferentScope =
+		session.scopeKey !== null &&
+		session.scopeKey !== scopeKey &&
+		(session.isListening || session.isConnecting);
+	const configuredScopeKey = hasActiveSessionInDifferentScope
+		? session.scopeKey
+		: scopeKey;
+	const scopedLiveTranscript = isScopedSession
+		? session.liveTranscript
+		: createEmptyLiveTranscriptState();
+	const scopedSystemAudioStatus = isScopedSession
+		? session.systemAudioStatus
+		: createSystemAudioCaptureStatus();
+	const scopedRecoveryStatus = isScopedSession
+		? session.recoveryStatus
+		: createTranscriptRecoveryStatus();
+
+	useEffect(() => {
+		transcriptionSessionManager.controller.configure({
+			autoStartKey: hasActiveSessionInDifferentScope ? null : autoStartKey,
+			lang,
+			scopeKey: configuredScopeKey,
+		});
+	}, [
 		autoStartKey,
+		configuredScopeKey,
+		hasActiveSessionInDifferentScope,
 		lang,
-		scopeKey,
-	});
+	]);
 
 	useEffect(() => {
-		onListeningChange?.(session.isListening);
-	}, [onListeningChange, session.isListening]);
+		onListeningChange?.(isScopedListening);
+	}, [isScopedListening, onListeningChange]);
 
 	useEffect(() => {
-		onLiveTranscriptChange?.(session.liveTranscript);
-	}, [onLiveTranscriptChange, session.liveTranscript]);
+		onLiveTranscriptChange?.(scopedLiveTranscript);
+	}, [onLiveTranscriptChange, scopedLiveTranscript]);
 
 	useEffect(() => {
-		onSystemAudioStatusChange?.(session.systemAudioStatus);
-	}, [onSystemAudioStatusChange, session.systemAudioStatus]);
+		onSystemAudioStatusChange?.(scopedSystemAudioStatus);
+	}, [onSystemAudioStatusChange, scopedSystemAudioStatus]);
 
 	useEffect(() => {
-		onRecoveryStatusChange?.(session.recoveryStatus);
-	}, [onRecoveryStatusChange, session.recoveryStatus]);
+		onRecoveryStatusChange?.(scopedRecoveryStatus);
+	}, [onRecoveryStatusChange, scopedRecoveryStatus]);
 
 	useEffect(() => {
 		if (!onUtterance) {
@@ -77,7 +108,7 @@ export const SpeechInput = ({
 
 	return (
 		<div className="relative inline-flex items-center justify-center">
-			{session.isListening &&
+			{isScopedListening &&
 				pulseAnimationDelays.map((delay) => (
 					<div
 						className="absolute inset-0 animate-ping rounded-full border-2 border-destructive/30"
@@ -92,7 +123,7 @@ export const SpeechInput = ({
 			<Button
 				className={cn(
 					"relative z-10 rounded-full transition-all duration-300",
-					session.isListening || session.isConnecting
+					isScopedListening || isScopedConnecting
 						? "!bg-destructive/15 !text-destructive hover:!bg-destructive/20 hover:!text-destructive"
 						: "!bg-background !text-foreground hover:!bg-muted hover:!text-foreground",
 					!session.isAvailable && "cursor-not-allowed",
@@ -104,16 +135,27 @@ export const SpeechInput = ({
 						return;
 					}
 
-					if (session.isListening || session.isConnecting) {
-						void controls.stop();
-						return;
-					}
+					void (async () => {
+						if (isScopedListening || isScopedConnecting) {
+							await transcriptionSessionManager.controller.stop();
+							return;
+						}
 
-					void controls.start();
+						if (session.isListening || session.isConnecting) {
+							await transcriptionSessionManager.controller.stop();
+						}
+
+						transcriptionSessionManager.controller.configure({
+							autoStartKey: null,
+							lang,
+							scopeKey,
+						});
+						await transcriptionSessionManager.controller.start();
+					})();
 				}}
 				{...props}
 			>
-				{session.isListening || session.isConnecting ? (
+				{isScopedListening || isScopedConnecting ? (
 					<SquareIcon className="size-4 text-current" />
 				) : (
 					<MicIcon className="size-4 text-current" />

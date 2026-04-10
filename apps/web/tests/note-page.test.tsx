@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -133,7 +133,24 @@ describe("NotePage", () => {
 	it("hides the body placeholder for a new empty note", async () => {
 		const { NotePage } = await import("../src/components/note/note-page");
 
-		render(<NotePage noteId={"note-1" as never} />);
+		render(
+			<NotePage
+				noteId={"note-1" as never}
+				note={
+					{
+						_id: "note-1",
+						title: "",
+						content: JSON.stringify({
+							type: "doc",
+							content: [{ type: "paragraph" }],
+						}),
+						searchableText: "",
+						templateSlug: null,
+						calendarEventKey: undefined,
+					} as never
+				}
+			/>,
+		);
 
 		expect(screen.getByTestId("editor-content").className).toContain(
 			"note-editor--hide-placeholder",
@@ -143,7 +160,24 @@ describe("NotePage", () => {
 	it("moves focus into the body when pressing enter in the title", async () => {
 		const { NotePage } = await import("../src/components/note/note-page");
 
-		render(<NotePage noteId={"note-1" as never} />);
+		render(
+			<NotePage
+				noteId={"note-1" as never}
+				note={
+					{
+						_id: "note-1",
+						title: "",
+						content: JSON.stringify({
+							type: "doc",
+							content: [{ type: "paragraph" }],
+						}),
+						searchableText: "",
+						templateSlug: null,
+						calendarEventKey: undefined,
+					} as never
+				}
+			/>,
+		);
 
 		const titleInput = screen.getByLabelText("Note title");
 		chainRunMock.mockClear();
@@ -157,5 +191,42 @@ describe("NotePage", () => {
 		);
 
 		expect(chainRunMock).toHaveBeenCalled();
+	});
+
+	it("clears the previous note title while the next note is still loading", async () => {
+		const { NotePage } = await import("../src/components/note/note-page");
+
+		const { rerender } = render(
+			<NotePage
+				noteId={"note-1" as never}
+				note={
+					{
+						_id: "note-1",
+						title: "First note",
+						content: JSON.stringify({
+							type: "doc",
+							content: [{ type: "paragraph" }],
+						}),
+						searchableText: "",
+						templateSlug: null,
+						calendarEventKey: undefined,
+					} as never
+				}
+			/>,
+		);
+
+		await waitFor(() =>
+			expect(
+				(screen.getByLabelText("Note title") as HTMLTextAreaElement).value,
+			).toBe("First note"),
+		);
+
+		rerender(<NotePage noteId={"note-2" as never} note={undefined} />);
+
+		await waitFor(() =>
+			expect(
+				(screen.getByLabelText("Note title") as HTMLTextAreaElement).value,
+			).toBe(""),
+		);
 	});
 });

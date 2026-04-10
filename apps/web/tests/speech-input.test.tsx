@@ -11,7 +11,9 @@ import type { TranscriptionControllerState } from "../src/lib/transcription-cont
 import type { TranscriptionSessionEvent } from "../src/lib/transcription-session-store";
 
 const subscribeToEventsMock = vi.fn();
-const useTranscriptionControlsMock = vi.fn();
+const configureTranscriptionSessionMock = vi.fn();
+const startTranscriptionSessionMock = vi.fn();
+const stopTranscriptionSessionMock = vi.fn();
 const useTranscriptionSessionMock = vi.fn();
 
 vi.mock("@workspace/ui/components/button", () => ({
@@ -32,16 +34,17 @@ vi.mock("@workspace/ui/lib/utils", () => ({
 		values.filter(Boolean).join(" "),
 }));
 
-vi.mock("../src/hooks/use-transcription-controls", () => ({
-	useTranscriptionControls: useTranscriptionControlsMock,
-}));
-
 vi.mock("../src/hooks/use-transcription-session", () => ({
 	useTranscriptionSession: useTranscriptionSessionMock,
 }));
 
 vi.mock("../src/lib/transcription-session-manager", () => ({
 	transcriptionSessionManager: {
+		controller: {
+			configure: configureTranscriptionSessionMock,
+			start: startTranscriptionSessionMock,
+			stop: stopTranscriptionSessionMock,
+		},
 		store: {
 			subscribeToEvents: subscribeToEventsMock,
 		},
@@ -87,15 +90,14 @@ const createSessionState = (
 describe("SpeechInput", () => {
 	beforeEach(() => {
 		subscribeToEventsMock.mockReset();
-		useTranscriptionControlsMock.mockReset();
+		configureTranscriptionSessionMock.mockReset();
+		startTranscriptionSessionMock.mockReset();
+		stopTranscriptionSessionMock.mockReset();
 		useTranscriptionSessionMock.mockReset();
 		subscribeToEventsMock.mockReturnValue(() => {});
-		useTranscriptionControlsMock.mockReturnValue({
-			detachSystemAudio: vi.fn(),
-			requestSystemAudio: vi.fn(),
-			start: vi.fn(async () => true),
-			stop: vi.fn(async () => {}),
-		});
+		configureTranscriptionSessionMock.mockImplementation(() => {});
+		startTranscriptionSessionMock.mockResolvedValue(true);
+		stopTranscriptionSessionMock.mockResolvedValue();
 		useTranscriptionSessionMock.mockReturnValue(createSessionState());
 	});
 
@@ -109,13 +111,6 @@ describe("SpeechInput", () => {
 		const onSystemAudioStatusChange = vi.fn();
 		const onRecoveryStatusChange = vi.fn();
 		const onUtterance = vi.fn();
-		const controls = {
-			detachSystemAudio: vi.fn(),
-			requestSystemAudio: vi.fn(),
-			start: vi.fn(async () => true),
-			stop: vi.fn(async () => {}),
-		};
-		useTranscriptionControlsMock.mockReturnValue(controls);
 		useTranscriptionSessionMock.mockReturnValue(
 			createSessionState({
 				autoStartKey: "note-1:capture",
@@ -151,7 +146,7 @@ describe("SpeechInput", () => {
 		);
 
 		await waitFor(() => {
-			expect(useTranscriptionControlsMock).toHaveBeenCalledWith({
+			expect(configureTranscriptionSessionMock).toHaveBeenCalledWith({
 				autoStartKey: "note-1:capture",
 				lang: undefined,
 				scopeKey: "note:1",
@@ -196,17 +191,12 @@ describe("SpeechInput", () => {
 		});
 
 		fireEvent.click(screen.getByRole("button"));
-		expect(controls.start).toHaveBeenCalledTimes(1);
+		await waitFor(() => {
+			expect(startTranscriptionSessionMock).toHaveBeenCalledTimes(1);
+		});
 	});
 
-	it("stops instead of starting when the session is already listening", async () => {
-		const controls = {
-			detachSystemAudio: vi.fn(),
-			requestSystemAudio: vi.fn(),
-			start: vi.fn(async () => true),
-			stop: vi.fn(async () => {}),
-		};
-		useTranscriptionControlsMock.mockReturnValue(controls);
+	it("stops instead of starting when the current scope is already listening", async () => {
 		useTranscriptionSessionMock.mockReturnValue(
 			createSessionState({
 				isListening: true,
@@ -221,7 +211,63 @@ describe("SpeechInput", () => {
 		render(<SpeechInput scopeKey="note:1" />);
 
 		fireEvent.click(screen.getByRole("button"));
-		expect(controls.stop).toHaveBeenCalledTimes(1);
-		expect(controls.start).not.toHaveBeenCalled();
+		await waitFor(() => {
+			expect(stopTranscriptionSessionMock).toHaveBeenCalledTimes(1);
+		});
+		expect(startTranscriptionSessionMock).not.toHaveBeenCalled();
+	});
+
+	it("shows the current note as idle while another scope is recording", async () => {
+		const onListeningChange = vi.fn();
+		useTranscriptionSessionMock.mockReturnValue(
+			createSessionState({
+				isListening: true,
+				phase: "listening",
+				scopeKey: "note:2",
+			}),
+		);
+
+		const { SpeechInput } = await import(
+			"../src/components/ai-elements/speech-input"
+		);
+
+		render(
+			<SpeechInput scopeKey="note:1" onListeningChange={onListeningChange} />,
+		);
+
+		expect(onListeningChange).toHaveBeenCalledWith(false);
+		expect(configureTranscriptionSessionMock).toHaveBeenCalledWith({
+			autoStartKey: null,
+			lang: undefined,
+			scopeKey: "note:2",
+		});
+	});
+
+	it("transfers recording to the clicked scope when another note is active", async () => {
+		useTranscriptionSessionMock.mockReturnValue(
+			createSessionState({
+				isListening: true,
+				phase: "listening",
+				scopeKey: "note:2",
+			}),
+		);
+
+		const { SpeechInput } = await import(
+			"../src/components/ai-elements/speech-input"
+		);
+
+		render(<SpeechInput lang="en" scopeKey="note:1" />);
+
+		fireEvent.click(screen.getByRole("button"));
+
+		await waitFor(() => {
+			expect(stopTranscriptionSessionMock).toHaveBeenCalledTimes(1);
+		});
+		expect(configureTranscriptionSessionMock).toHaveBeenLastCalledWith({
+			autoStartKey: null,
+			lang: "en",
+			scopeKey: "note:1",
+		});
+		expect(startTranscriptionSessionMock).toHaveBeenCalledTimes(1);
 	});
 });

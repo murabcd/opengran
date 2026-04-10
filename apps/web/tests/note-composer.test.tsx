@@ -192,10 +192,13 @@ describe("NoteComposer", () => {
 		useNoteTranscriptSessionMock.mockReturnValue({
 			autoStartKey: null,
 			captureScopeKey: "note:note-1",
+			currentNoteScopeKey: "note:note-1",
 			displayTranscriptEntries: [],
+			exportTranscript: "",
 			fullTranscript: "",
 			handleGenerateNotes: vi.fn(),
 			isGeneratingNotes: false,
+			isCurrentNoteSpeechListening: false,
 			isRefiningTranscript: false,
 			isSpeechListening: false,
 			liveTranscriptEntries: [],
@@ -216,6 +219,7 @@ describe("NoteComposer", () => {
 				sourceMode: "display-media",
 				state: "idle",
 			},
+			transcriptStartedAt: null,
 			transcriptRefinementError: null,
 			transcriptViewportRef: {
 				current: null,
@@ -406,6 +410,7 @@ describe("NoteComposer", () => {
 		useNoteTranscriptSessionMock.mockReturnValue({
 			autoStartKey: null,
 			captureScopeKey: "note:note-1",
+			currentNoteScopeKey: "note:note-1",
 			displayTranscriptEntries: [
 				{
 					endedAt: 2,
@@ -416,9 +421,11 @@ describe("NoteComposer", () => {
 					text: "hello",
 				},
 			],
+			exportTranscript: "hello",
 			fullTranscript: "hello",
 			handleGenerateNotes: vi.fn(),
 			isGeneratingNotes: false,
+			isCurrentNoteSpeechListening: true,
 			isRefiningTranscript: false,
 			isSpeechListening: true,
 			liveTranscriptEntries: [],
@@ -447,6 +454,7 @@ describe("NoteComposer", () => {
 				sourceMode: "display-media",
 				state: "ready",
 			},
+			transcriptStartedAt: 1,
 			transcriptRefinementError: null,
 			transcriptViewportRef: {
 				current: null,
@@ -496,6 +504,7 @@ describe("NoteComposer", () => {
 		useNoteTranscriptSessionMock.mockReturnValue({
 			autoStartKey: null,
 			captureScopeKey: "note:note-1",
+			currentNoteScopeKey: "note:note-1",
 			displayTranscriptEntries: [
 				{
 					endedAt: 2,
@@ -506,9 +515,11 @@ describe("NoteComposer", () => {
 					text: "hello",
 				},
 			],
+			exportTranscript: "hello",
 			fullTranscript: "hello",
 			handleGenerateNotes: vi.fn(),
 			isGeneratingNotes: false,
+			isCurrentNoteSpeechListening: true,
 			isRefiningTranscript: false,
 			isSpeechListening: true,
 			liveTranscriptEntries: [],
@@ -537,6 +548,7 @@ describe("NoteComposer", () => {
 				sourceMode: "display-media",
 				state: "ready",
 			},
+			transcriptStartedAt: 1,
 			transcriptRefinementError: null,
 			transcriptViewportRef: {
 				current: null,
@@ -572,6 +584,88 @@ describe("NoteComposer", () => {
 		expect(
 			screen.getByRole("button", { name: "Expand speech controls" }),
 		).toBeDefined();
+	});
+
+	it("renders the transcript snapshot returned by the note transcript hook", async () => {
+		useNoteTranscriptSessionMock.mockReturnValue({
+			autoStartKey: null,
+			captureScopeKey: "note:note-1",
+			currentNoteScopeKey: "note:note-2",
+			displayTranscriptEntries: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					isLive: false,
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
+			exportTranscript: "hello",
+			fullTranscript: "hello",
+			handleGenerateNotes: vi.fn(),
+			isGeneratingNotes: false,
+			isCurrentNoteSpeechListening: false,
+			isRefiningTranscript: false,
+			isSpeechListening: false,
+			liveTranscriptEntries: [],
+			onLiveTranscriptChange: vi.fn(),
+			onRecoveryStatusChange: vi.fn(),
+			onSystemAudioRecordingReady: vi.fn(),
+			onSystemAudioStatusChange: vi.fn(),
+			onTranscriptListeningChange: vi.fn(),
+			onTranscriptUtterance: vi.fn(),
+			orderedTranscriptUtterances: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
+			recoveryStatus: {
+				attempt: 0,
+				maxAttempts: 0,
+				message: null,
+				state: "idle",
+			},
+			systemAudioStatus: {
+				sourceMode: "display-media",
+				state: "ready",
+			},
+			transcriptStartedAt: 1,
+			transcriptRefinementError: null,
+			transcriptViewportRef: {
+				current: null,
+			},
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-2",
+					text: "",
+					title: "Second note",
+				}}
+			/>,
+		);
+
+		fireEvent.click(
+			screen.getAllByRole("button", {
+				name: "Expand speech controls",
+			})[0],
+		);
+
+		await waitFor(() => {
+			expect(screen.getByText("Live transcript")).toBeDefined();
+		});
+
+		expect(screen.getByText("hello")).toBeDefined();
 	});
 
 	it("shows inline chat without speech controls", async () => {
@@ -964,6 +1058,7 @@ describe("NoteComposer", () => {
 		useNoteTranscriptSessionMock.mockReturnValue({
 			autoStartKey: null,
 			captureScopeKey: "note:note-1",
+			currentNoteScopeKey: "note:note-1",
 			displayTranscriptEntries: [
 				{
 					endedAt: 2,
@@ -974,12 +1069,14 @@ describe("NoteComposer", () => {
 					text: "hello",
 				},
 			],
+			exportTranscript: "hello",
 			fullTranscript: "hello",
 			handleGenerateNotes: vi.fn(),
 			hasGeneratedLatestTranscript: false,
 			hasPendingGenerateTranscript: true,
 			isTranscriptSessionReady: true,
 			isGeneratingNotes: false,
+			isCurrentNoteSpeechListening: false,
 			isRefiningTranscript: false,
 			isSpeechListening: false,
 			liveTranscriptEntries: [],
@@ -1008,6 +1105,7 @@ describe("NoteComposer", () => {
 				sourceMode: "display-media",
 				state: "ready",
 			},
+			transcriptStartedAt: 1,
 			transcriptRefinementError: null,
 			transcriptViewportRef: {
 				current: null,
@@ -1042,6 +1140,7 @@ describe("NoteComposer", () => {
 		useNoteTranscriptSessionMock.mockReturnValue({
 			autoStartKey: null,
 			captureScopeKey: "note:note-1",
+			currentNoteScopeKey: "note:note-1",
 			displayTranscriptEntries: [
 				{
 					endedAt: 2,
@@ -1052,12 +1151,14 @@ describe("NoteComposer", () => {
 					text: "hello",
 				},
 			],
+			exportTranscript: "hello",
 			fullTranscript: "hello",
 			handleGenerateNotes: vi.fn(),
 			hasGeneratedLatestTranscript: false,
 			hasPendingGenerateTranscript: true,
 			isTranscriptSessionReady: true,
 			isGeneratingNotes: false,
+			isCurrentNoteSpeechListening: false,
 			isRefiningTranscript: false,
 			isSpeechListening: false,
 			liveTranscriptEntries: [],
@@ -1086,6 +1187,7 @@ describe("NoteComposer", () => {
 				sourceMode: "display-media",
 				state: "ready",
 			},
+			transcriptStartedAt: 1,
 			transcriptRefinementError: null,
 			transcriptViewportRef: {
 				current: null,
@@ -1114,6 +1216,7 @@ describe("NoteComposer", () => {
 		useNoteTranscriptSessionMock.mockReturnValue({
 			autoStartKey: null,
 			captureScopeKey: "note:note-1",
+			currentNoteScopeKey: "note:note-1",
 			displayTranscriptEntries: [
 				{
 					endedAt: 2,
@@ -1124,9 +1227,11 @@ describe("NoteComposer", () => {
 					text: "hello",
 				},
 			],
+			exportTranscript: "hello",
 			fullTranscript: "hello",
 			handleGenerateNotes: vi.fn(),
 			isGeneratingNotes: false,
+			isCurrentNoteSpeechListening: true,
 			isRefiningTranscript: false,
 			isSpeechListening: true,
 			liveTranscriptEntries: [],
@@ -1155,6 +1260,7 @@ describe("NoteComposer", () => {
 				sourceMode: "display-media",
 				state: "ready",
 			},
+			transcriptStartedAt: 1,
 			transcriptRefinementError: null,
 			transcriptViewportRef: {
 				current: null,
