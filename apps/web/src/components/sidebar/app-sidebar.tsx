@@ -21,6 +21,7 @@ import { InboxSheet } from "@/components/inbox/inbox-sheet";
 import { NavMain } from "@/components/nav/nav-main";
 import { NavNotes } from "@/components/nav/nav-notes";
 import { NavTrash } from "@/components/nav/nav-trash";
+import { RecipesDialog } from "@/components/recipes/recipes-dialog";
 import type { SearchCommandItem } from "@/components/search/search-command";
 import { SearchCommand } from "@/components/search/search-command";
 import {
@@ -126,6 +127,7 @@ export function AppSidebar({
 	const { isMobile, state } = useSidebar();
 	const [searchOpen, setSearchOpen] = React.useState(false);
 	const [trashOpen, setTrashOpen] = React.useState(false);
+	const [recipesOpen, setRecipesOpen] = React.useState(false);
 	const [templatesOpen, setTemplatesOpen] = React.useState(false);
 	const [draftUser, setDraftUser] = React.useState(user);
 	const [optimisticReadInboxItemIds, setOptimisticReadInboxItemIds] =
@@ -268,6 +270,7 @@ export function AppSidebar({
 					<NavTrash open={trashOpen} onOpenChange={setTrashOpen} />
 					<NavUser
 						user={draftUser}
+						onRecipesOpen={() => setRecipesOpen(true)}
 						onTemplatesOpen={() => setTemplatesOpen(true)}
 						onSettingsOpen={() => onSettingsOpenChange(true, "Profile")}
 						onSignOut={onSignOut}
@@ -305,6 +308,7 @@ export function AppSidebar({
 				initialPage={settingsPage}
 				onPageChange={(page) => onSettingsOpenChange(true, page)}
 			/>
+			<RecipesDialog open={recipesOpen} onOpenChange={setRecipesOpen} />
 			<TemplatesDialog open={templatesOpen} onOpenChange={setTemplatesOpen} />
 			<InboxSheet
 				open={inboxOpen}

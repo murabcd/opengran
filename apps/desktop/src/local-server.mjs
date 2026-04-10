@@ -63,6 +63,7 @@ const mimeTypes = {
 const fallbackChatModel = chatModels[0];
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
+const MAX_NOTE_CONTEXT_LENGTH = 16_000;
 const CHAT_TITLE_MODEL = "gpt-5.4-nano";
 const preferredExtensionBridgePorts = Array.from(
 	{ length: 20 },
@@ -260,10 +261,94 @@ const getNotesContext = async ({
 
 const clampWhitespace = (value) => value.replace(/\s+/g, " ").trim();
 
+const clampNoteContext = (value) =>
+	value.replace(/\r/g, "").trim().slice(0, MAX_NOTE_CONTEXT_LENGTH);
+
 const truncate = (value, maxLength) =>
 	value.length > maxLength
 		? `${value.slice(0, maxLength - 1).trimEnd()}…`
 		: value;
+
+const getInlineNoteContext = ({ title, text }) => {
+	const noteTitle = title?.trim() ?? "";
+	const noteText = clampNoteContext(text ?? "");
+
+	if (!noteTitle && !noteText) {
+		return "";
+	}
+
+	return [
+		"The current note is attached below. Use it as the primary context for this chat.",
+		noteTitle ? `Current note title: ${noteTitle}` : "",
+		noteText
+			? `Current note content:\n${noteText}`
+			: "Current note content: (empty note)",
+	]
+		.filter(Boolean)
+		.join("\n\n");
+};
+
+const getStoredNoteContext = async ({ convexToken, noteId, workspaceId }) => {
+	if (!convexToken || !noteId || !workspaceId) {
+		return "";
+	}
+
+	const client = new ConvexHttpClient(getConvexUrl(), { auth: convexToken });
+	const notes = await client.query(api.notes.getChatContext, {
+		workspaceId,
+		ids: [noteId],
+	});
+	const note = notes[0];
+
+	if (!note) {
+		return "";
+	}
+
+	return [
+		"The current note is attached below. Use it as the primary context for this chat.",
+		`Current note title: ${note.title}`,
+		note.searchableText
+			? `Current note content:\n${clampNoteContext(note.searchableText)}`
+			: "Current note content: (empty note)",
+	].join("\n\n");
+};
+
+const getSelectedRecipe = async ({ convexToken, recipeSlug, workspaceId }) => {
+	if (!convexToken || !recipeSlug || !workspaceId) {
+		return null;
+	}
+
+	const client = new ConvexHttpClient(getConvexUrl(), { auth: convexToken });
+	const recipes = await client.query(api.recipes.list, {
+		workspaceId,
+	});
+
+	return recipes.find((recipe) => recipe.slug === recipeSlug) ?? null;
+};
+
+const getRecipeContext = (selectedRecipe) => {
+	if (!selectedRecipe) {
+		return "";
+	}
+
+	return [
+		"A recipe is selected for this note chat.",
+		"Treat the selected recipe as the active task framing for the conversation.",
+		"Treat the attached note and any other provided note context as the source material to work from.",
+		"If the user's request is ambiguous, interpret it through the selected recipe first.",
+		"If the user explicitly asks for something else, follow the user's latest instruction instead.",
+		"If there is not enough source material to complete the recipe well, ask a focused follow-up question.",
+		`Selected recipe: ${selectedRecipe.name}`,
+		`Recipe prompt:\n${selectedRecipe.prompt.trim()}`,
+	].join("\n\n");
+};
+
+const logNoteChatDebug = (stage, payload) => {
+	console.info("[note-chat]", {
+		stage,
+		...payload,
+	});
+};
 
 const getMessageText = (message) =>
 	clampWhitespace(
@@ -496,6 +581,8 @@ const handleChatRequest = async (request, response) => {
 		mentions,
 		selectedSourceIds,
 		convexToken,
+		recipeSlug,
+		noteContext,
 	} = await readJsonBody(request);
 
 	if (!Array.isArray(messages)) {
@@ -507,6 +594,27 @@ const handleChatRequest = async (request, response) => {
 
 	const selectedModel = resolveChatModel(model);
 	const resolvedWorkspaceId = workspaceId ?? null;
+	const isNoteChatRequest = Boolean(
+		recipeSlug ||
+			noteContext?.noteId ||
+			noteContext?.title ||
+			noteContext?.text,
+	);
+
+	if (isNoteChatRequest) {
+		logNoteChatDebug("request", {
+			chatId: id ?? null,
+			workspaceId: resolvedWorkspaceId,
+			recipeSlug: recipeSlug ?? null,
+			noteId: noteContext?.noteId ?? null,
+			noteTitle: noteContext?.title ?? "",
+			noteTextLength: noteContext?.text?.length ?? 0,
+			hasSingleMessage: Boolean(message),
+			messageCount: messages.length,
+			hasConvexToken: Boolean(convexToken),
+		});
+	}
+
 	const convexClient =
 		convexToken && id && resolvedWorkspaceId
 			? new ConvexHttpClient(getConvexUrl(), { auth: convexToken })
@@ -520,6 +628,7 @@ const handleChatRequest = async (request, response) => {
 					})
 					.catch(() => null)
 			: null;
+	const resolvedNoteId = noteContext?.noteId ?? storedChat?.noteId ?? null;
 	const chatMessages = await validateUIMessages({
 		messages:
 			message && convexClient && id && resolvedWorkspaceId
@@ -553,6 +662,7 @@ const handleChatRequest = async (request, response) => {
 			await convexClient.mutation(api.chats.saveMessage, {
 				workspaceId: resolvedWorkspaceId,
 				chatId: id,
+				noteId: resolvedNoteId ?? undefined,
 				preview: getChatPreviewFromMessage(lastUserMessage),
 				model: selectedModel.model,
 				message: toStoredMessage(lastUserMessage),
@@ -568,8 +678,50 @@ const handleChatRequest = async (request, response) => {
 		selectedSourceIds,
 		workspaceId: resolvedWorkspaceId,
 	});
+	const attachedNoteContext =
+		convexToken && resolvedNoteId && resolvedWorkspaceId
+			? await getStoredNoteContext({
+					convexToken,
+					noteId: resolvedNoteId,
+					workspaceId: resolvedWorkspaceId,
+				}).catch(() =>
+					getInlineNoteContext({
+						title: noteContext?.title,
+						text: noteContext?.text,
+					}),
+				)
+			: getInlineNoteContext({
+					title: noteContext?.title,
+					text: noteContext?.text,
+				});
+	const selectedRecipe = await getSelectedRecipe({
+		convexToken,
+		recipeSlug,
+		workspaceId: resolvedWorkspaceId,
+	});
+	const recipeContext = getRecipeContext(selectedRecipe);
+
+	if (isNoteChatRequest) {
+		logNoteChatDebug("resolved-context", {
+			chatId: id ?? null,
+			workspaceId: resolvedWorkspaceId,
+			resolvedNoteId: resolvedNoteId ?? null,
+			recipeSlug: recipeSlug ?? null,
+			selectedRecipeSlug: selectedRecipe?.slug ?? null,
+			selectedRecipeName: selectedRecipe?.name ?? null,
+			notesContextLength: notesContext.length,
+			attachedNoteContextLength: attachedNoteContext.length,
+			recipeContextLength: recipeContext.length,
+			lastUserMessagePreview: lastUserMessage
+				? truncate(getMessageText(lastUserMessage), 120)
+				: "",
+		});
+	}
+
 	const systemPrompt = buildChatSystemPrompt({
 		notesContext,
+		attachedNoteContext,
+		recipeContext,
 		webSearchEnabled,
 	});
 
@@ -610,6 +762,7 @@ const handleChatRequest = async (request, response) => {
 				await convexClient.mutation(api.chats.saveMessage, {
 					workspaceId: resolvedWorkspaceId,
 					chatId: id,
+					noteId: resolvedNoteId ?? undefined,
 					title: generatedChatTitle,
 					preview: getChatPreviewFromMessage(responseMessage),
 					model: selectedModel.model,

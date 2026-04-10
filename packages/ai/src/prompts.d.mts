@@ -6,6 +6,7 @@ export declare const APPLY_TEMPLATE_SYSTEM_PROMPT: string;
 export declare function buildChatSystemPrompt(options?: {
 	notesContext?: string;
 	attachedNoteContext?: string;
+	recipeContext?: string;
 	userProfileContext?: {
 		name?: string | null;
 		jobTitle?: string | null;

@@ -22,6 +22,7 @@ import { useTheme } from "@workspace/ui/components/theme-provider";
 import {
 	ArrowDownToLine,
 	ChevronsUpDown,
+	Form,
 	LayoutTemplate,
 	LogOut,
 	Moon,
@@ -35,6 +36,7 @@ import { resolveLatestDesktopDownloadUrl } from "@/lib/desktop-release";
 
 export function NavUser({
 	user,
+	onRecipesOpen,
 	onTemplatesOpen,
 	onSettingsOpen,
 	onSignOut,
@@ -45,6 +47,7 @@ export function NavUser({
 		email: string;
 		avatar: string;
 	};
+	onRecipesOpen: () => void;
 	onTemplatesOpen: () => void;
 	onSettingsOpen: () => void;
 	onSignOut: () => void;
@@ -139,6 +142,13 @@ export function NavUser({
 						>
 							<LayoutTemplate />
 							Manage templates
+						</DropdownMenuItem>
+						<DropdownMenuItem
+							className="h-8 gap-2 px-2"
+							onClick={onRecipesOpen}
+						>
+							<Form />
+							Manage recipes
 						</DropdownMenuItem>
 						{!isDesktopApp ? (
 							<DropdownMenuItem

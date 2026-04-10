@@ -117,6 +117,28 @@ export default defineSchema({
 			"ownerTokenIdentifier",
 			"slug",
 		]),
+	recipes: defineTable({
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		slug: v.union(
+			v.literal("write-prd"),
+			v.literal("sales-questions"),
+			v.literal("write-weekly-recap"),
+		),
+		name: v.string(),
+		prompt: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_createdAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"createdAt",
+		])
+		.index("by_ownerTokenIdentifier_and_createdAt", [
+			"ownerTokenIdentifier",
+			"createdAt",
+		]),
 	workspaces: defineTable({
 		ownerTokenIdentifier: v.string(),
 		name: v.string(),

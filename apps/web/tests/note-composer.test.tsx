@@ -254,7 +254,7 @@ describe("NoteComposer", () => {
 		let queryCall = 0;
 
 		useQueryMock.mockImplementation(() => {
-			const index = queryCall % 4;
+			const index = queryCall % 5;
 			queryCall += 1;
 
 			if (index === 0) {
@@ -281,6 +281,10 @@ describe("NoteComposer", () => {
 			}
 
 			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
 				return {
 					transcriptionLanguage: null,
 				};
@@ -334,7 +338,7 @@ describe("NoteComposer", () => {
 		let queryCall = 0;
 
 		useQueryMock.mockImplementation(() => {
-			const index = queryCall % 4;
+			const index = queryCall % 5;
 			queryCall += 1;
 
 			if (index === 0) {
@@ -361,6 +365,10 @@ describe("NoteComposer", () => {
 			}
 
 			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
 				return {
 					transcriptionLanguage: null,
 				};
@@ -570,7 +578,7 @@ describe("NoteComposer", () => {
 		let queryCall = 0;
 
 		useQueryMock.mockImplementation(() => {
-			const index = queryCall % 4;
+			const index = queryCall % 5;
 			queryCall += 1;
 
 			if (index === 0) {
@@ -597,6 +605,10 @@ describe("NoteComposer", () => {
 			}
 
 			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
 				return {
 					transcriptionLanguage: null,
 				};
@@ -637,7 +649,7 @@ describe("NoteComposer", () => {
 		let queryCall = 0;
 
 		useQueryMock.mockImplementation(() => {
-			const index = queryCall % 4;
+			const index = queryCall % 5;
 			queryCall += 1;
 
 			if (index === 0) {
@@ -664,6 +676,10 @@ describe("NoteComposer", () => {
 			}
 
 			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
 				return {
 					transcriptionLanguage: null,
 				};
@@ -703,7 +719,7 @@ describe("NoteComposer", () => {
 		let queryCall = 0;
 
 		useQueryMock.mockImplementation(() => {
-			const index = queryCall % 4;
+			const index = queryCall % 5;
 			queryCall += 1;
 
 			if (index === 0) {
@@ -730,6 +746,10 @@ describe("NoteComposer", () => {
 			}
 
 			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
 				return {
 					transcriptionLanguage: null,
 				};
@@ -771,7 +791,7 @@ describe("NoteComposer", () => {
 		let queryCall = 0;
 
 		useQueryMock.mockImplementation(() => {
-			const index = queryCall % 4;
+			const index = queryCall % 5;
 			queryCall += 1;
 
 			if (index === 0) {
@@ -798,6 +818,10 @@ describe("NoteComposer", () => {
 			}
 
 			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
 				return {
 					transcriptionLanguage: null,
 				};

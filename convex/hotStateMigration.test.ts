@@ -151,6 +151,15 @@ test("workspace removal clears scheduled Convex cleanup across notes, chats, tra
 			createdAt: now,
 			updatedAt: now,
 		});
+		await ctx.db.insert("recipes", {
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			workspaceId,
+			slug: "write-prd",
+			name: "Write PRD",
+			prompt: "Write a PRD draft.",
+			createdAt: now,
+			updatedAt: now,
+		});
 		await ctx.db.insert("inboxItems", {
 			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
 			workspaceId,
@@ -196,6 +205,7 @@ test("workspace removal clears scheduled Convex cleanup across notes, chats, tra
 			await ctx.db.query("notificationPreferences").take(10)
 		).length,
 		templates: (await ctx.db.query("templates").take(10)).length,
+		recipes: (await ctx.db.query("recipes").take(10)).length,
 		inboxItems: (await ctx.db.query("inboxItems").take(10)).length,
 	}));
 
@@ -212,6 +222,7 @@ test("workspace removal clears scheduled Convex cleanup across notes, chats, tra
 		calendarPreferences: 0,
 		notificationPreferences: 0,
 		templates: 0,
+		recipes: 0,
 		inboxItems: 0,
 	});
 });

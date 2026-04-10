@@ -12,8 +12,11 @@ import {
 } from "ai";
 import { ConvexHttpClient } from "convex/browser";
 import { z } from "zod";
-import { api } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import {
+	buildChatTitlePrompt,
+	deriveFallbackChatTitle,
+	finalizeGeneratedChatTitle,
+} from "../packages/ai/src/chat-titles.mjs";
 import {
 	parseTemplateStreamToStructuredNote,
 	validateTemplateStream,
@@ -27,14 +30,11 @@ import {
 	ENHANCED_NOTE_SYSTEM_PROMPT,
 } from "../packages/ai/src/prompts.mjs";
 import {
-	buildChatTitlePrompt,
-	deriveFallbackChatTitle,
-	finalizeGeneratedChatTitle,
-} from "../packages/ai/src/chat-titles.mjs";
-import {
 	createDesktopRealtimeTranscriptionSession,
 	normalizeTranscriptionLanguage,
 } from "../packages/ai/src/transcription.mjs";
+import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 
 type ChatRequestBody = {
 	id?: string;
@@ -46,6 +46,7 @@ type ChatRequestBody = {
 	mentions?: string[];
 	selectedSourceIds?: string[];
 	convexToken?: string | null;
+	recipeSlug?: string | null;
 	noteContext?: {
 		noteId?: string | null;
 		title?: string;
@@ -113,7 +114,8 @@ const jsonResponse = (status: number, payload: Record<string, unknown>) =>
 		},
 	});
 
-const trim = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+const trim = (value: unknown) =>
+	typeof value === "string" ? value.trim() : "";
 
 const deriveConvexUrlFromSiteUrl = (siteUrl: string) => {
 	const url = new URL(siteUrl);
@@ -200,7 +202,9 @@ const generateChatTitle = async ({
 	assistantMessage?: UIMessage;
 }) => {
 	const userText = getMessageText(userMessage);
-	const assistantText = assistantMessage ? getMessageText(assistantMessage) : "";
+	const assistantText = assistantMessage
+		? getMessageText(assistantMessage)
+		: "";
 
 	if (!userText) {
 		return "Quick chat";
@@ -377,6 +381,63 @@ const getStoredNoteContext = async ({
 	].join("\n\n");
 };
 
+const getSelectedRecipe = async ({
+	request,
+	convexToken,
+	recipeSlug,
+	workspaceId,
+}: Pick<ChatRequestBody, "convexToken" | "recipeSlug" | "workspaceId"> & {
+	request: Request;
+}) => {
+	if (!convexToken || !recipeSlug || !workspaceId) {
+		return null;
+	}
+
+	const client = getConvexClient(request, convexToken);
+
+	if (!client) {
+		return null;
+	}
+
+	const recipes = await client.query(api.recipes.list, {
+		workspaceId: workspaceId as Id<"workspaces">,
+	});
+	return recipes.find((recipe) => recipe.slug === recipeSlug) ?? null;
+};
+
+const getRecipeContext = (
+	selectedRecipe:
+		| {
+				slug: string;
+				name: string;
+				prompt: string;
+		  }
+		| null
+		| undefined,
+) => {
+	if (!selectedRecipe) {
+		return "";
+	}
+
+	return [
+		"A recipe is selected for this note chat.",
+		"Treat the selected recipe as the active task framing for the conversation.",
+		"Treat the attached note and any other provided note context as the source material to work from.",
+		"If the user's request is ambiguous, interpret it through the selected recipe first.",
+		"If the user explicitly asks for something else, follow the user's latest instruction instead.",
+		"If there is not enough source material to complete the recipe well, ask a focused follow-up question.",
+		`Selected recipe: ${selectedRecipe.name}`,
+		`Recipe prompt:\n${selectedRecipe.prompt.trim()}`,
+	].join("\n\n");
+};
+
+const logNoteChatDebug = (stage: string, payload: Record<string, unknown>) => {
+	console.info("[note-chat]", {
+		stage,
+		...payload,
+	});
+};
+
 const resolveChatModel = (value?: string | null) =>
 	chatModels.find((model) => model.id === value || model.model === value) ??
 	fallbackChatModel;
@@ -429,6 +490,7 @@ export const handleChatRequest = async (request: Request) => {
 		mentions,
 		selectedSourceIds,
 		convexToken,
+		recipeSlug,
 		noteContext,
 	} = (await request.json().catch(() => ({}))) as ChatRequestBody;
 
@@ -440,6 +502,26 @@ export const handleChatRequest = async (request: Request) => {
 
 	const resolvedWorkspaceId =
 		(workspaceId as Id<"workspaces"> | null | undefined) ?? null;
+	const isNoteChatRequest = Boolean(
+		recipeSlug ||
+			noteContext?.noteId ||
+			noteContext?.title ||
+			noteContext?.text,
+	);
+
+	if (isNoteChatRequest) {
+		logNoteChatDebug("request", {
+			chatId: id ?? null,
+			workspaceId: resolvedWorkspaceId,
+			recipeSlug: recipeSlug ?? null,
+			noteId: noteContext?.noteId ?? null,
+			noteTitle: noteContext?.title ?? "",
+			noteTextLength: noteContext?.text?.length ?? 0,
+			hasSingleMessage: Boolean(message),
+			messageCount: messages.length,
+			hasConvexToken: Boolean(convexToken),
+		});
+	}
 
 	if (convexToken && !resolvedWorkspaceId) {
 		return jsonResponse(400, {
@@ -532,6 +614,31 @@ export const handleChatRequest = async (request: Request) => {
 					title: noteContext?.title,
 					text: noteContext?.text,
 				});
+	const selectedRecipe = await getSelectedRecipe({
+		request,
+		convexToken,
+		recipeSlug,
+		workspaceId,
+	});
+	const recipeContext = getRecipeContext(selectedRecipe);
+
+	if (isNoteChatRequest) {
+		logNoteChatDebug("resolved-context", {
+			chatId: id ?? null,
+			workspaceId: resolvedWorkspaceId,
+			resolvedNoteId: resolvedNoteId ?? null,
+			recipeSlug: recipeSlug ?? null,
+			selectedRecipeSlug: selectedRecipe?.slug ?? null,
+			selectedRecipeName: selectedRecipe?.name ?? null,
+			notesContextLength: notesContext.length,
+			attachedNoteContextLength: attachedNoteContext.length,
+			recipeContextLength: recipeContext.length,
+			lastUserMessagePreview: lastUserMessage
+				? truncate(getMessageText(lastUserMessage), 120)
+				: "",
+		});
+	}
+
 	const userProfileContext =
 		convexClient &&
 		(await convexClient
@@ -540,6 +647,7 @@ export const handleChatRequest = async (request: Request) => {
 	const systemPrompt = buildChatSystemPrompt({
 		notesContext,
 		attachedNoteContext,
+		recipeContext,
 		userProfileContext: userProfileContext ?? undefined,
 		webSearchEnabled,
 	});
@@ -716,9 +824,11 @@ export const handleApplyTemplateRequest = async (request: Request) => {
 		});
 	}
 
-	const { title = "", noteText = "", template } = (await request
-		.json()
-		.catch(() => ({}))) as ApplyTemplateRequestBody;
+	const {
+		title = "",
+		noteText = "",
+		template,
+	} = (await request.json().catch(() => ({}))) as ApplyTemplateRequestBody;
 
 	if (!noteText.trim()) {
 		return jsonResponse(400, {

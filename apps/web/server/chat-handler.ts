@@ -41,6 +41,7 @@ type ChatRequestBody = {
 	mentions?: string[];
 	selectedSourceIds?: string[];
 	convexToken?: string | null;
+	recipeSlug?: string | null;
 	noteContext?: {
 		noteId?: string | null;
 		title?: string;
@@ -177,6 +178,49 @@ const getSelectedAppConnections = async ({
 		workspaceId: workspaceId as Id<"workspaces">,
 		sourceIds,
 	});
+};
+
+const getSelectedRecipe = async ({
+	convexToken,
+	recipeSlug,
+	workspaceId,
+}: Pick<ChatRequestBody, "convexToken" | "recipeSlug" | "workspaceId">) => {
+	if (!convexToken || !recipeSlug || !workspaceId) {
+		return null;
+	}
+
+	const client = new ConvexHttpClient(getConvexUrl(), { auth: convexToken });
+	const recipes = await client.query(api.recipes.list, {
+		workspaceId: workspaceId as Id<"workspaces">,
+	});
+
+	return recipes.find((recipe) => recipe.slug === recipeSlug) ?? null;
+};
+
+const getRecipeContext = (
+	selectedRecipe:
+		| {
+				slug: string;
+				name: string;
+				prompt: string;
+		  }
+		| null
+		| undefined,
+) => {
+	if (!selectedRecipe) {
+		return "";
+	}
+
+	return [
+		"A recipe is selected for this note chat.",
+		"Treat the selected recipe as the active task framing for the conversation.",
+		"Treat the attached note and any other provided note context as the source material to work from.",
+		"If the user's request is ambiguous, interpret it through the selected recipe first.",
+		"If the user explicitly asks for something else, follow the user's latest instruction instead.",
+		"If there is not enough source material to complete the recipe well, ask a focused follow-up question.",
+		`Selected recipe: ${selectedRecipe.name}`,
+		`Recipe prompt:\n${selectedRecipe.prompt.trim()}`,
+	].join("\n\n");
 };
 
 const clampWhitespace = (value: string) => value.replace(/\s+/g, " ").trim();
@@ -377,6 +421,7 @@ export const handleChatRequest = async (
 		mentions,
 		selectedSourceIds,
 		convexToken,
+		recipeSlug,
 		noteContext,
 	} = await readJsonBody(request);
 
@@ -496,6 +541,12 @@ export const handleChatRequest = async (
 					title: noteContext?.title,
 					text: noteContext?.text,
 				});
+	const selectedRecipe = await getSelectedRecipe({
+		convexToken,
+		recipeSlug,
+		workspaceId: resolvedWorkspaceId,
+	});
+	const recipeContext = getRecipeContext(selectedRecipe);
 	const userProfileContext = convexClient
 		? await convexClient
 				.query(api.userPreferences.getAiProfileContext, {})
@@ -565,6 +616,7 @@ export const handleChatRequest = async (
 	const systemPrompt = `${buildChatSystemPrompt({
 		notesContext,
 		attachedNoteContext,
+		recipeContext,
 		userProfileContext: userProfileContext ?? undefined,
 		webSearchEnabled,
 	})}${

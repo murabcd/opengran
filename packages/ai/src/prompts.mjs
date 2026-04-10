@@ -49,12 +49,14 @@ export const CHAT_TITLE_SYSTEM_PROMPT = joinPromptSections([
 export const buildChatSystemPrompt = ({
 	notesContext = "",
 	attachedNoteContext = "",
+	recipeContext = "",
 	userProfileContext = {},
 	webSearchEnabled = false,
 } = {}) =>
 	webSearchEnabled
 		? joinPromptSections([
 				BASE_CHAT_SYSTEM_PROMPT,
+				recipeContext,
 				notesContext,
 				attachedNoteContext,
 				buildUserProfilePromptSection(userProfileContext),
@@ -64,6 +66,7 @@ export const buildChatSystemPrompt = ({
 			])
 		: joinPromptSections([
 				BASE_CHAT_SYSTEM_PROMPT,
+				recipeContext,
 				notesContext,
 				attachedNoteContext,
 				buildUserProfilePromptSection(userProfileContext),

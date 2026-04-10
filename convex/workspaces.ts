@@ -348,11 +348,19 @@ export const remove = mutation({
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,
 		});
-		await ctx.scheduler.runAfter(0, internal.appConnections.removeAllForWorkspace, {
+		await ctx.scheduler.runAfter(
+			0,
+			internal.appConnections.removeAllForWorkspace,
+			{
+				ownerTokenIdentifier: identity.tokenIdentifier,
+				workspaceId: args.workspaceId,
+			},
+		);
+		await ctx.scheduler.runAfter(0, internal.templates.removeAllForWorkspace, {
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,
 		});
-		await ctx.scheduler.runAfter(0, internal.templates.removeAllForWorkspace, {
+		await ctx.scheduler.runAfter(0, internal.recipes.removeAllForWorkspace, {
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,
 		});

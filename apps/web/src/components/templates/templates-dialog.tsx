@@ -15,14 +15,6 @@ import {
 	verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-	Breadcrumb,
-	BreadcrumbItem,
-	BreadcrumbLink,
-	BreadcrumbList,
-	BreadcrumbPage,
-	BreadcrumbSeparator,
-} from "@workspace/ui/components/breadcrumb";
 import { Button } from "@workspace/ui/components/button";
 import {
 	Dialog,
@@ -35,16 +27,7 @@ import { Field, FieldGroup } from "@workspace/ui/components/field";
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
-import {
-	Sidebar,
-	SidebarContent,
-	SidebarGroup,
-	SidebarGroupContent,
-	SidebarMenu,
-	SidebarMenuButton,
-	SidebarMenuItem,
-	SidebarProvider,
-} from "@workspace/ui/components/sidebar";
+import { SidebarProvider } from "@workspace/ui/components/sidebar";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
@@ -58,6 +41,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
+import {
+	ManageDialogHeader,
+	ManageDialogSidebarNav,
+} from "@/components/ui/manage-dialog-navigation";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -444,99 +431,6 @@ const useTemplateDraftEditor = ({
 	};
 };
 
-function TemplatesSidebarNav({
-	activeTemplate,
-	selectTemplate,
-	templates,
-}: {
-	activeTemplate: TemplateSlug | null;
-	selectTemplate: (slug: TemplateSlug) => void;
-	templates: TemplateDraft[];
-}) {
-	return (
-		<Sidebar collapsible="none" className="hidden md:flex">
-			<SidebarContent>
-				<SidebarGroup>
-					<SidebarGroupContent>
-						<SidebarMenu>
-							{templates.map((item) => {
-								const Icon = templateIcons[item.slug];
-
-								return (
-									<SidebarMenuItem key={item.slug}>
-										<SidebarMenuButton
-											asChild
-											isActive={activeTemplate === item.slug}
-										>
-											<button
-												type="button"
-												onClick={() => selectTemplate(item.slug)}
-											>
-												<Icon />
-												<span>{item.name}</span>
-											</button>
-										</SidebarMenuButton>
-									</SidebarMenuItem>
-								);
-							})}
-						</SidebarMenu>
-					</SidebarGroupContent>
-				</SidebarGroup>
-			</SidebarContent>
-		</Sidebar>
-	);
-}
-
-function TemplatesHeader({
-	activeTemplate,
-	selectTemplate,
-	templates,
-}: {
-	activeTemplate: TemplateSlug | null;
-	selectTemplate: (slug: TemplateSlug) => void;
-	templates: TemplateDraft[];
-}) {
-	const activeTemplateName =
-		templates.find((template) => template.slug === activeTemplate)?.name ??
-		"Templates";
-
-	return (
-		<header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
-			<div className="flex items-center gap-2 px-4">
-				<Breadcrumb className="hidden md:block">
-					<BreadcrumbList>
-						<BreadcrumbItem className="hidden md:block">
-							<BreadcrumbLink href="#">Templates</BreadcrumbLink>
-						</BreadcrumbItem>
-						<BreadcrumbSeparator className="hidden md:block" />
-						<BreadcrumbItem>
-							<BreadcrumbPage>{activeTemplateName}</BreadcrumbPage>
-						</BreadcrumbItem>
-					</BreadcrumbList>
-				</Breadcrumb>
-				<div className="flex gap-2 md:hidden">
-					{templates.map((item) => {
-						const Icon = templateIcons[item.slug];
-
-						return (
-							<Button
-								key={item.slug}
-								variant={activeTemplate === item.slug ? "secondary" : "ghost"}
-								size="sm"
-								onClick={() => selectTemplate(item.slug)}
-								className="whitespace-nowrap"
-							>
-								<Icon />
-								{item.name}
-							</Button>
-						);
-					})}
-				</div>
-			</div>
-		</header>
-	);
-}
-
 function TemplatesEditor({
 	isSaving,
 	onAddSection,
@@ -671,6 +565,15 @@ export function TemplatesDialog({ open, onOpenChange }: TemplatesDialogProps) {
 			coordinateGetter: sortableKeyboardCoordinates,
 		}),
 	);
+	const navigationItems = useMemo(
+		() =>
+			templates.map((template) => ({
+				id: template.slug,
+				icon: templateIcons[template.slug],
+				label: template.name,
+			})),
+		[templates],
+	);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -685,16 +588,17 @@ export function TemplatesDialog({ open, onOpenChange }: TemplatesDialogProps) {
 					Browse and manage your note templates.
 				</DialogDescription>
 				<SidebarProvider className="items-start">
-					<TemplatesSidebarNav
-						activeTemplate={activeTemplate}
-						selectTemplate={selectTemplate}
-						templates={templates}
+					<ManageDialogSidebarNav
+						activeItemId={activeTemplate}
+						items={navigationItems}
+						onSelect={(slug) => selectTemplate(slug as TemplateSlug)}
 					/>
 					<main className="flex h-[480px] flex-1 flex-col overflow-hidden">
-						<TemplatesHeader
-							activeTemplate={activeTemplate}
-							selectTemplate={selectTemplate}
-							templates={templates}
+						<ManageDialogHeader
+							activeItemId={activeTemplate}
+							items={navigationItems}
+							onSelect={(slug) => selectTemplate(slug as TemplateSlug)}
+							title="Templates"
 						/>
 						<TemplatesEditor
 							isSaving={editor.isSaving}

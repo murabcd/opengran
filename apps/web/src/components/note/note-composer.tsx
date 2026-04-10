@@ -2,6 +2,14 @@ import { useChat } from "@ai-sdk/react";
 import { Button } from "@workspace/ui/components/button";
 import { Card, CardContent, CardHeader } from "@workspace/ui/components/card";
 import {
+	Command,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+} from "@workspace/ui/components/command";
+import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -13,6 +21,11 @@ import {
 	InputGroupButton,
 	InputGroupTextarea,
 } from "@workspace/ui/components/input-group";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@workspace/ui/components/popover";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import {
 	Select,
@@ -50,6 +63,7 @@ import {
 	ThumbsDown,
 	ThumbsUp,
 	WandSparkles,
+	X,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -60,6 +74,11 @@ import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { getChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
+import {
+	RECIPE_ICONS,
+	type RecipePrompt,
+	type RecipeSlug,
+} from "@/lib/recipes";
 import { formatTranscriptElapsed } from "@/lib/transcript";
 import {
 	getTranscriptionLanguageSelectValue,
@@ -190,6 +209,9 @@ const useNoteComposerController = ({
 	const [inlinePanelHeight, setInlinePanelHeight] = React.useState(
 		INLINE_POPOVER_DEFAULT_HEIGHT,
 	);
+	const [recipePopoverOpen, setRecipePopoverOpen] = React.useState(false);
+	const [selectedRecipeSlug, setSelectedRecipeSlug] =
+		React.useState<RecipeSlug | null>(null);
 	const [reactionsByMessageId, setReactionsByMessageId] = React.useState<
 		Record<string, "like" | "dislike" | undefined>
 	>({});
@@ -231,6 +253,10 @@ const useNoteComposerController = ({
 			: "skip",
 	);
 	const updateUserPreferences = useMutation(api.userPreferences.update);
+	const recipeData = useQuery(
+		api.recipes.list,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const userPreferences = useQuery(api.userPreferences.get, {});
 	const [isSavingTranscriptionLanguage, setIsSavingTranscriptionLanguage] =
 		React.useState(false);
@@ -447,6 +473,23 @@ const useNoteComposerController = ({
 	);
 	const latestNoteChat = noteChats?.[0] ?? null;
 	const composerPlaceholder = latestNoteChat ? "Continue chat" : "Ask anything";
+	const recipes = React.useMemo(
+		() =>
+			(recipeData ?? []).flatMap((recipe) =>
+				recipe.slug in RECIPE_ICONS
+					? [
+							{
+								slug: recipe.slug as RecipeSlug,
+								name: recipe.name,
+								prompt: recipe.prompt,
+							},
+						]
+					: [],
+			),
+		[recipeData],
+	);
+	const selectedRecipe =
+		recipes.find((recipe) => recipe.slug === selectedRecipeSlug) ?? null;
 
 	const setRightSidebarOpen = React.useCallback(
 		(open: boolean) => {
@@ -491,6 +534,8 @@ const useNoteComposerController = ({
 		setMessage("");
 		setIsExpanded(false);
 		setPanelMode(null);
+		setSelectedRecipeSlug(null);
+		setRecipePopoverOpen(false);
 		setReactionsByMessageId({});
 		resetTextareaHeight();
 		closeRightSidebar();
@@ -502,6 +547,15 @@ const useNoteComposerController = ({
 		setMessages,
 		stop,
 	]);
+
+	React.useEffect(() => {
+		if (
+			selectedRecipeSlug &&
+			!recipes.some((recipe) => recipe.slug === selectedRecipeSlug)
+		) {
+			setSelectedRecipeSlug(null);
+		}
+	}, [recipes, selectedRecipeSlug]);
 
 	React.useEffect(() => {
 		setHasRightSidebar(panelMode === "chat" && presentationMode !== "inline");
@@ -654,19 +708,31 @@ const useNoteComposerController = ({
 			const { data } = await authClient.convex.token({
 				fetchOptions: { throw: false },
 			});
+			const requestBody = {
+				model: NOTE_CHAT_MODEL.model,
+				convexToken: data?.token ?? null,
+				noteContext: {
+					noteId: noteContext.noteId,
+					title: noteContext.title,
+					text: noteContext.text,
+				},
+				recipeSlug: selectedRecipe?.slug ?? null,
+			};
+
+			console.info("[note-chat] send", {
+				chatId: currentChatId,
+				noteId: noteContext.noteId ?? null,
+				noteTitle: noteContext.title ?? "",
+				noteTextLength: noteContext.text?.length ?? 0,
+				recipeSlug: selectedRecipe?.slug ?? null,
+				messageLength: nextMessage.length,
+				hasConvexToken: Boolean(requestBody.convexToken),
+			});
 
 			void sendMessage(
 				{ text: nextMessage },
 				{
-					body: {
-						model: NOTE_CHAT_MODEL.model,
-						convexToken: data?.token ?? null,
-						noteContext: {
-							noteId: noteContext.noteId,
-							title: noteContext.title,
-							text: noteContext.text,
-						},
-					},
+					body: requestBody,
 				},
 			);
 			setMessage("");
@@ -678,12 +744,14 @@ const useNoteComposerController = ({
 	}, [
 		isChatLoading,
 		message,
+		currentChatId,
 		noteContext.noteId,
 		noteContext.text,
 		noteContext.title,
 		openRightSidebar,
 		presentationMode,
 		resetTextareaHeight,
+		selectedRecipe?.slug,
 		sendMessage,
 	]);
 
@@ -807,6 +875,7 @@ const useNoteComposerController = ({
 		isMobile,
 		isSidebarPresentation,
 		isSpeechListening: transcriptSession.isSpeechListening,
+		isRecipeLoading: recipeData === undefined,
 		isTranscriptOpen,
 		liveTranscriptEntries: transcriptSession.liveTranscriptEntries,
 		message,
@@ -818,9 +887,14 @@ const useNoteComposerController = ({
 		transcriptViewportRef: transcriptSession.transcriptViewportRef,
 		reactionsByMessageId,
 		rootRef,
+		recipePopoverOpen,
+		recipes,
 		scrollTranscriptToBottom: transcriptSession.scrollTranscriptToBottom,
+		selectedRecipe,
 		setPanelMode,
+		setRecipePopoverOpen,
 		setReactionsByMessageId,
+		setSelectedRecipeSlug,
 		shouldShowInlinePanel,
 		textareaRef,
 		handleTranscriptionLanguageChange,
@@ -1355,11 +1429,18 @@ function ChatInlinePopoverFooter({
 	handleComposerFocus,
 	handleComposerPointerDown,
 	handleKeyDown,
+	isRecipeLoading,
 	handleTextareaChange,
 	hasMessage,
 	isChatLoading,
 	isSidebarCompact = false,
 	message,
+	onRecipePopoverOpenChange,
+	onRecipeRemove,
+	onRecipeSelect,
+	recipePopoverOpen,
+	recipes,
+	selectedRecipe,
 	speechControls,
 	textareaRef,
 }: {
@@ -1368,16 +1449,95 @@ function ChatInlinePopoverFooter({
 	handleComposerFocus: () => void;
 	handleComposerPointerDown: () => void;
 	handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+	isRecipeLoading: boolean;
 	handleTextareaChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
 	hasMessage: boolean;
 	isChatLoading: boolean;
 	isSidebarCompact?: boolean;
 	message: string;
+	onRecipePopoverOpenChange: (open: boolean) => void;
+	onRecipeRemove: () => void;
+	onRecipeSelect: (recipeSlug: RecipeSlug) => void;
+	recipePopoverOpen: boolean;
+	recipes: RecipePrompt[];
+	selectedRecipe: RecipePrompt | null;
 	speechControls: React.ReactNode;
 	textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
+	const recipePicker = (
+		<Popover open={recipePopoverOpen} onOpenChange={onRecipePopoverOpenChange}>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<PopoverTrigger asChild>
+						<InputGroupButton
+							variant="outline"
+							size="sm"
+							className="rounded-full border-input/50 bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+							disabled={isRecipeLoading}
+						>
+							<WandSparkles className="size-3.5" />
+							Recipes
+						</InputGroupButton>
+					</PopoverTrigger>
+				</TooltipTrigger>
+				<TooltipContent>
+					{isRecipeLoading ? "Loading recipes" : "Choose a recipe"}
+				</TooltipContent>
+			</Tooltip>
+
+			<PopoverContent className="w-80 p-0" align="start">
+				<Command>
+					<CommandInput placeholder="Search recipes..." />
+					<CommandList>
+						<CommandEmpty>
+							{isRecipeLoading ? "Loading recipes..." : "No recipes found."}
+						</CommandEmpty>
+						{recipes.length > 0 ? (
+							<CommandGroup heading="Recipes">
+								{recipes.map((recipe) => {
+									const Icon = RECIPE_ICONS[recipe.slug];
+
+									return (
+										<CommandItem
+											key={recipe.slug}
+											value={`${recipe.slug} ${recipe.name}`}
+											onSelect={() => onRecipeSelect(recipe.slug)}
+										>
+											<Icon />
+											<span className="truncate">{recipe.name}</span>
+										</CommandItem>
+									);
+								})}
+							</CommandGroup>
+						) : null}
+					</CommandList>
+				</Command>
+			</PopoverContent>
+		</Popover>
+	);
+
 	return (
 		<InputGroup className="min-h-[96px] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30">
+			{selectedRecipe ? (
+				<InputGroupAddon
+					align="block-start"
+					className={cn("gap-1 px-4 pb-0 pt-2.5", isSidebarCompact && "px-3.5")}
+				>
+					<InputGroupButton
+						size="sm"
+						variant="secondary"
+						className="rounded-full pl-2!"
+						onClick={onRecipeRemove}
+					>
+						{(() => {
+							const Icon = RECIPE_ICONS[selectedRecipe.slug];
+							return <Icon />;
+						})()}
+						{selectedRecipe.name}
+						<X />
+					</InputGroupButton>
+				</InputGroupAddon>
+			) : null}
 			<InputGroupTextarea
 				data-slot="input-group-control"
 				ref={textareaRef}
@@ -1403,6 +1563,7 @@ function ChatInlinePopoverFooter({
 				)}
 			>
 				{speechControls}
+				{recipePicker}
 				<InputGroupButton
 					type="submit"
 					variant="default"
@@ -1528,11 +1689,21 @@ function ChatComposerForm({
 				handleComposerFocus={controller.handleComposerFocus}
 				handleComposerPointerDown={controller.handleComposerPointerDown}
 				handleKeyDown={controller.handleKeyDown}
+				isRecipeLoading={controller.isRecipeLoading}
 				handleTextareaChange={controller.handleTextareaChange}
 				hasMessage={controller.hasMessage}
 				isChatLoading={controller.isChatLoading}
 				isSidebarCompact={controller.isSidebarPresentation}
 				message={controller.message}
+				onRecipePopoverOpenChange={controller.setRecipePopoverOpen}
+				onRecipeRemove={() => controller.setSelectedRecipeSlug(null)}
+				onRecipeSelect={(recipeSlug) => {
+					controller.setSelectedRecipeSlug(recipeSlug);
+					controller.setRecipePopoverOpen(false);
+				}}
+				recipePopoverOpen={controller.recipePopoverOpen}
+				recipes={controller.recipes}
+				selectedRecipe={controller.selectedRecipe}
 				speechControls={speechControls}
 				textareaRef={controller.textareaRef}
 			/>

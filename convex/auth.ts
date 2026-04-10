@@ -60,38 +60,41 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 						return;
 					}
 
-						const runCtx = requireRunMutationCtx(ctx);
-						await runCtx.runMutation(internal.notes.removeAllForOwner, {
+					const runCtx = requireRunMutationCtx(ctx);
+					await runCtx.runMutation(internal.notes.removeAllForOwner, {
+						ownerTokenIdentifier: identity.tokenIdentifier,
+					});
+					await runCtx.runMutation(internal.chats.removeAllForOwner, {
+						ownerTokenIdentifier: identity.tokenIdentifier,
+					});
+					await runCtx.runMutation(
+						internal.calendarPreferences.removeAllForOwner,
+						{
 							ownerTokenIdentifier: identity.tokenIdentifier,
-						});
-						await runCtx.runMutation(internal.chats.removeAllForOwner, {
+						},
+					);
+					await runCtx.runMutation(
+						internal.notificationPreferences.removeAllForOwner,
+						{
 							ownerTokenIdentifier: identity.tokenIdentifier,
-						});
-						await runCtx.runMutation(
-							internal.calendarPreferences.removeAllForOwner,
-							{
-								ownerTokenIdentifier: identity.tokenIdentifier,
-							},
-						);
-						await runCtx.runMutation(
-							internal.notificationPreferences.removeAllForOwner,
-							{
-								ownerTokenIdentifier: identity.tokenIdentifier,
-							},
-						);
-						await runCtx.runMutation(internal.inboxItems.removeAllForOwner, {
-							ownerTokenIdentifier: identity.tokenIdentifier,
-						});
-						await runCtx.runMutation(internal.appConnections.removeAllForOwner, {
-							ownerTokenIdentifier: identity.tokenIdentifier,
-						});
-						await runCtx.runMutation(internal.onboarding.removeAllForOwner, {
-							ownerTokenIdentifier: identity.tokenIdentifier,
-						});
-						await runCtx.runMutation(internal.workspaces.removeAllForOwner, {
+						},
+					);
+					await runCtx.runMutation(internal.inboxItems.removeAllForOwner, {
+						ownerTokenIdentifier: identity.tokenIdentifier,
+					});
+					await runCtx.runMutation(internal.appConnections.removeAllForOwner, {
+						ownerTokenIdentifier: identity.tokenIdentifier,
+					});
+					await runCtx.runMutation(internal.onboarding.removeAllForOwner, {
+						ownerTokenIdentifier: identity.tokenIdentifier,
+					});
+					await runCtx.runMutation(internal.workspaces.removeAllForOwner, {
 						ownerTokenIdentifier: identity.tokenIdentifier,
 					});
 					await runCtx.runMutation(internal.templates.removeAllForOwner, {
+						ownerTokenIdentifier: identity.tokenIdentifier,
+					});
+					await runCtx.runMutation(internal.recipes.removeAllForOwner, {
 						ownerTokenIdentifier: identity.tokenIdentifier,
 					});
 				},
@@ -115,10 +118,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
 				prompt: "consent",
 			},
 		},
-		plugins: [
-			convex({ authConfig }),
-			crossDomain({ siteUrl }),
-		],
+		plugins: [convex({ authConfig }), crossDomain({ siteUrl })],
 	});
 };
 
