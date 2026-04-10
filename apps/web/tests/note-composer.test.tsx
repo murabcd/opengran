@@ -907,6 +907,78 @@ describe("NoteComposer", () => {
 		expect(screen.queryByRole("button", { name: "Generate notes" })).toBeNull();
 	});
 
+	it("hides generate notes when the note is already enhanced", async () => {
+		useNoteTranscriptSessionMock.mockReturnValue({
+			autoStartKey: null,
+			captureScopeKey: "note:note-1",
+			displayTranscriptEntries: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					isLive: false,
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
+			fullTranscript: "hello",
+			handleGenerateNotes: vi.fn(),
+			hasGeneratedLatestTranscript: false,
+			hasPendingGenerateTranscript: true,
+			isTranscriptSessionReady: true,
+			isGeneratingNotes: false,
+			isRefiningTranscript: false,
+			isSpeechListening: false,
+			liveTranscriptEntries: [],
+			onLiveTranscriptChange: vi.fn(),
+			onRecoveryStatusChange: vi.fn(),
+			onSystemAudioRecordingReady: vi.fn(),
+			onSystemAudioStatusChange: vi.fn(),
+			onTranscriptListeningChange: vi.fn(),
+			onTranscriptUtterance: vi.fn(),
+			orderedTranscriptUtterances: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
+			recoveryStatus: {
+				attempt: 0,
+				maxAttempts: 0,
+				message: null,
+				state: "idle",
+			},
+			systemAudioStatus: {
+				sourceMode: "display-media",
+				state: "ready",
+			},
+			transcriptRefinementError: null,
+			transcriptViewportRef: {
+				current: null,
+			},
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					templateSlug: "enhanced",
+					text: "Already generated",
+					title: "Generated note",
+				}}
+			/>,
+		);
+
+		expect(screen.queryByRole("button", { name: "Generate notes" })).toBeNull();
+	});
+
 	it("keeps the inline transcript controls pinned to the dock position", async () => {
 		useNoteTranscriptSessionMock.mockReturnValue({
 			autoStartKey: null,

@@ -74,6 +74,7 @@ import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { getChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
+import { ENHANCED_NOTE_TEMPLATE_SLUG } from "@/lib/note-templates";
 import {
 	RECIPE_ICONS,
 	type RecipePrompt,
@@ -106,6 +107,7 @@ type NoteChatSummary = Pick<
 type NoteComposerProps = {
 	noteContext: {
 		noteId: string | null;
+		templateSlug?: string | null;
 		title: string;
 		text: string;
 	};
@@ -458,6 +460,7 @@ const useNoteComposerController = ({
 		transcriptSession.isTranscriptSessionReady &&
 		transcriptSession.hasPendingGenerateTranscript &&
 		!transcriptSession.hasGeneratedLatestTranscript &&
+		noteContext.templateSlug !== ENHANCED_NOTE_TEMPLATE_SLUG &&
 		!transcriptSession.isSpeechListening &&
 		!isChatOpen &&
 		!isTranscriptOpen;
