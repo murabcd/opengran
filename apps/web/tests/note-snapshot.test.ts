@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-	canFlushQueuedNoteSnapshot,
+	canFlushQueuedNoteSave,
 	createNoteSnapshot,
-	isLatestNoteSnapshot,
+	isLatestNoteSaveRequest,
 } from "../src/lib/note-snapshot";
 
 describe("note snapshot coordination", () => {
-	it("treats only the newest snapshot as saveable", () => {
+	it("treats only the newest save request as saveable", () => {
 		const staleSnapshot = createNoteSnapshot({
 			title: "Interview",
 			content: '{"type":"doc","content":[{"type":"paragraph"}]}',
@@ -19,8 +19,19 @@ describe("note snapshot coordination", () => {
 			searchableText: "Overview\nDecisions\nShip autosave fix",
 		});
 
-		expect(isLatestNoteSnapshot(staleSnapshot, latestSnapshot)).toBe(false);
-		expect(isLatestNoteSnapshot(latestSnapshot, latestSnapshot)).toBe(true);
+		expect(
+			isLatestNoteSaveRequest({
+				requestId: 1,
+				latestRequestId: 2,
+			}),
+		).toBe(false);
+		expect(
+			isLatestNoteSaveRequest({
+				requestId: 2,
+				latestRequestId: 2,
+			}),
+		).toBe(true);
+		expect(staleSnapshot).not.toBe(latestSnapshot);
 	});
 
 	it("flushes only queued snapshots that are still current and unsaved", () => {
@@ -37,25 +48,28 @@ describe("note snapshot coordination", () => {
 		});
 
 		expect(
-			canFlushQueuedNoteSnapshot({
+			canFlushQueuedNoteSave({
+				queuedRequestId: 1,
+				latestRequestId: 2,
 				queuedSnapshot: staleSnapshot,
-				latestSnapshot,
 				lastSavedSnapshot: null,
 			}),
 		).toBe(false);
 
 		expect(
-			canFlushQueuedNoteSnapshot({
+			canFlushQueuedNoteSave({
+				queuedRequestId: 2,
+				latestRequestId: 2,
 				queuedSnapshot: latestSnapshot,
-				latestSnapshot,
 				lastSavedSnapshot: null,
 			}),
 		).toBe(true);
 
 		expect(
-			canFlushQueuedNoteSnapshot({
+			canFlushQueuedNoteSave({
+				queuedRequestId: 2,
+				latestRequestId: 2,
 				queuedSnapshot: latestSnapshot,
-				latestSnapshot,
 				lastSavedSnapshot: latestSnapshot,
 			}),
 		).toBe(false);

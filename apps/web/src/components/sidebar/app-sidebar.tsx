@@ -33,6 +33,7 @@ import { TemplatesDialog } from "@/components/templates/templates-dialog";
 import { WorkspaceSwitcher } from "@/components/workspaces/workspace-switcher";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
 import { getChatId } from "@/lib/chat";
+import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { WorkspaceRecord } from "@/lib/workspaces";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
@@ -193,10 +194,11 @@ export function AppSidebar({
 	const searchItems: SearchCommandItem[] = [
 		...(notes ?? []).map((note) => ({
 			id: note._id,
-			title:
+			title: getNoteDisplayTitle(
 				note._id === currentNoteId && currentNoteTitle?.trim()
 					? currentNoteTitle
-					: note.title || "New note",
+					: note.title,
+			),
 			kind: "note" as const,
 			icon: FileText,
 			preview: note.searchableText.trim() || undefined,

@@ -48,6 +48,7 @@ export function NoteTitleEditInput({
 		<Input
 			ref={ref}
 			value={value}
+			placeholder="New note"
 			autoComplete="off"
 			autoCorrect="off"
 			autoCapitalize="off"

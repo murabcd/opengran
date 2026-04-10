@@ -110,6 +110,12 @@ type NoteComposerProps = {
 	noteContext: {
 		noteId: string | null;
 		templateSlug?: string | null;
+		title?: string;
+		text?: string;
+	};
+	getNoteContext?: () => {
+		noteId: string | null;
+		templateSlug?: string | null;
 		title: string;
 		text: string;
 	};
@@ -184,6 +190,7 @@ const createDraftChatId = (): string => crypto.randomUUID();
 
 const useNoteComposerController = ({
 	noteContext,
+	getNoteContext,
 	autoStartTranscription,
 	onAutoStartTranscriptionHandled,
 	onEnhanceTranscript,
@@ -226,6 +233,22 @@ const useNoteComposerController = ({
 	const previousSpeechListeningRef = React.useRef(false);
 	const shouldFocusInlineChatRef = React.useRef(false);
 	const noteId = (noteContext.noteId as Id<"notes"> | null) ?? null;
+	const readNoteContext = React.useCallback(
+		() =>
+			getNoteContext?.() ?? {
+				noteId: noteContext.noteId,
+				templateSlug: noteContext.templateSlug,
+				title: noteContext.title ?? "",
+				text: noteContext.text ?? "",
+			},
+		[
+			getNoteContext,
+			noteContext.noteId,
+			noteContext.templateSlug,
+			noteContext.text,
+			noteContext.title,
+		],
+	);
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const previousChatIdRef = React.useRef(currentChatId);
 	const previousNoteIdRef = React.useRef(noteId);
@@ -710,6 +733,7 @@ const useNoteComposerController = ({
 		}
 
 		try {
+			const currentNoteContext = readNoteContext();
 			const { data } = await authClient.convex.token({
 				fetchOptions: { throw: false },
 			});
@@ -717,9 +741,9 @@ const useNoteComposerController = ({
 				model: NOTE_CHAT_MODEL.model,
 				convexToken: data?.token ?? null,
 				noteContext: {
-					noteId: noteContext.noteId,
-					title: noteContext.title,
-					text: noteContext.text,
+					noteId: currentNoteContext.noteId,
+					title: currentNoteContext.title,
+					text: currentNoteContext.text,
 				},
 				recipeSlug: selectedRecipe?.slug ?? null,
 			};
@@ -739,12 +763,9 @@ const useNoteComposerController = ({
 	}, [
 		isChatLoading,
 		message,
-		currentChatId,
-		noteContext.noteId,
-		noteContext.text,
-		noteContext.title,
 		openRightSidebar,
 		presentationMode,
+		readNoteContext,
 		resetTextareaHeight,
 		selectedRecipe?.slug,
 		sendMessage,
@@ -1655,7 +1676,9 @@ function TranscriptInlinePopoverFooter({
 	);
 }
 
-export function NoteComposer(props: NoteComposerProps) {
+export const NoteComposer = React.memo(function NoteComposer(
+	props: NoteComposerProps,
+) {
 	const controller = useNoteComposerController(props);
 	return (
 		<div ref={controller.rootRef} className="relative w-full">
@@ -1684,7 +1707,7 @@ export function NoteComposer(props: NoteComposerProps) {
 			<NoteComposerDock controller={controller} />
 		</div>
 	);
-}
+});
 
 type NoteComposerController = ReturnType<typeof useNoteComposerController>;
 

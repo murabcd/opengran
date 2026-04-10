@@ -338,8 +338,8 @@ function useNoteActionsMenu({
 			return;
 		}
 
-		const nextTitle = renameValue.trim() || "New note";
-		const currentTitle = note.title.trim() || "New note";
+		const nextTitle = renameValue.trim();
+		const currentTitle = note.title.trim();
 
 		if (nextTitle === currentTitle) {
 			setRenameOpen(false);
@@ -371,7 +371,7 @@ function useNoteActionsMenu({
 			return;
 		}
 
-		setRenameValue(note?.title || "New note");
+		setRenameValue(note?.title ?? "");
 	}, [note?.title, renameOpen]);
 
 	React.useEffect(() => {
@@ -479,13 +479,13 @@ function useNoteActionsMenu({
 		setMenuOpen(false);
 		preventMenuCloseAutoFocusRef.current = true;
 		ignoreInitialRenameInteractOutsideRef.current = true;
-		setRenameValue(note?.title || "New note");
+		setRenameValue(note?.title ?? "");
 		setRenameOpen(true);
 	}, [note?.title]);
 
 	const handleRenameCancel = React.useCallback(() => {
 		setRenameOpen(false);
-		setRenameValue(note?.title || "New note");
+		setRenameValue(note?.title ?? "");
 	}, [note?.title]);
 
 	return {

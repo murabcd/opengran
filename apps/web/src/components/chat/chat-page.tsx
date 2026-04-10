@@ -22,6 +22,7 @@ import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
+import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { WorkspaceRecord } from "@/lib/workspaces";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
@@ -194,7 +195,7 @@ const useChatPageController = ({
 		() =>
 			(notes ?? []).map((note) => ({
 				id: note._id,
-				title: note.title.trim() || "New note",
+				title: getNoteDisplayTitle(note.title),
 				icon: FileText,
 				preview: note.searchableText.trim(),
 			})),

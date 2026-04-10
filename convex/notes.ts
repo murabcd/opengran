@@ -96,15 +96,15 @@ const requireOwnedWorkspace = async (
 	return workspace;
 };
 
-const requireOwnedNote = async (
-	ctx: QueryCtx | MutationCtx,
-	id: Doc<"notes">["_id"],
-	workspaceId: Id<"workspaces">,
-) => {
-	const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-	await requireOwnedWorkspace(ctx, ownerTokenIdentifier, workspaceId);
-	const note = await ctx.db.get(id);
-
+const ensureOwnedNote = ({
+	note,
+	ownerTokenIdentifier,
+	workspaceId,
+}: {
+	note: Doc<"notes"> | null;
+	ownerTokenIdentifier: string;
+	workspaceId: Id<"workspaces">;
+}) => {
 	if (!note) {
 		throw new ConvexError({
 			code: "NOTE_NOT_FOUND",
@@ -123,6 +123,21 @@ const requireOwnedNote = async (
 	}
 
 	return note;
+};
+
+const requireOwnedNote = async (
+	ctx: QueryCtx | MutationCtx,
+	id: Doc<"notes">["_id"],
+	workspaceId: Id<"workspaces">,
+) => {
+	const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+	await requireOwnedWorkspace(ctx, ownerTokenIdentifier, workspaceId);
+
+	return ensureOwnedNote({
+		note: await ctx.db.get(id),
+		ownerTokenIdentifier,
+		workspaceId,
+	});
 };
 
 const createShareId = () => crypto.randomUUID().replaceAll("-", "");
@@ -381,7 +396,7 @@ export const create = mutation({
 			workspaceId: args.workspaceId,
 			authorName: getAuthorName(identity),
 			isStarred: false,
-			title: "New note",
+			title: "",
 			content: JSON.stringify({
 				type: "doc",
 				content: [{ type: "paragraph" }],
@@ -474,7 +489,20 @@ export const save = mutation({
 		const now = Date.now();
 
 		if (args.id) {
-			const existing = await requireOwnedNote(ctx, args.id, args.workspaceId);
+			const existing = ensureOwnedNote({
+				note: await ctx.db.get(args.id),
+				ownerTokenIdentifier,
+				workspaceId: args.workspaceId,
+			});
+
+			if (
+				existing.title === args.title &&
+				existing.content === args.content &&
+				existing.searchableText === args.searchableText &&
+				!existing.isArchived
+			) {
+				return args.id;
+			}
 
 			await ctx.db.patch(args.id, {
 				authorName: existing.authorName ?? authorName,
@@ -561,7 +589,7 @@ export const rename = mutation({
 			});
 		}
 
-		const title = args.title.trim() || "New note";
+		const title = args.title.trim();
 
 		await ctx.db.patch(args.id, {
 			title,

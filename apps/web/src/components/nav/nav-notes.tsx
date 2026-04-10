@@ -10,6 +10,7 @@ import { FileText, MoreHorizontal } from "lucide-react";
 import * as React from "react";
 import { SidebarCollapsibleGroup } from "@/components/nav/sidebar-collapsible-group";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
+import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
 const MAX_VISIBLE_NOTES = 5;
@@ -138,9 +139,8 @@ function SidebarNotesList({
 				const isActive = note._id === currentNoteId;
 				const isRecording = note._id === recordingNoteId;
 				const title =
-					isActive && currentNoteTitle?.trim()
-						? currentNoteTitle
-						: note.title || "New note";
+					isActive && currentNoteTitle?.trim() ? currentNoteTitle : note.title;
+				const displayTitle = getNoteDisplayTitle(title);
 
 				return (
 					<SidebarMenuItem key={note._id}>
@@ -159,7 +159,7 @@ function SidebarNotesList({
 									) : (
 										<FileText />
 									)}
-									<span>{title}</span>
+									<span>{displayTitle}</span>
 								</SidebarMenuButton>
 							}
 							renamePopoverAlign="start"
@@ -168,15 +168,13 @@ function SidebarNotesList({
 							renamePopoverClassName="w-[340px] rounded-lg border-sidebar-border/70 bg-sidebar p-1.5 shadow-2xl ring-1 ring-border/60"
 							onRenamePreviewChange={isActive ? onNoteTitleChange : undefined}
 							onRenamePreviewReset={
-								isActive
-									? () => onNoteTitleChange?.(note.title || "New note")
-									: undefined
+								isActive ? () => onNoteTitleChange?.(note.title) : undefined
 							}
 						>
 							<SidebarMenuAction
 								showOnHover
 								className="cursor-pointer"
-								aria-label={`Open actions for ${title}`}
+								aria-label={`Open actions for ${displayTitle}`}
 							>
 								<MoreHorizontal />
 							</SidebarMenuAction>

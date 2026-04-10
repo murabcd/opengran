@@ -13,19 +13,26 @@ export const createNoteSnapshot = ({
 		searchableText,
 	});
 
-export const isLatestNoteSnapshot = (
-	snapshot: string,
-	latestSnapshot: string | null,
-) => snapshot === latestSnapshot;
+export const isLatestNoteSaveRequest = ({
+	requestId,
+	latestRequestId,
+}: {
+	requestId: number;
+	latestRequestId: number;
+}) => requestId === latestRequestId;
 
-export const canFlushQueuedNoteSnapshot = ({
+export const canFlushQueuedNoteSave = ({
+	queuedRequestId,
+	latestRequestId,
 	queuedSnapshot,
-	latestSnapshot,
 	lastSavedSnapshot,
 }: {
+	queuedRequestId: number;
+	latestRequestId: number;
 	queuedSnapshot: string;
-	latestSnapshot: string | null;
 	lastSavedSnapshot: string | null;
 }) =>
-	isLatestNoteSnapshot(queuedSnapshot, latestSnapshot) &&
-	queuedSnapshot !== lastSavedSnapshot;
+	isLatestNoteSaveRequest({
+		requestId: queuedRequestId,
+		latestRequestId,
+	}) && queuedSnapshot !== lastSavedSnapshot;

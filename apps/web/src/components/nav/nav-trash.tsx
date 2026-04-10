@@ -47,6 +47,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { getChatId } from "@/lib/chat";
+import { getNoteDisplayTitle } from "@/lib/note-title";
 import { removeNoteChats, restoreNoteChats } from "@/lib/optimistic-note-chats";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
@@ -415,7 +416,7 @@ function TrashResults({
 					{notes.map((note) => (
 						<TrashItemRow
 							key={note._id}
-							title={note.title || "New note"}
+							title={getNoteDisplayTitle(note.title)}
 							icon={FileText}
 							onRestore={() => onRestoreNote(note._id)}
 							onDelete={() => onDeleteNote(note._id)}

@@ -99,6 +99,7 @@ import {
 	DESKTOP_MAIN_HEADER_CONTENT_CLASS,
 	DESKTOP_MAIN_HEADER_LEADING_CLASS,
 } from "@/lib/desktop-chrome";
+import { getNoteDisplayTitle } from "@/lib/note-title";
 import {
 	getSuggestedWorkspaceName,
 	type WorkspaceRecord,
@@ -1932,7 +1933,7 @@ const useAppShellState = ({
 			return getAppLocationState(new URL(window.location.href))
 				.pendingCalendarEvent;
 		});
-	const [currentNoteTitle, setCurrentNoteTitle] = React.useState("New note");
+	const [currentNoteTitle, setCurrentNoteTitle] = React.useState("");
 	const [currentNoteEditorActions, setCurrentNoteEditorActions] =
 		React.useState<NoteEditorActions | null>(null);
 	const creatingNoteRef = React.useRef(false);
@@ -2323,15 +2324,15 @@ const useAppShellState = ({
 	}, []);
 
 	React.useEffect(() => {
-		if (selectedNote?.title) {
+		if (selectedNote) {
 			setCurrentNoteTitle(selectedNote.title);
 			return;
 		}
 
 		if (resolvedCurrentView === "note") {
-			setCurrentNoteTitle("New note");
+			setCurrentNoteTitle("");
 		}
-	}, [resolvedCurrentView, selectedNote?.title]);
+	}, [resolvedCurrentView, selectedNote]);
 
 	React.useEffect(() => {
 		void window.openGranDesktop
@@ -2459,7 +2460,7 @@ const useAppShellState = ({
 				? createNoteFromCalendarEvent({
 						workspaceId: resolvedActiveWorkspaceId,
 						calendarEventKey: createCalendarEventKey(calendarEvent),
-						title: calendarEvent.title.trim() || "New note",
+						title: calendarEvent.title.trim(),
 						content: buildCalendarEventNoteDocument({
 							currentDate,
 							event: calendarEvent,
@@ -2473,7 +2474,7 @@ const useAppShellState = ({
 
 			void createNotePromise
 				.then((noteId) => {
-					setCurrentNoteTitle(calendarEvent?.title.trim() || "New note");
+					setCurrentNoteTitle(calendarEvent?.title.trim() || "");
 					openNote(noteId, {
 						autoStartCapture: shouldStartCapture,
 						scheduledAutoStartAt,
@@ -2697,7 +2698,7 @@ const useAppShellState = ({
 
 			setCurrentNoteId(null);
 			setCurrentRouteNoteId(null);
-			setCurrentNoteTitle("New note");
+			setCurrentNoteTitle("");
 			setCurrentNoteEditorActions(null);
 			handleViewChange("home");
 		},
@@ -2815,7 +2816,7 @@ const useAppShellState = ({
 			: resolvedCurrentView === "notFound"
 				? null
 				: resolvedCurrentView === "note"
-					? currentNoteTitle
+					? getNoteDisplayTitle(currentNoteTitle)
 					: resolvedCurrentView === "chat" && currentChatId
 						? currentChatTitle
 						: null,
@@ -2997,16 +2998,10 @@ function AppShellHeader({
 }: AppShellHeaderProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const { state: sidebarState } = useSidebar();
-	const breadcrumbRenameInitialTitleRef = React.useRef(
-		currentNoteTitle || "New note",
-	);
-	const breadcrumbRenameSavedTitleRef = React.useRef(
-		currentNoteTitle || "New note",
-	);
+	const breadcrumbRenameInitialTitleRef = React.useRef(currentNoteTitle);
+	const breadcrumbRenameSavedTitleRef = React.useRef(currentNoteTitle);
 	const [titleEditOpen, setTitleEditOpen] = React.useState(false);
-	const [titleValue, setTitleValue] = React.useState(
-		currentNoteTitle || "New note",
-	);
+	const [titleValue, setTitleValue] = React.useState(currentNoteTitle);
 	const [isRenamingNote, setIsRenamingNote] = React.useState(false);
 	const renameNote = useMutation(api.notes.rename).withOptimisticUpdate(
 		(localStore, args) => {
@@ -3020,8 +3015,8 @@ function AppShellHeader({
 			return;
 		}
 
-		breadcrumbRenameSavedTitleRef.current = currentNoteTitle || "New note";
-		setTitleValue(currentNoteTitle || "New note");
+		breadcrumbRenameSavedTitleRef.current = currentNoteTitle;
+		setTitleValue(currentNoteTitle);
 	}, [currentNoteTitle, titleEditOpen]);
 
 	const commitBreadcrumbRename = React.useCallback(async () => {
@@ -3034,9 +3029,8 @@ function AppShellHeader({
 			return;
 		}
 
-		const nextTitle = titleValue.trim() || "New note";
-		const currentTitle =
-			breadcrumbRenameSavedTitleRef.current.trim() || "New note";
+		const nextTitle = titleValue.trim();
+		const currentTitle = breadcrumbRenameSavedTitleRef.current.trim();
 
 		if (nextTitle === currentTitle) {
 			setTitleEditOpen(false);
@@ -3075,9 +3069,8 @@ function AppShellHeader({
 	const handleBreadcrumbTitleEditOpenChange = React.useCallback(
 		(open: boolean) => {
 			if (open) {
-				breadcrumbRenameInitialTitleRef.current =
-					currentNoteTitle || "New note";
-				breadcrumbRenameSavedTitleRef.current = currentNoteTitle || "New note";
+				breadcrumbRenameInitialTitleRef.current = currentNoteTitle;
+				breadcrumbRenameSavedTitleRef.current = currentNoteTitle;
 				setTitleEditOpen(true);
 				return;
 			}
@@ -3088,8 +3081,8 @@ function AppShellHeader({
 	);
 
 	const openBreadcrumbTitleEditor = React.useCallback(() => {
-		breadcrumbRenameInitialTitleRef.current = currentNoteTitle || "New note";
-		breadcrumbRenameSavedTitleRef.current = currentNoteTitle || "New note";
+		breadcrumbRenameInitialTitleRef.current = currentNoteTitle;
+		breadcrumbRenameSavedTitleRef.current = currentNoteTitle;
 		setTitleEditOpen(true);
 	}, [currentNoteTitle]);
 
@@ -3150,7 +3143,7 @@ function AppShellHeader({
 					titleValue={titleValue}
 					onTitleValueChange={(value) => {
 						setTitleValue(value);
-						onNoteTitleChange(value || "New note");
+						onNoteTitleChange(value);
 					}}
 					onCommitTitleRename={() => {
 						void commitBreadcrumbRename();
@@ -4093,10 +4086,11 @@ function SharedNotesList({
 						<div className="space-y-2">
 							{section.notes.map((note) => {
 								const isActive = note._id === activeNoteId;
-								const title =
+								const title = getNoteDisplayTitle(
 									isActive && activeNoteTitle.trim()
 										? activeNoteTitle
-										: note.title || "New note";
+										: note.title,
+								);
 								const authorDisplayName = getNoteAuthorDisplayName(
 									note,
 									currentUser,
@@ -4204,10 +4198,11 @@ function HomeNotesList({
 						<div className="space-y-2">
 							{section.notes.map((note) => {
 								const isActive = note._id === activeNoteId;
-								const title =
+								const title = getNoteDisplayTitle(
 									isActive && activeNoteTitle.trim()
 										? activeNoteTitle
-										: note.title || "New note";
+										: note.title,
+								);
 								const authorDisplayName = getNoteAuthorDisplayName(
 									note,
 									currentUser,

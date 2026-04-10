@@ -8,7 +8,7 @@ export function optimisticRenameNote(
 	noteId: Id<"notes">,
 	title: string,
 ) {
-	const nextTitle = title.trim() || "New note";
+	const nextTitle = title.trim();
 
 	for (const query of [api.notes.list, api.notes.listShared] as const) {
 		const notes = localStore.getQuery(query, { workspaceId });

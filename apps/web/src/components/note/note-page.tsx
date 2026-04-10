@@ -20,9 +20,9 @@ import {
 	parseStoredNoteContent,
 } from "@/lib/note-editor";
 import {
-	canFlushQueuedNoteSnapshot,
+	canFlushQueuedNoteSave,
 	createNoteSnapshot,
-	isLatestNoteSnapshot,
+	isLatestNoteSaveRequest,
 } from "@/lib/note-snapshot";
 import {
 	isEnhancedNoteTemplate,
@@ -223,13 +223,7 @@ const useNotePageController = ({
 	const suppressNextTitleChangeRef = React.useRef(false);
 	const saveInFlightRef = React.useRef(false);
 	const lastSavedSnapshotRef = React.useRef<string | null>(null);
-	const latestSnapshotRef = React.useRef(
-		createNoteSnapshot({
-			title: "",
-			content: EMPTY_DOCUMENT_STRING,
-			searchableText: "",
-		}),
-	);
+	const latestSaveRequestIdRef = React.useRef(0);
 	const publishedEditorActionsRef = React.useRef<{
 		noteId: Id<"notes">;
 		canCopyMarkdown: boolean;
@@ -239,6 +233,7 @@ const useNotePageController = ({
 	} | null>(null);
 	const publishEditorActionsRef = React.useRef<(() => void) | null>(null);
 	const queuedSaveRef = React.useRef<{
+		requestId: number;
 		snapshot: string;
 		payload: {
 			title: string;
@@ -308,16 +303,10 @@ const useNotePageController = ({
 		}
 	});
 
-	const currentSnapshot = createNoteSnapshot({
-		title,
-		content,
-		searchableText,
-	});
-	latestSnapshotRef.current = currentSnapshot;
-
 	const flushSave = React.useCallback(
 		async (
 			nextNoteId: Id<"notes">,
+			requestId: number,
 			snapshot: string,
 			payload: {
 				title: string;
@@ -325,12 +314,17 @@ const useNotePageController = ({
 				searchableText: string;
 			},
 		) => {
-			if (!isLatestNoteSnapshot(snapshot, latestSnapshotRef.current)) {
+			if (
+				!isLatestNoteSaveRequest({
+					requestId,
+					latestRequestId: latestSaveRequestIdRef.current,
+				})
+			) {
 				return;
 			}
 
 			if (saveInFlightRef.current) {
-				queuedSaveRef.current = { snapshot, payload };
+				queuedSaveRef.current = { requestId, snapshot, payload };
 				return;
 			}
 
@@ -354,9 +348,10 @@ const useNotePageController = ({
 
 				const queuedSave = queuedSaveRef.current;
 				const shouldFlushQueuedSave = queuedSave
-					? canFlushQueuedNoteSnapshot({
+					? canFlushQueuedNoteSave({
 							lastSavedSnapshot: lastSavedSnapshotRef.current,
-							latestSnapshot: latestSnapshotRef.current,
+							latestRequestId: latestSaveRequestIdRef.current,
+							queuedRequestId: queuedSave.requestId,
 							queuedSnapshot: queuedSave.snapshot,
 						})
 					: false;
@@ -364,7 +359,12 @@ const useNotePageController = ({
 					queuedSaveRef.current = null;
 				} else {
 					queuedSaveRef.current = null;
-					void flushSave(nextNoteId, queuedSave.snapshot, queuedSave.payload);
+					void flushSave(
+						nextNoteId,
+						queuedSave.requestId,
+						queuedSave.snapshot,
+						queuedSave.payload,
+					);
 				}
 			}
 		},
@@ -418,6 +418,7 @@ const useNotePageController = ({
 			hydratedNoteIdRef.current = noteId;
 			hasHydratedRef.current = false;
 			lastSavedSnapshotRef.current = null;
+			latestSaveRequestIdRef.current = 0;
 			queuedSaveRef.current = null;
 		}
 
@@ -466,12 +467,21 @@ const useNotePageController = ({
 			return;
 		}
 
-		if (currentSnapshot === lastSavedSnapshotRef.current) {
+		const snapshot = createNoteSnapshot({
+			title,
+			content,
+			searchableText,
+		});
+
+		if (snapshot === lastSavedSnapshotRef.current) {
 			return;
 		}
 
+		const requestId = latestSaveRequestIdRef.current + 1;
+		latestSaveRequestIdRef.current = requestId;
+
 		const timeout = window.setTimeout(() => {
-			void flushSave(noteId, currentSnapshot, {
+			void flushSave(noteId, requestId, snapshot, {
 				title,
 				content,
 				searchableText,
@@ -483,7 +493,6 @@ const useNotePageController = ({
 		};
 	}, [
 		content,
-		currentSnapshot,
 		flushSave,
 		noteId,
 		searchableText,
@@ -497,7 +506,13 @@ const useNotePageController = ({
 			return;
 		}
 
-		onTitleChange?.(title || "New note");
+		const timeout = window.setTimeout(() => {
+			onTitleChange?.(title);
+		}, 150);
+
+		return () => {
+			window.clearTimeout(timeout);
+		};
 	}, [onTitleChange, title]);
 
 	React.useEffect(() => {
@@ -505,14 +520,16 @@ const useNotePageController = ({
 			return;
 		}
 
-		const nextTitle = externalTitle || "New note";
-		if (nextTitle === title) {
-			return;
-		}
+		const nextTitle = externalTitle;
+		setTitle((currentTitle) => {
+			if (nextTitle === currentTitle) {
+				return currentTitle;
+			}
 
-		suppressNextTitleChangeRef.current = true;
-		setTitle(nextTitle);
-	}, [externalTitle, noteId, title]);
+			suppressNextTitleChangeRef.current = true;
+			return nextTitle;
+		});
+	}, [externalTitle, noteId]);
 
 	React.useEffect(() => {
 		void title;
@@ -638,6 +655,14 @@ const useNotePageController = ({
 		},
 		[editor],
 	);
+
+	const focusEditor = React.useCallback(() => {
+		if (!editor) {
+			return;
+		}
+
+		editor.chain().focus("start").run();
+	}, [editor]);
 
 	const requestStructuredNote = React.useCallback(
 		async (body: {
@@ -985,17 +1010,19 @@ const useNotePageController = ({
 				if (!nextNoteId) {
 					return;
 				}
-				const saveSnapshot = JSON.stringify({
+				const saveSnapshot = createNoteSnapshot({
 					title: nextTitle,
 					content: nextContent,
 					searchableText: nextSearchableText,
 				});
+				const requestId = latestSaveRequestIdRef.current + 1;
+				latestSaveRequestIdRef.current = requestId;
 
 				editor.commands.setContent(nextDocument, { emitUpdate: false });
 				setTitle(nextTitle);
 				setContent(nextContent);
 				setSearchableText(nextSearchableText);
-				await flushSave(nextNoteId, saveSnapshot, {
+				await flushSave(nextNoteId, requestId, saveSnapshot, {
 					title: nextTitle,
 					content: nextContent,
 					searchableText: nextSearchableText,
@@ -1027,7 +1054,17 @@ const useNotePageController = ({
 	return {
 		appendChatResponseToNote,
 		editor,
+		focusEditor,
 		handleEnhanceTranscript,
+		getNoteContext: React.useCallback(
+			() => ({
+				noteId: nextNoteIdRef.current ?? noteId,
+				templateSlug: latestEditorStateRef.current.templateSlug,
+				title: latestEditorStateRef.current.title,
+				text: latestEditorStateRef.current.searchableText,
+			}),
+			[noteId],
+		),
 		noteId,
 		searchableText,
 		setTitle,
@@ -1061,6 +1098,15 @@ export function NotePage({
 		onTitleChange,
 		onEditorActionsChange,
 	});
+	const composerNoteContext = React.useMemo(
+		() => ({
+			noteId: controller.noteId,
+			templateSlug: controller.templateSlug,
+		}),
+		[controller.noteId, controller.templateSlug],
+	);
+	const shouldHideEmptyBodyPlaceholder =
+		!controller.title.trim() && !controller.searchableText.trim();
 
 	return (
 		<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
@@ -1072,6 +1118,14 @@ export function NotePage({
 								ref={controller.titleTextareaRef}
 								value={controller.title}
 								onChange={(event) => controller.setTitle(event.target.value)}
+								onKeyDown={(event) => {
+									if (event.key !== "Enter" || event.shiftKey) {
+										return;
+									}
+
+									event.preventDefault();
+									controller.focusEditor();
+								}}
 								placeholder="New note"
 								aria-label="Note title"
 								rows={1}
@@ -1083,6 +1137,8 @@ export function NotePage({
 								className={cn(
 									"min-h-[320px] text-base text-foreground",
 									"[&_.ProseMirror]:min-h-[320px]",
+									shouldHideEmptyBodyPlaceholder &&
+										"note-editor--hide-placeholder",
 									controller.templateApplyState.isRunning && "hidden",
 								)}
 							/>
@@ -1112,12 +1168,8 @@ export function NotePage({
 							<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
 								<NoteComposer
 									autoStartTranscription={autoStartTranscription}
-									noteContext={{
-										noteId: controller.noteId,
-										templateSlug: controller.templateSlug,
-										title: controller.title,
-										text: controller.searchableText,
-									}}
+									getNoteContext={controller.getNoteContext}
+									noteContext={composerNoteContext}
 									onAutoStartTranscriptionHandled={
 										onAutoStartTranscriptionHandled
 									}
