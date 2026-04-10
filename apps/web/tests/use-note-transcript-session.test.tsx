@@ -168,6 +168,90 @@ describe("useNoteTranscriptSession", () => {
 		expect(result.current.isSpeechListening).toBe(false);
 	});
 
+	it("completes the active transcript session before hydrating a stored snapshot after listening stops", async () => {
+		const completeSessionMock = vi.fn().mockResolvedValue(null);
+		const startSessionMock = vi.fn().mockResolvedValue("session-live");
+		let latestTranscriptSession: {
+			sessionId: string;
+			finalTranscript: string;
+			generatedNoteAt: number | null;
+			refinementError: string | null;
+			refinementStatus: "idle" | "running" | "completed" | "failed";
+			updatedAt: number;
+			utterances: Array<{
+				endedAt: number;
+				id: string;
+				speaker: "you" | "them";
+				startedAt: number;
+				text: string;
+			}>;
+		} | null = null;
+
+		useTranscriptSessionRepositoryMock.mockImplementation(() => ({
+			appendUtterance: vi.fn(),
+			clearDraft: vi.fn(),
+			completeSession: completeSessionMock,
+			isLatestTranscriptSessionLoading: false,
+			latestTranscriptSession,
+			loadDraft: vi.fn().mockResolvedValue(null),
+			markGenerated: vi.fn(),
+			saveDraft: vi.fn(),
+			setSystemAudioSourceMode: vi.fn(),
+			startSession: startSessionMock,
+		}));
+
+		const { useNoteTranscriptSession } = await import(
+			"../src/hooks/use-note-transcript-session"
+		);
+
+		setTranscriptionSessionState({
+			isListening: true,
+			phase: "listening",
+			scopeKey: "note:note-1",
+		});
+
+		const { result, rerender } = renderHook(() =>
+			useNoteTranscriptSession({
+				noteId: "note-1" as never,
+			}),
+		);
+
+		await waitFor(() => {
+			expect(result.current.activeTranscriptSessionId).toBe("session-live");
+		});
+
+		latestTranscriptSession = {
+			sessionId: "session-live",
+			finalTranscript: "",
+			generatedNoteAt: null,
+			refinementError: null,
+			refinementStatus: "idle",
+			updatedAt: 10,
+			utterances: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
+		};
+		setTranscriptionSessionState({
+			isListening: false,
+			phase: "reconnecting",
+			scopeKey: "note:note-1",
+		});
+
+		rerender();
+
+		await waitFor(() => {
+			expect(completeSessionMock).toHaveBeenCalledWith({
+				sessionId: "session-live",
+			});
+		});
+	});
+
 	it("consumes note auto-start after the first emission even if the prop stays true", async () => {
 		useTranscriptSessionRepositoryMock.mockReturnValue({
 			appendUtterance: vi.fn(),

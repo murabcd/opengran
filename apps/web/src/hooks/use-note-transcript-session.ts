@@ -474,6 +474,9 @@ export const useNoteTranscriptSession = ({
 			latestServerTranscript.length > pendingGenerateTranscript.trim().length;
 		const shouldHydrateFromServer =
 			!hasHydratedStoredTranscriptSessionRef.current &&
+			activeTranscriptSessionIdRef.current === null &&
+			transcriptSessionStartPromiseRef.current === null &&
+			!previousSpeechListeningRef.current &&
 			!isSpeechListening &&
 			latestSession !== null &&
 			(!hasLoadedTranscriptDraftContentRef.current ||
