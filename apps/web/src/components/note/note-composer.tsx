@@ -53,11 +53,12 @@ import {
 	Check,
 	ChevronUp,
 	Copy,
+	ListMinus,
 	LoaderCircle,
 	Minus,
+	PanelBottomDashed,
 	PanelRight,
 	PanelRightDashed,
-	PanelTopBottomDashed,
 	Plus,
 	SlidersHorizontal,
 	ThumbsDown,
@@ -95,6 +96,7 @@ type NoteChatPresentation = "inline" | "floating" | "sidebar";
 const NOTE_CHAT_MODEL = getChatModel("gpt-5.4-mini");
 const NOTE_CHAT_FLOATING_WIDTH = "min(28rem, calc(100vw - 2rem))";
 const INLINE_POPOVER_FOOTER_CONTAINER_CLASS = "px-6 pt-2 pb-4";
+const INLINE_POPOVER_FOOTER_DEFAULT_HEIGHT = 120;
 const INLINE_POPOVER_DEFAULT_HEIGHT = 384;
 const INLINE_POPOVER_MIN_HEIGHT = INLINE_POPOVER_DEFAULT_HEIGHT;
 const INLINE_POPOVER_MAX_HEIGHT = 680;
@@ -1255,7 +1257,7 @@ function NoteChatHeader({
 
 	const chatModeIcon =
 		presentationMode === "inline" ? (
-			<PanelTopBottomDashed className="size-4" />
+			<PanelBottomDashed className="size-4" />
 		) : presentationMode === "floating" ? (
 			<PanelRightDashed className="size-4" />
 		) : (
@@ -1276,7 +1278,7 @@ function NoteChatHeader({
 						title={chatTitle}
 						aria-label="Select note chat"
 						className={cn(
-							"h-8 min-w-0 max-w-full cursor-pointer justify-start gap-0.5 border-transparent !bg-transparent px-2 pr-1.5 text-left shadow-none hover:!bg-accent/50 focus-visible:ring-0 dark:!bg-transparent dark:hover:!bg-accent/50",
+							"h-8 min-w-0 max-w-full cursor-pointer justify-start gap-0.5 border-0 !bg-transparent px-2 pr-1.5 text-left shadow-none hover:!bg-accent/50 focus-visible:!bg-accent/50 focus-visible:ring-0 data-[state=open]:!bg-accent/50 dark:!bg-transparent dark:hover:!bg-accent/50 dark:data-[state=open]:!bg-accent/50",
 							sidebarCompact
 								? "max-w-[min(100%,18rem)]"
 								: "max-w-[min(100%,36rem)]",
@@ -1362,7 +1364,7 @@ function NoteChatHeader({
 							onSelect={onSelectInlinePresentation}
 							className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
 						>
-							<PanelTopBottomDashed className="size-4 text-muted-foreground" />
+							<PanelBottomDashed className="size-4 text-muted-foreground" />
 							<span>Inline</span>
 							{presentationMode === "inline" ? (
 								<Check className="size-4 text-muted-foreground" />
@@ -1412,18 +1414,64 @@ function NoteChatHeader({
 	);
 }
 
-function InlinePopoverFooterContainer({
-	className,
-	children,
-}: {
-	className?: string;
-	children: React.ReactNode;
-}) {
+const InlinePopoverFooterContainer = React.forwardRef<
+	HTMLDivElement,
+	{
+		className?: string;
+		children: React.ReactNode;
+	}
+>(function InlinePopoverFooterContainer({ className, children }, ref) {
 	return (
-		<div className={cn(INLINE_POPOVER_FOOTER_CONTAINER_CLASS, className)}>
+		<div
+			ref={ref}
+			data-slot="note-composer-inline-footer"
+			className={cn(INLINE_POPOVER_FOOTER_CONTAINER_CLASS, className)}
+		>
 			{children}
 		</div>
 	);
+});
+
+function useInlineFooterHeight() {
+	const footerRef = React.useRef<HTMLDivElement>(null);
+	const [footerHeight, setFooterHeight] = React.useState(
+		INLINE_POPOVER_FOOTER_DEFAULT_HEIGHT,
+	);
+
+	React.useLayoutEffect(() => {
+		const footerElement = footerRef.current;
+
+		if (!footerElement) {
+			return;
+		}
+
+		const measureFooterHeight = () => {
+			const nextHeight = Math.ceil(
+				footerElement.getBoundingClientRect().height,
+			);
+
+			if (nextHeight > 0) {
+				setFooterHeight(nextHeight);
+			}
+		};
+
+		measureFooterHeight();
+
+		const resizeObserver = new ResizeObserver(() => {
+			measureFooterHeight();
+		});
+
+		resizeObserver.observe(footerElement);
+
+		return () => {
+			resizeObserver.disconnect();
+		};
+	}, []);
+
+	return {
+		footerHeight,
+		footerRef,
+	};
 }
 
 function ChatInlinePopoverFooter({
@@ -1473,13 +1521,12 @@ function ChatInlinePopoverFooter({
 				<TooltipTrigger asChild>
 					<PopoverTrigger asChild>
 						<InputGroupButton
-							variant="outline"
+							variant="ghost"
 							size="sm"
-							className="rounded-full border-input/50 bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+							className="rounded-full border-0 bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
 							disabled={isRecipeLoading}
 						>
-							<WandSparkles className="size-3.5" />
-							Recipes
+							<ListMinus className="size-3.5" />
 						</InputGroupButton>
 					</PopoverTrigger>
 				</TooltipTrigger>
@@ -1583,16 +1630,21 @@ function ChatInlinePopoverFooter({
 }
 
 function TranscriptInlinePopoverFooter({
+	containerRef,
 	controller,
 	isSpeechListening,
 	speechControls,
 }: {
+	containerRef?: React.Ref<HTMLDivElement>;
 	controller: NoteComposerController;
 	isSpeechListening: boolean;
 	speechControls: React.ReactNode;
 }) {
 	return (
-		<InlinePopoverFooterContainer className="absolute inset-x-0 bottom-[6px] z-10 px-[6px] pb-0">
+		<InlinePopoverFooterContainer
+			ref={containerRef}
+			className="absolute inset-x-0 bottom-[6px] z-10 px-[6px] pb-0"
+		>
 			<div className="relative">
 				{isSpeechListening ? (
 					<div className="pointer-events-none absolute inset-x-4 bottom-full z-10 mb-2 rounded-lg bg-muted px-4 py-1 text-center text-[11px] leading-4 text-muted-foreground">
@@ -1866,10 +1918,13 @@ function NoteComposerChatPanelContent({
 	const shouldRenderInlineComposer = controller.shouldShowInlinePanel;
 	const isFloatingComposer =
 		controller.presentationMode === "floating" && !shouldRenderInlineComposer;
+	const isOverlayComposer = shouldRenderInlineComposer || isFloatingComposer;
 	const floatingFooterContainerClassName =
 		"absolute inset-x-0 bottom-[6px] z-10 px-[6px] pb-0";
 	const inlineFooterContainerClassName =
 		"absolute inset-x-0 bottom-[6px] z-10 px-[6px] pb-0";
+	const { footerHeight: overlayFooterHeight, footerRef: overlayFooterRef } =
+		useInlineFooterHeight();
 	const chatFooter = (
 		<ChatComposerForm
 			controller={controller}
@@ -1878,11 +1933,7 @@ function NoteComposerChatPanelContent({
 					? "-mx-[2px] w-[calc(100%+4px)]"
 					: undefined
 			}
-			speechControls={
-				shouldRenderInlineComposer ? null : (
-					<div aria-hidden="true" className="h-7 w-[60px] shrink-0" />
-				)
-			}
+			speechControls={null}
 		/>
 	);
 
@@ -1895,16 +1946,22 @@ function NoteComposerChatPanelContent({
 					"flex flex-1 overflow-hidden",
 					controller.isSidebarPresentation
 						? "px-2 pb-2"
-						: shouldRenderInlineComposer || isFloatingComposer
-							? "px-4 pb-[120px]"
+						: isOverlayComposer
+							? "px-4"
 							: "px-4 pb-4",
 				)}
+				style={
+					!controller.isSidebarPresentation && isOverlayComposer
+						? { paddingBottom: overlayFooterHeight }
+						: undefined
+				}
 			>
 				{chatPanelBody}
 			</CardContent>
 
-			{shouldRenderInlineComposer || isFloatingComposer ? (
+			{isOverlayComposer ? (
 				<InlinePopoverFooterContainer
+					ref={overlayFooterRef}
 					className={
 						isFloatingComposer
 							? floatingFooterContainerClassName
@@ -1932,6 +1989,8 @@ function NoteComposerTranscriptPanelContent({
 	controller: NoteComposerController;
 }) {
 	const shouldRenderInlineComposer = controller.shouldShowInlinePanel;
+	const { footerHeight: overlayFooterHeight, footerRef: overlayFooterRef } =
+		useInlineFooterHeight();
 
 	return (
 		<>
@@ -1943,9 +2002,14 @@ function NoteComposerTranscriptPanelContent({
 					controller.isSidebarPresentation
 						? "px-2 pb-2"
 						: shouldRenderInlineComposer
-							? "px-4 pb-[120px]"
+							? "px-4"
 							: "px-4 pb-4",
 				)}
+				style={
+					!controller.isSidebarPresentation && shouldRenderInlineComposer
+						? { paddingBottom: overlayFooterHeight }
+						: undefined
+				}
 			>
 				<NoteTranscriptPanel controller={controller} />
 			</CardContent>
@@ -1957,6 +2021,7 @@ function NoteComposerTranscriptPanelContent({
 
 			{shouldRenderInlineComposer ? (
 				<TranscriptInlinePopoverFooter
+					containerRef={overlayFooterRef}
 					controller={controller}
 					isSpeechListening={controller.isSpeechListening}
 					speechControls={

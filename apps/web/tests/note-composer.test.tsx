@@ -787,6 +787,137 @@ describe("NoteComposer", () => {
 		expect(reservedSpeechSpacer).toBeUndefined();
 	});
 
+	it("uses the measured inline footer height for chat panel padding", async () => {
+		class ResizeObserverMock {
+			callback: ResizeObserverCallback;
+
+			constructor(callback: ResizeObserverCallback) {
+				this.callback = callback;
+				resizeObservers.push(this);
+			}
+
+			observe() {}
+
+			unobserve() {}
+
+			disconnect() {}
+
+			trigger() {
+				this.callback([], this as unknown as ResizeObserver);
+			}
+		}
+
+		const originalResizeObserver = globalThis.ResizeObserver;
+		const resizeObservers: ResizeObserverMock[] = [];
+		globalThis.ResizeObserver =
+			ResizeObserverMock as unknown as typeof ResizeObserver;
+
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [
+					{
+						id: "assistant-1",
+						role: "assistant",
+						partsJson: JSON.stringify([
+							{
+								type: "text",
+								text: "Reply with one of these, or tell me a different project name.",
+							},
+						]),
+					},
+				];
+			}
+
+			if (index === 2) {
+				return {
+					title: "Support bot prd options",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+
+		await screen.findByPlaceholderText("Continue chat");
+		const inlineFooter = document.querySelector(
+			'[data-slot="note-composer-inline-footer"]',
+		) as HTMLDivElement | null;
+		const chatPanelContent =
+			inlineFooter?.previousElementSibling as HTMLDivElement | null;
+
+		expect(inlineFooter).not.toBeNull();
+		expect(chatPanelContent).not.toBeNull();
+		if (!inlineFooter || !chatPanelContent) {
+			throw new Error("Inline footer layout not found");
+		}
+
+		vi.spyOn(inlineFooter, "getBoundingClientRect").mockImplementation(
+			() =>
+				({
+					bottom: 0,
+					height: 156,
+					left: 0,
+					right: 0,
+					top: 0,
+					width: 0,
+					x: 0,
+					y: 0,
+					toJSON: () => ({}),
+				}) as DOMRect,
+		);
+
+		resizeObservers.at(-1)?.trigger();
+
+		await waitFor(() => {
+			expect(chatPanelContent?.style.paddingBottom).toBe("156px");
+		});
+
+		globalThis.ResizeObserver = originalResizeObserver;
+	});
+
 	it("hides generate notes while inline chat is open", async () => {
 		let queryCall = 0;
 

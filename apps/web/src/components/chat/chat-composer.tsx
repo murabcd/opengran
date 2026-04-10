@@ -197,7 +197,10 @@ export function ChatComposer({
 				<TooltipContent>Add context</TooltipContent>
 			</Tooltip>
 
-			<PopoverContent className="p-0" align="start">
+			<PopoverContent
+				className="p-0 [&_[data-slot=scroll-area]]:w-full [&_[data-slot=scroll-area-viewport]]:w-full [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:w-full [&_[data-slot=scroll-area-viewport]>div]:min-w-0 [&_[data-slot=command-list]]:w-full [&_[data-slot=command-list]]:min-w-0"
+				align="start"
+			>
 				<Command>
 					<CommandInput
 						placeholder="Search notes..."
@@ -220,9 +223,17 @@ export function ChatComposer({
 										key={document.id}
 										value={`${document.id} ${document.title}`}
 										onSelect={() => onAddMention(document.id)}
+										className="w-full cursor-pointer gap-1.5 overflow-hidden rounded-md px-1.5"
 									>
-										<document.icon />
-										<span className="truncate">{document.title}</span>
+										<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+											<document.icon className="size-4" />
+										</div>
+										<div
+											className="min-w-0 flex-1 truncate"
+											title={document.title}
+										>
+											{document.title}
+										</div>
 									</CommandItem>
 								))}
 							</CommandGroup>
