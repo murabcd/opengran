@@ -343,13 +343,6 @@ const getRecipeContext = (selectedRecipe) => {
 	].join("\n\n");
 };
 
-const logNoteChatDebug = (stage, payload) => {
-	console.info("[note-chat]", {
-		stage,
-		...payload,
-	});
-};
-
 const getMessageText = (message) =>
 	clampWhitespace(
 		message.parts
@@ -594,27 +587,6 @@ const handleChatRequest = async (request, response) => {
 
 	const selectedModel = resolveChatModel(model);
 	const resolvedWorkspaceId = workspaceId ?? null;
-	const isNoteChatRequest = Boolean(
-		recipeSlug ||
-			noteContext?.noteId ||
-			noteContext?.title ||
-			noteContext?.text,
-	);
-
-	if (isNoteChatRequest) {
-		logNoteChatDebug("request", {
-			chatId: id ?? null,
-			workspaceId: resolvedWorkspaceId,
-			recipeSlug: recipeSlug ?? null,
-			noteId: noteContext?.noteId ?? null,
-			noteTitle: noteContext?.title ?? "",
-			noteTextLength: noteContext?.text?.length ?? 0,
-			hasSingleMessage: Boolean(message),
-			messageCount: messages.length,
-			hasConvexToken: Boolean(convexToken),
-		});
-	}
-
 	const convexClient =
 		convexToken && id && resolvedWorkspaceId
 			? new ConvexHttpClient(getConvexUrl(), { auth: convexToken })
@@ -700,23 +672,6 @@ const handleChatRequest = async (request, response) => {
 		workspaceId: resolvedWorkspaceId,
 	});
 	const recipeContext = getRecipeContext(selectedRecipe);
-
-	if (isNoteChatRequest) {
-		logNoteChatDebug("resolved-context", {
-			chatId: id ?? null,
-			workspaceId: resolvedWorkspaceId,
-			resolvedNoteId: resolvedNoteId ?? null,
-			recipeSlug: recipeSlug ?? null,
-			selectedRecipeSlug: selectedRecipe?.slug ?? null,
-			selectedRecipeName: selectedRecipe?.name ?? null,
-			notesContextLength: notesContext.length,
-			attachedNoteContextLength: attachedNoteContext.length,
-			recipeContextLength: recipeContext.length,
-			lastUserMessagePreview: lastUserMessage
-				? truncate(getMessageText(lastUserMessage), 120)
-				: "",
-		});
-	}
 
 	const systemPrompt = buildChatSystemPrompt({
 		notesContext,

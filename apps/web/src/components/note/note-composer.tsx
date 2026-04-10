@@ -724,16 +724,6 @@ const useNoteComposerController = ({
 				recipeSlug: selectedRecipe?.slug ?? null,
 			};
 
-			console.info("[note-chat] send", {
-				chatId: currentChatId,
-				noteId: noteContext.noteId ?? null,
-				noteTitle: noteContext.title ?? "",
-				noteTextLength: noteContext.text?.length ?? 0,
-				recipeSlug: selectedRecipe?.slug ?? null,
-				messageLength: nextMessage.length,
-				hasConvexToken: Boolean(requestBody.convexToken),
-			});
-
 			void sendMessage(
 				{ text: nextMessage },
 				{
@@ -1250,11 +1240,6 @@ function NoteChatHeader({
 	presentationMode: NoteChatPresentation;
 	sidebarCompact: boolean;
 }) {
-	const selectedChatId =
-		(noteChats?.some((chat) => chat.chatId === currentChatId) ?? false)
-			? currentChatId
-			: undefined;
-
 	const chatModeIcon =
 		presentationMode === "inline" ? (
 			<PanelBottomDashed className="size-4" />
@@ -1272,7 +1257,7 @@ function NoteChatHeader({
 			)}
 		>
 			<div className="flex min-w-0 flex-1 items-center gap-2">
-				<Select value={selectedChatId} onValueChange={onSelectChat}>
+				<Select value={currentChatId} onValueChange={onSelectChat}>
 					<SelectTrigger
 						size="sm"
 						title={chatTitle}

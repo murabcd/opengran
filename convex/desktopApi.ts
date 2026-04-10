@@ -431,13 +431,6 @@ const getRecipeContext = (
 	].join("\n\n");
 };
 
-const logNoteChatDebug = (stage: string, payload: Record<string, unknown>) => {
-	console.info("[note-chat]", {
-		stage,
-		...payload,
-	});
-};
-
 const resolveChatModel = (value?: string | null) =>
 	chatModels.find((model) => model.id === value || model.model === value) ??
 	fallbackChatModel;
@@ -502,27 +495,6 @@ export const handleChatRequest = async (request: Request) => {
 
 	const resolvedWorkspaceId =
 		(workspaceId as Id<"workspaces"> | null | undefined) ?? null;
-	const isNoteChatRequest = Boolean(
-		recipeSlug ||
-			noteContext?.noteId ||
-			noteContext?.title ||
-			noteContext?.text,
-	);
-
-	if (isNoteChatRequest) {
-		logNoteChatDebug("request", {
-			chatId: id ?? null,
-			workspaceId: resolvedWorkspaceId,
-			recipeSlug: recipeSlug ?? null,
-			noteId: noteContext?.noteId ?? null,
-			noteTitle: noteContext?.title ?? "",
-			noteTextLength: noteContext?.text?.length ?? 0,
-			hasSingleMessage: Boolean(message),
-			messageCount: messages.length,
-			hasConvexToken: Boolean(convexToken),
-		});
-	}
-
 	if (convexToken && !resolvedWorkspaceId) {
 		return jsonResponse(400, {
 			error: "workspaceId is required.",
@@ -621,23 +593,6 @@ export const handleChatRequest = async (request: Request) => {
 		workspaceId,
 	});
 	const recipeContext = getRecipeContext(selectedRecipe);
-
-	if (isNoteChatRequest) {
-		logNoteChatDebug("resolved-context", {
-			chatId: id ?? null,
-			workspaceId: resolvedWorkspaceId,
-			resolvedNoteId: resolvedNoteId ?? null,
-			recipeSlug: recipeSlug ?? null,
-			selectedRecipeSlug: selectedRecipe?.slug ?? null,
-			selectedRecipeName: selectedRecipe?.name ?? null,
-			notesContextLength: notesContext.length,
-			attachedNoteContextLength: attachedNoteContext.length,
-			recipeContextLength: recipeContext.length,
-			lastUserMessagePreview: lastUserMessage
-				? truncate(getMessageText(lastUserMessage), 120)
-				: "",
-		});
-	}
 
 	const userProfileContext =
 		convexClient &&
