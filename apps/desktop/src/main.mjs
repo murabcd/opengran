@@ -354,12 +354,41 @@ const ensureDockVisible = () => {
 	applyDockIcon();
 };
 
+const ensureAppActive = () => {
+	if (process.platform !== "darwin") {
+		return;
+	}
+
+	app.show();
+	app.focus({ steal: true });
+};
+
 const ensureDockHidden = () => {
 	if (process.platform !== "darwin") {
 		return;
 	}
 
 	app.dock?.hide();
+};
+
+const hideMainWindow = () => {
+	if (!mainWindow || mainWindow.isDestroyed()) {
+		return;
+	}
+
+	mainWindow.hide();
+};
+
+const hideApp = ({ hideDock = false } = {}) => {
+	hideMainWindow();
+
+	if (process.platform === "darwin") {
+		app.hide();
+	}
+
+	if (hideDock) {
+		ensureDockHidden();
+	}
 };
 
 const getConvexUrl = () => {
@@ -4413,6 +4442,7 @@ const showMainWindow = async (options = {}) => {
 	}
 
 	ensureDockVisible();
+	ensureAppActive();
 	mainWindow.show();
 	mainWindow.focus();
 };
@@ -4478,6 +4508,7 @@ const handleDesktopAuthCallback = async (callbackUrl) => {
 	}
 
 	ensureDockVisible();
+	ensureAppActive();
 	mainWindow.show();
 	mainWindow.focus();
 };
@@ -4550,8 +4581,7 @@ const createMainWindow = async (targetUrl) => {
 		}
 
 		event.preventDefault();
-		mainWindow.hide();
-		ensureDockHidden();
+		hideMainWindow();
 	});
 
 	mainWindow.on("closed", () => {
@@ -5415,7 +5445,13 @@ const buildApplicationMenu = () => {
 				{ type: "separator" },
 				{ role: "services" },
 				{ type: "separator" },
-				{ role: "hide" },
+				{
+					label: `Hide ${app.getName()}`,
+					accelerator: "Command+H",
+					click: () => {
+						hideApp();
+					},
+				},
 				{ role: "hideOthers" },
 				{ role: "unhide" },
 				{ type: "separator" },
@@ -5430,7 +5466,17 @@ const buildApplicationMenu = () => {
 		},
 		{ role: "editMenu" },
 		{ role: "viewMenu" },
-		{ role: "windowMenu" },
+		{
+			role: "window",
+			submenu: [
+				{ role: "minimize" },
+				{ role: "zoom" },
+				{ type: "separator" },
+				{ role: "close" },
+				{ type: "separator" },
+				{ role: "front" },
+			],
+		},
 	]);
 };
 
@@ -5448,15 +5494,7 @@ const handleTrayQuit = async () => {
 		return;
 	}
 
-	if (mainWindow) {
-		mainWindow.hide();
-		ensureDockHidden();
-		return;
-	}
-
-	await createMainWindow();
-	mainWindow.hide();
-	ensureDockHidden();
+	hideApp({ hideDock: true });
 };
 
 const buildTrayMenu = () =>
