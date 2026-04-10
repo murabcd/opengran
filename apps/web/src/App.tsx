@@ -3844,7 +3844,7 @@ function HomeView({
 												</EmptyTitle>
 												<EmptyDescription>
 													{upcomingCalendarStatus === "not_connected"
-														? "Link Google Calendar or Yandex Calendar in settings to see upcoming meetings."
+														? "Link your calendar in settings to see upcoming meetings."
 														: upcomingCalendarStatus === "error"
 															? "Try reconnecting your calendars or refresh the app."
 															: "Check your visible calendars for today"}
