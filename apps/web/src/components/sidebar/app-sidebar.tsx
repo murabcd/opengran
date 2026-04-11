@@ -60,7 +60,7 @@ const navigation = [
 		icon: UsersRound,
 	},
 	{
-		title: "Chat",
+		title: "Ask AI",
 		action: "view",
 		view: "chat",
 		icon: MessageCircle,

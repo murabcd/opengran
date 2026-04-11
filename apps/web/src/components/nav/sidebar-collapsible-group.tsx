@@ -70,7 +70,7 @@ export function SidebarCollapsibleGroup({
 					{actionTooltip && action ? (
 						<Tooltip>
 							<TooltipTrigger asChild>{action}</TooltipTrigger>
-							<TooltipContent side="bottom" align="end" sideOffset={8}>
+							<TooltipContent side="bottom" align="center" sideOffset={8}>
 								{actionTooltip}
 							</TooltipContent>
 						</Tooltip>

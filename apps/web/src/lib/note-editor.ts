@@ -1,5 +1,9 @@
 import type { JSONContent } from "@tiptap/core";
 import Placeholder from "@tiptap/extension-placeholder";
+import {
+	type TableOfContentData,
+	TableOfContents,
+} from "@tiptap/extension-table-of-contents";
 import { Markdown, MarkdownManager } from "@tiptap/markdown";
 import type { Node as ProseMirrorNode, Schema } from "@tiptap/pm/model";
 import { Node as PMNode, Slice } from "@tiptap/pm/model";
@@ -190,8 +194,20 @@ export const normalizePastedSlice = (slice: Slice, schema: Schema) => {
 	return new Slice(normalizedNode.content, slice.openStart, slice.openEnd);
 };
 
-export const createNoteEditorExtensions = () => [
+type NoteEditorExtensionsOptions = {
+	onTableOfContentsUpdate?: (anchors: TableOfContentData) => void;
+	getTableOfContentsScrollParent?: () => HTMLElement | Window;
+};
+
+export const createNoteEditorExtensions = (
+	options: NoteEditorExtensionsOptions = {},
+) => [
 	StarterKit,
+	TableOfContents.configure({
+		anchorTypes: ["heading"],
+		onUpdate: options.onTableOfContentsUpdate,
+		scrollParent: options.getTableOfContentsScrollParent,
+	}),
 	Markdown.configure({
 		indentation: {
 			style: "space",

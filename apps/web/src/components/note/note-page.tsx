@@ -1,4 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
+import type {
+	TableOfContentData,
+	TableOfContentDataItem,
+} from "@tiptap/extension-table-of-contents";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { cn } from "@workspace/ui/lib/utils";
@@ -37,6 +41,7 @@ import {
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { NoteComposer } from "./note-composer";
+import { NoteTableOfContents } from "./note-table-of-contents";
 import { optimisticPatchNote } from "./optimistic-patch-note";
 import { writeRichTextToClipboard } from "./share-note";
 
@@ -186,17 +191,21 @@ const useNotePageController = ({
 	externalTitle,
 	onTitleChange,
 	onEditorActionsChange,
+	scrollParentRef,
 }: {
 	noteId: Id<"notes"> | null;
 	note?: Doc<"notes"> | null;
 	externalTitle?: string;
 	onTitleChange?: (title: string) => void;
 	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
+	scrollParentRef?: React.RefObject<HTMLDivElement | null>;
 }) => {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const [title, setTitle] = React.useState("");
 	const [content, setContent] = React.useState(EMPTY_DOCUMENT_STRING);
 	const [searchableText, setSearchableText] = React.useState("");
+	const [tableOfContents, setTableOfContents] =
+		React.useState<TableOfContentData>([]);
 	const [templateApplyState, setTemplateApplyState] = React.useState<{
 		isRunning: boolean;
 		templateName: string | null;
@@ -334,8 +343,16 @@ const useNotePageController = ({
 		[activeWorkspaceId, saveNote],
 	);
 
+	const getTableOfContentsScrollParent = React.useCallback(
+		() => scrollParentRef?.current ?? window,
+		[scrollParentRef],
+	);
+
 	const editor = useEditor({
-		extensions: createNoteEditorExtensions(),
+		extensions: createNoteEditorExtensions({
+			onTableOfContentsUpdate: setTableOfContents,
+			getTableOfContentsScrollParent,
+		}),
 		immediatelyRender: false,
 		autofocus: "end",
 		editorProps: {
@@ -352,6 +369,36 @@ const useNotePageController = ({
 			setSearchableText(editor.getText());
 		},
 	});
+
+	const syncTableOfContents = React.useCallback(() => {
+		if (!editor) {
+			return;
+		}
+
+		window.requestAnimationFrame(() => {
+			const updateTableOfContents = (
+				editor.commands as typeof editor.commands & {
+					updateTableOfContents?: () => void;
+				}
+			).updateTableOfContents;
+
+			if (!editor.isDestroyed && typeof updateTableOfContents === "function") {
+				updateTableOfContents();
+			}
+		});
+	}, [editor]);
+
+	const setEditorDocument = React.useCallback(
+		(nextDocument: JSONContent) => {
+			if (!editor) {
+				return;
+			}
+
+			editor.commands.setContent(nextDocument, { emitUpdate: false });
+			syncTableOfContents();
+		},
+		[editor, syncTableOfContents],
+	);
 
 	React.useEffect(() => {
 		nextNoteIdRef.current = noteId;
@@ -383,6 +430,7 @@ const useNotePageController = ({
 			lastSavedSnapshotRef.current = null;
 			latestSaveRequestIdRef.current = 0;
 			queuedSaveRef.current = null;
+			setTableOfContents([]);
 
 			if (editor && (!noteId || note === undefined)) {
 				applyDraftState({
@@ -390,7 +438,7 @@ const useNotePageController = ({
 					content: EMPTY_DOCUMENT_STRING,
 					searchableText: "",
 				});
-				editor.commands.setContent(EMPTY_DOCUMENT, { emitUpdate: false });
+				setEditorDocument(EMPTY_DOCUMENT);
 			}
 		}
 
@@ -414,18 +462,18 @@ const useNotePageController = ({
 				content: note.content,
 				searchableText: note.searchableText,
 			});
-			editor.commands.setContent(nextContent, { emitUpdate: false });
+			setEditorDocument(nextContent);
 		} else {
 			lastSavedSnapshotRef.current = createNoteSnapshot({
 				title: "",
 				content: EMPTY_DOCUMENT_STRING,
 				searchableText: "",
 			});
-			editor.commands.setContent(EMPTY_DOCUMENT, { emitUpdate: false });
+			setEditorDocument(EMPTY_DOCUMENT);
 		}
 
 		hasHydratedRef.current = true;
-	}, [applyDraftState, editor, note, noteId]);
+	}, [applyDraftState, editor, note, noteId, setEditorDocument]);
 
 	React.useEffect(() => {
 		if (!noteId || !hasHydratedRef.current) {
@@ -723,7 +771,7 @@ const useNotePageController = ({
 						? title
 						: enhancedNote.title.trim() || title;
 
-					editor.commands.setContent(nextDocument, { emitUpdate: false });
+					setEditorDocument(nextDocument);
 					setTitle(nextTitle);
 					setContent(nextContent);
 					setSearchableText(nextSearchableText);
@@ -732,7 +780,7 @@ const useNotePageController = ({
 					return true;
 				}
 
-				editor.commands.setContent(EMPTY_DOCUMENT, { emitUpdate: false });
+				setEditorDocument(EMPTY_DOCUMENT);
 				setContent(EMPTY_DOCUMENT_STRING);
 				setSearchableText("");
 
@@ -842,7 +890,7 @@ const useNotePageController = ({
 				const nextContent = JSON.stringify(nextDocument);
 				const nextSearchableText = structuredNoteToSearchableText(finalNote);
 
-				editor.commands.setContent(nextDocument, { emitUpdate: false });
+				setEditorDocument(nextDocument);
 				setContent(nextContent);
 				setSearchableText(nextSearchableText);
 				toast.success(`Rewrote note with ${template.name}`);
@@ -861,7 +909,7 @@ const useNotePageController = ({
 				} catch (revertError) {
 					console.error("Failed to revert note template", revertError);
 				}
-				editor.commands.setContent(previousDocument, { emitUpdate: false });
+				setEditorDocument(previousDocument);
 				setTitle(previousTitle);
 				setContent(previousContent);
 				setSearchableText(previousSearchableText);
@@ -881,6 +929,7 @@ const useNotePageController = ({
 			editor,
 			noteId,
 			requestStructuredNote,
+			setEditorDocument,
 			setNoteTemplate,
 			shouldPreserveStructuredNoteTitle,
 		],
@@ -987,7 +1036,7 @@ const useNotePageController = ({
 				const requestId = latestSaveRequestIdRef.current + 1;
 				latestSaveRequestIdRef.current = requestId;
 
-				editor.commands.setContent(nextDocument, { emitUpdate: false });
+				setEditorDocument(nextDocument);
 				setTitle(nextTitle);
 				setContent(nextContent);
 				setSearchableText(nextSearchableText);
@@ -1014,6 +1063,7 @@ const useNotePageController = ({
 			flushSave,
 			requestStructuredNote,
 			searchableText,
+			setEditorDocument,
 			setNoteTemplate,
 			shouldPreserveStructuredNoteTitle,
 			title,
@@ -1041,6 +1091,7 @@ const useNotePageController = ({
 		templateApplyState,
 		title,
 		titleTextareaRef,
+		tableOfContents,
 	};
 };
 
@@ -1052,6 +1103,7 @@ export function NotePage({
 	onAutoStartTranscriptionHandled,
 	onTitleChange,
 	onEditorActionsChange,
+	scrollParentRef,
 	stopTranscriptionWhenMeetingEnds = false,
 }: {
 	autoStartTranscription?: boolean;
@@ -1061,6 +1113,7 @@ export function NotePage({
 	onAutoStartTranscriptionHandled?: () => void;
 	onTitleChange?: (title: string) => void;
 	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
+	scrollParentRef?: React.RefObject<HTMLDivElement | null>;
 	stopTranscriptionWhenMeetingEnds?: boolean;
 }) {
 	const controller = useNotePageController({
@@ -1069,6 +1122,7 @@ export function NotePage({
 		externalTitle,
 		onTitleChange,
 		onEditorActionsChange,
+		scrollParentRef,
 	});
 	const composerNoteContext = React.useMemo(
 		() => ({
@@ -1079,79 +1133,123 @@ export function NotePage({
 	);
 	const shouldHideEmptyBodyPlaceholder =
 		!controller.title.trim() && !controller.searchableText.trim();
+	const handleTableOfContentsSelect = React.useCallback(
+		(anchor: TableOfContentDataItem) => {
+			const topOffset = 72;
+			const scrollParent = scrollParentRef?.current ?? window;
+
+			if (scrollParent instanceof HTMLElement) {
+				const nextTop =
+					anchor.dom.getBoundingClientRect().top -
+					scrollParent.getBoundingClientRect().top +
+					scrollParent.scrollTop -
+					topOffset;
+
+				scrollParent.scrollTo({
+					top: Math.max(0, nextTop),
+					behavior: "smooth",
+				});
+				return;
+			}
+
+			window.scrollTo({
+				top: Math.max(
+					0,
+					anchor.dom.getBoundingClientRect().top + window.scrollY - topOffset,
+				),
+				behavior: "smooth",
+			});
+		},
+		[scrollParentRef],
+	);
 
 	return (
 		<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
 			<div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
-				<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
-					<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
-						<div className="flex flex-col gap-6">
-							<Textarea
-								ref={controller.titleTextareaRef}
-								value={controller.title}
-								onChange={(event) => controller.setTitle(event.target.value)}
-								onKeyDown={(event) => {
-									if (event.key !== "Enter" || event.shiftKey) {
-										return;
-									}
+				<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-5xl flex-1 gap-4 md:min-h-[calc(100svh-5rem)]">
+					<div className="min-w-0 flex-1">
+						<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
+							<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
+								<div className="flex flex-col gap-6">
+									<Textarea
+										ref={controller.titleTextareaRef}
+										value={controller.title}
+										onChange={(event) =>
+											controller.setTitle(event.target.value)
+										}
+										onKeyDown={(event) => {
+											if (event.key !== "Enter" || event.shiftKey) {
+												return;
+											}
 
-									event.preventDefault();
-									controller.focusEditor();
-								}}
-								placeholder="New note"
-								aria-label="Note title"
-								rows={1}
-								className="note-title min-h-0 resize-none overflow-hidden rounded-none border-0 !bg-transparent px-0 py-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
-							/>
+											event.preventDefault();
+											controller.focusEditor();
+										}}
+										placeholder="New note"
+										aria-label="Note title"
+										rows={1}
+										className="note-title min-h-0 resize-none overflow-hidden rounded-none border-0 !bg-transparent px-0 py-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
+									/>
 
-							<EditorContent
-								editor={controller.editor}
-								className={cn(
-									"min-h-[320px] text-base text-foreground",
-									"[&_.ProseMirror]:min-h-[320px]",
-									shouldHideEmptyBodyPlaceholder &&
-										"note-editor--hide-placeholder",
-									controller.templateApplyState.isRunning && "hidden",
-								)}
-							/>
+									<EditorContent
+										editor={controller.editor}
+										className={cn(
+											"min-h-[320px] text-base text-foreground",
+											"[&_.ProseMirror]:min-h-[320px]",
+											shouldHideEmptyBodyPlaceholder &&
+												"note-editor--hide-placeholder",
+											controller.templateApplyState.isRunning && "hidden",
+										)}
+									/>
 
-							{controller.templateApplyState.isRunning ? (
-								controller.templateApplyState.streamedMarkdown.trim().length >
-								0 ? (
-									<Streamdown
-										className="note-streamdown min-h-[320px] text-base text-foreground"
-										controls={false}
-										caret="block"
-										isAnimating
-									>
-										{controller.templateApplyState.streamedMarkdown}
-									</Streamdown>
-								) : (
-									<div className="min-h-[320px] text-base text-muted-foreground">
-										<ShimmerText>Thinking</ShimmerText>
+									{controller.templateApplyState.isRunning ? (
+										controller.templateApplyState.streamedMarkdown.trim()
+											.length > 0 ? (
+											<Streamdown
+												className="note-streamdown min-h-[320px] text-base text-foreground"
+												controls={false}
+												caret="block"
+												isAnimating
+											>
+												{controller.templateApplyState.streamedMarkdown}
+											</Streamdown>
+										) : (
+											<div className="min-h-[320px] text-base text-muted-foreground">
+												<ShimmerText>Thinking</ShimmerText>
+											</div>
+										)
+									) : null}
+								</div>
+							</div>
+
+							<div className="sticky bottom-0 z-10 mt-auto h-0">
+								<div className="pointer-events-none absolute inset-x-0 bottom-0 -mx-4 bg-background pb-6 md:-mx-6">
+									<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
+										<NoteComposer
+											autoStartTranscription={autoStartTranscription}
+											getNoteContext={controller.getNoteContext}
+											noteContext={composerNoteContext}
+											onAutoStartTranscriptionHandled={
+												onAutoStartTranscriptionHandled
+											}
+											onAddMessageToNote={controller.appendChatResponseToNote}
+											onEnhanceTranscript={controller.handleEnhanceTranscript}
+											stopTranscriptionWhenMeetingEnds={
+												stopTranscriptionWhenMeetingEnds
+											}
+										/>
 									</div>
-								)
-							) : null}
+								</div>
+							</div>
 						</div>
 					</div>
 
-					<div className="sticky bottom-0 z-10 mt-auto h-0">
-						<div className="pointer-events-none absolute inset-x-0 bottom-0 -mx-4 bg-background pb-6 md:-mx-6">
-							<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
-								<NoteComposer
-									autoStartTranscription={autoStartTranscription}
-									getNoteContext={controller.getNoteContext}
-									noteContext={composerNoteContext}
-									onAutoStartTranscriptionHandled={
-										onAutoStartTranscriptionHandled
-									}
-									onAddMessageToNote={controller.appendChatResponseToNote}
-									onEnhanceTranscript={controller.handleEnhanceTranscript}
-									stopTranscriptionWhenMeetingEnds={
-										stopTranscriptionWhenMeetingEnds
-									}
-								/>
-							</div>
+					<div className="hidden xl:block xl:w-10 xl:shrink-0">
+						<div className="sticky top-1/2 -translate-y-1/2">
+							<NoteTableOfContents
+								anchors={controller.tableOfContents}
+								onSelect={handleTableOfContentsSelect}
+							/>
 						</div>
 					</div>
 				</div>

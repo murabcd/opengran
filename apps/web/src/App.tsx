@@ -3682,6 +3682,7 @@ function AppShellContent({
 					onAutoStartTranscriptionHandled={onAutoStartNoteCaptureHandled}
 					onTitleChange={onNoteTitleChange}
 					onEditorActionsChange={onNoteEditorActionsChange}
+					scrollParentRef={noteViewScrollRef}
 					stopTranscriptionWhenMeetingEnds={
 						shouldStopNoteCaptureWhenMeetingEnds
 					}
