@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { deriveFallbackChatTitle } from "../../../packages/ai/src/chat-titles.mjs";
 import {
 	buildApplyTemplatePrompt,
 	buildChatSystemPrompt,
 	buildEnhancedNotePrompt,
+	CHAT_TITLE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
 
 describe("prompt helpers", () => {
@@ -36,5 +38,21 @@ describe("prompt helpers", () => {
 				noteText: null,
 			}),
 		).not.toThrow();
+	});
+
+	it("tells chat title generation to preserve proper-name capitalization", () => {
+		expect(CHAT_TITLE_SYSTEM_PROMPT).toContain(
+			"Preserve the original capitalization of proper nouns",
+		);
+		expect(CHAT_TITLE_SYSTEM_PROMPT).toContain("OpenAI");
+		expect(CHAT_TITLE_SYSTEM_PROMPT).toContain("Cirrus Labs");
+	});
+
+	it("preserves organization and people name casing in fallback chat titles", () => {
+		expect(
+			deriveFallbackChatTitle({
+				userText: "why did OpenAI hire Sam Altman for GPT-5 work?",
+			}),
+		).toBe("OpenAI hire Sam Altman");
 	});
 });

@@ -375,4 +375,24 @@ describe("NoteActionsMenu", () => {
 
 		expect(toastSuccessMock).toHaveBeenCalledWith("Note moved to project");
 	});
+
+	it("shows cancel and rename actions in the note rename dialog", async () => {
+		const { NoteActionsMenu } = await import(
+			"../src/components/note/note-actions-menu"
+		);
+
+		render(
+			<NoteActionsMenu noteId={"note-1" as never}>
+				<button type="button">Open actions</button>
+			</NoteActionsMenu>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Open actions" }));
+		fireEvent.click(screen.getAllByRole("button", { name: "Rename" })[0]);
+
+		expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+		expect(
+			screen.getAllByRole("button", { name: "Rename" }).length,
+		).toBeGreaterThan(0);
+	});
 });

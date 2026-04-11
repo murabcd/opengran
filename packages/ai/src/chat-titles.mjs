@@ -6,12 +6,12 @@ const truncate = (value, maxLength) =>
 		? `${value.slice(0, maxLength - 1).trimEnd()}…`
 		: value;
 
-const toSentenceCase = (value) => {
+const uppercaseFirstCharacter = (value) => {
 	if (!value) {
 		return value;
 	}
 
-	return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+	return value.charAt(0).toUpperCase() + value.slice(1);
 };
 
 const normalizeComparisonText = (value) =>
@@ -49,6 +49,7 @@ const LEADING_FILLER_PATTERNS = [
 	/^i\s+need\s+(help\s+(with\s+)?)?/i,
 	/^i\s+want\s+to\s+/i,
 	/^how\s+do\s+i\s+/i,
+	/^why\s+(did|does|do|is|are|was|were|has|have|had|can|could|would|will)\s+/i,
 	/^what('?s| is)\s+/i,
 	/^tell\s+me\s+about\s+/i,
 	/^explain\s+/i,
@@ -116,7 +117,9 @@ export const deriveFallbackChatTitle = ({
 		return "Quick chat";
 	}
 
-	return toSentenceCase(truncate(candidate.split(/\s+/).slice(0, 4).join(" "), maxLength));
+	return uppercaseFirstCharacter(
+		truncate(candidate.split(/\s+/).slice(0, 4).join(" "), maxLength),
+	);
 };
 
 export const finalizeGeneratedChatTitle = ({

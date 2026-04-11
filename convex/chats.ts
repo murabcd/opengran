@@ -113,19 +113,19 @@ const truncate = (value: string, maxLength: number) =>
 		? `${value.slice(0, maxLength - 1).trimEnd()}…`
 		: value;
 
-const toSentenceCase = (value: string) => {
+const uppercaseFirstCharacter = (value: string) => {
 	if (!value) {
 		return value;
 	}
 
-	return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+	return value.charAt(0).toUpperCase() + value.slice(1);
 };
 
 const normalizeChatTitle = (value: string | undefined) => {
 	const normalized = clampWhitespace(value ?? "");
 
 	return normalized
-		? truncate(toSentenceCase(normalized), MAX_CHAT_TITLE_LENGTH)
+		? truncate(uppercaseFirstCharacter(normalized), MAX_CHAT_TITLE_LENGTH)
 		: "New chat";
 };
 
@@ -718,9 +718,7 @@ export const updateTitle = mutation({
 		}
 
 		const normalizedTitle = normalizeChatTitle(args.title);
-		const nextTitle = shouldReplaceChatTitle(chat, normalizedTitle)
-			? normalizedTitle
-			: chat.title;
+		const nextTitle = normalizedTitle;
 
 		if (nextTitle !== chat.title) {
 			await ctx.db.patch(chat._id, {

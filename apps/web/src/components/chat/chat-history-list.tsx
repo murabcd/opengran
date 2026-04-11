@@ -1,10 +1,4 @@
 import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@workspace/ui/components/dropdown-menu";
-import {
 	Empty,
 	EmptyDescription,
 	EmptyHeader,
@@ -13,10 +7,10 @@ import {
 } from "@workspace/ui/components/empty";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
-import { MessageCircle, MoreHorizontal, Trash2 } from "lucide-react";
-import * as React from "react";
+import { MessageCircle, MoreHorizontal } from "lucide-react";
 import { getChatId } from "@/lib/chat";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
+import { ChatActionsMenu } from "./chat-actions-menu";
 
 type ChatHistoryListProps = {
 	chats: Array<Doc<"chats">>;
@@ -120,7 +114,6 @@ function ChatHistoryItem({
 	onOpenChat: (chatId: string) => void;
 	onMoveToTrash: (chatId: string) => void;
 }) {
-	const [menuOpen, setMenuOpen] = React.useState(false);
 	const storedChatId = getChatId(chat);
 	const preview = chat.authorName?.trim() || "Unknown user";
 	const createdTime = chatCreatedTimeFormatter.format(
@@ -160,32 +153,17 @@ function ChatHistoryItem({
 					</div>
 				</div>
 			</button>
-			<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-				<DropdownMenuTrigger asChild>
-					<button
-						type="button"
-						data-chat-actions
-						className="flex aspect-square size-5 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground opacity-0 outline-hidden transition-[color,opacity] group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
-						aria-label={`Open actions for ${chat.title || "chat"}`}
-						onClick={(event) => event.stopPropagation()}
-					>
-						<MoreHorizontal className="size-4" />
-					</button>
-				</DropdownMenuTrigger>
-				<DropdownMenuContent align="end">
-					<DropdownMenuItem
-						variant="destructive"
-						className="cursor-pointer"
-						onSelect={() => {
-							setMenuOpen(false);
-							onMoveToTrash(storedChatId);
-						}}
-					>
-						<Trash2 />
-						Move to trash
-					</DropdownMenuItem>
-				</DropdownMenuContent>
-			</DropdownMenu>
+			<ChatActionsMenu chat={chat} onMoveToTrash={onMoveToTrash}>
+				<button
+					type="button"
+					data-chat-actions
+					className="flex aspect-square size-5 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground opacity-0 outline-hidden transition-[color,opacity] group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+					aria-label={`Open actions for ${chat.title || "chat"}`}
+					onClick={(event) => event.stopPropagation()}
+				>
+					<MoreHorizontal className="size-4" />
+				</button>
+			</ChatActionsMenu>
 		</div>
 	);
 }

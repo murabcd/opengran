@@ -856,7 +856,14 @@ function NoteRenameEditor({
 						onCancel={onRenameCancel}
 					/>
 				</div>
-				<div className="flex justify-end">
+				<div className="flex justify-end gap-2">
+					<Button
+						variant="ghost"
+						onClick={onRenameCancel}
+						disabled={isRenaming}
+					>
+						Cancel
+					</Button>
 					<Button onClick={onRename} disabled={isRenaming}>
 						{isRenaming ? "Renaming..." : "Rename"}
 					</Button>
