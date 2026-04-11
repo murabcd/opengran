@@ -879,6 +879,7 @@ function NoteProjectMoveSubmenu({
 }) {
 	const [open, setOpen] = React.useState(false);
 	const [searchValue, setSearchValue] = React.useState("");
+	const searchInputRef = React.useRef<HTMLInputElement>(null);
 
 	React.useEffect(() => {
 		if (open) {
@@ -886,6 +887,16 @@ function NoteProjectMoveSubmenu({
 		}
 
 		setSearchValue("");
+	}, [open]);
+
+	React.useEffect(() => {
+		if (!open) {
+			return;
+		}
+
+		requestAnimationFrame(() => {
+			searchInputRef.current?.focus();
+		});
 	}, [open]);
 
 	return (
@@ -898,7 +909,7 @@ function NoteProjectMoveSubmenu({
 				<DropdownMenuSubContent className="w-72 border-input/30 p-0">
 					<Command>
 						<CommandInput
-							autoFocus
+							ref={searchInputRef}
 							placeholder="Move note to..."
 							value={searchValue}
 							onValueChange={setSearchValue}

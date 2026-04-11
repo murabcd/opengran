@@ -188,6 +188,14 @@ const getChatText = (message: UIMessage) =>
 
 const createDraftChatId = (): string => crypto.randomUUID();
 
+const resolveStateUpdate = <T,>(
+	value: React.SetStateAction<T>,
+	currentValue: T,
+): T =>
+	typeof value === "function"
+		? (value as (previousValue: T) => T)(currentValue)
+		: value;
+
 const useNoteComposerController = ({
 	noteContext,
 	getNoteContext,
@@ -208,10 +216,10 @@ const useNoteComposerController = ({
 	} = useSidebar();
 	const [message, setMessage] = React.useState("");
 	const [, setIsExpanded] = React.useState(false);
-	const [panelMode, setPanelMode] = React.useState<
+	const [panelModeState, setPanelModeState] = React.useState<
 		"chat" | "transcript" | null
 	>(null);
-	const [presentationMode, setPresentationMode] =
+	const [presentationModeState, setPresentationModeState] =
 		React.useState<NoteChatPresentation>("inline");
 	const [currentChatId, setCurrentChatId] = React.useState<string>(() =>
 		createDraftChatId(),
@@ -231,8 +239,12 @@ const useNoteComposerController = ({
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 	const { containerRef: chatViewportRef } = useStickyScrollToBottom();
 	const previousSpeechListeningRef = React.useRef(false);
+	const panelModeRef = React.useRef(panelModeState);
+	const presentationModeRef = React.useRef(presentationModeState);
 	const shouldFocusInlineChatRef = React.useRef(false);
 	const noteId = (noteContext.noteId as Id<"notes"> | null) ?? null;
+	const panelMode = panelModeState;
+	const presentationMode = presentationModeState;
 	const readNoteContext = React.useCallback(
 		() =>
 			getNoteContext?.() ?? {
@@ -533,6 +545,34 @@ const useNoteComposerController = ({
 		[isMobile, setRightOpen, setRightOpenMobile],
 	);
 
+	const setPanelMode = React.useCallback(
+		(nextValue: React.SetStateAction<"chat" | "transcript" | null>) => {
+			setPanelModeState((currentValue) => {
+				const resolvedValue = resolveStateUpdate(nextValue, currentValue);
+				panelModeRef.current = resolvedValue;
+				setHasRightSidebar(
+					resolvedValue === "chat" && presentationModeRef.current !== "inline",
+				);
+				return resolvedValue;
+			});
+		},
+		[setHasRightSidebar],
+	);
+
+	const setPresentationMode = React.useCallback(
+		(nextValue: React.SetStateAction<NoteChatPresentation>) => {
+			setPresentationModeState((currentValue) => {
+				const resolvedValue = resolveStateUpdate(nextValue, currentValue);
+				presentationModeRef.current = resolvedValue;
+				setHasRightSidebar(
+					panelModeRef.current === "chat" && resolvedValue !== "inline",
+				);
+				return resolvedValue;
+			});
+		},
+		[setHasRightSidebar],
+	);
+
 	const openRightSidebar = React.useCallback(
 		(mode: Exclude<NoteChatPresentation, "inline">) => {
 			setPresentationMode(mode);
@@ -540,12 +580,25 @@ const useNoteComposerController = ({
 			setRightSidebarOpen(true);
 			setPanelMode("chat");
 		},
-		[setRightMode, setRightSidebarOpen],
+		[setPanelMode, setPresentationMode, setRightMode, setRightSidebarOpen],
 	);
 
 	const closeRightSidebar = React.useCallback(() => {
 		setRightSidebarOpen(false);
 	}, [setRightSidebarOpen]);
+
+	const resetComposerForNoteChange = React.useCallback(() => {
+		setCurrentChatId(createDraftChatId());
+		setMessages([]);
+		setMessage("");
+		setIsExpanded(false);
+		setPanelMode(null);
+		setSelectedRecipeSlug(null);
+		setRecipePopoverOpen(false);
+		setReactionsByMessageId({});
+		resetTextareaHeight();
+		closeRightSidebar();
+	}, [closeRightSidebar, resetTextareaHeight, setMessages, setPanelMode]);
 
 	React.useEffect(() => {
 		if (previousNoteIdRef.current === noteId) {
@@ -559,24 +612,8 @@ const useNoteComposerController = ({
 			stop();
 		}
 
-		setCurrentChatId(createDraftChatId());
-		setMessages([]);
-		setMessage("");
-		setIsExpanded(false);
-		setPanelMode(null);
-		setSelectedRecipeSlug(null);
-		setRecipePopoverOpen(false);
-		setReactionsByMessageId({});
-		resetTextareaHeight();
-		closeRightSidebar();
-	}, [
-		closeRightSidebar,
-		isChatLoading,
-		noteId,
-		resetTextareaHeight,
-		setMessages,
-		stop,
-	]);
+		resetComposerForNoteChange();
+	}, [isChatLoading, noteId, resetComposerForNoteChange, stop]);
 
 	React.useEffect(() => {
 		if (
@@ -586,10 +623,6 @@ const useNoteComposerController = ({
 			setSelectedRecipeSlug(null);
 		}
 	}, [recipes, selectedRecipeSlug]);
-
-	React.useEffect(() => {
-		setHasRightSidebar(panelMode === "chat" && presentationMode !== "inline");
-	}, [panelMode, presentationMode, setHasRightSidebar]);
 
 	React.useEffect(
 		() => () => {
@@ -609,7 +642,7 @@ const useNoteComposerController = ({
 		}
 
 		previousSpeechListeningRef.current = isCurrentNoteSpeechListening;
-	}, [closeRightSidebar, isCurrentNoteSpeechListening]);
+	}, [closeRightSidebar, isCurrentNoteSpeechListening, setPanelMode]);
 
 	React.useEffect(() => {
 		if (presentationMode === "inline") {
@@ -619,7 +652,7 @@ const useNoteComposerController = ({
 		if (!isRightSidebarOpen && panelMode === "chat") {
 			setPanelMode(null);
 		}
-	}, [isRightSidebarOpen, panelMode, presentationMode]);
+	}, [isRightSidebarOpen, panelMode, presentationMode, setPanelMode]);
 
 	React.useEffect(() => {
 		if (
@@ -695,7 +728,7 @@ const useNoteComposerController = ({
 		return () => {
 			document.removeEventListener("pointerdown", handlePointerDown);
 		};
-	}, [panelMode, shouldShowInlinePanel]);
+	}, [panelMode, setPanelMode, shouldShowInlinePanel]);
 
 	const openDraftChat = React.useCallback(() => {
 		if (isChatLoading) {
@@ -712,7 +745,14 @@ const useNoteComposerController = ({
 		}
 
 		openRightSidebar(presentationMode);
-	}, [isChatLoading, openRightSidebar, presentationMode, setMessages, stop]);
+	}, [
+		isChatLoading,
+		openRightSidebar,
+		presentationMode,
+		setMessages,
+		setPanelMode,
+		stop,
+	]);
 
 	const handleSend = React.useCallback(async () => {
 		const nextMessage = message.trim();
@@ -765,6 +805,7 @@ const useNoteComposerController = ({
 		resetTextareaHeight,
 		selectedRecipe?.slug,
 		sendMessage,
+		setPanelMode,
 	]);
 
 	const handleSubmit = async (event: React.FormEvent) => {
@@ -846,7 +887,14 @@ const useNoteComposerController = ({
 		setCurrentChatId(latestNoteChat.chatId);
 		shouldFocusInlineChatRef.current = true;
 		setPanelMode("chat");
-	}, [closeRightSidebar, isChatLoading, latestNoteChat, stop]);
+	}, [
+		closeRightSidebar,
+		isChatLoading,
+		latestNoteChat,
+		setPanelMode,
+		setPresentationMode,
+		stop,
+	]);
 
 	return {
 		autoStartKey: transcriptSession.autoStartKey,

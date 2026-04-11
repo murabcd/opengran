@@ -221,6 +221,15 @@ const useNotePageController = ({
 		isApplyingTemplate: false,
 		canShowTemplateSelect: false,
 	});
+	const applyDraftState = React.useCallback(
+		(nextDraft: { title: string; content: string; searchableText: string }) => {
+			setTitle(nextDraft.title);
+			onTitleChange?.(nextDraft.title);
+			setContent(nextDraft.content);
+			setSearchableText(nextDraft.searchableText);
+		},
+		[onTitleChange],
+	);
 	const hasHydratedRef = React.useRef(false);
 	const hydratedNoteIdRef = React.useRef<Id<"notes"> | null>(null);
 	const suppressNextTitleChangeRef = React.useRef(false);
@@ -376,10 +385,11 @@ const useNotePageController = ({
 			queuedSaveRef.current = null;
 
 			if (editor && (!noteId || note === undefined)) {
-				setTitle("");
-				onTitleChange?.("");
-				setContent(EMPTY_DOCUMENT_STRING);
-				setSearchableText("");
+				applyDraftState({
+					title: "",
+					content: EMPTY_DOCUMENT_STRING,
+					searchableText: "",
+				});
 				editor.commands.setContent(EMPTY_DOCUMENT, { emitUpdate: false });
 			}
 		}
@@ -394,10 +404,11 @@ const useNotePageController = ({
 				editor.state.schema,
 			);
 
-			setTitle(note.title);
-			onTitleChange?.(note.title);
-			setContent(note.content);
-			setSearchableText(note.searchableText);
+			applyDraftState({
+				title: note.title,
+				content: note.content,
+				searchableText: note.searchableText,
+			});
 			lastSavedSnapshotRef.current = createNoteSnapshot({
 				title: note.title,
 				content: note.content,
@@ -414,7 +425,7 @@ const useNotePageController = ({
 		}
 
 		hasHydratedRef.current = true;
-	}, [editor, note, noteId, onTitleChange]);
+	}, [applyDraftState, editor, note, noteId]);
 
 	React.useEffect(() => {
 		if (!noteId || !hasHydratedRef.current) {

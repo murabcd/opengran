@@ -75,6 +75,77 @@ type ProjectWithNotes = {
 	notes: Array<Doc<"notes">>;
 };
 
+type ProjectItemState = {
+	confirmOpen: boolean;
+	isOpen: boolean;
+	menuOpen: boolean;
+	renameOpen: boolean;
+	renameValue: string;
+};
+
+type ProjectItemAction =
+	| { type: "setConfirmOpen"; value: boolean }
+	| { type: "setOpen"; value: boolean }
+	| { type: "setMenuOpen"; value: boolean }
+	| { type: "setRenameOpen"; value: boolean }
+	| { type: "setRenameValue"; value: string }
+	| { type: "openRename"; value: string }
+	| { type: "closeRename"; value: string };
+
+const createProjectItemState = (projectName: string): ProjectItemState => ({
+	confirmOpen: false,
+	isOpen: false,
+	menuOpen: false,
+	renameOpen: false,
+	renameValue: projectName,
+});
+
+function projectItemReducer(
+	state: ProjectItemState,
+	action: ProjectItemAction,
+): ProjectItemState {
+	switch (action.type) {
+		case "setConfirmOpen":
+			return {
+				...state,
+				confirmOpen: action.value,
+			};
+		case "setOpen":
+			return {
+				...state,
+				isOpen: action.value,
+			};
+		case "setMenuOpen":
+			return {
+				...state,
+				menuOpen: action.value,
+			};
+		case "setRenameOpen":
+			return {
+				...state,
+				renameOpen: action.value,
+			};
+		case "setRenameValue":
+			return {
+				...state,
+				renameValue: action.value,
+			};
+		case "openRename":
+			return {
+				...state,
+				menuOpen: false,
+				renameOpen: true,
+				renameValue: action.value,
+			};
+		case "closeRename":
+			return {
+				...state,
+				renameOpen: false,
+				renameValue: action.value,
+			};
+	}
+}
+
 export function NavProjects({
 	projects,
 	notes,
@@ -241,16 +312,18 @@ function ProjectSidebarItem({
 }) {
 	const hasNotes = notes.length > 0;
 	const hasActiveNote = notes.some((note) => note._id === currentNoteId);
-	const [open, setOpen] = React.useState(hasActiveNote);
-	const [menuOpen, setMenuOpen] = React.useState(false);
-	const [renameOpen, setRenameOpen] = React.useState(false);
-	const [renameValue, setRenameValue] = React.useState(project.name);
+	const [state, dispatch] = React.useReducer(
+		projectItemReducer,
+		project.name,
+		createProjectItemState,
+	);
 	const renameInputRef = React.useRef<HTMLInputElement>(null);
 	const preventMenuCloseAutoFocusRef = React.useRef(false);
 	const ignoreInitialRenameInteractOutsideRef = React.useRef(false);
-	const [confirmOpen, setConfirmOpen] = React.useState(false);
 	const [isRenaming, setIsRenaming] = React.useState(false);
 	const [isRemoving, setIsRemoving] = React.useState(false);
+	const open = hasActiveNote || state.isOpen;
+	const renameValue = state.renameOpen ? state.renameValue : project.name;
 	const renameProject = useMutation(api.projects.rename).withOptimisticUpdate(
 		(localStore, args) => {
 			optimisticUpdateProjectList(localStore, args.workspaceId, (projects) =>
@@ -275,20 +348,6 @@ function ProjectSidebarItem({
 		},
 	);
 
-	React.useEffect(() => {
-		if (hasActiveNote) {
-			setOpen(true);
-		}
-	}, [hasActiveNote]);
-
-	React.useEffect(() => {
-		if (renameOpen) {
-			return;
-		}
-
-		setRenameValue(project.name);
-	}, [project.name, renameOpen]);
-
 	const handleRename = React.useCallback(async () => {
 		if (!workspaceId || isRenaming) {
 			return;
@@ -308,8 +367,7 @@ function ProjectSidebarItem({
 		}
 
 		if (nextName === project.name) {
-			setRenameOpen(false);
-			setRenameValue(nextName);
+			dispatch({ type: "closeRename", value: nextName });
 			return;
 		}
 
@@ -321,8 +379,7 @@ function ProjectSidebarItem({
 				id: project._id,
 				name: nextName,
 			});
-			setRenameOpen(false);
-			setRenameValue(nextName);
+			dispatch({ type: "closeRename", value: nextName });
 			toast.success("Project renamed");
 		} catch (error) {
 			console.error("Failed to rename project", error);
@@ -342,7 +399,7 @@ function ProjectSidebarItem({
 	const handleRenameOpenChange = React.useCallback(
 		(nextOpen: boolean) => {
 			if (nextOpen) {
-				setRenameOpen(true);
+				dispatch({ type: "setRenameOpen", value: true });
 				return;
 			}
 
@@ -352,16 +409,13 @@ function ProjectSidebarItem({
 	);
 
 	const handleRenameCancel = React.useCallback(() => {
-		setRenameOpen(false);
-		setRenameValue(project.name);
+		dispatch({ type: "closeRename", value: project.name });
 	}, [project.name]);
 
 	const handleStartRename = React.useCallback(() => {
-		setMenuOpen(false);
 		preventMenuCloseAutoFocusRef.current = true;
 		ignoreInitialRenameInteractOutsideRef.current = true;
-		setRenameValue(project.name);
-		setRenameOpen(true);
+		dispatch({ type: "openRename", value: project.name });
 	}, [project.name]);
 
 	const handleDeleteProject = React.useCallback(async () => {
@@ -376,7 +430,7 @@ function ProjectSidebarItem({
 				workspaceId,
 				id: project._id,
 			});
-			setConfirmOpen(false);
+			dispatch({ type: "setConfirmOpen", value: false });
 			toast.success("Project deleted");
 		} catch (error) {
 			console.error("Failed to delete project", error);
@@ -390,177 +444,328 @@ function ProjectSidebarItem({
 		<>
 			<Collapsible
 				open={open}
-				onOpenChange={setOpen}
+				onOpenChange={(nextOpen) =>
+					dispatch({ type: "setOpen", value: nextOpen })
+				}
 				className="group/collapsible"
 			>
 				<SidebarMenuItem className="group/project-item">
-					<Popover open={renameOpen} onOpenChange={handleRenameOpenChange}>
-						<PopoverAnchor asChild>
-							<div className="relative">
-								<SidebarMenuButton
-									className="pr-8"
-									aria-expanded={open}
-									onClick={() => {
-										setOpen((currentOpen) => !currentOpen);
-									}}
-								>
-									<span className="relative size-4 shrink-0">
-										<span className="absolute inset-0 flex items-center justify-center transition-opacity opacity-100 group-hover/menu-button:opacity-0">
-											{open ? <FolderOpen /> : <FolderClosed />}
-										</span>
-										<ChevronRight
-											className={
-												open
-													? "absolute inset-0 m-auto size-4 rotate-90 text-sidebar-foreground/50 opacity-0 transition-[opacity,transform] group-hover/menu-button:opacity-100"
-													: "absolute inset-0 m-auto size-4 text-sidebar-foreground/50 opacity-0 transition-[opacity,transform] group-hover/menu-button:opacity-100"
-											}
-										/>
-									</span>
-									<span className="truncate">{project.name}</span>
-								</SidebarMenuButton>
-								<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-									<DropdownMenuTrigger asChild>
-										<SidebarMenuAction
-											className="cursor-pointer opacity-0 pointer-events-none transition-opacity group-hover/project-item:opacity-100 group-hover/project-item:pointer-events-auto"
-											aria-label={`Open actions for ${project.name}`}
-											onPointerDown={(event) => {
-												event.stopPropagation();
-											}}
-											onClick={(event) => {
-												event.preventDefault();
-												event.stopPropagation();
-											}}
-										>
-											<MoreHorizontal />
-										</SidebarMenuAction>
-									</DropdownMenuTrigger>
-									<DropdownMenuContent
-										className="w-48 rounded-lg"
-										side="right"
-										align="start"
-										onCloseAutoFocus={(event) => {
-											if (preventMenuCloseAutoFocusRef.current) {
-												event.preventDefault();
-												preventMenuCloseAutoFocusRef.current = false;
-											}
-										}}
-									>
-										<DropdownMenuItem
-											disabled={!workspaceId}
-											onClick={handleStartRename}
-										>
-											<Pencil />
-											Rename
-										</DropdownMenuItem>
-										<DropdownMenuSeparator />
-										<DropdownMenuItem
-											variant="destructive"
-											disabled={!workspaceId}
-											onSelect={(event) => {
-												event.preventDefault();
-												setMenuOpen(false);
-												setConfirmOpen(true);
-											}}
-										>
-											<Trash2 />
-											Delete project
-										</DropdownMenuItem>
-									</DropdownMenuContent>
-								</DropdownMenu>
-							</div>
-						</PopoverAnchor>
-						<PopoverContent
-							align="start"
-							side="bottom"
-							sideOffset={8}
-							className="w-[340px] rounded-lg border-sidebar-border/70 bg-sidebar p-1.5 shadow-2xl ring-1 ring-border/60"
-							onOpenAutoFocus={(event) => {
-								event.preventDefault();
-								requestAnimationFrame(() => {
-									const input = renameInputRef.current;
-									if (!input) {
-										return;
-									}
-
-									input.focus();
-									input.setSelectionRange(0, input.value.length);
-								});
-							}}
-							onInteractOutside={(event) => {
-								if (ignoreInitialRenameInteractOutsideRef.current) {
-									event.preventDefault();
-									ignoreInitialRenameInteractOutsideRef.current = false;
-								}
-							}}
-						>
-							<div className="flex items-center gap-2">
-								<NoteTitleEditInput
-									focusOnMount
-									commitOnBlur={false}
-									inputRef={renameInputRef}
-									value={renameValue}
-									placeholder="Project name"
-									maxLength={MAX_PROJECT_NAME_LENGTH}
-									onValueChange={setRenameValue}
-									onCommit={() => {
-										void handleRename();
-									}}
-									onCancel={handleRenameCancel}
-								/>
-							</div>
-						</PopoverContent>
-					</Popover>
-					<CollapsibleContent
-						forceMount
-						className="group/project-folder-content data-[state=closed]:block grid overflow-hidden transition-[grid-template-rows,opacity] duration-220 ease-[cubic-bezier(0.23,1,0.32,1)] data-[state=closed]:pointer-events-none data-[state=closed]:grid-rows-[0fr] data-[state=closed]:opacity-0 data-[state=open]:grid-rows-[1fr] data-[state=open]:opacity-100"
-					>
-						<div className="min-h-0 overflow-hidden">
-							{hasNotes ? (
-								<SidebarMenuSub className="mr-0 translate-x-0 pr-0 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] group-data-[state=closed]/project-folder-content:-translate-y-1 group-data-[state=open]/project-folder-content:translate-y-0">
-									{notes.map((note) => (
-										<ProjectNoteItem
-											key={note._id}
-											note={note}
-											currentNoteId={currentNoteId}
-											currentNoteTitle={currentNoteTitle}
-											recordingNoteId={recordingNoteId}
-											onNoteSelect={onNoteSelect}
-											onNoteTitleChange={onNoteTitleChange}
-											onNoteTrashed={onNoteTrashed}
-										/>
-									))}
-								</SidebarMenuSub>
-							) : (
-								<div className="px-8 py-2 text-xs text-sidebar-foreground/50">
-									No notes in project yet
-								</div>
-							)}
-						</div>
-					</CollapsibleContent>
+					<ProjectSidebarRow
+						projectName={project.name}
+						workspaceId={workspaceId}
+						isOpen={open}
+						menuOpen={state.menuOpen}
+						renameOpen={state.renameOpen}
+						renameValue={renameValue}
+						renameInputRef={renameInputRef}
+						preventMenuCloseAutoFocusRef={preventMenuCloseAutoFocusRef}
+						ignoreInitialRenameInteractOutsideRef={
+							ignoreInitialRenameInteractOutsideRef
+						}
+						onMenuOpenChange={(nextOpen) =>
+							dispatch({ type: "setMenuOpen", value: nextOpen })
+						}
+						onToggleOpen={() => dispatch({ type: "toggleOpen" })}
+						onRenameOpenChange={handleRenameOpenChange}
+						onStartRename={handleStartRename}
+						onRenameValueChange={(value) =>
+							dispatch({ type: "setRenameValue", value })
+						}
+						onRenameCommit={() => {
+							void handleRename();
+						}}
+						onRenameCancel={handleRenameCancel}
+						onDeleteSelect={() => {
+							dispatch({ type: "setMenuOpen", value: false });
+							dispatch({ type: "setConfirmOpen", value: true });
+						}}
+					/>
+					<ProjectSidebarContent
+						hasNotes={hasNotes}
+						notes={notes}
+						currentNoteId={currentNoteId}
+						currentNoteTitle={currentNoteTitle}
+						recordingNoteId={recordingNoteId}
+						onNoteSelect={onNoteSelect}
+						onNoteTitleChange={onNoteTitleChange}
+						onNoteTrashed={onNoteTrashed}
+					/>
 				</SidebarMenuItem>
 			</Collapsible>
-			<AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-						<AlertDialogDescription>
-							This action cannot be undone. The project will be removed and its
-							notes will move back to Home.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={isRemoving}>Cancel</AlertDialogCancel>
-						<AlertDialogAction
-							className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
-							onClick={handleDeleteProject}
-							disabled={isRemoving}
-						>
-							{isRemoving ? "Deleting..." : "Delete project"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ProjectDeleteDialog
+				open={state.confirmOpen}
+				isRemoving={isRemoving}
+				onOpenChange={(nextOpen) =>
+					dispatch({ type: "setConfirmOpen", value: nextOpen })
+				}
+				onConfirm={handleDeleteProject}
+			/>
 		</>
+	);
+}
+
+function ProjectSidebarRow({
+	projectName,
+	workspaceId,
+	isOpen,
+	menuOpen,
+	renameOpen,
+	renameValue,
+	renameInputRef,
+	preventMenuCloseAutoFocusRef,
+	ignoreInitialRenameInteractOutsideRef,
+	onMenuOpenChange,
+	onToggleOpen,
+	onRenameOpenChange,
+	onStartRename,
+	onRenameValueChange,
+	onRenameCommit,
+	onRenameCancel,
+	onDeleteSelect,
+}: {
+	projectName: string;
+	workspaceId: Id<"workspaces"> | null;
+	isOpen: boolean;
+	menuOpen: boolean;
+	renameOpen: boolean;
+	renameValue: string;
+	renameInputRef: React.RefObject<HTMLInputElement | null>;
+	preventMenuCloseAutoFocusRef: React.MutableRefObject<boolean>;
+	ignoreInitialRenameInteractOutsideRef: React.MutableRefObject<boolean>;
+	onMenuOpenChange: (open: boolean) => void;
+	onToggleOpen: () => void;
+	onRenameOpenChange: (open: boolean) => void;
+	onStartRename: () => void;
+	onRenameValueChange: (value: string) => void;
+	onRenameCommit: () => void;
+	onRenameCancel: () => void;
+	onDeleteSelect: () => void;
+}) {
+	return (
+		<Popover open={renameOpen} onOpenChange={onRenameOpenChange}>
+			<PopoverAnchor asChild>
+				<div className="relative">
+					<SidebarMenuButton
+						className="pr-8"
+						aria-expanded={isOpen}
+						onClick={onToggleOpen}
+					>
+						<span className="relative size-4 shrink-0">
+							<span className="absolute inset-0 flex items-center justify-center transition-opacity opacity-100 group-hover/menu-button:opacity-0">
+								{isOpen ? <FolderOpen /> : <FolderClosed />}
+							</span>
+							<ChevronRight
+								className={
+									isOpen
+										? "absolute inset-0 m-auto size-4 rotate-90 text-sidebar-foreground/50 opacity-0 transition-[opacity,transform] group-hover/menu-button:opacity-100"
+										: "absolute inset-0 m-auto size-4 text-sidebar-foreground/50 opacity-0 transition-[opacity,transform] group-hover/menu-button:opacity-100"
+								}
+							/>
+						</span>
+						<span className="truncate">{projectName}</span>
+					</SidebarMenuButton>
+					<ProjectActionsMenu
+						projectName={projectName}
+						workspaceId={workspaceId}
+						menuOpen={menuOpen}
+						preventMenuCloseAutoFocusRef={preventMenuCloseAutoFocusRef}
+						onMenuOpenChange={onMenuOpenChange}
+						onStartRename={onStartRename}
+						onDeleteSelect={onDeleteSelect}
+					/>
+				</div>
+			</PopoverAnchor>
+			<PopoverContent
+				align="start"
+				side="bottom"
+				sideOffset={8}
+				className="w-[340px] rounded-lg border-sidebar-border/70 bg-sidebar p-1.5 shadow-2xl ring-1 ring-border/60"
+				onOpenAutoFocus={(event) => {
+					event.preventDefault();
+					requestAnimationFrame(() => {
+						const input = renameInputRef.current;
+						if (!input) {
+							return;
+						}
+
+						input.focus();
+						input.setSelectionRange(0, input.value.length);
+					});
+				}}
+				onInteractOutside={(event) => {
+					if (ignoreInitialRenameInteractOutsideRef.current) {
+						event.preventDefault();
+						ignoreInitialRenameInteractOutsideRef.current = false;
+					}
+				}}
+			>
+				<div className="flex items-center gap-2">
+					<NoteTitleEditInput
+						focusOnMount
+						commitOnBlur={false}
+						inputRef={renameInputRef}
+						value={renameValue}
+						placeholder="Project name"
+						maxLength={MAX_PROJECT_NAME_LENGTH}
+						onValueChange={onRenameValueChange}
+						onCommit={onRenameCommit}
+						onCancel={onRenameCancel}
+					/>
+				</div>
+			</PopoverContent>
+		</Popover>
+	);
+}
+
+function ProjectActionsMenu({
+	projectName,
+	workspaceId,
+	menuOpen,
+	preventMenuCloseAutoFocusRef,
+	onMenuOpenChange,
+	onStartRename,
+	onDeleteSelect,
+}: {
+	projectName: string;
+	workspaceId: Id<"workspaces"> | null;
+	menuOpen: boolean;
+	preventMenuCloseAutoFocusRef: React.MutableRefObject<boolean>;
+	onMenuOpenChange: (open: boolean) => void;
+	onStartRename: () => void;
+	onDeleteSelect: () => void;
+}) {
+	return (
+		<DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
+			<DropdownMenuTrigger asChild>
+				<SidebarMenuAction
+					className="cursor-pointer opacity-0 pointer-events-none transition-opacity group-hover/project-item:opacity-100 group-hover/project-item:pointer-events-auto"
+					aria-label={`Open actions for ${projectName}`}
+					onPointerDown={(event) => {
+						event.stopPropagation();
+					}}
+					onClick={(event) => {
+						event.preventDefault();
+						event.stopPropagation();
+					}}
+				>
+					<MoreHorizontal />
+				</SidebarMenuAction>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent
+				className="w-48 rounded-lg"
+				side="right"
+				align="start"
+				onCloseAutoFocus={(event) => {
+					if (preventMenuCloseAutoFocusRef.current) {
+						event.preventDefault();
+						preventMenuCloseAutoFocusRef.current = false;
+					}
+				}}
+			>
+				<DropdownMenuItem disabled={!workspaceId} onClick={onStartRename}>
+					<Pencil />
+					Rename
+				</DropdownMenuItem>
+				<DropdownMenuSeparator />
+				<DropdownMenuItem
+					variant="destructive"
+					disabled={!workspaceId}
+					onSelect={(event) => {
+						event.preventDefault();
+						onDeleteSelect();
+					}}
+				>
+					<Trash2 />
+					Delete project
+				</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+}
+
+function ProjectSidebarContent({
+	hasNotes,
+	notes,
+	currentNoteId,
+	currentNoteTitle,
+	recordingNoteId,
+	onNoteSelect,
+	onNoteTitleChange,
+	onNoteTrashed,
+}: {
+	hasNotes: boolean;
+	notes: Array<Doc<"notes">>;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle?: string;
+	recordingNoteId: Id<"notes"> | null;
+	onNoteSelect: (noteId: Id<"notes">) => void;
+	onNoteTitleChange?: (title: string) => void;
+	onNoteTrashed?: (noteId: Id<"notes">) => void;
+}) {
+	return (
+		<CollapsibleContent
+			forceMount
+			className="group/project-folder-content data-[state=closed]:block grid overflow-hidden transition-[grid-template-rows,opacity] duration-220 ease-[cubic-bezier(0.23,1,0.32,1)] data-[state=closed]:pointer-events-none data-[state=closed]:grid-rows-[0fr] data-[state=closed]:opacity-0 data-[state=open]:grid-rows-[1fr] data-[state=open]:opacity-100"
+		>
+			<div className="min-h-0 overflow-hidden">
+				{hasNotes ? (
+					<SidebarMenuSub className="mr-0 translate-x-0 pr-0 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] group-data-[state=closed]/project-folder-content:-translate-y-1 group-data-[state=open]/project-folder-content:translate-y-0">
+						{notes.map((note) => (
+							<ProjectNoteItem
+								key={note._id}
+								note={note}
+								currentNoteId={currentNoteId}
+								currentNoteTitle={currentNoteTitle}
+								recordingNoteId={recordingNoteId}
+								onNoteSelect={onNoteSelect}
+								onNoteTitleChange={onNoteTitleChange}
+								onNoteTrashed={onNoteTrashed}
+							/>
+						))}
+					</SidebarMenuSub>
+				) : (
+					<div className="px-8 py-2 text-xs text-sidebar-foreground/50">
+						No notes in project yet
+					</div>
+				)}
+			</div>
+		</CollapsibleContent>
+	);
+}
+
+function ProjectDeleteDialog({
+	open,
+	isRemoving,
+	onOpenChange,
+	onConfirm,
+}: {
+	open: boolean;
+	isRemoving: boolean;
+	onOpenChange: (open: boolean) => void;
+	onConfirm: () => void;
+}) {
+	return (
+		<AlertDialog open={open} onOpenChange={onOpenChange}>
+			<AlertDialogContent>
+				<AlertDialogHeader>
+					<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+					<AlertDialogDescription>
+						This action cannot be undone. The project will be removed and its
+						notes will move back to Home.
+					</AlertDialogDescription>
+				</AlertDialogHeader>
+				<AlertDialogFooter>
+					<AlertDialogCancel disabled={isRemoving}>Cancel</AlertDialogCancel>
+					<AlertDialogAction
+						className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
+						onClick={onConfirm}
+						disabled={isRemoving}
+					>
+						{isRemoving ? "Deleting..." : "Delete project"}
+					</AlertDialogAction>
+				</AlertDialogFooter>
+			</AlertDialogContent>
+		</AlertDialog>
 	);
 }
 

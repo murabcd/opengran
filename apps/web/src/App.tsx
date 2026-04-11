@@ -801,17 +801,70 @@ const useAppBootstrapState = () => {
 	const isDesktopApp =
 		typeof window !== "undefined" && Boolean(window.openGranDesktop);
 
+	const applyDesktopMeta = React.useCallback((platform: DesktopPlatform) => {
+		setIsDesktopMac(platform === "darwin");
+		setDesktopPlatform(platform);
+	}, []);
+
+	const resetDesktopPermissionsState = React.useCallback(() => {
+		setDesktopPermissionsError(null);
+		setDesktopPermissionsStatus(null);
+	}, []);
+
+	const applyDesktopPermissionsError = React.useCallback((message: string) => {
+		setDesktopPermissionsError(message);
+	}, []);
+
+	const applyDesktopPermissionsStatus = React.useCallback(
+		(status: DesktopPermissionsStatus | null) => {
+			setDesktopPermissionsStatus(status);
+		},
+		[],
+	);
+
+	const applyLegacyDesktopPermissionsFallback = React.useCallback(
+		(platform: DesktopPlatform) => {
+			applyDesktopPermissionsStatus({
+				isDesktop: true,
+				platform,
+				permissions: [
+					{
+						id: "microphone",
+						description:
+							"During your meetings, OpenGran transcribes your microphone.",
+						required: true,
+						state: "unknown",
+						canRequest: false,
+						canOpenSystemSettings: false,
+					},
+					{
+						id: "systemAudio",
+						description:
+							"During your meetings, OpenGran transcribes your system audio output.",
+						required: false,
+						state: "unknown",
+						canRequest: false,
+						canOpenSystemSettings: false,
+					},
+				],
+			});
+			applyDesktopPermissionsError(
+				"Desktop permissions are unavailable because the Electron shell is still running an older build. Restart the desktop app, then try again.",
+			);
+		},
+		[applyDesktopPermissionsError, applyDesktopPermissionsStatus],
+	);
+
 	React.useEffect(() => {
 		void window.openGranDesktop
 			?.getMeta()
 			.then((meta) => {
-				setIsDesktopMac(meta.platform === "darwin");
-				setDesktopPlatform(meta.platform);
+				applyDesktopMeta(meta.platform);
 			})
 			.catch(() => {
 				setIsDesktopMac(false);
 			});
-	}, []);
+	}, [applyDesktopMeta]);
 
 	React.useEffect(() => {
 		if (typeof window === "undefined") {
@@ -854,14 +907,14 @@ const useAppBootstrapState = () => {
 
 	const syncDesktopPermissions = React.useCallback(async () => {
 		if (!window.openGranDesktop) {
-			setDesktopPermissionsStatus(null);
+			applyDesktopPermissionsStatus(null);
 			return null;
 		}
 
 		const status = await window.openGranDesktop.getPermissionsStatus();
-		setDesktopPermissionsStatus(status);
+		applyDesktopPermissionsStatus(status);
 		return status;
-	}, []);
+	}, [applyDesktopPermissionsStatus]);
 
 	const isAuthenticating = authenticatingProvider !== null;
 
@@ -974,50 +1027,30 @@ const useAppBootstrapState = () => {
 
 	React.useEffect(() => {
 		if (!shouldLoadDesktopPermissions) {
-			setDesktopPermissionsError(null);
-			setDesktopPermissionsStatus(null);
+			resetDesktopPermissionsState();
 			return;
 		}
 
 		void syncDesktopPermissions().catch((error) => {
 			if (isMissingDesktopPermissionHandlerError(error)) {
-				setDesktopPermissionsStatus({
-					isDesktop: true,
-					platform: desktopPlatform,
-					permissions: [
-						{
-							id: "microphone",
-							description:
-								"During your meetings, OpenGran transcribes your microphone.",
-							required: true,
-							state: "unknown",
-							canRequest: false,
-							canOpenSystemSettings: false,
-						},
-						{
-							id: "systemAudio",
-							description:
-								"During your meetings, OpenGran transcribes your system audio output.",
-							required: false,
-							state: "unknown",
-							canRequest: false,
-							canOpenSystemSettings: false,
-						},
-					],
-				});
-				setDesktopPermissionsError(
-					"Desktop permissions are unavailable because the Electron shell is still running an older build. Restart the desktop app, then try again.",
-				);
+				applyLegacyDesktopPermissionsFallback(desktopPlatform);
 				return;
 			}
 
-			setDesktopPermissionsError(
+			applyDesktopPermissionsError(
 				error instanceof Error
 					? error.message
 					: "Failed to load desktop permissions.",
 			);
 		});
-	}, [desktopPlatform, shouldLoadDesktopPermissions, syncDesktopPermissions]);
+	}, [
+		applyDesktopPermissionsError,
+		applyLegacyDesktopPermissionsFallback,
+		desktopPlatform,
+		resetDesktopPermissionsState,
+		shouldLoadDesktopPermissions,
+		syncDesktopPermissions,
+	]);
 
 	React.useEffect(() => {
 		if (!shouldLoadDesktopPermissions) {
@@ -1958,6 +1991,50 @@ const useAppShellState = ({
 	const upcomingCalendarLoadKey = session?.user?.email
 		? `${isConvexAuthenticated ? "authenticated" : "unauthenticated"}:${session.user.email}`
 		: "anonymous";
+	const applyLocationSyncState = React.useCallback(
+		(input: {
+			chatId: string | null;
+			inboxOpen: boolean;
+			noteIdString: string | null;
+			pendingCalendarEvent: UpcomingCalendarEvent | null;
+			scheduledAutoStartNoteCaptureAt: string | null;
+			settingsOpen: boolean;
+			settingsPage: SettingsPage;
+			shouldAutoStartNoteCapture: boolean;
+			shouldStopNoteCaptureWhenMeetingEnds: boolean;
+			view: AppView;
+		}) => {
+			setInboxOpen(input.inboxOpen);
+			setCurrentView(input.view);
+			setCurrentChatId(input.chatId);
+			setChatComposerId(
+				input.view === "chat"
+					? (input.chatId ?? crypto.randomUUID())
+					: crypto.randomUUID(),
+			);
+			setCurrentNoteId(null);
+			setCurrentRouteNoteId(input.view === "note" ? input.noteIdString : null);
+			setShouldAutoStartNoteCapture(input.shouldAutoStartNoteCapture);
+			setShouldStopNoteCaptureWhenMeetingEnds(
+				input.shouldStopNoteCaptureWhenMeetingEnds,
+			);
+			setScheduledAutoStartNoteCaptureAt(input.scheduledAutoStartNoteCaptureAt);
+			setPendingCalendarEvent(input.pendingCalendarEvent);
+			setCurrentNoteEditorActions(null);
+			setSettingsPage(input.settingsPage);
+			setSettingsOpen(input.settingsOpen);
+		},
+		[],
+	);
+
+	const clearScheduledAutoStart = React.useCallback(() => {
+		setScheduledAutoStartNoteCaptureAt(null);
+	}, []);
+
+	const triggerScheduledAutoStart = React.useCallback(() => {
+		setShouldAutoStartNoteCapture(true);
+		setScheduledAutoStartNoteCaptureAt(null);
+	}, []);
 	const calendarPreferences = useQuery(
 		api.calendarPreferences.get,
 		isConvexAuthenticated && resolvedActiveWorkspaceId
@@ -2255,24 +2332,19 @@ const useAppShellState = ({
 			const nextScheduledAutoStartNoteCaptureAt =
 				nextLocationState.scheduledAutoStartNoteCaptureAt;
 
-			setInboxOpen(nextInboxOpen);
-			setCurrentView(nextView);
-			setCurrentChatId(nextChatId);
-			setChatComposerId(
-				nextView === "chat"
-					? (nextChatId ?? crypto.randomUUID())
-					: crypto.randomUUID(),
-			);
-			setCurrentNoteId(null);
-			setCurrentRouteNoteId(nextView === "note" ? nextNoteIdString : null);
-			setShouldAutoStartNoteCapture(nextShouldAutoStartNoteCapture);
-			setShouldStopNoteCaptureWhenMeetingEnds(
-				nextShouldStopNoteCaptureWhenMeetingEnds,
-			);
-			setScheduledAutoStartNoteCaptureAt(nextScheduledAutoStartNoteCaptureAt);
-			setPendingCalendarEvent(nextLocationState.pendingCalendarEvent);
-			setCurrentNoteEditorActions(null);
-			setSettingsPage(nextSettingsPage ?? "Profile");
+			applyLocationSyncState({
+				chatId: nextChatId,
+				inboxOpen: nextInboxOpen,
+				noteIdString: nextNoteIdString,
+				pendingCalendarEvent: nextLocationState.pendingCalendarEvent,
+				scheduledAutoStartNoteCaptureAt: nextScheduledAutoStartNoteCaptureAt,
+				settingsOpen: nextSettingsOpen,
+				settingsPage: nextSettingsPage ?? "Profile",
+				shouldAutoStartNoteCapture: nextShouldAutoStartNoteCapture,
+				shouldStopNoteCaptureWhenMeetingEnds:
+					nextShouldStopNoteCaptureWhenMeetingEnds,
+				view: nextView,
+			});
 
 			const nextPath = nextSettingsOpen
 				? getSettingsPath(nextSettingsPage ?? "Profile")
@@ -2297,8 +2369,6 @@ const useAppShellState = ({
 					`${nextPath}${nextSearch}${nextHash}`,
 				);
 			}
-
-			setSettingsOpen(nextSettingsOpen);
 		};
 
 		syncViewFromLocation();
@@ -2307,7 +2377,7 @@ const useAppShellState = ({
 		return () => {
 			window.removeEventListener("popstate", syncViewFromLocation);
 		};
-	}, []);
+	}, [applyLocationSyncState]);
 
 	React.useEffect(() => {
 		if (typeof window === "undefined" || !window.openGranDesktop?.onNavigate) {
@@ -2568,19 +2638,17 @@ const useAppShellState = ({
 		const scheduledAt = new Date(scheduledAutoStartNoteCaptureAt).getTime();
 
 		if (Number.isNaN(scheduledAt)) {
-			setScheduledAutoStartNoteCaptureAt(null);
+			clearScheduledAutoStart();
 			return;
 		}
 
 		if (scheduledAt <= Date.now()) {
-			setShouldAutoStartNoteCapture(true);
-			setScheduledAutoStartNoteCaptureAt(null);
+			triggerScheduledAutoStart();
 			return;
 		}
 
 		const timeoutId = window.setTimeout(() => {
-			setShouldAutoStartNoteCapture(true);
-			setScheduledAutoStartNoteCaptureAt(null);
+			triggerScheduledAutoStart();
 		}, scheduledAt - Date.now());
 
 		return () => window.clearTimeout(timeoutId);
@@ -2589,6 +2657,8 @@ const useAppShellState = ({
 		resolvedCurrentView,
 		scheduledAutoStartNoteCaptureAt,
 		shouldAutoStartNoteCapture,
+		clearScheduledAutoStart,
+		triggerScheduledAutoStart,
 	]);
 
 	const handleOpenCalendarEventNote = React.useCallback(
@@ -3007,7 +3077,7 @@ function AppShellHeader({
 	const breadcrumbRenameInitialTitleRef = React.useRef(currentNoteTitle);
 	const breadcrumbRenameSavedTitleRef = React.useRef(currentNoteTitle);
 	const [titleEditOpen, setTitleEditOpen] = React.useState(false);
-	const [titleValue, setTitleValue] = React.useState(currentNoteTitle);
+	const [titleValue, setTitleValue] = React.useState("");
 	const [isRenamingNote, setIsRenamingNote] = React.useState(false);
 	const renameNote = useMutation(api.notes.rename).withOptimisticUpdate(
 		(localStore, args) => {
