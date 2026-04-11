@@ -23,7 +23,10 @@ import { NavNotes } from "@/components/nav/nav-notes";
 import { NavProjects } from "@/components/nav/nav-projects";
 import { NavTrash } from "@/components/nav/nav-trash";
 import { RecipesDialog } from "@/components/recipes/recipes-dialog";
-import type { SearchCommandItem } from "@/components/search/search-command";
+import type {
+	SearchCommandItem,
+	SearchCommandProject,
+} from "@/components/search/search-command";
 import { SearchCommand } from "@/components/search/search-command";
 import {
 	SettingsDialog,
@@ -33,7 +36,6 @@ import { NavUser } from "@/components/sidebar/nav-user";
 import { TemplatesDialog } from "@/components/templates/templates-dialog";
 import { WorkspaceSwitcher } from "@/components/workspaces/workspace-switcher";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
-import { getChatId } from "@/lib/chat";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { WorkspaceRecord } from "@/lib/workspaces";
 import { api } from "../../../../../convex/_generated/api";
@@ -254,26 +256,38 @@ export function AppSidebar({
 			})),
 		[currentView, inboxOpen, unreadInboxCount],
 	);
-	const searchItems: SearchCommandItem[] = [
-		...(notes ?? []).map((note) => ({
-			id: note._id,
-			title: getNoteDisplayTitle(
-				note._id === currentNoteId && currentNoteTitle?.trim()
-					? currentNoteTitle
-					: note.title,
-			),
-			kind: "note" as const,
-			icon: FileText,
-			preview: note.searchableText.trim() || undefined,
-		})),
-		...(chats ?? []).map((chat) => ({
-			id: getChatId(chat),
-			title: chat.title || "New chat",
-			kind: "chat" as const,
-			icon: MessageCircle,
-			preview: chat.authorName?.trim() || undefined,
-		})),
-	];
+	const searchProjects = React.useMemo<SearchCommandProject[]>(
+		() =>
+			(projects ?? []).map((project) => ({
+				id: project._id,
+				name: project.name,
+			})),
+		[projects],
+	);
+	const projectNameById = React.useMemo(
+		() => new Map(searchProjects.map((project) => [project.id, project.name])),
+		[searchProjects],
+	);
+	const searchItems = React.useMemo<SearchCommandItem[]>(
+		() =>
+			(notes ?? []).map((note) => ({
+				id: note._id,
+				title: getNoteDisplayTitle(
+					note._id === currentNoteId && currentNoteTitle?.trim()
+						? currentNoteTitle
+						: note.title,
+				),
+				kind: "note" as const,
+				icon: FileText,
+				preview: note.searchableText.trim() || undefined,
+				projectId: note.projectId ?? undefined,
+				projectName: note.projectId
+					? projectNameById.get(note.projectId)
+					: undefined,
+				updatedAt: note.updatedAt,
+			})),
+		[currentNoteId, currentNoteTitle, notes, projectNameById],
+	);
 
 	return (
 		<>
@@ -365,6 +379,7 @@ export function AppSidebar({
 				}
 				onSettingsOpenChange={onSettingsOpenChange}
 				searchItems={searchItems}
+				searchProjects={searchProjects}
 				settingsOpen={settingsOpen}
 				settingsPage={settingsPage}
 				sidebarState={state}
@@ -519,6 +534,7 @@ function AppSidebarDialogs({
 	onMarkInboxItemsRead,
 	onSettingsOpenChange,
 	searchItems,
+	searchProjects,
 	settingsOpen,
 	settingsPage,
 	sidebarState,
@@ -543,6 +559,7 @@ function AppSidebarDialogs({
 	onMarkInboxItemsRead: (itemIds: string[]) => void;
 	onSettingsOpenChange: (open: boolean, page?: SettingsPage) => void;
 	searchItems: SearchCommandItem[];
+	searchProjects: SearchCommandProject[];
 	settingsOpen: boolean;
 	settingsPage: SettingsPage;
 	sidebarState: "expanded" | "collapsed";
@@ -562,6 +579,7 @@ function AppSidebarDialogs({
 				open={searchOpen}
 				onOpenChange={(open) => onOpenChange("searchOpen", open)}
 				items={searchItems}
+				projects={searchProjects}
 				onSelectItem={(itemId) => {
 					const selectedItem = searchItems.find((item) => item.id === itemId);
 					if (!selectedItem) {
