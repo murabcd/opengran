@@ -136,6 +136,7 @@ export function InboxSheet({
 							<InboxPaneHeader
 								isMobile={false}
 								open={open}
+								desktopSafeTop={desktopSafeTop}
 								view={view}
 								onViewChange={setView}
 								onMarkAllRead={() => {
@@ -206,6 +207,7 @@ export function InboxSheet({
 function InboxPaneHeader({
 	isMobile = false,
 	open = true,
+	desktopSafeTop = false,
 	view,
 	onViewChange,
 	onMarkAllRead,
@@ -214,6 +216,7 @@ function InboxPaneHeader({
 }: {
 	isMobile?: boolean;
 	open?: boolean;
+	desktopSafeTop?: boolean;
 	view: InboxView;
 	onViewChange: (view: InboxView) => void;
 	onMarkAllRead: () => void;
@@ -280,14 +283,18 @@ function InboxPaneHeader({
 			data-app-region={!isMobile && open ? "no-drag" : undefined}
 			className={cn(
 				"flex w-full items-center justify-between",
-				!isMobile && "h-10 px-2",
+				!isMobile && (desktopSafeTop ? "h-10 px-2" : "h-16 px-2"),
 				isMobile && "border-b px-4 py-3",
 			)}
 		>
 			{isMobile ? (
 				<SheetTitle className="text-sm font-medium">Inbox</SheetTitle>
 			) : (
-				<Breadcrumb className={DESKTOP_MAIN_HEADER_CONTENT_CLASS}>
+				<Breadcrumb
+					className={
+						desktopSafeTop ? DESKTOP_MAIN_HEADER_CONTENT_CLASS : undefined
+					}
+				>
 					<BreadcrumbList className="gap-0">
 						<BreadcrumbItem>
 							<BreadcrumbPage>Inbox</BreadcrumbPage>
@@ -298,7 +305,7 @@ function InboxPaneHeader({
 			<div
 				className={cn(
 					"flex items-center gap-0.5",
-					!isMobile && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+					desktopSafeTop && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
 				)}
 			>
 				<DropdownMenu
