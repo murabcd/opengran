@@ -1,6 +1,6 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import * as React from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TranscriptionControllerState } from "../src/lib/transcription-controller";
 import type { TranscriptionSessionEvent } from "../src/lib/transcription-session-store";
 
@@ -97,6 +97,21 @@ const emitTranscriptionSessionEvent = (event: TranscriptionSessionEvent) => {
 	}
 };
 
+const createTranscriptSessionRepositoryMock = () => ({
+	appendUtterance: vi.fn(),
+	clearDraft: vi.fn().mockResolvedValue(null),
+	completeSession: vi.fn().mockResolvedValue(null),
+	isLatestTranscriptSessionLoading: false,
+	latestTranscriptSession: null,
+	loadDraft: vi.fn().mockResolvedValue(null),
+	markGenerated: vi.fn().mockResolvedValue(null),
+	replaceSpeakerUtterances: vi.fn(),
+	saveDraft: vi.fn().mockResolvedValue(null),
+	setRefinementStatus: vi.fn(),
+	setSystemAudioSourceMode: vi.fn().mockResolvedValue(null),
+	startSession: vi.fn().mockResolvedValue(null),
+});
+
 describe("useNoteTranscriptSession", () => {
 	beforeEach(() => {
 		vi.useRealTimers();
@@ -113,7 +128,16 @@ describe("useNoteTranscriptSession", () => {
 				transcriptionSessionEventListeners.delete(listener);
 			};
 		});
+		useTranscriptSessionRepositoryMock.mockImplementation(() =>
+			createTranscriptSessionRepositoryMock(),
+		);
 		setTranscriptionSessionState();
+	});
+
+	afterEach(() => {
+		cleanup();
+		transcriptionSessionEventListeners.clear();
+		window.openGranDesktop = undefined;
 	});
 
 	it("hydrates the latest stored transcript session in StrictMode", async () => {
