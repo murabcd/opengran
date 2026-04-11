@@ -7,6 +7,8 @@ type NoteTitleEditInputProps = {
 	onValueChange: (value: string) => void;
 	onCommit: () => void;
 	onCancel: () => void;
+	placeholder?: string;
+	maxLength?: number;
 	focusOnMount?: boolean;
 	commitOnBlur?: boolean;
 	className?: string;
@@ -18,6 +20,8 @@ export function NoteTitleEditInput({
 	onValueChange,
 	onCommit,
 	onCancel,
+	placeholder = "New note",
+	maxLength,
 	focusOnMount = false,
 	commitOnBlur = true,
 	className,
@@ -48,13 +52,14 @@ export function NoteTitleEditInput({
 		<Input
 			ref={ref}
 			value={value}
-			placeholder="New note"
+			placeholder={placeholder}
 			autoComplete="off"
 			autoCorrect="off"
 			autoCapitalize="off"
 			spellCheck={false}
 			data-1p-ignore="true"
 			data-lpignore="true"
+			maxLength={maxLength}
 			className={cn(className)}
 			onChange={(event) => onValueChange(event.target.value)}
 			onBlur={() => {

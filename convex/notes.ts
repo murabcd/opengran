@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
+import { requireOwnedProject } from "./projects";
 
 const noteVisibilityValidator = v.union(
 	v.literal("private"),
@@ -14,6 +15,7 @@ const noteFields = {
 	_creationTime: v.number(),
 	ownerTokenIdentifier: v.string(),
 	workspaceId: v.id("workspaces"),
+	projectId: v.optional(v.id("projects")),
 	calendarEventKey: v.optional(v.string()),
 	authorName: v.optional(v.string()),
 	isStarred: v.optional(v.boolean()),
@@ -394,6 +396,7 @@ export const create = mutation({
 		return await ctx.db.insert("notes", {
 			ownerTokenIdentifier,
 			workspaceId: args.workspaceId,
+			projectId: undefined,
 			authorName: getAuthorName(identity),
 			isStarred: false,
 			title: "",
@@ -455,6 +458,7 @@ export const createFromCalendarEvent = mutation({
 		return await ctx.db.insert("notes", {
 			ownerTokenIdentifier,
 			workspaceId: args.workspaceId,
+			projectId: undefined,
 			calendarEventKey,
 			authorName,
 			isStarred: false,
@@ -507,6 +511,7 @@ export const save = mutation({
 			await ctx.db.patch(args.id, {
 				authorName: existing.authorName ?? authorName,
 				isStarred: existing.isStarred ?? false,
+				projectId: existing.projectId,
 				title: args.title,
 				content: args.content,
 				searchableText: args.searchableText,
@@ -525,6 +530,7 @@ export const save = mutation({
 		return await ctx.db.insert("notes", {
 			ownerTokenIdentifier,
 			workspaceId: args.workspaceId,
+			projectId: undefined,
 			authorName,
 			isStarred: false,
 			title: args.title,
@@ -538,6 +544,47 @@ export const save = mutation({
 			createdAt: now,
 			updatedAt: now,
 		});
+	},
+});
+
+export const setProject = mutation({
+	args: {
+		workspaceId: v.id("workspaces"),
+		id: v.id("notes"),
+		projectId: v.union(v.id("projects"), v.null()),
+	},
+	returns: v.object({
+		projectId: v.union(v.id("projects"), v.null()),
+	}),
+	handler: async (ctx, args) => {
+		const note = await requireOwnedNote(ctx, args.id, args.workspaceId);
+
+		if (note.isArchived) {
+			throw new ConvexError({
+				code: "NOTE_NOT_FOUND",
+				message: "Note not found.",
+			});
+		}
+
+		if (args.projectId) {
+			await requireOwnedProject(ctx, args.projectId, args.workspaceId);
+		}
+
+		const nextProjectId = args.projectId ?? undefined;
+		if (note.projectId === nextProjectId) {
+			return {
+				projectId: args.projectId,
+			};
+		}
+
+		await ctx.db.patch(args.id, {
+			projectId: nextProjectId,
+			updatedAt: Date.now(),
+		});
+
+		return {
+			projectId: args.projectId,
+		};
 	},
 });
 

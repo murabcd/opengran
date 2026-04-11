@@ -190,3 +190,53 @@ test("notes.create and notes.rename preserve empty titles", async () => {
 	expect(renamedNote).not.toBeNull();
 	expect(renamedNote?.title).toBe("");
 });
+
+test("notes.setProject assigns and clears a project without dropping note metadata", async () => {
+	const { asOwner, noteId, t, workspaceId } = await createWorkspaceAndNote();
+
+	const projectId = await t.run(async (ctx) =>
+		ctx.db.insert("projects", {
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			workspaceId,
+			name: "Product",
+			normalizedName: "product",
+			createdAt: 3_000,
+			updatedAt: 3_000,
+		}),
+	);
+
+	const assigned = await asOwner.mutation(api.notes.setProject, {
+		workspaceId,
+		id: noteId,
+		projectId,
+	});
+	const assignedNote = await asOwner.query(api.notes.get, {
+		id: noteId,
+		workspaceId,
+	});
+
+	expect(assigned.projectId).toBe(projectId);
+	expect(assignedNote).not.toBeNull();
+	expect(assignedNote).toMatchObject({
+		_id: noteId,
+		projectId,
+		title: "Old title",
+		templateSlug: "enhanced",
+		visibility: "public",
+	});
+
+	const cleared = await asOwner.mutation(api.notes.setProject, {
+		workspaceId,
+		id: noteId,
+		projectId: null,
+	});
+	const clearedNote = await asOwner.query(api.notes.get, {
+		id: noteId,
+		workspaceId,
+	});
+
+	expect(cleared.projectId).toBeNull();
+	expect(clearedNote).not.toBeNull();
+	expect(clearedNote?.projectId).toBeUndefined();
+	expect(clearedNote?.title).toBe("Old title");
+});

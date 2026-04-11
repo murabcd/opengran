@@ -127,7 +127,6 @@ type SettingsDialogProps = {
 	onOpenChange: (open: boolean) => void;
 	user: SettingsUser;
 	workspace: WorkspaceRecord | null;
-	onUserChange: (user: SettingsUser) => void;
 	initialPage?: SettingsPage;
 	onPageChange?: (page: SettingsPage) => void;
 };
@@ -535,7 +534,6 @@ export function SettingsDialog({
 	onOpenChange,
 	user,
 	workspace,
-	onUserChange,
 	initialPage = "Profile",
 	onPageChange,
 }: SettingsDialogProps) {
@@ -639,10 +637,7 @@ export function SettingsDialog({
 								<ManageAccountForm
 									user={user}
 									onCancel={() => onOpenChange(false)}
-									onSave={(nextUser) => {
-										onUserChange(nextUser);
-										onOpenChange(false);
-									}}
+									onSave={() => onOpenChange(false)}
 								/>
 							) : activePage === "Appearance" ? (
 								<AppearanceSettings />
@@ -2753,7 +2748,7 @@ function ManageAccountForm({
 }: {
 	user: SettingsUser;
 	onCancel: () => void;
-	onSave: (user: SettingsUser) => void;
+	onSave: () => void;
 }) {
 	const userPreferences = useQuery(api.userPreferences.get, {});
 	const updateUserPreferences = useMutation(
@@ -2780,29 +2775,22 @@ function ManageAccountForm({
 		);
 	});
 	const [formState, setFormState] = useState(() => ({
-		name: user.name,
-		avatar: user.avatar,
-		avatarPreview: user.avatar,
 		jobTitle: "",
 		companyName: "",
 	}));
 	const [isSavingPreferences, setIsSavingPreferences] = useState(false);
-	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
 		setFormState({
-			name: user.name,
-			avatar: user.avatar,
-			avatarPreview: user.avatar,
 			jobTitle: userPreferences?.jobTitle ?? "",
 			companyName: userPreferences?.companyName ?? "",
 		});
-	}, [user, userPreferences?.companyName, userPreferences?.jobTitle]);
+	}, [userPreferences?.companyName, userPreferences?.jobTitle]);
 
-	const initials = getInitials(formState.name, user.email);
+	const initials = getInitials(user.name, user.email);
 	const avatarSrc = getAvatarSrc({
-		avatar: formState.avatarPreview,
-		name: formState.name,
+		avatar: user.avatar,
+		name: user.name,
 		email: user.email,
 	});
 
@@ -2815,47 +2803,16 @@ function ManageAccountForm({
 						<Avatar className="size-20 rounded-lg">
 							<AvatarImage
 								src={avatarSrc}
-								alt="Avatar preview"
+								alt="Profile avatar"
 								className="object-cover"
 							/>
 							<AvatarFallback className="rounded-lg bg-muted/40">
-								{formState.avatarPreview ? (
-									initials
-								) : (
-									<ImageUp className="size-8" />
-								)}
+								{user.avatar ? initials : <ImageUp className="size-8" />}
 							</AvatarFallback>
 						</Avatar>
 						<div className="flex flex-col gap-2">
-							<Button
-								variant="outline"
-								size="sm"
-								className="w-min"
-								onClick={() => fileInputRef.current?.click()}
-							>
-								Upload
-							</Button>
-							<input
-								ref={fileInputRef}
-								type="file"
-								accept="image/png,image/jpeg,image/gif,image/webp"
-								className="hidden"
-								onChange={(event) => {
-									const file = event.target.files?.[0];
-									if (!file) {
-										return;
-									}
-
-									const objectUrl = URL.createObjectURL(file);
-									setFormState((current) => ({
-										...current,
-										avatar: objectUrl,
-										avatarPreview: objectUrl,
-									}));
-								}}
-							/>
 							<FieldDescription>
-								Recommend size 1:1, up to 5MB.
+								Managed by your signed-in account.
 							</FieldDescription>
 						</div>
 					</div>
@@ -2864,18 +2821,7 @@ function ManageAccountForm({
 					<Label htmlFor="settings-name" className={SETTINGS_LABEL_CLASSNAME}>
 						Full name
 					</Label>
-					<Input
-						id="settings-name"
-						value={formState.name}
-						onChange={(event) => {
-							const nextName = event.target.value;
-							setFormState((current) => ({
-								...current,
-								name: nextName,
-							}));
-						}}
-						placeholder="Enter your name"
-					/>
+					<Input id="settings-name" value={user.name} disabled />
 				</Field>
 				<Field>
 					<Label htmlFor="settings-email" className={SETTINGS_LABEL_CLASSNAME}>
@@ -2938,11 +2884,7 @@ function ManageAccountForm({
 								companyName: formState.companyName.trim() || null,
 							});
 
-							onSave({
-								name: formState.name.trim() || user.name,
-								email: user.email,
-								avatar: formState.avatar,
-							});
+							onSave();
 						} catch (error) {
 							console.error("Failed to update profile preferences", error);
 							toast.error("Failed to update profile");
@@ -2950,7 +2892,7 @@ function ManageAccountForm({
 							setIsSavingPreferences(false);
 						}
 					}}
-					disabled={!formState.name.trim() || isSavingPreferences}
+					disabled={isSavingPreferences}
 				>
 					{isSavingPreferences ? "Saving..." : "Save"}
 				</Button>

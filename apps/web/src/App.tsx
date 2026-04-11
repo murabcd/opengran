@@ -2896,6 +2896,7 @@ function AppShell({
 					onNoteSelect={controller.openNote}
 					onNoteTitleChange={controller.setCurrentNoteTitle}
 					onNoteTrashed={controller.handleNoteTrashed}
+					onCreateNote={controller.handleQuickNote}
 				/>
 				<AppShellInset reserveRightSidebar={controller.currentView === "note"}>
 					<AppShellHeader

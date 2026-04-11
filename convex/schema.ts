@@ -157,9 +157,33 @@ export default defineSchema({
 			"ownerTokenIdentifier",
 			"normalizedName",
 		]),
+	projects: defineTable({
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		name: v.string(),
+		normalizedName: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_owner_ws_normalizedName", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"normalizedName",
+		])
+		.index("by_owner_ws_createdAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"createdAt",
+		])
+		.index("by_owner_ws_updatedAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"updatedAt",
+		]),
 	notes: defineTable({
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),
+		projectId: v.optional(v.id("projects")),
 		calendarEventKey: v.optional(v.string()),
 		authorName: v.optional(v.string()),
 		isStarred: v.optional(v.boolean()),
@@ -202,6 +226,13 @@ export default defineSchema({
 			"workspaceId",
 			"calendarEventKey",
 			"isArchived",
+		])
+		.index("by_owner_ws_project_arch_upd", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"projectId",
+			"isArchived",
+			"updatedAt",
 		])
 		.index("by_ownerTokenIdentifier_and_isArchived_and_updatedAt", [
 			"ownerTokenIdentifier",

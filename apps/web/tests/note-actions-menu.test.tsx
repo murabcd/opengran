@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -65,6 +71,45 @@ vi.mock("@workspace/ui/components/popover", () => ({
 	PopoverContent: ({ children }: React.PropsWithChildren) => (
 		<div>{children}</div>
 	),
+}));
+
+vi.mock("@workspace/ui/components/command", () => ({
+	Command: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+	CommandEmpty: ({ children }: React.PropsWithChildren) => (
+		<div>{children}</div>
+	),
+	CommandGroup: ({ children }: React.PropsWithChildren) => (
+		<div>{children}</div>
+	),
+	CommandInput: ({
+		value,
+		onValueChange,
+		...props
+	}: React.InputHTMLAttributes<HTMLInputElement> & {
+		onValueChange?: (value: string) => void;
+	}) => (
+		<input
+			{...props}
+			value={value ?? ""}
+			onChange={(event) => onValueChange?.(event.target.value)}
+		/>
+	),
+	CommandItem: ({
+		children,
+		onSelect,
+		value,
+		...props
+	}: React.PropsWithChildren<
+		React.ButtonHTMLAttributes<HTMLButtonElement> & {
+			onSelect?: (value: string) => void;
+			value?: string;
+		}
+	>) => (
+		<button type="button" {...props} onClick={() => onSelect?.(value ?? "")}>
+			{children}
+		</button>
+	),
+	CommandList: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
 }));
 
 vi.mock("@workspace/ui/components/alert-dialog", async () => {
@@ -220,19 +265,23 @@ vi.mock("@workspace/ui/components/dropdown-menu", async () => {
 
 describe("NoteActionsMenu", () => {
 	beforeEach(() => {
-		useQueryMock.mockReturnValue({
-			_id: "note-1",
-			title: "Test note",
-			visibility: "private",
-			shareId: null,
-			isStarred: false,
-		});
+		useQueryMock.mockImplementation((_query, args) =>
+			args && typeof args === "object" && "id" in args
+				? {
+						_id: "note-1",
+						title: "Test note",
+						visibility: "private",
+						shareId: null,
+						isStarred: false,
+					}
+				: [],
+		);
 
 		useMutationMock.mockImplementation(() => {
 			const mutation = vi.fn().mockResolvedValue({});
-			return {
+			return Object.assign(mutation, {
 				withOptimisticUpdate: () => mutation,
-			};
+			});
 		});
 	});
 
@@ -261,5 +310,69 @@ describe("NoteActionsMenu", () => {
 		expect(
 			screen.queryAllByRole("button", { name: "Move to trash" }),
 		).toHaveLength(1);
+	});
+
+	it("renders a searchable move menu and assigns the selected project", async () => {
+		const mutations: Array<ReturnType<typeof vi.fn>> = [];
+
+		useQueryMock.mockImplementation((_query, args) =>
+			args && typeof args === "object" && "id" in args
+				? {
+						_id: "note-1",
+						title: "Test note",
+						visibility: "private",
+						shareId: null,
+						isStarred: false,
+						projectId: undefined,
+					}
+				: [
+						{ _id: "project-1", name: "Flomni" },
+						{ _id: "project-2", name: "Forward" },
+					],
+		);
+
+		useMutationMock.mockImplementation(() => {
+			const mutation = vi.fn().mockResolvedValue({});
+			mutations.push(mutation);
+
+			return Object.assign(mutation, {
+				withOptimisticUpdate: () => mutation,
+			});
+		});
+
+		const { NoteActionsMenu } = await import(
+			"../src/components/note/note-actions-menu"
+		);
+
+		render(
+			<NoteActionsMenu noteId={"note-1" as never} showRename={false}>
+				<button type="button">Open actions</button>
+			</NoteActionsMenu>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Open actions" }));
+
+		expect(screen.getByRole("button", { name: "Move to" })).toBeTruthy();
+		expect(screen.getByPlaceholderText("Move note to...")).toBeTruthy();
+
+		fireEvent.change(screen.getByPlaceholderText("Move note to..."), {
+			target: { value: "flo" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Flomni" }));
+
+		await waitFor(() => {
+			expect(
+				mutations.some((mutation) =>
+					mutation.mock.calls.some(
+						([args]) =>
+							args?.workspaceId === "workspace-1" &&
+							args?.id === "note-1" &&
+							args?.projectId === "project-1",
+					),
+				),
+			).toBe(true);
+		});
+
+		expect(toastSuccessMock).toHaveBeenCalledWith("Note moved to project");
 	});
 });

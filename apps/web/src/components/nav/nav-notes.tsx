@@ -6,7 +6,7 @@ import {
 	SidebarMenuItem,
 } from "@workspace/ui/components/sidebar";
 import { Skeleton } from "@workspace/ui/components/skeleton";
-import { FileText, MoreHorizontal } from "lucide-react";
+import { FileText, MoreHorizontal, Plus } from "lucide-react";
 import * as React from "react";
 import { SidebarCollapsibleGroup } from "@/components/nav/sidebar-collapsible-group";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
@@ -20,40 +20,53 @@ const SIDEBAR_NOTE_SKELETON_IDS = [
 	"sidebar-note-skeleton-3",
 	"sidebar-note-skeleton-4",
 ] as const;
+const SIDEBAR_GROUP_ACTION_CLASS_NAME =
+	"opacity-0 transition-opacity pointer-events-none group-hover/header:opacity-100 group-hover/header:pointer-events-auto group-focus-within/header:opacity-100 group-focus-within/header:pointer-events-auto";
 
 export function NavNotes({
 	notes,
 	title = "Notes",
 	emptyMessage = "No notes yet",
 	showStarred = true,
+	filterProjectNotes = true,
 	currentNoteId,
 	currentNoteTitle,
 	recordingNoteId = null,
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
+	onCreateNote,
 }: {
 	notes: Array<Doc<"notes">> | undefined;
 	title?: string;
 	emptyMessage?: string;
 	showStarred?: boolean;
+	filterProjectNotes?: boolean;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	recordingNoteId?: Id<"notes"> | null;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
+	onCreateNote?: () => void;
 }) {
 	const starredNotes = React.useMemo(
 		() => (notes ?? []).filter((note) => note.isStarred),
 		[notes],
 	);
+	const visibleNoteSource = React.useMemo(
+		() =>
+			filterProjectNotes
+				? (notes ?? []).filter((note) => !note.projectId)
+				: (notes ?? []),
+		[filterProjectNotes, notes],
+	);
 	const [showAllNotes, setShowAllNotes] = React.useState(false);
 	const isNotesPending = notes === undefined;
-	const hasMoreNotes = (notes?.length ?? 0) > MAX_VISIBLE_NOTES;
+	const hasMoreNotes = visibleNoteSource.length > MAX_VISIBLE_NOTES;
 	const visibleNotes = showAllNotes
-		? (notes ?? [])
-		: (notes ?? []).slice(0, MAX_VISIBLE_NOTES);
+		? visibleNoteSource
+		: visibleNoteSource.slice(0, MAX_VISIBLE_NOTES);
 
 	return (
 		<>
@@ -76,11 +89,29 @@ export function NavNotes({
 			<SidebarCollapsibleGroup
 				title={title}
 				className="group-data-[collapsible=icon]:hidden"
+				actionClassName={
+					title === "Notes" ? SIDEBAR_GROUP_ACTION_CLASS_NAME : undefined
+				}
+				actionTooltip={title === "Notes" ? "Add note" : undefined}
+				actions={
+					title === "Notes" && onCreateNote ? (
+						<button
+							type="button"
+							aria-label="Add note"
+							className="cursor-pointer"
+							onClick={onCreateNote}
+						>
+							<Plus />
+						</button>
+					) : undefined
+				}
 			>
 				{isNotesPending ? <NavNotesSkeleton /> : null}
-				{notes && notes.length === 0 ? (
+				{notes && visibleNoteSource.length === 0 ? (
 					<div className="px-2 text-xs text-muted-foreground/50">
-						{emptyMessage}
+						{filterProjectNotes && notes.length > 0
+							? "All notes are in projects"
+							: emptyMessage}
 					</div>
 				) : null}
 				{isNotesPending ? null : (
@@ -172,8 +203,7 @@ function SidebarNotesList({
 							}
 						>
 							<SidebarMenuAction
-								showOnHover
-								className="cursor-pointer"
+								className="cursor-pointer opacity-0 pointer-events-none transition-opacity group-hover/menu-item:opacity-100 group-hover/menu-item:pointer-events-auto"
 								aria-label={`Open actions for ${displayTitle}`}
 							>
 								<MoreHorizontal />

@@ -324,6 +324,10 @@ export const remove = mutation({
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,
 		});
+		await ctx.scheduler.runAfter(0, internal.projects.removeAllForWorkspace, {
+			ownerTokenIdentifier: identity.tokenIdentifier,
+			workspaceId: args.workspaceId,
+		});
 		await ctx.scheduler.runAfter(0, internal.chats.removeAllForWorkspace, {
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,

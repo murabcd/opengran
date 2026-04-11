@@ -20,6 +20,7 @@ import * as React from "react";
 import { InboxSheet } from "@/components/inbox/inbox-sheet";
 import { NavMain } from "@/components/nav/nav-main";
 import { NavNotes } from "@/components/nav/nav-notes";
+import { NavProjects } from "@/components/nav/nav-projects";
 import { NavTrash } from "@/components/nav/nav-trash";
 import { RecipesDialog } from "@/components/recipes/recipes-dialog";
 import type { SearchCommandItem } from "@/components/search/search-command";
@@ -94,6 +95,7 @@ export function AppSidebar({
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
+	onCreateNote,
 	...props
 }: React.ComponentProps<typeof Sidebar> & {
 	workspaces: Array<WorkspaceRecord>;
@@ -124,13 +126,13 @@ export function AppSidebar({
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
+	onCreateNote: () => void;
 }) {
 	const { isMobile, state } = useSidebar();
 	const [searchOpen, setSearchOpen] = React.useState(false);
 	const [trashOpen, setTrashOpen] = React.useState(false);
 	const [recipesOpen, setRecipesOpen] = React.useState(false);
 	const [templatesOpen, setTemplatesOpen] = React.useState(false);
-	const [draftUser, setDraftUser] = React.useState(user);
 	const [optimisticReadInboxItemIds, setOptimisticReadInboxItemIds] =
 		React.useState(() => new Set<string>());
 	const transcriptionSession = useTranscriptionSession();
@@ -144,6 +146,10 @@ export function AppSidebar({
 		inboxItems?.filter(
 			(item) => !optimisticReadInboxItemIds.has(String(item._id)),
 		).length ?? 0;
+	const projects = useQuery(
+		api.projects.list,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const recordingNoteId = React.useMemo(() => {
 		if (!transcriptionSession.isListening) {
 			return null;
@@ -161,10 +167,6 @@ export function AppSidebar({
 
 		return scopedNoteId as Id<"notes">;
 	}, [transcriptionSession.isListening, transcriptionSession.scopeKey]);
-
-	React.useEffect(() => {
-		setDraftUser(user);
-	}, [user]);
 
 	React.useEffect(() => {
 		const workspaceScope = activeWorkspaceId ?? "no-workspace";
@@ -250,6 +252,7 @@ export function AppSidebar({
 							title="Shared"
 							emptyMessage="No shared notes yet"
 							showStarred={false}
+							filterProjectNotes={false}
 							currentNoteId={currentView === "note" ? currentNoteId : null}
 							currentNoteTitle={currentNoteTitle}
 							recordingNoteId={recordingNoteId}
@@ -266,12 +269,24 @@ export function AppSidebar({
 						onNoteSelect={onNoteSelect}
 						onNoteTitleChange={onNoteTitleChange}
 						onNoteTrashed={onNoteTrashed}
+						onCreateNote={onCreateNote}
+					/>
+					<NavProjects
+						projects={projects}
+						notes={notes}
+						workspaceId={activeWorkspaceId}
+						currentNoteId={currentView === "note" ? currentNoteId : null}
+						currentNoteTitle={currentNoteTitle}
+						recordingNoteId={recordingNoteId}
+						onNoteSelect={onNoteSelect}
+						onNoteTitleChange={onNoteTitleChange}
+						onNoteTrashed={onNoteTrashed}
 					/>
 				</SidebarContent>
 				<SidebarFooter>
 					<NavTrash open={trashOpen} onOpenChange={setTrashOpen} />
 					<NavUser
-						user={draftUser}
+						user={user}
 						onRecipesOpen={() => setRecipesOpen(true)}
 						onTemplatesOpen={() => setTemplatesOpen(true)}
 						onSettingsOpen={() => onSettingsOpenChange(true, "Profile")}
@@ -301,12 +316,11 @@ export function AppSidebar({
 			<SettingsDialog
 				open={settingsOpen}
 				onOpenChange={onSettingsOpenChange}
-				user={draftUser}
+				user={user}
 				workspace={
 					workspaces.find((workspace) => workspace._id === activeWorkspaceId) ??
 					null
 				}
-				onUserChange={setDraftUser}
 				initialPage={settingsPage}
 				onPageChange={(page) => onSettingsOpenChange(true, page)}
 			/>

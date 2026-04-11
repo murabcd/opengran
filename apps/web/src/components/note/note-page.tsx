@@ -37,6 +37,7 @@ import {
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { NoteComposer } from "./note-composer";
+import { optimisticPatchNote } from "./optimistic-patch-note";
 import { writeRichTextToClipboard } from "./share-note";
 
 const getPlainTextContent = ({
@@ -253,47 +254,7 @@ const useNotePageController = ({
 			...currentNote,
 			templateSlug: nextTemplateSlug,
 		});
-		const currentNote = localStore.getQuery(api.notes.get, {
-			workspaceId: args.workspaceId,
-			id: args.id,
-		});
-		if (currentNote !== undefined) {
-			localStore.setQuery(
-				api.notes.get,
-				{ workspaceId: args.workspaceId, id: args.id },
-				currentNote ? patchNote(currentNote) : currentNote,
-			);
-		}
-
-		const latestNote = localStore.getQuery(api.notes.getLatest, {
-			workspaceId: args.workspaceId,
-		});
-		if (latestNote?._id === args.id) {
-			localStore.setQuery(
-				api.notes.getLatest,
-				{ workspaceId: args.workspaceId },
-				patchNote(latestNote),
-			);
-		}
-
-		const noteLists = [
-			api.notes.list,
-			api.notes.listShared,
-			api.notes.listArchived,
-		] as const;
-
-		for (const noteQuery of noteLists) {
-			const notes = localStore.getQuery(noteQuery, {
-				workspaceId: args.workspaceId,
-			});
-			if (notes !== undefined) {
-				localStore.setQuery(
-					noteQuery,
-					{ workspaceId: args.workspaceId },
-					notes.map((item) => (item._id === args.id ? patchNote(item) : item)),
-				);
-			}
-		}
+		optimisticPatchNote(localStore, args.workspaceId, args.id, patchNote);
 	});
 
 	const flushSave = React.useCallback(

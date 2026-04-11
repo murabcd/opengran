@@ -10,6 +10,14 @@ import {
 } from "@workspace/ui/components/alert-dialog";
 import { Button } from "@workspace/ui/components/button";
 import {
+	Command,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+} from "@workspace/ui/components/command";
+import {
 	Dialog,
 	DialogContent,
 	DialogDescription,
@@ -36,6 +44,9 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
 	Check,
+	CornerUpRight,
+	FileText,
+	FolderClosed,
 	Globe,
 	Link2,
 	Lock,
@@ -52,6 +63,7 @@ import { archiveNoteChats } from "@/lib/optimistic-note-chats";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { NoteTitleEditInput } from "./note-title-edit-input";
+import { optimisticPatchNote } from "./optimistic-patch-note";
 import { optimisticRenameNote } from "./optimistic-rename-note";
 import {
 	buildNoteShareUrl,
@@ -251,11 +263,29 @@ function useNoteActionsMenu({
 	const [isMovingToTrash, setIsMovingToTrash] = React.useState(false);
 	const [isRenaming, setIsRenaming] = React.useState(false);
 	const [isUpdatingShare, setIsUpdatingShare] = React.useState(false);
+	const [isUpdatingProject, setIsUpdatingProject] = React.useState(false);
 	const { handleToggleStar, isUpdatingStar, note } = useNoteStarControl(noteId);
+	const projects = useQuery(
+		api.projects.list,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const ensureShareId = useMutation(api.notes.ensureShareId);
 	const renameNote = useMutation(api.notes.rename).withOptimisticUpdate(
 		(localStore, args) => {
 			optimisticRenameNote(localStore, args.workspaceId, args.id, args.title);
+		},
+	);
+	const setProject = useMutation(api.notes.setProject).withOptimisticUpdate(
+		(localStore, args) => {
+			optimisticPatchNote(
+				localStore,
+				args.workspaceId,
+				args.id,
+				(currentNote) => ({
+					...currentNote,
+					projectId: args.projectId ?? undefined,
+				}),
+			);
 		},
 	);
 	const moveToTrash = useMutation(api.notes.moveToTrash).withOptimisticUpdate(
@@ -448,6 +478,39 @@ function useNoteActionsMenu({
 		[activeWorkspaceId, isUpdatingShare, note, noteId, updateVisibility],
 	);
 
+	const handleSetProject = React.useCallback(
+		async (projectId: Id<"projects"> | null) => {
+			if (!note || !activeWorkspaceId || isUpdatingProject) {
+				return;
+			}
+
+			const currentProjectId = note.projectId ?? null;
+			if (currentProjectId === projectId) {
+				return;
+			}
+
+			setMenuOpen(false);
+			setIsUpdatingProject(true);
+
+			try {
+				await setProject({
+					workspaceId: activeWorkspaceId,
+					id: noteId,
+					projectId,
+				});
+				toast.success(
+					projectId ? "Note moved to project" : "Removed from project",
+				);
+			} catch (error) {
+				console.error("Failed to update project", error);
+				toast.error("Failed to update project");
+			} finally {
+				setIsUpdatingProject(false);
+			}
+		},
+		[activeWorkspaceId, isUpdatingProject, note, noteId, setProject],
+	);
+
 	const handleMoveToTrash = React.useCallback(() => {
 		if (!activeWorkspaceId || isMovingToTrash) {
 			return;
@@ -500,13 +563,16 @@ function useNoteActionsMenu({
 		isMovingToTrash,
 		isRenaming,
 		isUpdatingShare,
+		isUpdatingProject,
 		isUpdatingStar,
 		note,
+		projects,
 		preventMenuCloseAutoFocusRef,
 		ignoreInitialRenameInteractOutsideRef,
 		handleToggleStar,
 		handleRenameOpenChange,
 		handleSetVisibility,
+		handleSetProject,
 		handleCopyLink,
 		handleMoveToTrash,
 		handleConfirmTrashOpen,
@@ -545,13 +611,16 @@ export function NoteActionsMenu({
 		isMovingToTrash,
 		isRenaming,
 		isUpdatingShare,
+		isUpdatingProject,
 		isUpdatingStar,
 		note,
+		projects,
 		preventMenuCloseAutoFocusRef,
 		ignoreInitialRenameInteractOutsideRef,
 		handleToggleStar,
 		handleRenameOpenChange,
 		handleSetVisibility,
+		handleSetProject,
 		handleCopyLink,
 		handleMoveToTrash,
 		handleConfirmTrashOpen,
@@ -578,8 +647,11 @@ export function NoteActionsMenu({
 							itemsAfterDefaults={itemsAfterDefaults}
 							preventMenuCloseAutoFocusRef={preventMenuCloseAutoFocusRef}
 							note={note}
+							projects={projects}
 							isUpdatingShare={isUpdatingShare}
+							isUpdatingProject={isUpdatingProject}
 							onSetVisibility={handleSetVisibility}
+							onSetProject={handleSetProject}
 							showRename={showRename}
 							onStartRename={handleStartRename}
 							isUpdatingStar={isUpdatingStar}
@@ -625,8 +697,11 @@ export function NoteActionsMenu({
 							itemsAfterDefaults={itemsAfterDefaults}
 							preventMenuCloseAutoFocusRef={preventMenuCloseAutoFocusRef}
 							note={note}
+							projects={projects}
 							isUpdatingShare={isUpdatingShare}
+							isUpdatingProject={isUpdatingProject}
 							onSetVisibility={handleSetVisibility}
+							onSetProject={handleSetProject}
 							showRename={showRename}
 							onStartRename={handleStartRename}
 							isUpdatingStar={isUpdatingStar}
@@ -791,6 +866,97 @@ function NoteRenameEditor({
 	);
 }
 
+function NoteProjectMoveSubmenu({
+	note,
+	projects,
+	isUpdatingProject,
+	onSetProject,
+}: {
+	note: Doc<"notes"> | null | undefined;
+	projects: Array<Doc<"projects">> | undefined;
+	isUpdatingProject: boolean;
+	onSetProject: (projectId: Id<"projects"> | null) => Promise<void>;
+}) {
+	const [open, setOpen] = React.useState(false);
+	const [searchValue, setSearchValue] = React.useState("");
+
+	React.useEffect(() => {
+		if (open) {
+			return;
+		}
+
+		setSearchValue("");
+	}, [open]);
+
+	return (
+		<DropdownMenuSub open={open} onOpenChange={setOpen}>
+			<DropdownMenuSubTrigger disabled={!note}>
+				<CornerUpRight />
+				Move to
+			</DropdownMenuSubTrigger>
+			<DropdownMenuPortal>
+				<DropdownMenuSubContent className="w-72 border-input/30 p-0">
+					<Command>
+						<CommandInput
+							autoFocus
+							placeholder="Move note to..."
+							value={searchValue}
+							onValueChange={setSearchValue}
+							disabled={!note || isUpdatingProject}
+						/>
+						<CommandList>
+							<CommandEmpty>No projects found.</CommandEmpty>
+							<CommandGroup heading="Main">
+								<CommandItem
+									value="notes top level"
+									className="relative w-full gap-2 pr-8"
+									disabled={!note || isUpdatingProject}
+									onSelect={() => {
+										setOpen(false);
+										void onSetProject(null);
+									}}
+								>
+									<FileText />
+									<span className="truncate">Notes</span>
+									{!note?.projectId ? (
+										<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
+											<Check className="size-4" />
+										</span>
+									) : null}
+								</CommandItem>
+							</CommandGroup>
+							{(projects?.length ?? 0) > 0 ? (
+								<CommandGroup heading="Projects">
+									{projects?.map((project) => (
+										<CommandItem
+											key={project._id}
+											value={`${project._id} ${project.name}`}
+											className="relative w-full gap-2 pr-8"
+											disabled={!note || isUpdatingProject}
+											onSelect={() => {
+												setOpen(false);
+												void onSetProject(project._id);
+											}}
+										>
+											<FolderClosed />
+											<span className="truncate">{project.name}</span>
+											{note?.projectId === project._id ? (
+												<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
+													<Check className="size-4" />
+												</span>
+											) : null}
+										</CommandItem>
+									))}
+								</CommandGroup>
+							) : null}
+						</CommandList>
+					</Command>
+				</DropdownMenuSubContent>
+			</DropdownMenuPortal>
+		</DropdownMenuSub>
+	);
+}
+
 function NoteActionsDropdownContent({
 	align,
 	side,
@@ -798,8 +964,11 @@ function NoteActionsDropdownContent({
 	itemsAfterDefaults,
 	preventMenuCloseAutoFocusRef,
 	note,
+	projects,
 	isUpdatingShare,
+	isUpdatingProject,
 	onSetVisibility,
+	onSetProject,
 	showRename,
 	onStartRename,
 	isUpdatingStar,
@@ -813,8 +982,11 @@ function NoteActionsDropdownContent({
 	itemsAfterDefaults?: React.ReactNode;
 	preventMenuCloseAutoFocusRef: React.MutableRefObject<boolean>;
 	note: Doc<"notes"> | null | undefined;
+	projects: Array<Doc<"projects">> | undefined;
 	isUpdatingShare: boolean;
+	isUpdatingProject: boolean;
 	onSetVisibility: (visibility: NoteVisibility) => Promise<void>;
+	onSetProject: (projectId: Id<"projects"> | null) => Promise<void>;
 	showRename: boolean;
 	onStartRename: () => void;
 	isUpdatingStar: boolean;
@@ -891,6 +1063,12 @@ function NoteActionsDropdownContent({
 				{note?.isStarred ? <StarOff /> : <Star />}
 				{note?.isStarred ? "Unstar" : "Star"}
 			</DropdownMenuItem>
+			<NoteProjectMoveSubmenu
+				note={note}
+				projects={projects}
+				isUpdatingProject={isUpdatingProject}
+				onSetProject={onSetProject}
+			/>
 			<DropdownMenuItem
 				className="cursor-pointer"
 				onClick={() => {
