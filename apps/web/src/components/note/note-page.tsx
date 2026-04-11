@@ -436,10 +436,6 @@ const useNotePageController = ({
 			return;
 		}
 
-		if (!title.trim() && !searchableText.trim()) {
-			return;
-		}
-
 		const snapshot = createNoteSnapshot({
 			title,
 			content,

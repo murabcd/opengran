@@ -1,4 +1,11 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -37,6 +44,14 @@ const mockEditor = {
 	}),
 	chain: () => editorChain,
 };
+let latestEditorOptions:
+	| {
+			onUpdate?: ({ editor }: { editor: typeof mockEditor }) => void;
+	  }
+	| undefined;
+const saveNoteMutationMock = vi.fn().mockResolvedValue(undefined);
+const setNoteTemplateMutationMock = vi.fn().mockResolvedValue(undefined);
+let mutationHookCallCount = 0;
 
 vi.mock("convex/react", () => ({
 	useMutation: useMutationMock,
@@ -47,7 +62,10 @@ vi.mock("@tiptap/react", () => ({
 	EditorContent: ({ className }: { className?: string }) => (
 		<div data-testid="editor-content" className={className} />
 	),
-	useEditor: () => mockEditor,
+	useEditor: (options: typeof latestEditorOptions) => {
+		latestEditorOptions = options;
+		return mockEditor;
+	},
 }));
 
 vi.mock("../src/hooks/use-active-workspace", () => ({
@@ -116,10 +134,31 @@ describe("NotePage", () => {
 			calendarEventKey: undefined,
 		});
 
+		latestEditorOptions = undefined;
+		mutationHookCallCount = 0;
+		saveNoteMutationMock.mockClear();
+		setNoteTemplateMutationMock.mockClear();
+		mockEditor.setEditable.mockClear();
+		mockEditor.on.mockClear();
+		mockEditor.off.mockClear();
+		mockEditor.commands.setContent.mockClear();
+		mockEditor.getJSON.mockReturnValue({
+			type: "doc",
+			content: [{ type: "paragraph" }],
+		});
+		mockEditor.getText.mockReturnValue("");
+		mockEditor.getMarkdown.mockReturnValue("");
+		mockEditor.getHTML.mockReturnValue("<p></p>");
+
 		useMutationMock.mockImplementation(() => {
-			const mutation = vi.fn().mockResolvedValue(undefined);
-			return Object.assign(mutation, {
-				withOptimisticUpdate: () => mutation,
+			mutationHookCallCount += 1;
+
+			if (mutationHookCallCount % 2 === 1) {
+				return saveNoteMutationMock;
+			}
+
+			return Object.assign(setNoteTemplateMutationMock, {
+				withOptimisticUpdate: () => setNoteTemplateMutationMock,
 			});
 		});
 	});
@@ -227,6 +266,108 @@ describe("NotePage", () => {
 			expect(
 				(screen.getByLabelText("Note title") as HTMLTextAreaElement).value,
 			).toBe(""),
+		);
+	});
+
+	it("saves an empty title after clearing it", async () => {
+		const { NotePage } = await import("../src/components/note/note-page");
+
+		render(
+			<NotePage
+				noteId={"note-1" as never}
+				note={
+					{
+						_id: "note-1",
+						title: "Draft title",
+						content: JSON.stringify({
+							type: "doc",
+							content: [{ type: "paragraph" }],
+						}),
+						searchableText: "",
+						templateSlug: null,
+						calendarEventKey: undefined,
+					} as never
+				}
+			/>,
+		);
+
+		const titleInput = screen.getByLabelText("Note title");
+		await waitFor(() =>
+			expect((titleInput as HTMLTextAreaElement).value).toBe("Draft title"),
+		);
+
+		saveNoteMutationMock.mockClear();
+		fireEvent.change(titleInput, {
+			target: { value: "" },
+		});
+
+		await waitFor(() =>
+			expect(saveNoteMutationMock).toHaveBeenCalledWith({
+				workspaceId: "workspace-1",
+				id: "note-1",
+				title: "",
+				content: JSON.stringify({
+					type: "doc",
+					content: [{ type: "paragraph" }],
+				}),
+				searchableText: "",
+			}),
+		);
+	});
+
+	it("saves an empty body after clearing the editor", async () => {
+		const { NotePage } = await import("../src/components/note/note-page");
+
+		render(
+			<NotePage
+				noteId={"note-1" as never}
+				note={
+					{
+						_id: "note-1",
+						title: "",
+						content: JSON.stringify({
+							type: "doc",
+							content: [
+								{
+									type: "paragraph",
+									content: [{ type: "text", text: "Body text" }],
+								},
+							],
+						}),
+						searchableText: "Body text",
+						templateSlug: null,
+						calendarEventKey: undefined,
+					} as never
+				}
+			/>,
+		);
+
+		await waitFor(() =>
+			expect(latestEditorOptions?.onUpdate).toBeTypeOf("function"),
+		);
+
+		saveNoteMutationMock.mockClear();
+		mockEditor.getJSON.mockReturnValue({
+			type: "doc",
+			content: [{ type: "paragraph" }],
+		});
+		mockEditor.getText.mockReturnValue("");
+
+		act(() => {
+			latestEditorOptions?.onUpdate?.({ editor: mockEditor });
+		});
+
+		await waitFor(() =>
+			expect(saveNoteMutationMock).toHaveBeenCalledWith({
+				workspaceId: "workspace-1",
+				id: "note-1",
+				title: "",
+				content: JSON.stringify({
+					type: "doc",
+					content: [{ type: "paragraph" }],
+				}),
+				searchableText: "",
+			}),
 		);
 	});
 });
