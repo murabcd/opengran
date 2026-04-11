@@ -143,6 +143,8 @@ function projectItemReducer(
 				renameOpen: false,
 				renameValue: action.value,
 			};
+		default:
+			return state;
 	}
 }
 
@@ -465,7 +467,7 @@ function ProjectSidebarItem({
 						onMenuOpenChange={(nextOpen) =>
 							dispatch({ type: "setMenuOpen", value: nextOpen })
 						}
-						onToggleOpen={() => dispatch({ type: "toggleOpen" })}
+						onToggleOpen={() => dispatch({ type: "setOpen", value: !open })}
 						onRenameOpenChange={handleRenameOpenChange}
 						onStartRename={handleStartRename}
 						onRenameValueChange={(value) =>
