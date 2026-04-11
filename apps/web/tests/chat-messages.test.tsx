@@ -129,6 +129,49 @@ describe("ChatMessages", () => {
 		).toBe("https://openai.com/index/introducing-gpt-5");
 	});
 
+	it("keeps sources visually attached to the assistant answer and clickable", async () => {
+		const user = userEvent.setup();
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "assistant-4",
+						role: "assistant",
+						parts: [
+							{
+								type: "text",
+								text: "Here are the supporting references.",
+							},
+							{
+								type: "source-url",
+								sourceId: "source-2",
+								url: "https://openai.com/research",
+								title: "OpenAI Research",
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		const trigger = screen.getByRole("button", { name: "Used 1 sources" });
+		const sourcesSection = trigger.parentElement;
+		const messageColumn = sourcesSection?.parentElement;
+		const messageRow = sourcesSection?.previousElementSibling;
+
+		expect(trigger.className).toContain("cursor-pointer");
+		expect(messageRow?.className).toContain("pb-2");
+		expect(messageColumn?.className).not.toContain("space-y-4");
+
+		await user.click(trigger);
+
+		expect(
+			screen.getByRole("link", { name: "OpenAI Research" }).className,
+		).toContain("cursor-pointer");
+	});
+
 	it("applies note typography styles to assistant markdown", async () => {
 		const { ChatMessages } = await import("../src/components/chat/messages");
 

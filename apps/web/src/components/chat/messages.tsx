@@ -192,8 +192,15 @@ export function ChatMessages({
 								message.role === "user" && "ml-auto w-fit max-w-2xl",
 							)}
 						>
-							<div className="flex w-full flex-col space-y-4">
-								<div className="flex w-full flex-row items-start gap-2 pb-4">
+							<div className="flex w-full flex-col">
+								<div
+									className={cn(
+										"flex w-full flex-row items-start gap-2 pb-4",
+										message.role === "assistant" &&
+											messageSources.length > 0 &&
+											"pb-2",
+									)}
+								>
 									<div
 										className={cn(
 											"flex flex-col gap-4 text-sm leading-6",
