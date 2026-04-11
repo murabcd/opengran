@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { forwardElectronOutput } from "./forward-electron-output.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(packageRoot, "..", "..");
@@ -175,7 +176,7 @@ await runCommand("bunx", ["electron-builder", "--mac", "dir"], {
 const bundledAppExecutable = await resolveBundledAppExecutable();
 const child = spawn(bundledAppExecutable, [], {
 	cwd: packageRoot,
-	stdio: "inherit",
+	stdio: ["inherit", "pipe", "pipe"],
 	env: {
 		...process.env,
 		OPENGRAN_ENABLE_TRANSCRIPTION_DEBUG:
@@ -184,6 +185,8 @@ const child = spawn(bundledAppExecutable, [], {
 		OPENGRAN_RENDERER_URL: rendererUrl,
 	},
 });
+
+forwardElectronOutput(child);
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
 	process.on(signal, () => {

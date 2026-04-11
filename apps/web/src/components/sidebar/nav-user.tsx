@@ -22,8 +22,8 @@ import { useTheme } from "@workspace/ui/components/theme-provider";
 import {
 	ArrowDownToLine,
 	ChevronsUpDown,
-	Form,
 	LayoutTemplate,
+	ListMinus,
 	LogOut,
 	Moon,
 	Settings,
@@ -147,7 +147,7 @@ export function NavUser({
 							className="h-8 gap-2 px-2"
 							onClick={onRecipesOpen}
 						>
-							<Form />
+							<ListMinus />
 							Manage recipes
 						</DropdownMenuItem>
 						{!isDesktopApp ? (

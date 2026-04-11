@@ -46,6 +46,7 @@ import {
 import { getDesktopAuthClient } from "./auth-client.mjs";
 import { loadRootEnv } from "./env.mjs";
 import { startLocalServer } from "./local-server.mjs";
+import { toErrorLogDetails } from "./network.mjs";
 import { getRuntimeConfig, hydrateRuntimeConfig } from "./runtime-config.mjs";
 
 const { autoUpdater } = electronUpdater;
@@ -783,7 +784,10 @@ const refreshTrayCalendar = async () => {
 				syncShownScheduledMeetingNotifications([]);
 			}
 		} catch (error) {
-			console.warn("Failed to refresh tray calendar.", error);
+			console.warn(
+				"Failed to refresh tray calendar.",
+				toErrorLogDetails(error),
+			);
 			trayCalendarState = {
 				...createInitialTrayCalendarState(),
 				status: "error",

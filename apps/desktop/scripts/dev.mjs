@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import "./build-system-audio-helper.mjs";
+import { forwardElectronOutput } from "./forward-electron-output.mjs";
 
 const require = createRequire(import.meta.url);
 const electronBinary = require("electron");
@@ -38,12 +39,14 @@ if (process.platform === "darwin") {
 
 const child = spawn(electronBinary, ["."], {
 	cwd: packageRoot,
-	stdio: "inherit",
+	stdio: ["inherit", "pipe", "pipe"],
 	env: {
 		...process.env,
 		OPENGRAN_RENDERER_URL: rendererUrl,
 	},
 });
+
+forwardElectronOutput(child);
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
 	process.on(signal, () => {

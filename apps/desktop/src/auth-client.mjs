@@ -1,5 +1,6 @@
 import Conf from "conf";
 import { app } from "electron";
+import { fetchWithRetry } from "./network.mjs";
 
 const cookieStore = new Conf({
 	cwd: app.getPath("userData"),
@@ -164,6 +165,7 @@ const authFetch = async (path, options = {}) => {
 	const authBaseUrl = getAuthBaseUrl();
 	const authOrigin = getAuthOrigin();
 	const cookie = getCookie(authOrigin);
+	const method = options.method ?? "GET";
 
 	if (cookie && !requestHeaders.has("cookie")) {
 		requestHeaders.set("cookie", cookie);
@@ -177,12 +179,16 @@ const authFetch = async (path, options = {}) => {
 		requestHeaders.set("referer", `${authBaseUrl.replace(/\/$/u, "")}/`);
 	}
 
-	const response = await fetch(toAbsoluteUrl(path), {
-		method: options.method ?? "GET",
+	const request = {
+		method,
 		headers: requestHeaders,
 		body: options.body,
 		redirect: "follow",
-	});
+	};
+	const response =
+		method === "GET" || method === "HEAD"
+			? await fetchWithRetry(toAbsoluteUrl(path), request)
+			: await fetch(toAbsoluteUrl(path), request);
 
 	mergeSetCookieHeaders(response.headers, authOrigin);
 
