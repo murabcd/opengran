@@ -920,7 +920,7 @@ function NoteProjectMoveSubmenu({
 							<CommandGroup heading="Main">
 								<CommandItem
 									value="notes top level"
-									className="relative w-full gap-2 pr-8"
+									className="relative w-full cursor-pointer gap-2 pr-8"
 									disabled={!note || isUpdatingProject}
 									onSelect={() => {
 										setOpen(false);
@@ -942,7 +942,7 @@ function NoteProjectMoveSubmenu({
 										<CommandItem
 											key={project._id}
 											value={`${project._id} ${project.name}`}
-											className="relative w-full gap-2 pr-8"
+											className="relative w-full cursor-pointer gap-2 pr-8"
 											disabled={!note || isUpdatingProject}
 											onSelect={() => {
 												setOpen(false);

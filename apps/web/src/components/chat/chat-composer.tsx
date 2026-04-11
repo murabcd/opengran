@@ -46,7 +46,6 @@ import {
 import {
 	ArrowUp,
 	AtSign,
-	Book,
 	Check,
 	CirclePlus,
 	FileText,
@@ -577,9 +576,6 @@ function ScopePicker({
 							</DropdownMenuCheckboxItem>
 						);
 					})}
-					<DropdownMenuItem>
-						<Book /> Help Center
-					</DropdownMenuItem>
 				</DropdownMenuGroup>
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
