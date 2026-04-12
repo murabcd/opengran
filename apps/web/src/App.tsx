@@ -302,6 +302,47 @@ const isUpcomingEventLive = (
 	return now >= liveWindowStart && now <= endAt;
 };
 
+const getUpcomingCalendarIndicator = ({
+	hasLiveMeeting,
+	status,
+}: {
+	hasLiveMeeting: boolean;
+	status: "idle" | "ready" | "not_connected" | "error";
+}) => {
+	if (hasLiveMeeting) {
+		return {
+			label: "Live now",
+			dotClassName: "bg-status-live",
+		};
+	}
+
+	if (status === "idle") {
+		return {
+			label: "Checking",
+			dotClassName: "bg-warning-foreground",
+		};
+	}
+
+	if (status === "ready") {
+		return {
+			label: "Connected",
+			dotClassName: "bg-chart-1",
+		};
+	}
+
+	if (status === "error") {
+		return {
+			label: "Sync issue",
+			dotClassName: "bg-destructive",
+		};
+	}
+
+	return {
+		label: "Not connected",
+		dotClassName: "bg-muted-foreground/60",
+	};
+};
+
 const formatUpcomingEventMeta = (
 	event: UpcomingCalendarEvent,
 	currentDate: Date,
@@ -3873,6 +3914,13 @@ function HomeView({
 		isLoadingUpcomingCalendarEvents &&
 		upcomingCalendarStatus === "idle" &&
 		visibleUpcomingEvents.length === 0;
+	const hasLiveUpcomingMeeting = visibleUpcomingEvents.some((event) =>
+		isUpcomingEventLive(event, currentDate),
+	);
+	const upcomingCalendarIndicator = getUpcomingCalendarIndicator({
+		hasLiveMeeting: hasLiveUpcomingMeeting,
+		status: upcomingCalendarStatus,
+	});
 
 	const openMeetingLink = React.useCallback(async (url: string) => {
 		if (window.openGranDesktop) {
@@ -3894,20 +3942,31 @@ function HomeView({
 				<section className="mx-auto w-full max-w-xl space-y-6">
 					<h1 className="text-lg md:text-xl">Coming up</h1>
 					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
-						<CardContent className="p-0">
-							<div className="grid min-h-[152px] md:grid-cols-[184px_minmax(0,1fr)]">
-								<div className="flex items-start border-b border-border/60 px-5 py-4 md:border-b-0 md:border-r">
-									<div className="grid grid-cols-[auto_auto] items-start gap-x-3 gap-y-1">
-										<div className="row-span-2 text-5xl leading-none tracking-tight tabular-nums">
-											{currentDayOfMonth}
-										</div>
-										<div className="flex items-center gap-2 pt-1 text-base leading-none">
-											<span>{currentMonthLabel}</span>
-											<span className="h-1.5 w-1.5 rounded-full bg-status-live" />
-										</div>
-										<p className="text-base leading-none text-muted-foreground">
-											{currentWeekdayLabel}
-										</p>
+					<CardContent className="p-0">
+						<div className="grid min-h-[152px] md:grid-cols-[184px_minmax(0,1fr)]">
+							<div className="flex items-start border-b border-border/60 px-5 py-4 md:border-b-0 md:border-r">
+								<div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1">
+									<div className="row-span-2 text-5xl leading-none tracking-tight tabular-nums">
+										{currentDayOfMonth}
+									</div>
+									<div className="flex min-w-0 items-center gap-2 pt-1 text-base leading-none">
+										<span>{currentMonthLabel}</span>
+										<span
+											role="status"
+											aria-label={`Calendar status: ${upcomingCalendarIndicator.label}`}
+											className="inline-flex"
+										>
+											<span
+												className={cn(
+													"size-2 rounded-full",
+													upcomingCalendarIndicator.dotClassName,
+												)}
+											/>
+										</span>
+									</div>
+									<p className="text-base leading-none text-muted-foreground">
+										{currentWeekdayLabel}
+									</p>
 									</div>
 								</div>
 								<div className="flex min-h-[152px] w-full items-start justify-center p-3">
