@@ -1166,8 +1166,8 @@ function NotePageContent({
 
 	return (
 		<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
-			<div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
-				<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-5xl flex-1 gap-4 md:min-h-[calc(100svh-5rem)]">
+			<div className="relative flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
+				<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-5xl flex-1 md:min-h-[calc(100svh-5rem)]">
 					<div className="min-w-0 flex-1">
 						<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
 							<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
@@ -1251,14 +1251,14 @@ function NotePageContent({
 							</div>
 						</div>
 					</div>
+				</div>
 
-					<div className="hidden xl:block xl:w-10 xl:shrink-0">
-						<div className="sticky top-1/2 -translate-y-1/2">
-							<NoteTableOfContents
-								anchors={controller.tableOfContents}
-								onSelect={handleTableOfContentsSelect}
-							/>
-						</div>
+				<div className="pointer-events-none absolute top-0 right-0 hidden h-full lg:block">
+					<div className="pointer-events-auto sticky top-1/2 -translate-y-1/2">
+						<NoteTableOfContents
+							anchors={controller.tableOfContents}
+							onSelect={handleTableOfContentsSelect}
+						/>
 					</div>
 				</div>
 			</div>
