@@ -373,7 +373,6 @@ const useNotePageController = ({
 			onCommentThreadClick,
 		}),
 		immediatelyRender: false,
-		autofocus: "end",
 		editorProps: {
 			attributes: {
 				class:
@@ -427,7 +426,7 @@ const useNotePageController = ({
 			queuedSaveRef.current = null;
 			setTableOfContents([]);
 
-			if (editor && !noteId) {
+			if (editor) {
 				applyDraftState({
 					title: "",
 					content: EMPTY_DOCUMENT_STRING,

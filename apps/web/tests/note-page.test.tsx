@@ -46,6 +46,7 @@ const mockEditor = {
 };
 let latestEditorOptions:
 	| {
+			autofocus?: boolean | "start" | "end" | "all";
 			onUpdate?: ({ editor }: { editor: typeof mockEditor }) => void;
 	  }
 	| undefined;
@@ -242,6 +243,36 @@ describe("NotePage", () => {
 		);
 
 		expect(chainRunMock).toHaveBeenCalled();
+	});
+
+	it("does not autofocus the editor to the end when opening a note", async () => {
+		const { NotePage } = await import("../src/components/note/note-page");
+
+		render(
+			<NotePage
+				noteId={"note-1" as never}
+				note={
+					{
+						_id: "note-1",
+						title: "Long note",
+						content: JSON.stringify({
+							type: "doc",
+							content: [
+								{
+									type: "paragraph",
+									content: [{ type: "text", text: "First paragraph" }],
+								},
+							],
+						}),
+						searchableText: "First paragraph",
+						templateSlug: null,
+						calendarEventKey: undefined,
+					} as never
+				}
+			/>,
+		);
+
+		expect(latestEditorOptions?.autofocus).toBeUndefined();
 	});
 
 	it("clears the previous note title while the next note is still loading", async () => {
