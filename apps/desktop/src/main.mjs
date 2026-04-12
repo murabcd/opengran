@@ -5431,6 +5431,54 @@ const handleCheckForUpdates = async () => {
 	await autoUpdater.checkForUpdates();
 };
 
+const handleRestartApp = () => {
+	isBypassingQuitConfirmation = true;
+	isQuitting = true;
+	app.relaunch();
+	app.quit();
+};
+
+const handleDesktopSignOut = async () => {
+	try {
+		const desktopAuthClient = getDesktopAuthClient();
+		await desktopAuthClient.$fetch("/sign-out", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+			},
+			body: JSON.stringify({}),
+			throw: true,
+		});
+		lastNavigation = { ...defaultLastNavigation };
+		await saveLastNavigation();
+
+		if (!mainWindow || mainWindow.isDestroyed()) {
+			await showMainWindow(defaultLastNavigation);
+			return;
+		}
+
+		await mainWindow.loadURL(await getNavigationUrl(defaultLastNavigation));
+
+		if (mainWindow.isMinimized()) {
+			mainWindow.restore();
+		}
+
+		ensureDockVisible();
+		ensureAppActive();
+		mainWindow.show();
+		mainWindow.focus();
+	} catch (error) {
+		const errorDetails = toErrorLogDetails(error);
+		console.error("Failed to sign out from desktop menu.", errorDetails);
+		await showUpdateMessageBox({
+			type: "error",
+			title: "Sign Out Failed",
+			message: `Couldn't sign out of ${app.getName()}.`,
+			detail: errorDetails.message,
+		});
+	}
+};
+
 const buildApplicationMenu = () => {
 	if (process.platform !== "darwin") {
 		return null;
@@ -5444,6 +5492,20 @@ const buildApplicationMenu = () => {
 					label: `About ${app.getName()}`,
 					click: () => {
 						void showAboutMessageBox();
+					},
+				},
+				{ type: "separator" },
+				{
+					label: "Check for updates...",
+					click: () => {
+						void handleCheckForUpdates();
+					},
+				},
+				{
+					label: "Settings",
+					accelerator: "Command+,",
+					click: () => {
+						void showMainWindow({ pathname: "/settings" });
 					},
 				},
 				{ type: "separator" },
@@ -5461,9 +5523,28 @@ const buildApplicationMenu = () => {
 				{ type: "separator" },
 				{
 					label: "Quit",
+					click: () => {
+						void handleTrayQuit();
+					},
+				},
+				{
+					label: `Restart ${app.getName()}`,
+					click: () => {
+						handleRestartApp();
+					},
+				},
+				{
+					label: "Quit completely",
 					accelerator: "Command+Q",
 					click: () => {
 						void confirmAndQuitCompletely();
+					},
+				},
+				{ type: "separator" },
+				{
+					label: "Log out",
+					click: () => {
+						void handleDesktopSignOut();
 					},
 				},
 			],
