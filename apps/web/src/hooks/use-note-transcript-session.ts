@@ -198,19 +198,26 @@ export const useNoteTranscriptSession = ({
 	);
 	const captureLatestTranscriptSession =
 		captureTranscriptSessionRepository.latestTranscriptSession;
+	const captureLatestTranscriptSessionSummary =
+		captureTranscriptSessionRepository.latestTranscriptSessionSummary;
 	const currentNoteLatestTranscriptSession =
 		currentNoteTranscriptSessionRepository.latestTranscriptSession;
+	const currentNoteLatestTranscriptSessionSummary =
+		currentNoteTranscriptSessionRepository.latestTranscriptSessionSummary;
 	const isViewingCaptureScope = currentNoteScopeKey === captureScopeKey;
-	const latestTranscriptSession = isViewingCaptureScope
-		? captureLatestTranscriptSession
-		: currentNoteLatestTranscriptSession;
+	const latestTranscriptSessionSummary = isViewingCaptureScope
+		? captureLatestTranscriptSessionSummary
+		: currentNoteLatestTranscriptSessionSummary;
 	const currentNoteStoredTranscript = React.useMemo(
 		() =>
 			currentNoteLatestTranscriptSession
 				? createTranscriptText(currentNoteLatestTranscriptSession.utterances) ||
 					currentNoteLatestTranscriptSession.finalTranscript
-				: "",
-		[currentNoteLatestTranscriptSession],
+				: (currentNoteLatestTranscriptSessionSummary?.finalTranscript ?? ""),
+		[
+			currentNoteLatestTranscriptSession,
+			currentNoteLatestTranscriptSessionSummary?.finalTranscript,
+		],
 	);
 	const visibleOrderedTranscriptUtterances = isViewingCaptureScope
 		? orderedTranscriptUtterances
@@ -277,9 +284,10 @@ export const useNoteTranscriptSession = ({
 			!captureTranscriptSessionRepository.isLatestTranscriptSessionLoading
 		: !currentNoteTranscriptSessionRepository.isLatestTranscriptSessionLoading;
 	const hasGeneratedLatestTranscript = Boolean(
-		latestTranscriptSession?.generatedNoteAt ||
-			(latestTranscriptSession &&
-				latestTranscriptSession.sessionId === generatedTranscriptSessionId),
+		latestTranscriptSessionSummary?.generatedNoteAt ||
+			(latestTranscriptSessionSummary &&
+				latestTranscriptSessionSummary.sessionId ===
+					generatedTranscriptSessionId),
 	);
 	const visibleHasPendingGenerateTranscript = isViewingCaptureScope
 		? hasPendingGenerateTranscript
@@ -557,17 +565,19 @@ export const useNoteTranscriptSession = ({
 
 	React.useEffect(() => {
 		const latestSession = captureLatestTranscriptSession;
+		const latestSessionSummary = captureLatestTranscriptSessionSummary;
 		const latestServerTranscript = latestSession
 			? createTranscriptText(latestSession.utterances) ||
 				latestSession.finalTranscript
-			: "";
-		const latestSessionUpdatedAt = latestSession?.updatedAt ?? null;
+			: (latestSessionSummary?.finalTranscript ?? "");
+		const latestSessionUpdatedAt =
+			latestSessionSummary?.updatedAt ?? latestSession?.updatedAt ?? null;
 		const hasNewerServerSnapshot =
 			loadedTranscriptDraftUpdatedAtRef.current !== null &&
 			latestSessionUpdatedAt !== null &&
 			latestSessionUpdatedAt > loadedTranscriptDraftUpdatedAtRef.current;
 		const hasMoreServerUtterances =
-			latestSession !== null &&
+			latestSession != null &&
 			latestSession.utterances.length > transcriptUtterances.length;
 		const hasLongerServerTranscript =
 			latestServerTranscript.length > pendingGenerateTranscript.trim().length;
@@ -577,9 +587,9 @@ export const useNoteTranscriptSession = ({
 			transcriptSessionStartPromiseRef.current === null &&
 			!previousSpeechListeningRef.current &&
 			!isSpeechListening &&
-			latestSession !== null &&
+			latestSession != null &&
 			(!hasLoadedTranscriptDraftContentRef.current ||
-				latestSession?.generatedNoteAt !== null ||
+				latestSessionSummary?.generatedNoteAt !== null ||
 				hasNewerServerSnapshot ||
 				hasMoreServerUtterances ||
 				hasLongerServerTranscript);
@@ -590,19 +600,15 @@ export const useNoteTranscriptSession = ({
 
 		hasHydratedStoredTranscriptSessionRef.current = true;
 		activeTranscriptSessionIdRef.current = null;
-		lastCompletedTranscriptSessionIdRef.current =
-			captureLatestTranscriptSession.sessionId;
+		lastCompletedTranscriptSessionIdRef.current = latestSession.sessionId;
 		setActiveTranscriptSessionId(null);
 		persistedTranscriptUtteranceIdsRef.current = new Set(
-			captureLatestTranscriptSession.utterances.map(
-				(utterance) => utterance.id,
-			),
+			latestSession.utterances.map((utterance) => utterance.id),
 		);
-		setTranscriptUtterances(captureLatestTranscriptSession.utterances);
+		setTranscriptUtterances(latestSession.utterances);
 		setPendingGenerateTranscript(
-			captureLatestTranscriptSession.generatedNoteAt ||
-				captureLatestTranscriptSession.sessionId ===
-					generatedTranscriptSessionId
+			latestSession.generatedNoteAt ||
+				latestSession.sessionId === generatedTranscriptSessionId
 				? ""
 				: latestServerTranscript,
 		);
@@ -615,6 +621,7 @@ export const useNoteTranscriptSession = ({
 		}
 	}, [
 		captureLatestTranscriptSession,
+		captureLatestTranscriptSessionSummary,
 		captureTranscriptDraftKey,
 		captureTranscriptSessionRepository,
 		generatedTranscriptSessionId,
@@ -786,7 +793,9 @@ export const useNoteTranscriptSession = ({
 		const targetSessionId = isViewingCaptureScope
 			? (lastCompletedTranscriptSessionIdRef.current ??
 				activeTranscriptSessionIdRef.current)
-			: (currentNoteLatestTranscriptSession?.sessionId ?? null);
+			: (currentNoteLatestTranscriptSessionSummary?.sessionId ??
+				currentNoteLatestTranscriptSession?.sessionId ??
+				null);
 
 		setIsGeneratingNotes(true);
 		void (async () => {
@@ -823,6 +832,7 @@ export const useNoteTranscriptSession = ({
 		captureTranscriptDraftKey,
 		captureTranscriptSessionRepository,
 		currentNoteLatestTranscriptSession,
+		currentNoteLatestTranscriptSessionSummary,
 		currentNoteScopeKey,
 		currentNoteStoredTranscript,
 		currentNoteTranscriptSessionRepository,

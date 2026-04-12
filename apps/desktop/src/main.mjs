@@ -92,7 +92,10 @@ const meetingDetectionDebounceMs = 8_000;
 const meetingDetectionDismissMs = 30 * 60 * 1000;
 const meetingWidgetAutoHideMs = 12 * 1000;
 const scheduledMeetingNotificationLeadTimeMs = 5 * 60 * 1000;
-const trayCalendarRefreshMs = 60 * 1000;
+const trayCalendarActiveRefreshMs = 60 * 1000;
+const trayCalendarIdleRefreshMs = 5 * 60 * 1000;
+const trayCalendarUnavailableRefreshMs = 15 * 60 * 1000;
+const trayCalendarUpcomingRefreshWindowMs = 30 * 60 * 1000;
 const trayCalendarMenuEventLimit = 5;
 const browserMeetingSignalFreshMs = 30 * 1000;
 const shouldLogDesktopTurnDebug =
@@ -716,9 +719,63 @@ const getDesktopConvexToken = async () => {
 		: null;
 };
 
-const scheduleTrayCalendarRefresh = (delayMs = trayCalendarRefreshMs) => {
+const clearTrayCalendarRefresh = () => {
 	if (trayCalendarRefreshTimeoutId != null) {
 		clearTimeout(trayCalendarRefreshTimeoutId);
+		trayCalendarRefreshTimeoutId = null;
+	}
+};
+
+const shouldMaintainTrayCalendar = () =>
+	Boolean(trayCalendarWorkspaceId) &&
+	(traySettings.keepOpenInMenuBar ||
+		activeWorkspaceNotificationPreferences.notifyForScheduledMeetings);
+
+const shouldUseActiveTrayCalendarRefresh = (events) => {
+	const now = Date.now();
+
+	return events.some((event) => {
+		if (!event?.isMeeting || event.isAllDay) {
+			return false;
+		}
+
+		const startAt = Date.parse(event.startAt);
+		const endAt = Date.parse(event.endAt);
+
+		if (!Number.isFinite(startAt) || !Number.isFinite(endAt) || endAt <= now) {
+			return false;
+		}
+
+		return startAt - now <= trayCalendarUpcomingRefreshWindowMs;
+	});
+};
+
+const getTrayCalendarRefreshDelay = () => {
+	if (!shouldMaintainTrayCalendar()) {
+		return null;
+	}
+
+	if (
+		trayCalendarState.status === "ready" &&
+		shouldUseActiveTrayCalendarRefresh(trayCalendarState.events)
+	) {
+		return trayCalendarActiveRefreshMs;
+	}
+
+	if (trayCalendarState.status === "ready") {
+		return trayCalendarIdleRefreshMs;
+	}
+
+	return trayCalendarUnavailableRefreshMs;
+};
+
+const scheduleTrayCalendarRefresh = (
+	delayMs = getTrayCalendarRefreshDelay(),
+) => {
+	clearTrayCalendarRefresh();
+
+	if (delayMs == null) {
+		return;
 	}
 
 	trayCalendarRefreshTimeoutId = setTimeout(() => {
@@ -734,9 +791,12 @@ const refreshTrayCalendar = async () => {
 
 	trayCalendarRefreshPromise = (async () => {
 		try {
-			const convexToken = await getDesktopConvexToken();
+			if (!shouldMaintainTrayCalendar()) {
+				trayCalendarState = createInitialTrayCalendarState();
+				return;
+			}
 
-			if (!convexToken) {
+			if (!trayCalendarWorkspaceId) {
 				trayCalendarState = {
 					...createInitialTrayCalendarState(),
 					status: "not_connected",
@@ -744,7 +804,9 @@ const refreshTrayCalendar = async () => {
 				return;
 			}
 
-			if (!trayCalendarWorkspaceId) {
+			const convexToken = await getDesktopConvexToken();
+
+			if (!convexToken) {
 				trayCalendarState = {
 					...createInitialTrayCalendarState(),
 					status: "not_connected",
@@ -5641,6 +5703,7 @@ const buildTrayMenu = () =>
 						};
 						void saveTraySettings();
 						refreshTrayMenu();
+						void refreshTrayCalendar();
 					},
 				},
 				{
