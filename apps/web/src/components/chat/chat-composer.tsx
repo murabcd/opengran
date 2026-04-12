@@ -84,6 +84,7 @@ type ChatComposerProps = {
 	hasMessages: boolean;
 	draft: string;
 	editingMessageId?: string | null;
+	topAccessory?: React.ReactNode;
 	onDraftChange: (value: string) => void;
 	onDraftKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>;
 	onCancelEdit?: () => void;
@@ -127,6 +128,7 @@ export function ChatComposer({
 	hasMessages,
 	draft,
 	editingMessageId,
+	topAccessory,
 	onDraftChange,
 	onDraftKeyDown,
 	onCancelEdit,
@@ -304,23 +306,29 @@ export function ChatComposer({
 	}, [editingMessageId, onCancelEdit]);
 
 	return (
-		<div className={`mx-auto w-full max-w-xl ${hasMessages ? "mt-auto" : ""}`}>
+		<div
+			className={`relative mx-auto w-full max-w-xl ${hasMessages ? "mt-auto" : ""}`}
+		>
 			<label htmlFor="chat-prompt" className="sr-only">
 				Prompt
 			</label>
 			{editingMessageId && onCancelEdit ? (
-				<div className="mb-3 flex justify-center">
+				<div className="pointer-events-none absolute inset-x-0 bottom-full z-10 mb-3 flex justify-center">
 					<button
 						type="button"
 						onClick={onCancelEdit}
-						className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border/80 bg-background/95 px-4 py-1.5 text-sm text-foreground shadow-sm hover:bg-background/95"
+						className="pointer-events-auto inline-flex cursor-pointer items-center gap-2 rounded-full border border-border/60 bg-secondary/80 px-4 py-1.5 text-sm text-secondary-foreground shadow-sm hover:bg-secondary"
 						aria-label="Cancel edit"
 					>
 						<span>Cancel edit</span>
-						<span className="rounded-full border border-border/80 px-2 py-0.5 text-[10px] leading-none text-muted-foreground">
+						<span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] leading-none text-muted-foreground">
 							Esc
 						</span>
 					</button>
+				</div>
+			) : topAccessory ? (
+				<div className="pointer-events-none absolute inset-x-0 bottom-full z-10 mb-3 flex justify-center">
+					<div className="pointer-events-auto">{topAccessory}</div>
 				</div>
 			) : null}
 			<InputGroup

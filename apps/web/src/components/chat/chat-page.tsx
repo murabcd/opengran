@@ -9,11 +9,12 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@workspace/ui/components/alert-dialog";
+import { Button } from "@workspace/ui/components/button";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
 import { useMutation, useQuery } from "convex/react";
-import { FileText } from "lucide-react";
+import { ArrowDown, FileText } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { ChatMessages } from "@/components/chat/messages";
@@ -573,7 +574,11 @@ export function ChatPage({
 		onChatRemoved,
 		activeWorkspace,
 	});
-	const { containerRef } = useStickyScrollToBottom();
+	const {
+		containerRef,
+		isAtBottom: isChatViewportAtBottom,
+		scrollToBottom: scrollChatToBottom,
+	} = useStickyScrollToBottom();
 	const handleCreateNoteFromResponse = React.useCallback(
 		(content: string) => {
 			if (!onCreateNoteFromResponse) {
@@ -597,6 +602,20 @@ export function ChatPage({
 		<ChatComposer
 			hasMessages={controller.hasMessages}
 			draft={controller.draft}
+			topAccessory={
+				controller.hasMessages && !isChatViewportAtBottom ? (
+					<Button
+						type="button"
+						variant="secondary"
+						size="icon"
+						className="size-9 rounded-full border border-border/60 shadow-md"
+						onClick={() => scrollChatToBottom()}
+						aria-label="Scroll to latest messages"
+					>
+						<ArrowDown className="size-4" />
+					</Button>
+				) : undefined
+			}
 			onDraftChange={controller.setDraft}
 			onDraftKeyDown={controller.handleDraftKeyDown}
 			onSubmit={controller.handleSubmit}
@@ -652,7 +671,7 @@ export function ChatPage({
 				<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
 					<div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
 						{controller.hasMessages ? (
-							<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
+							<div className="relative mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
 								<div className="flex-1 pt-8 pb-28 md:pb-32">
 									<ChatMessages
 										messages={controller.messages}

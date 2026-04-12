@@ -266,7 +266,11 @@ const useNoteComposerController = ({
 	const rootRef = React.useRef<HTMLDivElement>(null);
 	const inlinePanelRef = React.useRef<HTMLDivElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-	const { containerRef: chatViewportRef } = useStickyScrollToBottom();
+	const {
+		containerRef: chatViewportRef,
+		isAtBottom: isChatViewportAtBottom,
+		scrollToBottom: scrollChatToBottom,
+	} = useStickyScrollToBottom();
 	const previousSpeechListeningRef = React.useRef(false);
 	const panelModeRef = React.useRef(panelModeState);
 	const presentationModeRef = React.useRef(presentationModeState);
@@ -1111,6 +1115,7 @@ const useNoteComposerController = ({
 		chatMessages,
 		chatTitle,
 		chatViewportRef,
+		isChatViewportAtBottom,
 		closeRightSidebar,
 		composerPlaceholder,
 		currentChatId,
@@ -1160,6 +1165,7 @@ const useNoteComposerController = ({
 		rootRef,
 		recipePopoverOpen,
 		recipes,
+		scrollChatToBottom,
 		scrollTranscriptToBottom: transcriptSession.scrollTranscriptToBottom,
 		selectedRecipe,
 		setPanelMode,
@@ -1902,11 +1908,13 @@ function TranscriptInlinePopoverFooter({
 	controller,
 	isSpeechListening,
 	speechControls,
+	topAccessory,
 }: {
 	containerRef?: React.Ref<HTMLDivElement>;
 	controller: NoteComposerController;
 	isSpeechListening: boolean;
 	speechControls: React.ReactNode;
+	topAccessory?: React.ReactNode;
 }) {
 	return (
 		<InlinePopoverFooterContainer
@@ -1914,9 +1922,16 @@ function TranscriptInlinePopoverFooter({
 			className="absolute inset-x-0 bottom-[6px] z-10 px-[6px] pb-0"
 		>
 			<div className="relative">
-				{isSpeechListening ? (
-					<div className="pointer-events-none absolute inset-x-4 bottom-full z-10 mb-2 rounded-lg bg-muted px-4 py-1 text-center text-[11px] leading-4 text-muted-foreground">
-						Always get consent when transcribing others.
+				{isSpeechListening || topAccessory ? (
+					<div className="pointer-events-none absolute inset-x-4 bottom-full z-10 mb-3 flex flex-col items-center gap-2">
+						{isSpeechListening ? (
+							<div className="w-full rounded-lg bg-muted px-4 py-1 text-center text-[11px] leading-4 text-muted-foreground">
+								Always get consent when transcribing others.
+							</div>
+						) : null}
+						{topAccessory ? (
+							<div className="pointer-events-auto">{topAccessory}</div>
+						) : null}
 					</div>
 				) : null}
 
@@ -2000,28 +2015,37 @@ function ChatComposerForm({
 	controller,
 	formClassName,
 	speechControls,
+	topAccessory,
 }: {
 	activateInlineOnFocus?: boolean;
 	controller: NoteComposerController;
 	formClassName?: string;
 	speechControls: React.ReactNode;
+	topAccessory?: React.ReactNode;
 }) {
 	return (
-		<form onSubmit={controller.handleSubmit} className={formClassName}>
+		<form
+			onSubmit={controller.handleSubmit}
+			className={cn("relative", formClassName)}
+		>
 			{controller.editingMessageId ? (
-				<div className="mb-3 flex justify-center">
+				<div className="pointer-events-none absolute inset-x-0 bottom-full z-10 mb-3 flex justify-center">
 					<Button
 						type="button"
 						variant="ghost"
-						className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-background/95 px-4 py-1.5 text-sm text-foreground shadow-sm hover:bg-background/95"
+						className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/80 px-4 py-1.5 text-sm text-secondary-foreground shadow-sm hover:bg-secondary"
 						aria-label="Cancel edit"
 						onClick={controller.handleCancelEdit}
 					>
 						<span>Cancel edit</span>
-						<span className="rounded-full border border-border/80 px-2 py-0.5 text-[10px] leading-none text-muted-foreground">
+						<span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] leading-none text-muted-foreground">
 							Esc
 						</span>
 					</Button>
+				</div>
+			) : topAccessory ? (
+				<div className="pointer-events-none absolute inset-x-0 bottom-full z-10 mb-3 flex justify-center">
+					<div className="pointer-events-auto">{topAccessory}</div>
 				</div>
 			) : null}
 			<ChatInlinePopoverFooter
@@ -2220,6 +2244,21 @@ function NoteComposerChatPanelContent({
 					: undefined
 			}
 			speechControls={null}
+			topAccessory={
+				controller.chatMessages.length > 0 &&
+				!controller.isChatViewportAtBottom ? (
+					<Button
+						type="button"
+						variant="secondary"
+						size="icon"
+						className="size-9 rounded-full border border-border/60 shadow-md"
+						onClick={() => controller.scrollChatToBottom()}
+						aria-label="Scroll to latest messages"
+					>
+						<ArrowDown className="size-4" />
+					</Button>
+				) : undefined
+			}
 		/>
 	);
 
@@ -2297,7 +2336,10 @@ function NoteComposerTranscriptPanelContent({
 						: undefined
 				}
 			>
-				<NoteTranscriptPanel controller={controller} />
+				<NoteTranscriptPanel
+					controller={controller}
+					showFloatingScrollButton={!shouldRenderInlineComposer}
+				/>
 			</CardContent>
 
 			<TranscriptPanelNoticeStack
@@ -2312,6 +2354,21 @@ function NoteComposerTranscriptPanelContent({
 					isSpeechListening={controller.isSpeechListening}
 					speechControls={
 						<NoteComposerSpeechControls controller={controller} />
+					}
+					topAccessory={
+						!controller.isTranscriptViewportAtBottom &&
+						controller.displayTranscriptEntries.length > 0 ? (
+							<Button
+								type="button"
+								variant="secondary"
+								size="icon"
+								className="size-9 rounded-full border border-border/60 shadow-md"
+								onClick={() => controller.scrollTranscriptToBottom()}
+								aria-label="Scroll to latest transcript"
+							>
+								<ArrowDown className="size-4" />
+							</Button>
+						) : undefined
 					}
 				/>
 			) : null}
@@ -2465,8 +2522,10 @@ function NoteComposerPanelContent({
 
 function NoteTranscriptPanel({
 	controller,
+	showFloatingScrollButton = true,
 }: {
 	controller: NoteComposerController;
+	showFloatingScrollButton?: boolean;
 }) {
 	if (!controller.fullTranscript) {
 		return (
@@ -2522,7 +2581,8 @@ function NoteTranscriptPanel({
 					))}
 				</div>
 			</ScrollArea>
-			{!controller.isTranscriptViewportAtBottom &&
+			{showFloatingScrollButton &&
+			!controller.isTranscriptViewportAtBottom &&
 			controller.displayTranscriptEntries.length > 0 ? (
 				<div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center">
 					<Button

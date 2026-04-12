@@ -16,6 +16,8 @@ const useNoteTranscriptSessionMock = vi.fn();
 const useSidebarMock = vi.fn();
 const convexTokenMock = vi.fn();
 const regenerateMock = vi.fn();
+const scrollToBottomMock = vi.fn();
+const useStickyScrollToBottomMock = vi.fn();
 
 vi.mock("@ai-sdk/react", () => ({
 	useChat: useChatMock,
@@ -149,11 +151,7 @@ vi.mock("../src/hooks/use-note-transcript-session", () => ({
 }));
 
 vi.mock("../src/hooks/use-sticky-scroll-to-bottom", () => ({
-	useStickyScrollToBottom: () => ({
-		containerRef: {
-			current: null,
-		},
-	}),
+	useStickyScrollToBottom: () => useStickyScrollToBottomMock(),
 }));
 
 vi.mock("../src/lib/auth-client", () => ({
@@ -187,6 +185,14 @@ describe("NoteComposer", () => {
 		useQueryMock.mockReturnValue(undefined);
 		useMutationMock.mockReturnValue(vi.fn().mockResolvedValue(undefined));
 		regenerateMock.mockReset();
+		scrollToBottomMock.mockReset();
+		useStickyScrollToBottomMock.mockReturnValue({
+			containerRef: {
+				current: null,
+			},
+			isAtBottom: true,
+			scrollToBottom: scrollToBottomMock,
+		});
 		convexTokenMock.mockResolvedValue({
 			data: {
 				token: null,
@@ -267,6 +273,97 @@ describe("NoteComposer", () => {
 		expect(
 			screen.queryByRole("button", { name: "Audio visualization" }),
 		).toBeNull();
+	});
+
+	it("shows a floating scroll button when the note chat is away from the bottom", async () => {
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+		useStickyScrollToBottomMock.mockReturnValue({
+			containerRef: {
+				current: null,
+			},
+			isAtBottom: false,
+			scrollToBottom: scrollToBottomMock,
+		});
+		useChatMock.mockReturnValue({
+			error: undefined,
+			messages: [
+				{
+					id: "user-1",
+					role: "user",
+					parts: [{ type: "text", text: "hello" }],
+				},
+			],
+			sendMessage: vi.fn(),
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			status: "ready",
+			stop: vi.fn(),
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<NoteComposer
+					noteContext={{
+						noteId: "note-1",
+						text: "",
+						title: "New note",
+					}}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "Scroll to latest messages",
+			}),
+		);
+
+		expect(scrollToBottomMock).toHaveBeenCalledTimes(1);
 	});
 
 	it("keeps streaming assistant thinking aligned to the left", async () => {

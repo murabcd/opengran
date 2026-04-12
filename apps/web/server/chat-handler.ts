@@ -414,6 +414,8 @@ export const handleChatRequest = async (
 
 	const {
 		id,
+		trigger,
+		messageId,
 		message,
 		messages = [],
 		model,
@@ -488,7 +490,7 @@ export const handleChatRequest = async (
 					})
 					.catch(() => [])
 			: [];
-	const editedMessageId = body.messageId ?? message?.id;
+	const editedMessageId = messageId ?? message?.id;
 	const editedMessageIndex = editedMessageId
 		? storedChatMessages.findIndex(
 				(storedMessage) => storedMessage.id === editedMessageId,
@@ -521,15 +523,15 @@ export const handleChatRequest = async (
 		convexClient &&
 		id &&
 		resolvedWorkspaceId &&
-		body.trigger === "submit-message" &&
-		body.messageId &&
+		trigger === "submit-message" &&
+		messageId &&
 		editedMessageIndex >= 0
 	) {
 		try {
 			await convexClient.mutation(api.chats.truncateFromMessage, {
 				workspaceId: resolvedWorkspaceId,
 				chatId: id,
-				messageId: body.messageId,
+				messageId,
 			});
 		} catch (error) {
 			console.error("Failed to truncate edited chat message branch", error);
@@ -539,14 +541,14 @@ export const handleChatRequest = async (
 		convexClient &&
 		id &&
 		resolvedWorkspaceId &&
-		body.trigger === "regenerate-message" &&
-		body.messageId
+		trigger === "regenerate-message" &&
+		messageId
 	) {
 		try {
 			await convexClient.mutation(api.chats.truncateFromMessage, {
 				workspaceId: resolvedWorkspaceId,
 				chatId: id,
-				messageId: body.messageId,
+				messageId,
 			});
 		} catch (error) {
 			console.error(

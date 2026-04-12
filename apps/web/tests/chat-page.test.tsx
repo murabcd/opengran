@@ -13,6 +13,8 @@ const truncateFromMessageMock = vi.fn();
 const useChatMock = vi.fn();
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
+const scrollToBottomMock = vi.fn();
+const useStickyScrollToBottomMock = vi.fn();
 
 const mockChatPageMutations = () => {
 	let mutationCallCount = 0;
@@ -43,6 +45,10 @@ vi.mock("ai", () => ({
 	DefaultChatTransport: class DefaultChatTransport {
 		constructor(readonly options: unknown) {}
 	},
+}));
+
+vi.mock("../src/hooks/use-sticky-scroll-to-bottom", () => ({
+	useStickyScrollToBottom: () => useStickyScrollToBottomMock(),
 }));
 
 vi.mock("../src/components/chat/messages", () => ({
@@ -305,9 +311,15 @@ describe("ChatPage", () => {
 		regenerateMock.mockReset();
 		toastSuccessMock.mockReset();
 		truncateFromMessageMock.mockReset();
+		scrollToBottomMock.mockReset();
 		truncateFromMessageMock.mockResolvedValue(undefined);
 		useQueryMock.mockReset();
 		useMutationMock.mockReset();
+		useStickyScrollToBottomMock.mockReturnValue({
+			containerRef: vi.fn(),
+			isAtBottom: true,
+			scrollToBottom: scrollToBottomMock,
+		});
 		convexTokenMock.mockResolvedValue({ data: { token: "convex-token" } });
 		mockChatPageMutations();
 		useChatMock.mockReturnValue({
@@ -766,5 +778,54 @@ describe("ChatPage", () => {
 			"Greeting and assistance",
 			"Hey! How can I help?",
 		);
+	});
+
+	it("shows a floating scroll button when the chat is away from the bottom", async () => {
+		const user = userEvent.setup();
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		useStickyScrollToBottomMock.mockReturnValue({
+			containerRef: vi.fn(),
+			isAtBottom: false,
+			scrollToBottom: scrollToBottomMock,
+		});
+		useChatMock.mockReturnValue({
+			messages: [
+				{
+					id: "user-1",
+					role: "user",
+					parts: [{ type: "text", text: "Original question" }],
+				},
+			],
+			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			error: undefined,
+			status: "ready",
+			stop: stopMock,
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={"chat-1"}
+					onOpenChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		await user.click(
+			screen.getByRole("button", { name: "Scroll to latest messages" }),
+		);
+
+		expect(scrollToBottomMock).toHaveBeenCalledTimes(1);
 	});
 });
