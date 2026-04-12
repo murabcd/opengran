@@ -100,6 +100,46 @@ const INLINE_POPOVER_FOOTER_DEFAULT_HEIGHT = 120;
 const INLINE_POPOVER_DEFAULT_HEIGHT = 384;
 const INLINE_POPOVER_MIN_HEIGHT = INLINE_POPOVER_DEFAULT_HEIGHT;
 const INLINE_POPOVER_MAX_HEIGHT = 680;
+const INLINE_POPOVER_HEIGHT_STORAGE_KEY =
+	"opengran.noteComposer.inlinePopoverHeight";
+
+const readStoredInlinePopoverHeight = () => {
+	if (typeof window === "undefined") {
+		return INLINE_POPOVER_DEFAULT_HEIGHT;
+	}
+
+	try {
+		const storedValue = window.localStorage.getItem(
+			INLINE_POPOVER_HEIGHT_STORAGE_KEY,
+		);
+
+		if (!storedValue) {
+			return INLINE_POPOVER_DEFAULT_HEIGHT;
+		}
+
+		const parsedValue = Number(storedValue);
+		return Number.isFinite(parsedValue)
+			? parsedValue
+			: INLINE_POPOVER_DEFAULT_HEIGHT;
+	} catch {
+		return INLINE_POPOVER_DEFAULT_HEIGHT;
+	}
+};
+
+const storeInlinePopoverHeight = (height: number) => {
+	if (typeof window === "undefined") {
+		return;
+	}
+
+	try {
+		window.localStorage.setItem(
+			INLINE_POPOVER_HEIGHT_STORAGE_KEY,
+			String(height),
+		);
+	} catch {
+		// Ignore storage failures and keep the in-memory size.
+	}
+};
 
 type NoteChatSummary = Pick<
 	Doc<"chats">,
@@ -225,8 +265,8 @@ const useNoteComposerController = ({
 		createDraftChatId(),
 	);
 	const [isPreparingRequest, setIsPreparingRequest] = React.useState(false);
-	const [inlinePanelHeight, setInlinePanelHeight] = React.useState(
-		INLINE_POPOVER_DEFAULT_HEIGHT,
+	const [inlinePanelHeight, setInlinePanelHeight] = React.useState(() =>
+		readStoredInlinePopoverHeight(),
 	);
 	const [recipePopoverOpen, setRecipePopoverOpen] = React.useState(false);
 	const [selectedRecipeSlug, setSelectedRecipeSlug] =
@@ -440,6 +480,12 @@ const useNoteComposerController = ({
 	);
 
 	React.useEffect(() => {
+		setInlinePanelHeight((currentHeight) =>
+			clampInlinePanelHeight(currentHeight),
+		);
+	}, [clampInlinePanelHeight]);
+
+	React.useEffect(() => {
 		const handleWindowResize = () => {
 			setInlinePanelHeight((currentHeight) =>
 				clampInlinePanelHeight(currentHeight),
@@ -451,6 +497,10 @@ const useNoteComposerController = ({
 			window.removeEventListener("resize", handleWindowResize);
 		};
 	}, [clampInlinePanelHeight]);
+
+	React.useEffect(() => {
+		storeInlinePopoverHeight(inlinePanelHeight);
+	}, [inlinePanelHeight]);
 
 	const handleInlinePanelResizeStart = React.useCallback(
 		(event: React.PointerEvent<HTMLDivElement>) => {

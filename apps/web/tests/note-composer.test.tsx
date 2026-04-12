@@ -163,10 +163,13 @@ vi.mock("../src/lib/auth-client", () => ({
 
 describe("NoteComposer", () => {
 	afterEach(() => {
+		window.localStorage.clear();
 		cleanup();
 	});
 
 	beforeEach(() => {
+		window.localStorage.clear();
+
 		useSidebarMock.mockReturnValue({
 			isMobile: false,
 			rightMode: "sidebar",
@@ -1010,6 +1013,138 @@ describe("NoteComposer", () => {
 		});
 
 		globalThis.ResizeObserver = originalResizeObserver;
+	});
+
+	it("persists the inline popover height across notes", async () => {
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "First note",
+				}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+		await screen.findByPlaceholderText("Continue chat");
+
+		const resizeHandle = document.querySelector(
+			".cursor-row-resize",
+		) as HTMLDivElement | null;
+		const inlinePanel = resizeHandle?.parentElement?.parentElement
+			?.parentElement?.parentElement as HTMLDivElement | null;
+		const inlinePanelCard = resizeHandle?.parentElement
+			?.parentElement as HTMLDivElement | null;
+
+		expect(resizeHandle).not.toBeNull();
+		expect(inlinePanel).not.toBeNull();
+		expect(inlinePanelCard).not.toBeNull();
+		if (!resizeHandle || !inlinePanel || !inlinePanelCard) {
+			throw new Error("Inline popover resize controls not found");
+		}
+
+		vi.spyOn(inlinePanel, "getBoundingClientRect").mockImplementation(
+			() =>
+				({
+					bottom: 0,
+					height: 384,
+					left: 0,
+					right: 0,
+					top: 0,
+					width: 0,
+					x: 0,
+					y: 0,
+					toJSON: () => ({}),
+				}) as DOMRect,
+		);
+
+		fireEvent.pointerDown(resizeHandle, {
+			button: 0,
+			clientY: 200,
+		});
+		fireEvent.pointerMove(window, {
+			clientY: 120,
+		});
+		fireEvent.pointerUp(window);
+
+		await waitFor(() => {
+			expect(inlinePanelCard.style.height).toBe("464px");
+		});
+
+		expect(
+			window.localStorage.getItem("opengran.noteComposer.inlinePopoverHeight"),
+		).toBe("464");
+
+		cleanup();
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-2",
+					text: "",
+					title: "Second note",
+				}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+		await screen.findByPlaceholderText("Continue chat");
+
+		const restoredResizeHandle = document.querySelector(
+			".cursor-row-resize",
+		) as HTMLDivElement | null;
+		const restoredInlinePanelCard = restoredResizeHandle?.parentElement
+			?.parentElement as HTMLDivElement | null;
+
+		expect(restoredInlinePanelCard).not.toBeNull();
+		expect(restoredInlinePanelCard?.style.height).toBe("464px");
 	});
 
 	it("hides generate notes while inline chat is open", async () => {
