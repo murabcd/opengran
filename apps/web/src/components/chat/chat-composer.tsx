@@ -178,11 +178,210 @@ export function ChatComposer({
 			: selectedSourceIds.length === 1
 				? "1 scope"
 				: `${selectedSourceIds.length} scopes`;
-	const mentionPicker = (
-		<Popover
-			open={mentionPopoverOpen}
-			onOpenChange={onMentionPopoverOpenChange}
+	const mentionedPages = React.useMemo(
+		() =>
+			mentions.flatMap((mentionId) => {
+				const document = contextPages.find((page) => page.id === mentionId);
+				return document ? [document] : [];
+			}),
+		[contextPages, mentions],
+	);
+	const showTopAddon = !hasMessages || mentions.length > 0;
+	useChatComposerPromptFocus({
+		promptRef,
+		editingMessageId,
+		onCancelEdit,
+	});
+
+	return (
+		<div
+			className={`relative mx-auto w-full max-w-xl ${hasMessages ? "mt-auto" : ""}`}
 		>
+			<label htmlFor="chat-prompt" className="sr-only">
+				Prompt
+			</label>
+			<ChatComposerTopAccessory
+				editingMessageId={editingMessageId}
+				onCancelEdit={onCancelEdit}
+				topAccessory={topAccessory}
+			/>
+			<InputGroup
+				className={`${hasMessages ? "min-h-[96px]" : "min-h-[148px]"} max-h-[32rem] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30`}
+			>
+				{showTopAddon ? (
+					<ChatComposerTopAddon
+						hasMessages={hasMessages}
+						mentionedPages={mentionedPages}
+						onRemoveMention={onRemoveMention}
+						mentionPicker={
+							<MentionPicker
+								open={mentionPopoverOpen}
+								onOpenChange={onMentionPopoverOpenChange}
+								documentSearchTerm={documentSearchTerm}
+								onDocumentSearchTermChange={onDocumentSearchTermChange}
+								mentionableDocuments={mentionableDocuments}
+								isNotesLoading={isNotesLoading}
+								emptyStateMessage={emptyStateMessage}
+								shouldSearchDocuments={shouldSearchDocuments}
+								onAddMention={onAddMention}
+							/>
+						}
+					/>
+				) : null}
+
+				<InputGroupTextarea
+					ref={promptRef}
+					id="chat-prompt"
+					value={draft}
+					onChange={(event) => onDraftChange(event.target.value)}
+					onKeyDown={onDraftKeyDown}
+					rows={hasMessages ? 1 : 3}
+					placeholder="Ask, search, or make anything..."
+					className={`${hasMessages ? "min-h-[40px] pt-2 pb-0" : "min-h-[64px] pt-2"} max-h-[24rem] overflow-y-auto px-4 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0`}
+				/>
+
+				<ChatComposerFooter
+					hasMessages={hasMessages}
+					draft={draft}
+					isLoading={isLoading}
+					onSubmit={onSubmit}
+					mentionPicker={
+						<MentionPicker
+							open={mentionPopoverOpen}
+							onOpenChange={onMentionPopoverOpenChange}
+							documentSearchTerm={documentSearchTerm}
+							onDocumentSearchTermChange={onDocumentSearchTermChange}
+							mentionableDocuments={mentionableDocuments}
+							isNotesLoading={isNotesLoading}
+							emptyStateMessage={emptyStateMessage}
+							shouldSearchDocuments={shouldSearchDocuments}
+							onAddMention={onAddMention}
+						/>
+					}
+					modelPicker={
+						<ModelPicker
+							open={modelPopoverOpen}
+							onOpenChange={onModelPopoverOpenChange}
+							selectedModel={selectedModel}
+							onSelectedModelChange={onSelectedModelChange}
+						/>
+					}
+					scopePicker={
+						<ScopePicker
+							open={sourcesOpen}
+							onOpenChange={onSourcesOpenChange}
+							scopesLabel={scopesLabel}
+							webSearchEnabled={webSearchEnabled}
+							onWebSearchEnabledChange={onWebSearchEnabledChange}
+							appsEnabled={appsEnabled}
+							onAppsEnabledChange={onAppsEnabledChange}
+							selectedSourceIds={selectedSourceIds}
+							sourceSearchTerm={sourceSearchTerm}
+							onSourceSearchTermChange={onSourceSearchTermChange}
+							filteredWorkspaceSources={filteredWorkspaceSources}
+							workspaceSourceId={workspaceSourceId}
+							activeWorkspace={activeWorkspace}
+							appSources={appSources}
+							isNotesLoading={isNotesLoading}
+							onToggleSource={onToggleSource}
+							onClearSelectedSources={onClearSelectedSources}
+							onOpenConnectionsSettings={onOpenConnectionsSettings}
+						/>
+					}
+				/>
+			</InputGroup>
+		</div>
+	);
+}
+
+function useChatComposerPromptFocus({
+	promptRef,
+	editingMessageId,
+	onCancelEdit,
+}: {
+	promptRef: React.RefObject<HTMLTextAreaElement | null>;
+	editingMessageId: string | null | undefined;
+	onCancelEdit?: () => void;
+}) {
+	const focusPrompt = React.useCallback(() => {
+		const prompt = promptRef.current;
+		if (!prompt) {
+			return;
+		}
+
+		const activeElement = document.activeElement;
+		const isEditableElement =
+			activeElement instanceof HTMLElement &&
+			(activeElement instanceof HTMLInputElement ||
+				activeElement instanceof HTMLTextAreaElement ||
+				activeElement instanceof HTMLSelectElement ||
+				activeElement.isContentEditable);
+
+		if (isEditableElement && activeElement !== prompt) {
+			return;
+		}
+
+		prompt.focus({ preventScroll: true });
+		const selectionEnd = prompt.value.length;
+		prompt.setSelectionRange(selectionEnd, selectionEnd);
+	}, [promptRef]);
+
+	React.useEffect(() => {
+		focusPrompt();
+	}, [focusPrompt]);
+
+	React.useEffect(() => {
+		if (!editingMessageId) {
+			return;
+		}
+
+		focusPrompt();
+	}, [editingMessageId, focusPrompt]);
+
+	React.useEffect(() => {
+		if (!editingMessageId || !onCancelEdit) {
+			return;
+		}
+
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") {
+				return;
+			}
+
+			event.preventDefault();
+			onCancelEdit();
+		};
+
+		window.addEventListener("keydown", handleKeyDown);
+		return () => {
+			window.removeEventListener("keydown", handleKeyDown);
+		};
+	}, [editingMessageId, onCancelEdit]);
+}
+
+function MentionPicker({
+	open,
+	onOpenChange,
+	documentSearchTerm,
+	onDocumentSearchTermChange,
+	mentionableDocuments,
+	isNotesLoading,
+	emptyStateMessage,
+	shouldSearchDocuments,
+	onAddMention,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	documentSearchTerm: string;
+	onDocumentSearchTermChange: (value: string) => void;
+	mentionableDocuments: ContextPage[];
+	isNotesLoading: boolean;
+	emptyStateMessage: string;
+	shouldSearchDocuments: boolean;
+	onAddMention: (pageId: string) => void;
+}) {
+	return (
+		<Popover open={open} onOpenChange={onOpenChange}>
 			<Tooltip>
 				<TooltipTrigger
 					asChild
@@ -248,185 +447,137 @@ export function ChatComposer({
 			</PopoverContent>
 		</Popover>
 	);
-	const showTopAddon = !hasMessages || mentions.length > 0;
+}
 
-	const focusPrompt = React.useCallback(() => {
-		const prompt = promptRef.current;
-		if (!prompt) {
-			return;
-		}
+function ChatComposerTopAccessory({
+	editingMessageId,
+	onCancelEdit,
+	topAccessory,
+}: {
+	editingMessageId: string | null | undefined;
+	onCancelEdit?: () => void;
+	topAccessory?: React.ReactNode;
+}) {
+	if (editingMessageId && onCancelEdit) {
+		return (
+			<div className="pointer-events-none absolute inset-x-0 bottom-full z-10 mb-3 flex justify-center">
+				<button
+					type="button"
+					onClick={onCancelEdit}
+					className="pointer-events-auto inline-flex cursor-pointer items-center gap-2 rounded-full border border-border/60 bg-secondary/80 px-4 py-1.5 text-sm text-secondary-foreground shadow-sm hover:bg-secondary"
+					aria-label="Cancel edit"
+				>
+					<span>Cancel edit</span>
+					<span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] leading-none text-muted-foreground">
+						Esc
+					</span>
+				</button>
+			</div>
+		);
+	}
 
-		const activeElement = document.activeElement;
-		const isEditableElement =
-			activeElement instanceof HTMLElement &&
-			(activeElement instanceof HTMLInputElement ||
-				activeElement instanceof HTMLTextAreaElement ||
-				activeElement instanceof HTMLSelectElement ||
-				activeElement.isContentEditable);
-
-		if (isEditableElement && activeElement !== prompt) {
-			return;
-		}
-
-		prompt.focus({ preventScroll: true });
-		const selectionEnd = prompt.value.length;
-		prompt.setSelectionRange(selectionEnd, selectionEnd);
-	}, []);
-
-	React.useEffect(() => {
-		focusPrompt();
-	}, [focusPrompt]);
-
-	React.useEffect(() => {
-		if (!editingMessageId) {
-			return;
-		}
-
-		focusPrompt();
-	}, [editingMessageId, focusPrompt]);
-
-	React.useEffect(() => {
-		if (!editingMessageId || !onCancelEdit) {
-			return;
-		}
-
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.key !== "Escape") {
-				return;
-			}
-
-			event.preventDefault();
-			onCancelEdit();
-		};
-
-		window.addEventListener("keydown", handleKeyDown);
-		return () => {
-			window.removeEventListener("keydown", handleKeyDown);
-		};
-	}, [editingMessageId, onCancelEdit]);
+	if (!topAccessory) {
+		return null;
+	}
 
 	return (
-		<div
-			className={`relative mx-auto w-full max-w-xl ${hasMessages ? "mt-auto" : ""}`}
-		>
-			<label htmlFor="chat-prompt" className="sr-only">
-				Prompt
-			</label>
-			{editingMessageId && onCancelEdit ? (
-				<div className="pointer-events-none absolute inset-x-0 bottom-full z-10 mb-3 flex justify-center">
-					<button
-						type="button"
-						onClick={onCancelEdit}
-						className="pointer-events-auto inline-flex cursor-pointer items-center gap-2 rounded-full border border-border/60 bg-secondary/80 px-4 py-1.5 text-sm text-secondary-foreground shadow-sm hover:bg-secondary"
-						aria-label="Cancel edit"
-					>
-						<span>Cancel edit</span>
-						<span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] leading-none text-muted-foreground">
-							Esc
-						</span>
-					</button>
-				</div>
-			) : topAccessory ? (
-				<div className="pointer-events-none absolute inset-x-0 bottom-full z-10 mb-3 flex justify-center">
-					<div className="pointer-events-auto">{topAccessory}</div>
-				</div>
-			) : null}
-			<InputGroup
-				className={`${hasMessages ? "min-h-[96px]" : "min-h-[148px]"} max-h-[32rem] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30`}
-			>
-				{showTopAddon ? (
-					<InputGroupAddon
-						align="block-start"
-						className={`px-4 pb-0 ${hasMessages ? "pt-2.5" : "pt-4"}`}
-					>
-						{!hasMessages ? mentionPicker : null}
-						{mentions.length > 0 ? (
-							<div className="no-scrollbar -m-1.5 flex gap-1 overflow-y-auto p-1.5">
-								{mentions.map((mentionId) => {
-									const document = contextPages.find(
-										(page) => page.id === mentionId,
-									);
-
-									if (!document) {
-										return null;
-									}
-
-									return (
-										<InputGroupButton
-											key={mentionId}
-											size="sm"
-											variant="secondary"
-											className="rounded-full pl-2!"
-											onClick={() => onRemoveMention(mentionId)}
-										>
-											<document.icon />
-											{document.title}
-											<X />
-										</InputGroupButton>
-									);
-								})}
-							</div>
-						) : null}
-					</InputGroupAddon>
-				) : null}
-
-				<InputGroupTextarea
-					ref={promptRef}
-					id="chat-prompt"
-					value={draft}
-					onChange={(event) => onDraftChange(event.target.value)}
-					onKeyDown={onDraftKeyDown}
-					rows={hasMessages ? 1 : 3}
-					placeholder="Ask, search, or make anything..."
-					className={`${hasMessages ? "min-h-[40px] pt-2 pb-0" : "min-h-[64px] pt-2"} max-h-[24rem] overflow-y-auto px-4 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0`}
-				/>
-
-				<InputGroupAddon
-					align="block-end"
-					className={`gap-1 px-4 ${hasMessages ? "pb-2.5" : "pb-4"}`}
-				>
-					{hasMessages ? mentionPicker : null}
-					<ModelPicker
-						open={modelPopoverOpen}
-						onOpenChange={onModelPopoverOpenChange}
-						selectedModel={selectedModel}
-						onSelectedModelChange={onSelectedModelChange}
-					/>
-					<ScopePicker
-						open={sourcesOpen}
-						onOpenChange={onSourcesOpenChange}
-						scopesLabel={scopesLabel}
-						webSearchEnabled={webSearchEnabled}
-						onWebSearchEnabledChange={onWebSearchEnabledChange}
-						appsEnabled={appsEnabled}
-						onAppsEnabledChange={onAppsEnabledChange}
-						selectedSourceIds={selectedSourceIds}
-						sourceSearchTerm={sourceSearchTerm}
-						onSourceSearchTermChange={onSourceSearchTermChange}
-						filteredWorkspaceSources={filteredWorkspaceSources}
-						workspaceSourceId={workspaceSourceId}
-						activeWorkspace={activeWorkspace}
-						appSources={appSources}
-						isNotesLoading={isNotesLoading}
-						onToggleSource={onToggleSource}
-						onClearSelectedSources={onClearSelectedSources}
-						onOpenConnectionsSettings={onOpenConnectionsSettings}
-					/>
-					<InputGroupButton
-						aria-label="Send"
-						className="ml-auto rounded-full"
-						variant="default"
-						size="icon-sm"
-						disabled={!draft.trim() || isLoading}
-						onClick={() => {
-							void onSubmit();
-						}}
-					>
-						<ArrowUp className="size-4" />
-					</InputGroupButton>
-				</InputGroupAddon>
-			</InputGroup>
+		<div className="pointer-events-none absolute inset-x-0 bottom-full z-10 mb-3 flex justify-center">
+			<div className="pointer-events-auto">{topAccessory}</div>
 		</div>
+	);
+}
+
+function ChatComposerTopAddon({
+	hasMessages,
+	mentionedPages,
+	onRemoveMention,
+	mentionPicker,
+}: {
+	hasMessages: boolean;
+	mentionedPages: ContextPage[];
+	onRemoveMention: (pageId: string) => void;
+	mentionPicker: React.ReactNode;
+}) {
+	return (
+		<InputGroupAddon
+			align="block-start"
+			className={`px-4 pb-0 ${hasMessages ? "pt-2.5" : "pt-4"}`}
+		>
+			{!hasMessages ? mentionPicker : null}
+			{mentionedPages.length > 0 ? (
+				<ChatComposerMentionChips
+					mentionedPages={mentionedPages}
+					onRemoveMention={onRemoveMention}
+				/>
+			) : null}
+		</InputGroupAddon>
+	);
+}
+
+function ChatComposerMentionChips({
+	mentionedPages,
+	onRemoveMention,
+}: {
+	mentionedPages: ContextPage[];
+	onRemoveMention: (pageId: string) => void;
+}) {
+	return (
+		<div className="no-scrollbar -m-1.5 flex gap-1 overflow-y-auto p-1.5">
+			{mentionedPages.map((document) => (
+				<InputGroupButton
+					key={document.id}
+					size="sm"
+					variant="secondary"
+					className="rounded-full pl-2!"
+					onClick={() => onRemoveMention(document.id)}
+				>
+					<document.icon />
+					{document.title}
+					<X />
+				</InputGroupButton>
+			))}
+		</div>
+	);
+}
+
+function ChatComposerFooter({
+	hasMessages,
+	draft,
+	isLoading,
+	onSubmit,
+	mentionPicker,
+	modelPicker,
+	scopePicker,
+}: {
+	hasMessages: boolean;
+	draft: string;
+	isLoading: boolean;
+	onSubmit: () => void | Promise<void>;
+	mentionPicker: React.ReactNode;
+	modelPicker: React.ReactNode;
+	scopePicker: React.ReactNode;
+}) {
+	return (
+		<InputGroupAddon
+			align="block-end"
+			className={`gap-1 px-4 ${hasMessages ? "pb-2.5" : "pb-4"}`}
+		>
+			{hasMessages ? mentionPicker : null}
+			{modelPicker}
+			{scopePicker}
+			<InputGroupButton
+				aria-label="Send"
+				className="ml-auto rounded-full"
+				variant="default"
+				size="icon-sm"
+				disabled={!draft.trim() || isLoading}
+				onClick={() => {
+					void onSubmit();
+				}}
+			>
+				<ArrowUp className="size-4" />
+			</InputGroupButton>
+		</InputGroupAddon>
 	);
 }
 
