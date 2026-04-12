@@ -105,6 +105,8 @@ const INLINE_POPOVER_MIN_HEIGHT = INLINE_POPOVER_DEFAULT_HEIGHT;
 const INLINE_POPOVER_MAX_HEIGHT = 680;
 const INLINE_POPOVER_HEIGHT_STORAGE_KEY =
 	"opengran.noteComposer.inlinePopoverHeight";
+const LONG_TRANSCRIPT_RENDER_THRESHOLD = 96;
+const LONG_TRANSCRIPT_INITIAL_WINDOW_SIZE = 48;
 
 const readStoredInlinePopoverHeight = () => {
 	if (typeof window === "undefined") {
@@ -340,6 +342,7 @@ const useNoteComposerController = ({
 	const transcriptionLanguageSelectValue = getTranscriptionLanguageSelectValue(
 		transcriptionLanguage,
 	);
+	const shouldLoadStoredTranscriptHistory = panelModeState === "transcript";
 
 	const handleTranscriptionLanguageChange = React.useCallback(
 		async (value: string) => {
@@ -364,6 +367,7 @@ const useNoteComposerController = ({
 		noteId,
 		onAutoStartTranscriptionHandled,
 		onEnhanceTranscript,
+		shouldLoadStoredTranscriptHistory,
 		stopTranscriptionWhenMeetingEnds,
 		transcriptionLanguage,
 	});
@@ -1152,6 +1156,7 @@ const useNoteComposerController = ({
 		isMobile,
 		isSidebarPresentation,
 		isSpeechListening: isCurrentNoteSpeechListening,
+		isStoredTranscriptLoading: transcriptSession.isStoredTranscriptLoading,
 		isRecipeLoading: recipeData === undefined,
 		isTranscriptOpen,
 		liveTranscriptEntries: transcriptSession.liveTranscriptEntries,
@@ -2527,6 +2532,75 @@ function NoteTranscriptPanel({
 	controller: NoteComposerController;
 	showFloatingScrollButton?: boolean;
 }) {
+	const deferredDisplayTranscriptEntries = React.useDeferredValue(
+		controller.displayTranscriptEntries,
+	);
+	const isDeferringTranscriptEntries =
+		deferredDisplayTranscriptEntries !== controller.displayTranscriptEntries;
+	const [renderFullTranscriptEntries, setRenderFullTranscriptEntries] =
+		React.useState(
+			deferredDisplayTranscriptEntries.length <=
+				LONG_TRANSCRIPT_RENDER_THRESHOLD,
+		);
+
+	React.useEffect(() => {
+		if (
+			deferredDisplayTranscriptEntries.length <=
+			LONG_TRANSCRIPT_RENDER_THRESHOLD
+		) {
+			setRenderFullTranscriptEntries(true);
+			return;
+		}
+
+		setRenderFullTranscriptEntries(false);
+
+		const promoteFullTranscriptEntries = () => {
+			React.startTransition(() => {
+				setRenderFullTranscriptEntries(true);
+			});
+		};
+
+		if ("requestIdleCallback" in globalThis) {
+			const idleCallbackId = globalThis.requestIdleCallback(
+				promoteFullTranscriptEntries,
+				{
+					timeout: 250,
+				},
+			);
+
+			return () => {
+				globalThis.cancelIdleCallback(idleCallbackId);
+			};
+		}
+
+		const timeoutId = globalThis.setTimeout(promoteFullTranscriptEntries, 32);
+		return () => {
+			globalThis.clearTimeout(timeoutId);
+		};
+	}, [deferredDisplayTranscriptEntries.length]);
+	const renderedTranscriptEntries = renderFullTranscriptEntries
+		? deferredDisplayTranscriptEntries
+		: deferredDisplayTranscriptEntries.slice(
+				-LONG_TRANSCRIPT_INITIAL_WINDOW_SIZE,
+			);
+	const isProgressivelyRenderingTranscript =
+		!renderFullTranscriptEntries &&
+		deferredDisplayTranscriptEntries.length > renderedTranscriptEntries.length;
+
+	if (
+		controller.isStoredTranscriptLoading &&
+		!controller.fullTranscript &&
+		!controller.isSpeechListening
+	) {
+		return (
+			<div className="flex flex-1 items-center justify-center">
+				<p className="text-center text-sm font-medium tracking-tight text-muted-foreground">
+					Loading transcript...
+				</p>
+			</div>
+		);
+	}
+
 	if (!controller.fullTranscript) {
 		return (
 			<div className="flex flex-1 items-center justify-center">
@@ -2545,7 +2619,22 @@ function NoteTranscriptPanel({
 				viewportRef={controller.transcriptViewportRef}
 			>
 				<div className={cn("flex flex-col gap-4")}>
-					{controller.displayTranscriptEntries.map((utterance) => (
+					{isDeferringTranscriptEntries &&
+					deferredDisplayTranscriptEntries.length === 0 ? (
+						<div className="flex flex-1 items-center justify-center py-12">
+							<p className="text-center text-sm font-medium tracking-tight text-muted-foreground">
+								Loading transcript...
+							</p>
+						</div>
+					) : null}
+					{isProgressivelyRenderingTranscript ? (
+						<div className="flex justify-center">
+							<p className="text-[11px] font-medium tracking-tight text-muted-foreground">
+								Loading earlier transcript...
+							</p>
+						</div>
+					) : null}
+					{renderedTranscriptEntries.map((utterance) => (
 						<div key={utterance.id} className="flex flex-col gap-2">
 							{controller.transcriptStartedAt != null ? (
 								<div className="flex justify-center">
@@ -2573,6 +2662,10 @@ function NoteTranscriptPanel({
 												? "text-muted-foreground"
 												: "text-foreground",
 									)}
+									style={{
+										containIntrinsicSize: "120px",
+										contentVisibility: "auto",
+									}}
 								>
 									<p className="whitespace-pre-wrap">{utterance.text}</p>
 								</div>
@@ -2583,7 +2676,7 @@ function NoteTranscriptPanel({
 			</ScrollArea>
 			{showFloatingScrollButton &&
 			!controller.isTranscriptViewportAtBottom &&
-			controller.displayTranscriptEntries.length > 0 ? (
+			renderedTranscriptEntries.length > 0 ? (
 				<div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center">
 					<Button
 						type="button"

@@ -39,7 +39,16 @@ const toTranscriptUtteranceInput = (
 	endedAt: utterance.endedAt,
 });
 
-export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
+export const useTranscriptSessionRepository = (
+	noteId: Id<"notes"> | null,
+	{
+		shouldPrefetchLatestTranscriptSession = false,
+		shouldAutoLoadLatestTranscriptSession = true,
+	}: {
+		shouldPrefetchLatestTranscriptSession?: boolean;
+		shouldAutoLoadLatestTranscriptSession?: boolean;
+	} = {},
+) => {
 	const convex = useConvex();
 	const startTranscriptSessionMutation = useMutation(
 		api.transcriptSessions.startSession,
@@ -67,11 +76,16 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 	const [latestTranscriptSession, setLatestTranscriptSession] = React.useState<
 		TranscriptSessionSnapshot | null | undefined
 	>(noteId ? undefined : null);
+	const [
+		isFetchingLatestTranscriptSession,
+		setIsFetchingLatestTranscriptSession,
+	] = React.useState(false);
 	const latestTranscriptSessionRequestIdRef = React.useRef(0);
 	const isLatestTranscriptSessionLoading = Boolean(
 		noteId &&
-			(latestTranscriptSessionSummaryQuery === undefined ||
-				(latestTranscriptSessionSummaryQuery !== null &&
+			(isFetchingLatestTranscriptSession ||
+				(shouldAutoLoadLatestTranscriptSession &&
+					latestTranscriptSessionSummaryQuery !== null &&
 					latestTranscriptSession === undefined)),
 	);
 	const latestTranscriptSessionSummary =
@@ -100,45 +114,66 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 		latestTranscriptSessionRequestIdRef.current = requestId;
 
 		if (!noteId) {
+			setIsFetchingLatestTranscriptSession(false);
 			setLatestTranscriptSession(null);
 			return null;
 		}
 
-		const result = await convex.query(api.transcriptSessions.getLatestForNote, {
-			noteId,
-		});
-		const nextValue: TranscriptSessionSnapshot | null = result
-			? {
-					sessionId: result.session._id,
-					finalTranscript: result.session.finalTranscript?.trim() || "",
-					generatedNoteAt: result.session.generatedNoteAt ?? null,
-					refinementError: result.session.refinementError ?? null,
-					refinementStatus: result.session.refinementStatus,
-					updatedAt: result.session.updatedAt,
-					utterances: result.utterances.map((utterance) => ({
-						id: utterance.utteranceId,
-						speaker: utterance.speaker as TranscriptUtterance["speaker"],
-						text: utterance.text,
-						startedAt: utterance.startedAt,
-						endedAt: utterance.endedAt,
-					})),
-				}
-			: null;
+		setIsFetchingLatestTranscriptSession(true);
 
-		if (latestTranscriptSessionRequestIdRef.current === requestId) {
-			setLatestTranscriptSession(nextValue);
+		try {
+			const result = await convex.query(
+				api.transcriptSessions.getLatestForNote,
+				{
+					noteId,
+				},
+			);
+			const nextValue: TranscriptSessionSnapshot | null = result
+				? {
+						sessionId: result.session._id,
+						finalTranscript: result.session.finalTranscript?.trim() || "",
+						generatedNoteAt: result.session.generatedNoteAt ?? null,
+						refinementError: result.session.refinementError ?? null,
+						refinementStatus: result.session.refinementStatus,
+						updatedAt: result.session.updatedAt,
+						utterances: result.utterances.map((utterance) => ({
+							id: utterance.utteranceId,
+							speaker: utterance.speaker as TranscriptUtterance["speaker"],
+							text: utterance.text,
+							startedAt: utterance.startedAt,
+							endedAt: utterance.endedAt,
+						})),
+					}
+				: null;
+
+			if (latestTranscriptSessionRequestIdRef.current === requestId) {
+				React.startTransition(() => {
+					setLatestTranscriptSession(nextValue);
+					setIsFetchingLatestTranscriptSession(false);
+				});
+			}
+
+			return nextValue;
+		} catch (error) {
+			if (latestTranscriptSessionRequestIdRef.current === requestId) {
+				setIsFetchingLatestTranscriptSession(false);
+			}
+			throw error;
 		}
-
-		return nextValue;
 	}, [convex, noteId]);
 
 	React.useEffect(() => {
 		latestTranscriptSessionRequestIdRef.current += 1;
+		setIsFetchingLatestTranscriptSession(false);
 		setLatestTranscriptSession(noteId ? undefined : null);
 	}, [noteId]);
 
 	React.useEffect(() => {
-		if (!noteId || latestTranscriptSessionSummaryQuery === undefined) {
+		if (
+			!shouldAutoLoadLatestTranscriptSession ||
+			!noteId ||
+			latestTranscriptSessionSummaryQuery === undefined
+		) {
 			return;
 		}
 
@@ -162,6 +197,59 @@ export const useTranscriptSessionRepository = (noteId: Id<"notes"> | null) => {
 		latestTranscriptSessionSummaryQuery,
 		noteId,
 		refreshLatestTranscriptSession,
+		shouldAutoLoadLatestTranscriptSession,
+	]);
+
+	React.useEffect(() => {
+		if (
+			shouldAutoLoadLatestTranscriptSession ||
+			!shouldPrefetchLatestTranscriptSession ||
+			!noteId ||
+			latestTranscriptSessionSummaryQuery === undefined ||
+			latestTranscriptSessionSummary === null ||
+			latestTranscriptSession !== undefined ||
+			isFetchingLatestTranscriptSession
+		) {
+			return;
+		}
+
+		let isCancelled = false;
+
+		const schedulePrefetch = () => {
+			if (isCancelled) {
+				return;
+			}
+
+			void refreshLatestTranscriptSession().catch((error) => {
+				console.error("Failed to prefetch transcript session", error);
+			});
+		};
+
+		if ("requestIdleCallback" in globalThis) {
+			const idleCallbackId = globalThis.requestIdleCallback(schedulePrefetch, {
+				timeout: 1_000,
+			});
+
+			return () => {
+				isCancelled = true;
+				globalThis.cancelIdleCallback(idleCallbackId);
+			};
+		}
+
+		const timeoutId = globalThis.setTimeout(schedulePrefetch, 150);
+		return () => {
+			isCancelled = true;
+			globalThis.clearTimeout(timeoutId);
+		};
+	}, [
+		isFetchingLatestTranscriptSession,
+		latestTranscriptSession,
+		latestTranscriptSessionSummary,
+		latestTranscriptSessionSummaryQuery,
+		noteId,
+		refreshLatestTranscriptSession,
+		shouldAutoLoadLatestTranscriptSession,
+		shouldPrefetchLatestTranscriptSession,
 	]);
 
 	React.useEffect(() => {

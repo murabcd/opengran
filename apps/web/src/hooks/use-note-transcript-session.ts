@@ -54,6 +54,7 @@ type UseNoteTranscriptSessionArgs = {
 	noteId: Id<"notes"> | null;
 	onAutoStartTranscriptionHandled?: () => void;
 	onEnhanceTranscript?: (transcript: string) => Promise<void>;
+	shouldLoadStoredTranscriptHistory?: boolean;
 	stopTranscriptionWhenMeetingEnds?: boolean;
 	transcriptionLanguage?: string | null;
 };
@@ -63,6 +64,7 @@ export const useNoteTranscriptSession = ({
 	noteId,
 	onAutoStartTranscriptionHandled,
 	onEnhanceTranscript,
+	shouldLoadStoredTranscriptHistory = false,
 	stopTranscriptionWhenMeetingEnds,
 	transcriptionLanguage,
 }: UseNoteTranscriptSessionArgs) => {
@@ -144,12 +146,30 @@ export const useNoteTranscriptSession = ({
 		[captureScopeKey],
 	);
 	const captureTranscriptDraftKey = captureScopeKey;
-	const captureTranscriptSessionRepository =
-		useTranscriptSessionRepository(captureScopeNoteId);
-	const currentNoteTranscriptSessionRepository =
-		useTranscriptSessionRepository(noteId);
 	const isScopedTranscriptionSession =
 		transcriptionSession.scopeKey === captureScopeKey;
+	const isViewingCaptureScope = resolvedCaptureScopeKey === captureScopeKey;
+	const captureTranscriptSessionRepository = useTranscriptSessionRepository(
+		captureScopeNoteId,
+		{
+			shouldAutoLoadLatestTranscriptSession:
+				isScopedTranscriptionSession ||
+				(isViewingCaptureScope && shouldLoadStoredTranscriptHistory),
+			shouldPrefetchLatestTranscriptSession:
+				isViewingCaptureScope &&
+				!isScopedTranscriptionSession &&
+				!shouldLoadStoredTranscriptHistory,
+		},
+	);
+	const currentNoteTranscriptSessionRepository = useTranscriptSessionRepository(
+		noteId,
+		{
+			shouldAutoLoadLatestTranscriptSession:
+				!isViewingCaptureScope && shouldLoadStoredTranscriptHistory,
+			shouldPrefetchLatestTranscriptSession:
+				!isViewingCaptureScope && !shouldLoadStoredTranscriptHistory,
+		},
+	);
 	const isSpeechListening = isScopedTranscriptionSession
 		? transcriptionSession.isListening
 		: false;
@@ -204,7 +224,6 @@ export const useNoteTranscriptSession = ({
 		currentNoteTranscriptSessionRepository.latestTranscriptSession;
 	const currentNoteLatestTranscriptSessionSummary =
 		currentNoteTranscriptSessionRepository.latestTranscriptSessionSummary;
-	const isViewingCaptureScope = currentNoteScopeKey === captureScopeKey;
 	const latestTranscriptSessionSummary = isViewingCaptureScope
 		? captureLatestTranscriptSessionSummary
 		: currentNoteLatestTranscriptSessionSummary;
@@ -283,6 +302,9 @@ export const useNoteTranscriptSession = ({
 			isTranscriptDraftReady &&
 			!captureTranscriptSessionRepository.isLatestTranscriptSessionLoading
 		: !currentNoteTranscriptSessionRepository.isLatestTranscriptSessionLoading;
+	const isStoredTranscriptLoading = isViewingCaptureScope
+		? captureTranscriptSessionRepository.isLatestTranscriptSessionLoading
+		: currentNoteTranscriptSessionRepository.isLatestTranscriptSessionLoading;
 	const hasGeneratedLatestTranscript = Boolean(
 		latestTranscriptSessionSummary?.generatedNoteAt ||
 			(latestTranscriptSessionSummary &&
@@ -895,6 +917,7 @@ export const useNoteTranscriptSession = ({
 		hasGeneratedLatestTranscript,
 		hasPendingGenerateTranscript: visibleHasPendingGenerateTranscript,
 		isCurrentNoteSpeechListening,
+		isStoredTranscriptLoading,
 		isTranscriptSessionReady,
 		isGeneratingNotes,
 		isSpeechListening,
