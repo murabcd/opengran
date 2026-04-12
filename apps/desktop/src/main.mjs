@@ -108,8 +108,8 @@ const minimumWindowSize = {
 	height: 640,
 };
 const defaultWindowSize = {
-	width: 1180,
-	height: 800,
+	width: 1200,
+	height: 840,
 };
 const defaultTraySettings = {
 	keepOpenInMenuBar: true,
