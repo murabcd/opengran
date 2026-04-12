@@ -95,3 +95,59 @@ test("explicit chat renames persist after saving", async () => {
 	expect(session).not.toBeNull();
 	expect(session?.title).toBe("Renamed chat title");
 });
+
+test("truncating from an edited message removes that branch of the chat", async () => {
+	const { asOwner, workspaceId } = await createWorkspace();
+
+	await asOwner.mutation(api.chats.saveMessage, {
+		workspaceId,
+		chatId: "chat-edit",
+		preview: "First prompt",
+		message: {
+			id: "msg-1",
+			role: "user",
+			partsJson: JSON.stringify([{ type: "text", text: "First prompt" }]),
+			text: "First prompt",
+			createdAt: 2_000,
+		},
+	});
+	await asOwner.mutation(api.chats.saveMessage, {
+		workspaceId,
+		chatId: "chat-edit",
+		preview: "First answer",
+		message: {
+			id: "msg-2",
+			role: "assistant",
+			partsJson: JSON.stringify([{ type: "text", text: "First answer" }]),
+			text: "First answer",
+			createdAt: 2_100,
+		},
+	});
+	await asOwner.mutation(api.chats.saveMessage, {
+		workspaceId,
+		chatId: "chat-edit",
+		preview: "Second prompt",
+		message: {
+			id: "msg-3",
+			role: "user",
+			partsJson: JSON.stringify([{ type: "text", text: "Second prompt" }]),
+			text: "Second prompt",
+			createdAt: 2_200,
+		},
+	});
+
+	const result = await asOwner.mutation(api.chats.truncateFromMessage, {
+		workspaceId,
+		chatId: "chat-edit",
+		messageId: "msg-1",
+	});
+
+	expect(result.deletedCount).toBe(3);
+
+	const messages = await asOwner.query(api.chats.getMessages, {
+		workspaceId,
+		chatId: "chat-edit",
+	});
+
+	expect(messages).toHaveLength(0);
+});

@@ -6,10 +6,29 @@ import { ActiveWorkspaceProvider } from "../src/hooks/use-active-workspace";
 
 const convexTokenMock = vi.fn();
 const sendMessageMock = vi.fn();
+const regenerateMock = vi.fn();
+const stopMock = vi.fn();
 const toastSuccessMock = vi.fn();
+const truncateFromMessageMock = vi.fn();
 const useChatMock = vi.fn();
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
+
+const mockChatPageMutations = () => {
+	let mutationCallCount = 0;
+
+	useMutationMock.mockImplementation(() => {
+		mutationCallCount += 1;
+
+		if (mutationCallCount % 2 === 1) {
+			return {
+				withOptimisticUpdate: vi.fn(() => vi.fn()),
+			};
+		}
+
+		return truncateFromMessageMock;
+	});
+};
 
 vi.mock("@ai-sdk/react", () => ({
 	useChat: useChatMock,
@@ -27,7 +46,75 @@ vi.mock("ai", () => ({
 }));
 
 vi.mock("../src/components/chat/messages", () => ({
-	ChatMessages: () => <div>chat messages</div>,
+	ChatMessages: ({
+		messages,
+		onDeleteMessage,
+		onEditMessage,
+		onPlusAction,
+		onRegenerateMessage,
+	}: {
+		messages?: Array<{
+			id: string;
+			role: string;
+			parts: Array<{ text?: string }>;
+		}>;
+		onDeleteMessage?: (messageId: string) => void;
+		onEditMessage?: (messageId: string, text: string) => void;
+		onPlusAction?: (content: string) => undefined | Promise<unknown>;
+		onRegenerateMessage?: (messageId: string) => void;
+	}) => (
+		<div>
+			<div>chat messages</div>
+			{messages?.map((message) => {
+				const text = message.parts
+					.map((part) => part.text ?? "")
+					.join("\n\n")
+					.trim();
+
+				return (
+					<div key={message.id}>
+						<span>{text}</span>
+						{message.role === "user" ? (
+							<>
+								<button
+									type="button"
+									aria-label="Edit"
+									onClick={() => onEditMessage?.(message.id, text)}
+								>
+									Edit
+								</button>
+								<button
+									type="button"
+									aria-label="Delete"
+									onClick={() => onDeleteMessage?.(message.id)}
+								>
+									Delete
+								</button>
+							</>
+						) : null}
+						{message.role === "assistant" ? (
+							<>
+								<button
+									type="button"
+									aria-label="Create note"
+									onClick={() => onPlusAction?.(text)}
+								>
+									Create note
+								</button>
+								<button
+									type="button"
+									aria-label="Regenerate"
+									onClick={() => onRegenerateMessage?.(message.id)}
+								>
+									Regenerate
+								</button>
+							</>
+						) : null}
+					</div>
+				);
+			})}
+		</div>
+	),
 }));
 
 vi.mock("@/lib/auth-client", () => ({
@@ -214,18 +301,23 @@ describe("ChatPage", () => {
 	beforeEach(() => {
 		convexTokenMock.mockReset();
 		sendMessageMock.mockReset();
+		stopMock.mockReset();
+		regenerateMock.mockReset();
 		toastSuccessMock.mockReset();
+		truncateFromMessageMock.mockReset();
+		truncateFromMessageMock.mockResolvedValue(undefined);
 		useQueryMock.mockReset();
 		useMutationMock.mockReset();
 		convexTokenMock.mockResolvedValue({ data: { token: "convex-token" } });
-		useMutationMock.mockReturnValue({
-			withOptimisticUpdate: vi.fn(() => vi.fn()),
-		});
+		mockChatPageMutations();
 		useChatMock.mockReturnValue({
 			messages: [],
 			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
 			error: undefined,
 			status: "ready",
+			stop: stopMock,
 		});
 		useQueryMock.mockImplementation((_query, args) => {
 			if (
@@ -351,8 +443,11 @@ describe("ChatPage", () => {
 		vi.mocked(useChatMock).mockReturnValue({
 			messages: [],
 			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
 			error: undefined,
 			status: "ready",
+			stop: stopMock,
 		});
 
 		render(
@@ -408,5 +503,268 @@ describe("ChatPage", () => {
 
 		expect(toastSuccessMock).toHaveBeenNthCalledWith(1, "Web search enabled");
 		expect(toastSuccessMock).toHaveBeenNthCalledWith(2, "Web search disabled");
+	});
+
+	it("loads a user message into the composer for editing and resubmits with the same id", async () => {
+		const user = userEvent.setup();
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		useChatMock.mockReturnValue({
+			messages: [
+				{
+					id: "user-1",
+					role: "user",
+					parts: [{ type: "text", text: "Original question" }],
+				},
+				{
+					id: "assistant-1",
+					role: "assistant",
+					parts: [{ type: "text", text: "Original answer" }],
+				},
+			],
+			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			error: undefined,
+			status: "ready",
+			stop: stopMock,
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[
+						{
+							_id: "chat-doc-1",
+							_creationTime: 1,
+							ownerTokenIdentifier: "token-1",
+							workspaceId: "workspace-1" as never,
+							authorName: "User",
+							chatId: "chat-1",
+							title: "Chat",
+							preview: "Original question",
+							model: "gpt-5.4",
+							isArchived: false,
+							createdAt: 1,
+							updatedAt: 1,
+							lastMessageAt: 1,
+						} as never,
+					]}
+					isChatsLoading={false}
+					activeChatId={"chat-1"}
+					onOpenChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Edit" }));
+
+		const textbox = screen.getByDisplayValue("Original question");
+		expect(screen.getByRole("button", { name: "Cancel edit" })).toBeDefined();
+
+		await user.clear(textbox);
+		await user.type(textbox, "Updated question");
+		await user.click(screen.getByRole("button", { name: "Send" }));
+
+		expect(sendMessageMock).toHaveBeenCalledWith(
+			{ messageId: "user-1", text: "Updated question" },
+			{
+				body: {
+					model: "gpt-5.4",
+					webSearchEnabled: false,
+					appsEnabled: true,
+					mentions: [],
+					selectedSourceIds: [],
+					workspaceId: "workspace-1",
+					convexToken: "convex-token",
+				},
+			},
+		);
+	});
+
+	it("deletes a user message turn from the chat", async () => {
+		const user = userEvent.setup();
+		const setMessagesMock = vi.fn();
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		useMutationMock.mockReset();
+		mockChatPageMutations();
+		useChatMock.mockReturnValue({
+			messages: [
+				{
+					id: "user-1",
+					role: "user",
+					parts: [{ type: "text", text: "Original question" }],
+				},
+				{
+					id: "assistant-1",
+					role: "assistant",
+					parts: [{ type: "text", text: "Original answer" }],
+				},
+			],
+			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: setMessagesMock,
+			error: undefined,
+			status: "ready",
+			stop: stopMock,
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={"chat-1"}
+					onOpenChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Delete" }));
+
+		expect(setMessagesMock).toHaveBeenCalledWith(expect.any(Function));
+		expect(truncateFromMessageMock).toHaveBeenCalledWith({
+			workspaceId: "workspace-1",
+			chatId: "chat-1",
+			messageId: "user-1",
+		});
+	});
+
+	it("regenerates an assistant response with the ai sdk regenerate flow", async () => {
+		const user = userEvent.setup();
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		useChatMock.mockReturnValue({
+			messages: [
+				{
+					id: "user-1",
+					role: "user",
+					parts: [{ type: "text", text: "Original question" }],
+				},
+				{
+					id: "assistant-1",
+					role: "assistant",
+					parts: [{ type: "text", text: "Original answer" }],
+				},
+			],
+			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			error: undefined,
+			status: "ready",
+			stop: stopMock,
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={"chat-1"}
+					onOpenChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Regenerate" }));
+
+		expect(regenerateMock).toHaveBeenCalledWith({
+			messageId: "assistant-1",
+			body: {
+				model: "gpt-5.4",
+				webSearchEnabled: false,
+				appsEnabled: true,
+				mentions: [],
+				selectedSourceIds: [],
+				workspaceId: "workspace-1",
+				convexToken: "convex-token",
+			},
+		});
+	});
+
+	it("creates a note from an assistant response using the current chat title", async () => {
+		const user = userEvent.setup();
+		const onCreateNoteFromResponse = vi.fn().mockResolvedValue("created");
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		useChatMock.mockReturnValue({
+			messages: [
+				{
+					id: "user-1",
+					role: "user",
+					parts: [{ type: "text", text: "hey ho" }],
+				},
+				{
+					id: "assistant-1",
+					role: "assistant",
+					parts: [{ type: "text", text: "Hey! How can I help?" }],
+				},
+			],
+			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			error: undefined,
+			status: "ready",
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[
+						{
+							_id: "chat-doc-1",
+							_creationTime: 1,
+							ownerTokenIdentifier: "token-1",
+							workspaceId: "workspace-1" as never,
+							authorName: "User",
+							chatId: "chat-1",
+							title: "Greeting and assistance",
+							preview: "hey ho",
+							model: "gpt-5.4",
+							isArchived: false,
+							createdAt: 1,
+							updatedAt: 1,
+							lastMessageAt: 1,
+						} as never,
+					]}
+					isChatsLoading={false}
+					activeChatId={"chat-1"}
+					onOpenChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					onCreateNoteFromResponse={onCreateNoteFromResponse}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Create note" }));
+
+		expect(onCreateNoteFromResponse).toHaveBeenCalledWith(
+			"Greeting and assistance",
+			"Hey! How can I help?",
+		);
 	});
 });

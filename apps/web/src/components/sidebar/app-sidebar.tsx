@@ -8,14 +8,7 @@ import {
 	useSidebar,
 } from "@workspace/ui/components/sidebar";
 import { useQuery } from "convex/react";
-import {
-	FileText,
-	Home,
-	Inbox,
-	MessageCircle,
-	Search,
-	UsersRound,
-} from "lucide-react";
+import { FileText } from "lucide-react";
 import * as React from "react";
 import { InboxSheet } from "@/components/inbox/inbox-sheet";
 import { NavMain } from "@/components/nav/nav-main";
@@ -36,41 +29,11 @@ import { NavUser } from "@/components/sidebar/nav-user";
 import { TemplatesDialog } from "@/components/templates/templates-dialog";
 import { WorkspaceSwitcher } from "@/components/workspaces/workspace-switcher";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
+import { SIDEBAR_NAVIGATION } from "@/lib/navigation";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { WorkspaceRecord } from "@/lib/workspaces";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
-
-const navigation = [
-	{
-		title: "Search",
-		action: "search",
-		icon: Search,
-	},
-	{
-		title: "Home",
-		action: "view",
-		view: "home",
-		icon: Home,
-	},
-	{
-		title: "Shared",
-		action: "view",
-		view: "shared",
-		icon: UsersRound,
-	},
-	{
-		title: "Ask AI",
-		action: "view",
-		view: "chat",
-		icon: MessageCircle,
-	},
-	{
-		title: "Inbox",
-		action: "inbox",
-		icon: Inbox,
-	},
-] as const;
 
 type AppSidebarView =
 	| "home"
@@ -243,7 +206,7 @@ export function AppSidebar({
 
 	const navItems = React.useMemo(
 		() =>
-			navigation.map((item) => ({
+			SIDEBAR_NAVIGATION.map((item) => ({
 				...item,
 				isActive:
 					item.action === "inbox"

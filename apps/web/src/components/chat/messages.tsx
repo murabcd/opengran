@@ -1,5 +1,13 @@
+import { Button } from "@workspace/ui/components/button";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
+import { Copy, PenLine, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
 import {
@@ -8,14 +16,7 @@ import {
 	SourcesContent,
 	SourcesTrigger,
 } from "@/components/ai-elements/sources";
-
-const extractTextParts = (message: UIMessage) =>
-	message.parts.filter(
-		(part): part is Extract<(typeof message.parts)[number], { type: "text" }> =>
-			part.type === "text" &&
-			typeof part.text === "string" &&
-			part.text.length > 0,
-	);
+import { extractTextParts, getChatText } from "@/lib/chat-message";
 
 type ToolSource = {
 	href: string;
@@ -158,10 +159,20 @@ export function ChatMessages({
 	messages,
 	error,
 	isLoading,
+	onEditMessage,
+	onDeleteMessage,
+	onPlusAction,
+	onRegenerateMessage,
 }: {
 	messages: UIMessage[];
 	error?: Error;
 	isLoading?: boolean;
+	onEditMessage?: (messageId: string, text: string) => void;
+	onDeleteMessage?: (messageId: string) => void;
+	onPlusAction?: (
+		content: string,
+	) => Promise<"created" | undefined> | "created" | undefined;
+	onRegenerateMessage?: (messageId: string) => void;
 }) {
 	const lastMessage = messages[messages.length - 1];
 	const showLoadingIndicator =
@@ -172,6 +183,7 @@ export function ChatMessages({
 		<div className="space-y-4">
 			{messages.map((message) => {
 				const textParts = extractTextParts(message);
+				const messageText = getChatText(message);
 				const messageSources =
 					message.role === "assistant" ? collectMessageSources(message) : [];
 				const isStreamingAssistantMessage =
@@ -185,7 +197,7 @@ export function ChatMessages({
 				}
 
 				return (
-					<div key={message.id} className="mx-auto w-full">
+					<div key={message.id} className="group/message mx-auto w-full">
 						<div
 							className={cn(
 								"flex w-full gap-4",
@@ -227,6 +239,112 @@ export function ChatMessages({
 										)}
 									</div>
 								</div>
+								{message.role === "assistant" && !isEmpty ? (
+									<div className="-mt-3 flex items-center gap-1 pb-3 opacity-100 transition-opacity duration-150 md:pointer-events-none md:opacity-0 md:group-hover/message:pointer-events-auto md:group-hover/message:opacity-100 md:group-focus-within/message:pointer-events-auto md:group-focus-within/message:opacity-100">
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon-sm"
+													className="size-7 text-muted-foreground hover:text-foreground"
+													aria-label="Regenerate"
+													disabled={!onRegenerateMessage}
+													onClick={() => onRegenerateMessage?.(message.id)}
+												>
+													<RotateCcw className="size-3.5" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>Regenerate</TooltipContent>
+										</Tooltip>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon-sm"
+													className="size-7 text-muted-foreground hover:text-foreground"
+													aria-label="Copy"
+													onClick={() => {
+														void navigator.clipboard
+															.writeText(messageText)
+															.then(() => toast.success("Copied"))
+															.catch(() => toast.error("Failed to copy"));
+													}}
+												>
+													<Copy className="size-3.5" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>Copy</TooltipContent>
+										</Tooltip>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon-sm"
+													className="size-7 text-muted-foreground hover:text-foreground"
+													aria-label="Create note"
+													disabled={!onPlusAction}
+													onClick={() => {
+														if (!onPlusAction) {
+															return;
+														}
+														void Promise.resolve(onPlusAction(messageText))
+															.then((result) => {
+																if (result === "created") {
+																	toast.success("Note created");
+																}
+															})
+															.catch(() =>
+																toast.error("Failed to create note"),
+															);
+													}}
+												>
+													<Plus className="size-3.5" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>Create note</TooltipContent>
+										</Tooltip>
+									</div>
+								) : null}
+								{message.role === "user" && !isEmpty ? (
+									<div className="-mt-3 flex justify-end gap-1 pb-3 opacity-100 transition-opacity duration-150 md:pointer-events-none md:opacity-0 md:group-hover/message:pointer-events-auto md:group-hover/message:opacity-100 md:group-focus-within/message:pointer-events-auto md:group-focus-within/message:opacity-100">
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon-sm"
+													className="size-7 text-muted-foreground hover:text-foreground"
+													aria-label="Edit"
+													onClick={() =>
+														onEditMessage?.(message.id, messageText)
+													}
+												>
+													<PenLine className="size-3.5" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>Edit</TooltipContent>
+										</Tooltip>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon-sm"
+													className="size-7 text-muted-foreground hover:text-foreground"
+													aria-label="Delete"
+													disabled={!onDeleteMessage}
+													onClick={() => onDeleteMessage?.(message.id)}
+												>
+													<Trash2 className="size-3.5" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>Delete</TooltipContent>
+										</Tooltip>
+									</div>
+								) : null}
 								{message.role === "assistant" && messageSources.length > 0 ? (
 									<Sources defaultOpen={false}>
 										<SourcesTrigger count={messageSources.length} />

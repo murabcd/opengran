@@ -22,6 +22,8 @@ import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
+import { getChatText } from "@/lib/chat-message";
+import { getMessagesBefore } from "@/lib/chat-thread";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { WorkspaceRecord } from "@/lib/workspaces";
 import { api } from "../../../../../convex/_generated/api";
@@ -40,6 +42,27 @@ type ChatPageProps = {
 	onChatRemoved: (chatId: string) => void;
 	activeWorkspace: WorkspaceRecord | null;
 	onOpenConnectionsSettings: () => void;
+	onCreateNoteFromResponse?: (
+		title: string,
+		content: string,
+	) => Promise<"created" | undefined> | "created" | undefined;
+};
+
+const getLatestUserMessageText = (messages: UIMessage[]) => {
+	for (let index = messages.length - 1; index >= 0; index -= 1) {
+		const message = messages[index];
+
+		if (message?.role !== "user") {
+			continue;
+		}
+
+		const text = getChatText(message);
+		if (text) {
+			return text;
+		}
+	}
+
+	return "";
 };
 
 const useChatPageController = ({
@@ -74,6 +97,9 @@ const useChatPageController = ({
 	const [sourceSearchTerm, setSourceSearchTerm] = React.useState("");
 	const [webSearchEnabled, setWebSearchEnabled] = React.useState(false);
 	const [appsEnabled, setAppsEnabled] = React.useState(true);
+	const [editingMessageId, setEditingMessageId] = React.useState<string | null>(
+		null,
+	);
 	const [isPreparingRequest, setIsPreparingRequest] = React.useState(false);
 	const [isMovingChatToTrash, setIsMovingChatToTrash] = React.useState(false);
 	const [selectedSourceIds, setSelectedSourceIds] = React.useState<string[]>(
@@ -122,6 +148,7 @@ const useChatPageController = ({
 			);
 		}
 	});
+	const truncateFromMessage = useMutation(api.chats.truncateFromMessage);
 	const transport = React.useMemo(
 		() =>
 			new DefaultChatTransport({
@@ -132,6 +159,8 @@ const useChatPageController = ({
 					body,
 					headers,
 					credentials,
+					trigger,
+					messageId,
 				}) => ({
 					api: "/api/chat",
 					headers,
@@ -141,19 +170,31 @@ const useChatPageController = ({
 								...body,
 								id,
 								message: messages[messages.length - 1],
+								trigger,
+								messageId,
 								workspaceId: activeWorkspaceId,
 							}
 						: {
 								...body,
 								id,
 								messages,
+								trigger,
+								messageId,
 								workspaceId: activeWorkspaceId,
 							},
 				}),
 			}),
 		[activeWorkspaceId],
 	);
-	const { messages, setMessages, sendMessage, error, status } = useChat({
+	const {
+		messages,
+		setMessages,
+		sendMessage,
+		regenerate,
+		error,
+		status,
+		stop,
+	} = useChat({
 		id: chatId,
 		messages: initialMessages,
 		transport,
@@ -237,21 +278,25 @@ const useChatPageController = ({
 				fetchOptions: { throw: false },
 			});
 			onChatPersisted?.(chatId);
+			const nextOutgoingMessage = editingMessageId
+				? {
+						messageId: editingMessageId,
+						text: value,
+					}
+				: { text: value };
 
-			void sendMessage(
-				{ text: value },
-				{
-					body: {
-						model: selectedModel.model,
-						webSearchEnabled,
-						appsEnabled,
-						mentions,
-						selectedSourceIds,
-						workspaceId: activeWorkspaceId,
-						convexToken: data?.token ?? null,
-					},
+			void sendMessage(nextOutgoingMessage, {
+				body: {
+					model: selectedModel.model,
+					webSearchEnabled,
+					appsEnabled,
+					mentions,
+					selectedSourceIds,
+					workspaceId: activeWorkspaceId,
+					convexToken: data?.token ?? null,
 				},
-			);
+			});
+			setEditingMessageId(null);
 			setDraft("");
 		} finally {
 			setIsPreparingRequest(false);
@@ -261,6 +306,7 @@ const useChatPageController = ({
 		appsEnabled,
 		chatId,
 		draft,
+		editingMessageId,
 		isLoading,
 		mentions,
 		onChatPersisted,
@@ -326,10 +372,109 @@ const useChatPageController = ({
 		});
 	}, []);
 
+	const handleEditMessage = React.useCallback(
+		(messageId: string, text: string) => {
+			if (isLoading) {
+				stop();
+			}
+
+			setEditingMessageId(messageId);
+			setDraft(text);
+		},
+		[isLoading, stop],
+	);
+
+	const handleCancelEdit = React.useCallback(() => {
+		setEditingMessageId(null);
+		setDraft("");
+	}, []);
+
+	const buildRequestBody = React.useCallback(async () => {
+		const { data } = await authClient.convex.token({
+			fetchOptions: { throw: false },
+		});
+
+		return {
+			model: selectedModel.model,
+			webSearchEnabled,
+			appsEnabled,
+			mentions,
+			selectedSourceIds,
+			workspaceId: activeWorkspaceId,
+			convexToken: data?.token ?? null,
+		};
+	}, [
+		activeWorkspaceId,
+		appsEnabled,
+		mentions,
+		selectedModel.model,
+		selectedSourceIds,
+		webSearchEnabled,
+	]);
+
+	const handleDeleteMessage = React.useCallback(
+		(messageId: string) => {
+			if (isLoading) {
+				stop();
+			}
+
+			setMessages((currentMessages) =>
+				getMessagesBefore(currentMessages, messageId),
+			);
+			setEditingMessageId(null);
+			setDraft("");
+
+			if (!activeWorkspaceId) {
+				return;
+			}
+
+			void truncateFromMessage({
+				workspaceId: activeWorkspaceId,
+				chatId,
+				messageId,
+			}).catch((error) => {
+				console.error("Failed to delete message", error);
+				toast.error("Failed to delete message");
+			});
+		},
+		[
+			activeWorkspaceId,
+			chatId,
+			isLoading,
+			setMessages,
+			stop,
+			truncateFromMessage,
+		],
+	);
+
+	const handleRegenerateMessage = React.useCallback(
+		async (assistantMessageId: string) => {
+			if (isLoading) {
+				stop();
+			}
+
+			setIsPreparingRequest(true);
+
+			try {
+				const requestBody = await buildRequestBody();
+				setEditingMessageId(null);
+				setDraft("");
+				void regenerate({
+					messageId: assistantMessageId,
+					body: requestBody,
+				});
+			} finally {
+				setIsPreparingRequest(false);
+			}
+		},
+		[buildRequestBody, isLoading, regenerate, stop],
+	);
+
 	return {
 		appsEnabled,
 		confirmTrashChatId,
 		contextPages,
+		currentChatTitle: currentChat?.title ?? "",
 		draft,
 		error,
 		activeWorkspace,
@@ -366,7 +511,10 @@ const useChatPageController = ({
 		workspaceSources,
 		appSources: appSources ?? [],
 		documentSearchTerm,
+		editingMessageId,
 		mentions,
+		handleCancelEdit,
+		onDeleteMessage: handleDeleteMessage,
 		onAddMention: (pageId: string) => {
 			setMentions((current) =>
 				current.includes(pageId) ? current : [...current, pageId],
@@ -399,6 +547,8 @@ const useChatPageController = ({
 					: [...current.filter((id) => !id.startsWith("workspace:")), sourceId];
 			});
 		},
+		onEditMessage: handleEditMessage,
+		onRegenerateMessage: handleRegenerateMessage,
 	};
 };
 
@@ -413,6 +563,7 @@ export function ChatPage({
 	onChatRemoved,
 	activeWorkspace,
 	onOpenConnectionsSettings,
+	onCreateNoteFromResponse,
 }: ChatPageProps) {
 	const controller = useChatPageController({
 		chatId,
@@ -423,6 +574,25 @@ export function ChatPage({
 		activeWorkspace,
 	});
 	const { containerRef } = useStickyScrollToBottom();
+	const handleCreateNoteFromResponse = React.useCallback(
+		(content: string) => {
+			if (!onCreateNoteFromResponse) {
+				return undefined;
+			}
+
+			const title =
+				controller.currentChatTitle.trim() ||
+				getLatestUserMessageText(controller.messages) ||
+				"New note";
+
+			return onCreateNoteFromResponse(title, content);
+		},
+		[
+			controller.currentChatTitle,
+			controller.messages,
+			onCreateNoteFromResponse,
+		],
+	);
 	const composer = (
 		<ChatComposer
 			hasMessages={controller.hasMessages}
@@ -467,6 +637,8 @@ export function ChatPage({
 			onToggleSource={controller.onToggleSource}
 			onClearSelectedSources={controller.handleClearSelectedSources}
 			onOpenConnectionsSettings={onOpenConnectionsSettings}
+			editingMessageId={controller.editingMessageId}
+			onCancelEdit={controller.handleCancelEdit}
 		/>
 	);
 
@@ -486,6 +658,10 @@ export function ChatPage({
 										messages={controller.messages}
 										error={controller.error}
 										isLoading={controller.isLoading}
+										onDeleteMessage={controller.onDeleteMessage}
+										onEditMessage={controller.onEditMessage}
+										onPlusAction={handleCreateNoteFromResponse}
+										onRegenerateMessage={controller.onRegenerateMessage}
 									/>
 								</div>
 

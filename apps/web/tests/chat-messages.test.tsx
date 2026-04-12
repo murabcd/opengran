@@ -1,6 +1,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const toastSuccessMock = vi.fn();
+const toastErrorMock = vi.fn();
 
 vi.mock("streamdown", () => ({
 	Streamdown: ({
@@ -16,6 +20,34 @@ vi.mock("../src/hooks/use-sticky-scroll-to-bottom", () => ({
 	useStickyScrollToBottom: () => ({
 		containerRef: { current: null },
 	}),
+}));
+
+vi.mock("@workspace/ui/components/button", () => ({
+	Button: ({
+		children,
+		...props
+	}: React.PropsWithChildren<
+		React.ButtonHTMLAttributes<HTMLButtonElement>
+	>) => (
+		<button type="button" {...props}>
+			{children}
+		</button>
+	),
+}));
+
+vi.mock("@workspace/ui/components/tooltip", () => ({
+	Tooltip: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+	TooltipContent: ({ children }: React.PropsWithChildren) => (
+		<div>{children}</div>
+	),
+	TooltipTrigger: ({ children }: React.PropsWithChildren) => <>{children}</>,
+}));
+
+vi.mock("sonner", () => ({
+	toast: {
+		success: toastSuccessMock,
+		error: toastErrorMock,
+	},
 }));
 
 afterEach(() => {
@@ -159,9 +191,11 @@ describe("ChatMessages", () => {
 		const trigger = screen.getByRole("button", { name: "Used 1 sources" });
 		const sourcesSection = trigger.parentElement;
 		const messageColumn = sourcesSection?.parentElement;
-		const messageRow = sourcesSection?.previousElementSibling;
+		const actionsRow = sourcesSection?.previousElementSibling;
+		const messageRow = actionsRow?.previousElementSibling;
 
 		expect(trigger.className).toContain("cursor-pointer");
+		expect(actionsRow?.className).toContain("pb-3");
 		expect(messageRow?.className).toContain("pb-2");
 		expect(messageColumn?.className).not.toContain("space-y-4");
 
@@ -216,5 +250,201 @@ describe("ChatMessages", () => {
 		expect(
 			screen.getByText("Thinking").closest(".flex.w-full.gap-4")?.className,
 		).not.toContain("ml-auto");
+	});
+
+	it("copies assistant responses from the message actions", async () => {
+		const user = userEvent.setup();
+		const writeTextMock = vi.fn().mockResolvedValue(undefined);
+		vi.stubGlobal("navigator", {
+			...navigator,
+			clipboard: {
+				writeText: writeTextMock,
+			},
+		});
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "assistant-copy",
+						role: "assistant",
+						parts: [
+							{
+								type: "text",
+								text: "Copy me",
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Copy" }));
+
+		expect(writeTextMock).toHaveBeenCalledWith("Copy me");
+		expect(toastSuccessMock).toHaveBeenCalledWith("Copied");
+	});
+
+	it("keeps message actions hover-only on desktop layouts", async () => {
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "assistant-actions",
+						role: "assistant",
+						parts: [
+							{
+								type: "text",
+								text: "Hover me",
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		expect(
+			screen.getByRole("button", { name: "Copy" }).parentElement?.parentElement
+				?.className,
+		).toContain("md:opacity-0");
+	});
+
+	it("creates a note from the assistant response", async () => {
+		const user = userEvent.setup();
+		const onPlusAction = vi.fn().mockResolvedValue("created");
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "assistant-create-note",
+						role: "assistant",
+						parts: [
+							{
+								type: "text",
+								text: "Turn this into a note",
+							},
+						],
+					},
+				]}
+				onPlusAction={onPlusAction}
+			/>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Create note" }));
+
+		expect(onPlusAction).toHaveBeenCalledWith("Turn this into a note");
+		expect(toastSuccessMock).toHaveBeenCalledWith("Note created");
+	});
+
+	it("regenerates an assistant response from the message actions", async () => {
+		const user = userEvent.setup();
+		const onRegenerateMessage = vi.fn();
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "assistant-regenerate",
+						role: "assistant",
+						parts: [
+							{
+								type: "text",
+								text: "Try again",
+							},
+						],
+					},
+				]}
+				onRegenerateMessage={onRegenerateMessage}
+			/>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Regenerate" }));
+
+		expect(onRegenerateMessage).toHaveBeenCalledWith("assistant-regenerate");
+	});
+
+	it("calls the edit handler for user message actions", async () => {
+		const user = userEvent.setup();
+		const onEditMessage = vi.fn();
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "user-edit",
+						role: "user",
+						parts: [
+							{
+								type: "text",
+								text: "Edit me",
+							},
+						],
+					},
+				]}
+				onEditMessage={onEditMessage}
+			/>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Edit" }));
+
+		expect(onEditMessage).toHaveBeenCalledWith("user-edit", "Edit me");
+	});
+
+	it("deletes a user message from the message actions", async () => {
+		const user = userEvent.setup();
+		const onDeleteMessage = vi.fn();
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "user-delete",
+						role: "user",
+						parts: [
+							{
+								type: "text",
+								text: "Delete me",
+							},
+						],
+					},
+				]}
+				onDeleteMessage={onDeleteMessage}
+			/>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Delete" }));
+
+		expect(onDeleteMessage).toHaveBeenCalledWith("user-delete");
+	});
+
+	it("does not render a copy action for user messages", async () => {
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "user-no-copy",
+						role: "user",
+						parts: [
+							{
+								type: "text",
+								text: "No copy here",
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
 	});
 });

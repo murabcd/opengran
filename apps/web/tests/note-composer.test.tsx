@@ -7,12 +7,15 @@ import {
 } from "@testing-library/react";
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ActiveWorkspaceProvider } from "../src/hooks/use-active-workspace";
 
 const useChatMock = vi.fn();
 const useMutationMock = vi.fn();
 const useQueryMock = vi.fn();
 const useNoteTranscriptSessionMock = vi.fn();
 const useSidebarMock = vi.fn();
+const convexTokenMock = vi.fn();
+const regenerateMock = vi.fn();
 
 vi.mock("@ai-sdk/react", () => ({
 	useChat: useChatMock,
@@ -156,7 +159,7 @@ vi.mock("../src/hooks/use-sticky-scroll-to-bottom", () => ({
 vi.mock("../src/lib/auth-client", () => ({
 	authClient: {
 		convex: {
-			token: vi.fn(),
+			token: convexTokenMock,
 		},
 	},
 }));
@@ -182,11 +185,18 @@ describe("NoteComposer", () => {
 		});
 
 		useQueryMock.mockReturnValue(undefined);
-		useMutationMock.mockReturnValue(vi.fn());
+		useMutationMock.mockReturnValue(vi.fn().mockResolvedValue(undefined));
+		regenerateMock.mockReset();
+		convexTokenMock.mockResolvedValue({
+			data: {
+				token: null,
+			},
+		});
 		useChatMock.mockReturnValue({
 			error: undefined,
 			messages: [],
 			sendMessage: vi.fn(),
+			regenerate: regenerateMock,
 			setMessages: vi.fn(),
 			status: "ready",
 			stop: vi.fn(),
@@ -236,13 +246,15 @@ describe("NoteComposer", () => {
 		);
 
 		render(
-			<NoteComposer
-				noteContext={{
-					noteId: "note-1",
-					text: "",
-					title: "New note",
-				}}
-			/>,
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<NoteComposer
+					noteContext={{
+						noteId: "note-1",
+						text: "",
+						title: "New note",
+					}}
+				/>
+			</ActiveWorkspaceProvider>,
 		);
 
 		expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty(
@@ -310,6 +322,7 @@ describe("NoteComposer", () => {
 				},
 			],
 			sendMessage: vi.fn(),
+			regenerate: regenerateMock,
 			setMessages: vi.fn(),
 			status: "streaming",
 			stop: vi.fn(),
@@ -337,7 +350,7 @@ describe("NoteComposer", () => {
 
 		expect(
 			screen.getByText("Thinking").closest(".flex.w-full")?.className,
-		).toBe("flex w-full justify-start");
+		).toContain("justify-start");
 	});
 
 	it("keeps the full chat title accessible from the selector trigger", async () => {
@@ -740,6 +753,387 @@ describe("NoteComposer", () => {
 		expect(
 			screen.queryByRole("button", { name: "Expand speech controls" }),
 		).toBeNull();
+	});
+
+	it("loads a user message into the composer for editing and resubmits with the same id", async () => {
+		let queryCall = 0;
+		const sendMessageMock = vi.fn();
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		useChatMock.mockReturnValue({
+			error: undefined,
+			messages: [
+				{
+					id: "user-message-1",
+					role: "user",
+					parts: [{ type: "text", text: "Original question" }],
+				},
+				{
+					id: "assistant-message-1",
+					role: "assistant",
+					parts: [{ type: "text", text: "Original answer" }],
+				},
+			],
+			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			status: "ready",
+			stop: vi.fn(),
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+
+		fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+
+		const editingTextbox = await screen.findByDisplayValue("Original question");
+
+		expect((editingTextbox as HTMLTextAreaElement).value).toBe(
+			"Original question",
+		);
+		expect(screen.getByRole("button", { name: "Cancel edit" })).toBeDefined();
+
+		fireEvent.change(editingTextbox, {
+			target: { value: "Updated question" },
+		});
+		fireEvent.submit(editingTextbox.closest("form") as HTMLFormElement);
+
+		await waitFor(() => {
+			expect(sendMessageMock).toHaveBeenCalledWith(
+				{
+					messageId: "user-message-1",
+					text: "Updated question",
+				},
+				expect.objectContaining({
+					body: expect.objectContaining({
+						recipeSlug: null,
+					}),
+				}),
+			);
+		});
+
+		expect(screen.queryByRole("button", { name: "Cancel edit" })).toBeNull();
+	});
+
+	it("deletes a user note chat message turn", async () => {
+		let queryCall = 0;
+		const truncateFromMessageMock = vi.fn().mockResolvedValue(undefined);
+		const setMessagesMock = vi.fn();
+
+		useMutationMock.mockReturnValue(truncateFromMessageMock);
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+		useChatMock.mockReturnValue({
+			error: undefined,
+			messages: [
+				{
+					id: "user-message-1",
+					role: "user",
+					parts: [{ type: "text", text: "Original question" }],
+				},
+				{
+					id: "assistant-message-1",
+					role: "assistant",
+					parts: [{ type: "text", text: "Original answer" }],
+				},
+			],
+			sendMessage: vi.fn(),
+			regenerate: regenerateMock,
+			setMessages: setMessagesMock,
+			status: "ready",
+			stop: vi.fn(),
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<NoteComposer
+					noteContext={{
+						noteId: "note-1",
+						text: "",
+						title: "New note",
+					}}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+		fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+		expect(setMessagesMock).toHaveBeenCalledWith(expect.any(Function));
+		expect(truncateFromMessageMock).toHaveBeenCalledWith({
+			workspaceId: "workspace-1",
+			chatId: "chat-1",
+			messageId: "user-message-1",
+		});
+	});
+
+	it("regenerates a note chat response with the ai sdk regenerate flow", async () => {
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+		useChatMock.mockReturnValue({
+			error: undefined,
+			messages: [
+				{
+					id: "user-message-1",
+					role: "user",
+					parts: [{ type: "text", text: "Original question" }],
+				},
+				{
+					id: "assistant-message-1",
+					role: "assistant",
+					parts: [{ type: "text", text: "Original answer" }],
+				},
+			],
+			sendMessage: vi.fn(),
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			status: "ready",
+			stop: vi.fn(),
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<NoteComposer
+					noteContext={{
+						noteId: "note-1",
+						text: "",
+						title: "New note",
+					}}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+		fireEvent.click(await screen.findByRole("button", { name: "Regenerate" }));
+
+		await waitFor(() => {
+			expect(regenerateMock).toHaveBeenCalledWith(
+				expect.objectContaining({
+					messageId: "assistant-message-1",
+					body: expect.objectContaining({
+						recipeSlug: null,
+					}),
+				}),
+			);
+		});
+	});
+
+	it("keeps note chat message actions hover-only on desktop layouts", async () => {
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+		useChatMock.mockReturnValue({
+			error: undefined,
+			messages: [
+				{
+					id: "user-message-1",
+					role: "user",
+					parts: [{ type: "text", text: "Original question" }],
+				},
+			],
+			sendMessage: vi.fn(),
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			status: "ready",
+			stop: vi.fn(),
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<NoteComposer
+					noteContext={{
+						noteId: "note-1",
+						text: "",
+						title: "New note",
+					}}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+
+		expect(
+			(await screen.findByRole("button", { name: "Edit" })).parentElement
+				?.parentElement?.parentElement?.className,
+		).toContain("md:opacity-0");
 	});
 
 	it("shows only the selected chat presentation after switching modes", async () => {

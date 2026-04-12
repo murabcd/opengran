@@ -104,6 +104,7 @@ import {
 	DESKTOP_MAIN_HEADER_CONTENT_CLASS,
 	DESKTOP_MAIN_HEADER_LEADING_CLASS,
 } from "@/lib/desktop-chrome";
+import { getSidebarViewTitle } from "@/lib/navigation";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import {
 	getSuggestedWorkspaceName,
@@ -2081,6 +2082,7 @@ const useAppShellState = ({
 	const createNoteFromCalendarEvent = useMutation(
 		api.notes.createFromCalendarEvent,
 	);
+	const saveNote = useMutation(api.notes.save);
 	const createWorkspace = useMutation(api.workspaces.create);
 	const listUpcomingGoogleEvents = useAction(
 		api.calendar.listUpcomingGoogleEvents,
@@ -2597,6 +2599,36 @@ const useAppShellState = ({
 		window.history.pushState(null, "", "/note?capture=1");
 	}, []);
 
+	const handleCreateNoteFromChatResponse = React.useCallback(
+		async (title: string, content: string) => {
+			if (!resolvedActiveWorkspaceId || creatingNoteRef.current) {
+				return undefined;
+			}
+
+			creatingNoteRef.current = true;
+			const nextTitle = title.trim() || "New note";
+			const nextContent = content.trim();
+
+			try {
+				const noteId = await saveNote({
+					workspaceId: resolvedActiveWorkspaceId,
+					title: nextTitle,
+					content: nextContent,
+					searchableText: nextContent,
+				});
+				setCurrentNoteTitle(nextTitle);
+				openNote(noteId);
+				return "created" as const;
+			} catch (error) {
+				console.error("Failed to create note from chat response", error);
+				return undefined;
+			} finally {
+				creatingNoteRef.current = false;
+			}
+		},
+		[openNote, resolvedActiveWorkspaceId, saveNote],
+	);
+
 	const handleAutoStartNoteCaptureHandled = React.useCallback(() => {
 		setShouldAutoStartNoteCapture(false);
 		setShouldStopNoteCaptureWhenMeetingEnds(false);
@@ -2868,6 +2900,7 @@ const useAppShellState = ({
 		handleChatPersisted,
 		handleChatRemoved,
 		handleCreateNote,
+		handleCreateNoteFromChatResponse,
 		handleQuickNote,
 		handleNewChat,
 		handleNoteTrashed,
@@ -2913,10 +2946,10 @@ const useAppShellState = ({
 			resolvedCurrentView === "notFound"
 				? "Page Not Found"
 				: resolvedCurrentView === "chat"
-					? "Chat"
+					? getSidebarViewTitle("chat")
 					: resolvedCurrentView === "shared" || isSharedNote
-						? "Shared"
-						: "Home",
+						? getSidebarViewTitle("shared")
+						: getSidebarViewTitle("home"),
 		handleBreadcrumbSectionClick: () => {
 			if (resolvedCurrentView === "notFound") {
 				handleViewChange("home");
@@ -3036,6 +3069,9 @@ function AppShell({
 						onChatRemoved={controller.handleChatRemoved}
 						onOpenConnectionsSettings={() =>
 							controller.handleSettingsOpenChange(true, "Connections")
+						}
+						onCreateNoteFromChatResponse={
+							controller.handleCreateNoteFromChatResponse
 						}
 						onNoteTitleChange={controller.setCurrentNoteTitle}
 						onNoteEditorActionsChange={controller.setCurrentNoteEditorActions}
@@ -3601,6 +3637,7 @@ function AppShellContent({
 	onOpenChat,
 	onChatRemoved,
 	onOpenConnectionsSettings,
+	onCreateNoteFromChatResponse,
 	onNoteTitleChange,
 	onNoteEditorActionsChange,
 	onNoteCommentsOpenChange,
@@ -3644,6 +3681,10 @@ function AppShellContent({
 	onOpenChat: (chatId: string) => void;
 	onChatRemoved: (chatId: string) => void;
 	onOpenConnectionsSettings: () => void;
+	onCreateNoteFromChatResponse: (
+		title: string,
+		content: string,
+	) => Promise<"created" | undefined> | "created" | undefined;
 	onNoteTitleChange: (title: string) => void;
 	onNoteEditorActionsChange: (actions: NoteEditorActions | null) => void;
 	onNoteCommentsOpenChange: (opener: (() => void) | null) => void;
@@ -3757,6 +3798,7 @@ function AppShellContent({
 			onChatRemoved={onChatRemoved}
 			activeWorkspace={activeWorkspace}
 			onOpenConnectionsSettings={onOpenConnectionsSettings}
+			onCreateNoteFromResponse={onCreateNoteFromChatResponse}
 		/>
 	);
 }

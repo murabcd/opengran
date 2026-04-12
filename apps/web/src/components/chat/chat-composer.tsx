@@ -83,8 +83,10 @@ type AppSource = {
 type ChatComposerProps = {
 	hasMessages: boolean;
 	draft: string;
+	editingMessageId?: string | null;
 	onDraftChange: (value: string) => void;
 	onDraftKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>;
+	onCancelEdit?: () => void;
 	onSubmit: () => void | Promise<void>;
 	isLoading: boolean;
 	selectedModel: (typeof chatModels)[number];
@@ -124,8 +126,10 @@ type ChatComposerProps = {
 export function ChatComposer({
 	hasMessages,
 	draft,
+	editingMessageId,
 	onDraftChange,
 	onDraftKeyDown,
+	onCancelEdit,
 	onSubmit,
 	isLoading,
 	selectedModel,
@@ -244,7 +248,7 @@ export function ChatComposer({
 	);
 	const showTopAddon = !hasMessages || mentions.length > 0;
 
-	React.useEffect(() => {
+	const focusPrompt = React.useCallback(() => {
 		const prompt = promptRef.current;
 		if (!prompt) {
 			return;
@@ -267,11 +271,58 @@ export function ChatComposer({
 		prompt.setSelectionRange(selectionEnd, selectionEnd);
 	}, []);
 
+	React.useEffect(() => {
+		focusPrompt();
+	}, [focusPrompt]);
+
+	React.useEffect(() => {
+		if (!editingMessageId) {
+			return;
+		}
+
+		focusPrompt();
+	}, [editingMessageId, focusPrompt]);
+
+	React.useEffect(() => {
+		if (!editingMessageId || !onCancelEdit) {
+			return;
+		}
+
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") {
+				return;
+			}
+
+			event.preventDefault();
+			onCancelEdit();
+		};
+
+		window.addEventListener("keydown", handleKeyDown);
+		return () => {
+			window.removeEventListener("keydown", handleKeyDown);
+		};
+	}, [editingMessageId, onCancelEdit]);
+
 	return (
 		<div className={`mx-auto w-full max-w-xl ${hasMessages ? "mt-auto" : ""}`}>
 			<label htmlFor="chat-prompt" className="sr-only">
 				Prompt
 			</label>
+			{editingMessageId && onCancelEdit ? (
+				<div className="mb-3 flex justify-center">
+					<button
+						type="button"
+						onClick={onCancelEdit}
+						className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border/80 bg-background/95 px-4 py-1.5 text-sm text-foreground shadow-sm hover:bg-background/95"
+						aria-label="Cancel edit"
+					>
+						<span>Cancel edit</span>
+						<span className="rounded-full border border-border/80 px-2 py-0.5 text-[10px] leading-none text-muted-foreground">
+							Esc
+						</span>
+					</button>
+				</div>
+			) : null}
 			<InputGroup
 				className={`${hasMessages ? "min-h-[96px]" : "min-h-[148px]"} max-h-[32rem] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30`}
 			>

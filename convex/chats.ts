@@ -256,11 +256,13 @@ const getNoteChats = async (
 ) =>
 	await ctx.db
 		.query("chats")
-		.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_noteId_and_chatId", (q) =>
-			q
-				.eq("ownerTokenIdentifier", ownerTokenIdentifier)
-				.eq("workspaceId", workspaceId)
-				.eq("noteId", noteId),
+		.withIndex(
+			"by_ownerTokenIdentifier_and_workspaceId_and_noteId_and_chatId",
+			(q) =>
+				q
+					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+					.eq("workspaceId", workspaceId)
+					.eq("noteId", noteId),
 		)
 		.take(NOTE_CHAT_BATCH_SIZE);
 
@@ -275,9 +277,7 @@ export const list = query({
 
 		return await ctx.db
 			.query("chats")
-			.withIndex(
-				"by_owner_ws_chat_arch_upd",
-				(q) =>
+			.withIndex("by_owner_ws_chat_arch_upd", (q) =>
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
 					.eq("workspaceId", args.workspaceId)
@@ -299,9 +299,7 @@ export const listArchived = query({
 
 		return await ctx.db
 			.query("chats")
-			.withIndex(
-				"by_owner_ws_chat_arch_upd",
-				(q) =>
+			.withIndex("by_owner_ws_chat_arch_upd", (q) =>
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
 					.eq("workspaceId", args.workspaceId)
@@ -330,14 +328,12 @@ export const listForNote = query({
 
 		return await ctx.db
 			.query("chats")
-			.withIndex(
-				"by_owner_ws_note_chat_arch_upd",
-				(q) =>
-					q
-						.eq("ownerTokenIdentifier", ownerTokenIdentifier)
-						.eq("workspaceId", args.workspaceId)
-						.eq("noteId", args.noteId)
-						.eq("isArchived", false),
+			.withIndex("by_owner_ws_note_chat_arch_upd", (q) =>
+				q
+					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+					.eq("workspaceId", args.workspaceId)
+					.eq("noteId", args.noteId)
+					.eq("isArchived", false),
 			)
 			.order("desc")
 			.take(MAX_RETURNED_CHATS);
@@ -687,6 +683,65 @@ export const saveMessage = mutation({
 		return {
 			chat,
 			message,
+		};
+	},
+});
+
+export const truncateFromMessage = mutation({
+	args: {
+		workspaceId: v.id("workspaces"),
+		chatId: v.string(),
+		messageId: v.string(),
+	},
+	returns: v.object({
+		deletedCount: v.number(),
+	}),
+	handler: async (ctx, args) => {
+		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
+		const chat = await getOwnedChatById(
+			ctx,
+			ownerTokenIdentifier,
+			args.workspaceId,
+			clampWhitespace(args.chatId),
+		);
+
+		if (!chat || chat.isArchived) {
+			return { deletedCount: 0 };
+		}
+
+		const targetMessageId = clampWhitespace(args.messageId);
+
+		if (!targetMessageId) {
+			return { deletedCount: 0 };
+		}
+
+		const messages = await ctx.db
+			.query("chatMessages")
+			.withIndex("by_chatId_and_createdAt", (q) => q.eq("chatId", chat._id))
+			.take(MAX_RETURNED_CHAT_MESSAGES);
+		const targetIndex = messages.findIndex(
+			(message) => message.messageId === targetMessageId,
+		);
+
+		if (targetIndex < 0) {
+			return { deletedCount: 0 };
+		}
+
+		const messagesToDelete = messages.slice(targetIndex);
+		const previousMessage = targetIndex > 0 ? messages[targetIndex - 1] : null;
+
+		await Promise.all(
+			messagesToDelete.map((message) => ctx.db.delete(message._id)),
+		);
+		await ctx.db.patch(chat._id, {
+			preview: previousMessage?.text ?? "",
+			updatedAt: Date.now(),
+			lastMessageAt: previousMessage?.createdAt ?? chat.createdAt,
+		});
+
+		return {
+			deletedCount: messagesToDelete.length,
 		};
 	},
 });

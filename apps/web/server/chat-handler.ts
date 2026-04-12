@@ -33,6 +33,8 @@ import { getTrackerIssue, searchTrackerIssues } from "./tracker";
 type ChatRequestBody = {
 	id?: string;
 	workspaceId?: string | null;
+	trigger?: "submit-message" | "regenerate-message";
+	messageId?: string;
 	message?: UIMessage;
 	messages?: UIMessage[];
 	model?: string;
@@ -477,18 +479,29 @@ export const handleChatRequest = async (
 		(noteContext?.noteId as Id<"notes"> | null | undefined) ??
 		storedChat?.noteId ??
 		null;
+	const storedChatMessages =
+		convexClient && id && resolvedWorkspaceId
+			? await convexClient
+					.query(api.chats.getMessages, {
+						workspaceId: resolvedWorkspaceId,
+						chatId: id,
+					})
+					.catch(() => [])
+			: [];
+	const editedMessageId = body.messageId ?? message?.id;
+	const editedMessageIndex = editedMessageId
+		? storedChatMessages.findIndex(
+				(storedMessage) => storedMessage.id === editedMessageId,
+			)
+		: -1;
+	const baseStoredMessages =
+		editedMessageIndex >= 0
+			? storedChatMessages.slice(0, editedMessageIndex)
+			: storedChatMessages;
 	const chatMessages = await validateUIMessages({
 		messages:
 			message && convexClient && id && resolvedWorkspaceId
-				? [
-						...fromStoredMessages(
-							await convexClient.query(api.chats.getMessages, {
-								workspaceId: resolvedWorkspaceId,
-								chatId: id,
-							}),
-						),
-						message,
-					]
+				? [...fromStoredMessages(baseStoredMessages), message]
 				: message
 					? [message]
 					: messages,
@@ -504,6 +517,44 @@ export const handleChatRequest = async (
 			lastUserMessage &&
 			(!storedChat || storedChat.title === "New chat"),
 	);
+	if (
+		convexClient &&
+		id &&
+		resolvedWorkspaceId &&
+		body.trigger === "submit-message" &&
+		body.messageId &&
+		editedMessageIndex >= 0
+	) {
+		try {
+			await convexClient.mutation(api.chats.truncateFromMessage, {
+				workspaceId: resolvedWorkspaceId,
+				chatId: id,
+				messageId: body.messageId,
+			});
+		} catch (error) {
+			console.error("Failed to truncate edited chat message branch", error);
+		}
+	}
+	if (
+		convexClient &&
+		id &&
+		resolvedWorkspaceId &&
+		body.trigger === "regenerate-message" &&
+		body.messageId
+	) {
+		try {
+			await convexClient.mutation(api.chats.truncateFromMessage, {
+				workspaceId: resolvedWorkspaceId,
+				chatId: id,
+				messageId: body.messageId,
+			});
+		} catch (error) {
+			console.error(
+				"Failed to truncate regenerated chat message branch",
+				error,
+			);
+		}
+	}
 	if (convexClient && id && resolvedWorkspaceId && lastUserMessage) {
 		try {
 			await convexClient.mutation(api.chats.saveMessage, {

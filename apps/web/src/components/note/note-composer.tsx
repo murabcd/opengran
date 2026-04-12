@@ -59,10 +59,11 @@ import {
 	PanelBottomDashed,
 	PanelRight,
 	PanelRightDashed,
+	PenLine,
 	Plus,
+	RotateCcw,
 	SlidersHorizontal,
-	ThumbsDown,
-	ThumbsUp,
+	Trash2,
 	WandSparkles,
 	X,
 } from "lucide-react";
@@ -75,6 +76,8 @@ import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { getChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
+import { getChatText } from "@/lib/chat-message";
+import { getMessagesBefore } from "@/lib/chat-thread";
 import { ENHANCED_NOTE_TEMPLATE_SLUG } from "@/lib/note-templates";
 import {
 	RECIPE_ICONS,
@@ -166,14 +169,6 @@ type NoteComposerProps = {
 	stopTranscriptionWhenMeetingEnds?: boolean;
 };
 
-const extractTextParts = (message: UIMessage) =>
-	message.parts.filter(
-		(part): part is Extract<(typeof message.parts)[number], { type: "text" }> =>
-			part.type === "text" &&
-			typeof part.text === "string" &&
-			part.text.length > 0,
-	);
-
 const toStoredChatMessages = (
 	messages: Array<{
 		id: string;
@@ -220,12 +215,6 @@ const groupChatsForSelector = (chats: NoteChatSummary[]) => {
 	);
 };
 
-const getChatText = (message: UIMessage) =>
-	extractTextParts(message)
-		.map((part) => part.text)
-		.join("\n\n")
-		.trim();
-
 const createDraftChatId = (): string => crypto.randomUUID();
 
 const resolveStateUpdate = <T,>(
@@ -271,9 +260,9 @@ const useNoteComposerController = ({
 	const [recipePopoverOpen, setRecipePopoverOpen] = React.useState(false);
 	const [selectedRecipeSlug, setSelectedRecipeSlug] =
 		React.useState<RecipeSlug | null>(null);
-	const [reactionsByMessageId, setReactionsByMessageId] = React.useState<
-		Record<string, "like" | "dislike" | undefined>
-	>({});
+	const [editingMessageId, setEditingMessageId] = React.useState<string | null>(
+		null,
+	);
 	const rootRef = React.useRef<HTMLDivElement>(null);
 	const inlinePanelRef = React.useRef<HTMLDivElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -332,6 +321,7 @@ const useNoteComposerController = ({
 			: "skip",
 	);
 	const updateUserPreferences = useMutation(api.userPreferences.update);
+	const truncateFromMessage = useMutation(api.chats.truncateFromMessage);
 	const recipeData = useQuery(
 		api.recipes.list,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
@@ -386,6 +376,8 @@ const useNoteComposerController = ({
 					body,
 					headers,
 					credentials,
+					trigger,
+					messageId,
 				}) => ({
 					api: "/api/chat",
 					headers,
@@ -395,12 +387,16 @@ const useNoteComposerController = ({
 								...body,
 								id,
 								message: messages[messages.length - 1],
+								trigger,
+								messageId,
 								workspaceId: activeWorkspaceId,
 							}
 						: {
 								...body,
 								id,
 								messages,
+								trigger,
+								messageId,
 								workspaceId: activeWorkspaceId,
 							},
 				}),
@@ -416,6 +412,7 @@ const useNoteComposerController = ({
 		messages: chatMessages,
 		setMessages,
 		sendMessage,
+		regenerate,
 		error: chatError,
 		status: chatStatus,
 		stop,
@@ -640,12 +637,12 @@ const useNoteComposerController = ({
 	const resetComposerForNoteChange = React.useCallback(() => {
 		setCurrentChatId(createDraftChatId());
 		setMessages([]);
+		setEditingMessageId(null);
 		setMessage("");
 		setIsExpanded(false);
 		setPanelMode(null);
 		setSelectedRecipeSlug(null);
 		setRecipePopoverOpen(false);
-		setReactionsByMessageId({});
 		resetTextareaHeight();
 		closeRightSidebar();
 	}, [closeRightSidebar, resetTextareaHeight, setMessages, setPanelMode]);
@@ -788,6 +785,7 @@ const useNoteComposerController = ({
 		const nextChatId = createDraftChatId();
 		setCurrentChatId(nextChatId);
 		setMessages([]);
+		setEditingMessageId(null);
 
 		if (presentationMode === "inline") {
 			setPanelMode("chat");
@@ -833,13 +831,17 @@ const useNoteComposerController = ({
 				},
 				recipeSlug: selectedRecipe?.slug ?? null,
 			};
+			const nextOutgoingMessage = editingMessageId
+				? {
+						messageId: editingMessageId,
+						text: nextMessage,
+					}
+				: { text: nextMessage };
 
-			void sendMessage(
-				{ text: nextMessage },
-				{
-					body: requestBody,
-				},
-			);
+			void sendMessage(nextOutgoingMessage, {
+				body: requestBody,
+			});
+			setEditingMessageId(null);
 			setMessage("");
 			setIsExpanded(false);
 			resetTextareaHeight();
@@ -854,6 +856,7 @@ const useNoteComposerController = ({
 		readNoteContext,
 		resetTextareaHeight,
 		selectedRecipe?.slug,
+		editingMessageId,
 		sendMessage,
 		setPanelMode,
 	]);
@@ -885,6 +888,138 @@ const useNoteComposerController = ({
 		void handleSend();
 	};
 
+	const focusComposerInput = React.useCallback(() => {
+		window.setTimeout(() => {
+			const element = textareaRef.current;
+			if (!element) {
+				return;
+			}
+
+			element.focus({ preventScroll: true });
+			const cursorPosition = element.value.length;
+			element.setSelectionRange(cursorPosition, cursorPosition);
+		}, 0);
+	}, []);
+
+	const handleEditMessage = React.useCallback(
+		(messageId: string, text: string) => {
+			if (isChatLoading) {
+				stop();
+			}
+
+			setEditingMessageId(messageId);
+			setMessage(text);
+			setIsExpanded(text.length > 100 || text.includes("\n"));
+			resizeTextarea();
+			focusComposerInput();
+		},
+		[focusComposerInput, isChatLoading, resizeTextarea, stop],
+	);
+
+	const handleCancelEdit = React.useCallback(() => {
+		setEditingMessageId(null);
+		setMessage("");
+		setIsExpanded(false);
+		resetTextareaHeight();
+		focusComposerInput();
+	}, [focusComposerInput, resetTextareaHeight]);
+
+	const buildRequestBody = React.useCallback(async () => {
+		const currentNoteContext = readNoteContext();
+		const { data } = await authClient.convex.token({
+			fetchOptions: { throw: false },
+		});
+
+		return {
+			model: NOTE_CHAT_MODEL.model,
+			convexToken: data?.token ?? null,
+			noteContext: {
+				noteId: currentNoteContext.noteId,
+				title: currentNoteContext.title,
+				text: currentNoteContext.text,
+			},
+			recipeSlug: selectedRecipe?.slug ?? null,
+		};
+	}, [readNoteContext, selectedRecipe?.slug]);
+
+	const handleDeleteMessage = React.useCallback(
+		(messageId: string) => {
+			if (isChatLoading) {
+				stop();
+			}
+
+			setMessages((currentMessages) =>
+				getMessagesBefore(currentMessages, messageId),
+			);
+			setEditingMessageId(null);
+			setMessage("");
+			setIsExpanded(false);
+			resetTextareaHeight();
+
+			if (!activeWorkspaceId) {
+				return;
+			}
+
+			void truncateFromMessage({
+				workspaceId: activeWorkspaceId,
+				chatId: currentChatId,
+				messageId,
+			}).catch((error) => {
+				console.error("Failed to delete note chat message", error);
+				toast.error("Failed to delete message");
+			});
+		},
+		[
+			activeWorkspaceId,
+			currentChatId,
+			isChatLoading,
+			resetTextareaHeight,
+			setMessages,
+			stop,
+			truncateFromMessage,
+		],
+	);
+
+	const handleRegenerateMessage = React.useCallback(
+		async (assistantMessageId: string) => {
+			if (isChatLoading) {
+				stop();
+			}
+
+			setIsPreparingRequest(true);
+			if (presentationMode === "inline") {
+				setPanelMode("chat");
+			} else {
+				openRightSidebar(presentationMode);
+			}
+
+			try {
+				const requestBody = await buildRequestBody();
+
+				setEditingMessageId(null);
+				setMessage("");
+				setIsExpanded(false);
+				resetTextareaHeight();
+				void regenerate({
+					messageId: assistantMessageId,
+					body: requestBody,
+				});
+			} finally {
+				setIsPreparingRequest(false);
+			}
+		},
+		[
+			buildRequestBody,
+			isChatLoading,
+			openRightSidebar,
+			presentationMode,
+			regenerate,
+			resetTextareaHeight,
+			setPanelMode,
+			stop,
+		],
+	);
+
 	const handleSelectChat = (chatId: string) => {
 		if (currentChatId === chatId) {
 			return;
@@ -895,6 +1030,7 @@ const useNoteComposerController = ({
 		}
 
 		setCurrentChatId(chatId);
+		setEditingMessageId(null);
 		if (presentationMode === "inline") {
 			setPanelMode("chat");
 			return;
@@ -923,6 +1059,26 @@ const useNoteComposerController = ({
 
 	const handleComposerPointerDown = React.useCallback(() => {}, []);
 
+	React.useEffect(() => {
+		if (!editingMessageId) {
+			return;
+		}
+
+		const handleWindowKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") {
+				return;
+			}
+
+			event.preventDefault();
+			handleCancelEdit();
+		};
+
+		window.addEventListener("keydown", handleWindowKeyDown);
+		return () => {
+			window.removeEventListener("keydown", handleWindowKeyDown);
+		};
+	}, [editingMessageId, handleCancelEdit]);
+
 	const handleComposerFocus = React.useCallback(() => {
 		if (!latestNoteChat) {
 			return;
@@ -935,6 +1091,7 @@ const useNoteComposerController = ({
 		closeRightSidebar();
 		setPresentationMode("inline");
 		setCurrentChatId(latestNoteChat.chatId);
+		setEditingMessageId(null);
 		shouldFocusInlineChatRef.current = true;
 		setPanelMode("chat");
 	}, [
@@ -957,11 +1114,15 @@ const useNoteComposerController = ({
 		closeRightSidebar,
 		composerPlaceholder,
 		currentChatId,
+		editingMessageId,
 		exportTranscript: transcriptSession.exportTranscript,
 		fullTranscript: transcriptSession.fullTranscript,
 		groupedNoteChats,
+		handleCancelEdit,
 		handleComposerFocus,
 		handleComposerPointerDown,
+		handleDeleteMessage,
+		handleEditMessage,
 		handleGenerateNotes: transcriptSession.handleGenerateNotes,
 		handleHideChat,
 		handleKeyDown,
@@ -969,6 +1130,7 @@ const useNoteComposerController = ({
 		handleSelectChat,
 		handleSelectInlinePresentation,
 		handleSelectRightPresentation,
+		handleRegenerateMessage,
 		handleSubmit,
 		handleTextareaChange,
 		hasMessage,
@@ -995,7 +1157,6 @@ const useNoteComposerController = ({
 		panelMode,
 		presentationMode,
 		transcriptViewportRef: transcriptSession.transcriptViewportRef,
-		reactionsByMessageId,
 		rootRef,
 		recipePopoverOpen,
 		recipes,
@@ -1003,7 +1164,6 @@ const useNoteComposerController = ({
 		selectedRecipe,
 		setPanelMode,
 		setRecipePopoverOpen,
-		setReactionsByMessageId,
 		setSelectedRecipeSlug,
 		shouldShowInlinePanel,
 		textareaRef,
@@ -1152,8 +1312,9 @@ function NoteChatMessages({
 	disablePadding,
 	isChatLoading,
 	onAddMessageToNote,
-	onReactionChange,
-	reactionsByMessageId,
+	onDeleteMessage,
+	onEditMessage,
+	onRegenerateMessage,
 }: {
 	chatError: Error | undefined;
 	chatMessages: UIMessage[];
@@ -1162,8 +1323,9 @@ function NoteChatMessages({
 	disablePadding: boolean;
 	isChatLoading: boolean;
 	onAddMessageToNote?: (text: string) => Promise<void> | void;
-	onReactionChange: (messageId: string, reaction: "like" | "dislike") => void;
-	reactionsByMessageId: Record<string, "like" | "dislike" | undefined>;
+	onDeleteMessage?: (messageId: string) => void;
+	onEditMessage?: (messageId: string, text: string) => void;
+	onRegenerateMessage?: (messageId: string) => void;
 }) {
 	return (
 		<ScrollArea
@@ -1189,25 +1351,27 @@ function NoteChatMessages({
 					<div
 						key={chatMessage.id}
 						className={cn(
-							"flex w-full",
+							"group/message flex w-full",
 							chatMessage.role === "user" ? "justify-end" : "justify-start",
 						)}
 					>
-						<div
-							className={cn(
-								"max-w-[85%] rounded-lg px-3 py-2 text-sm",
-								chatMessage.role === "user"
-									? "bg-secondary text-secondary-foreground"
-									: "bg-transparent px-0 py-0 text-foreground",
-								isStreamingAssistantMessage && !text && "text-muted-foreground",
-							)}
-						>
-							{isStreamingAssistantMessage && !text ? (
-								<div className="text-sm text-muted-foreground">
-									<ShimmerText>Thinking</ShimmerText>
-								</div>
-							) : (
-								<>
+						<div className="max-w-[85%]">
+							<div
+								className={cn(
+									"rounded-lg px-3 py-2 text-sm",
+									chatMessage.role === "user"
+										? "bg-secondary text-secondary-foreground"
+										: "px-0 py-0 text-foreground",
+									isStreamingAssistantMessage &&
+										!text &&
+										"text-muted-foreground",
+								)}
+							>
+								{isStreamingAssistantMessage && !text ? (
+									<div className="text-sm text-muted-foreground">
+										<ShimmerText>Thinking</ShimmerText>
+									</div>
+								) : (
 									<Streamdown
 										className={cn(
 											chatMessage.role === "assistant" && "note-streamdown",
@@ -1219,103 +1383,107 @@ function NoteChatMessages({
 									>
 										{text}
 									</Streamdown>
-									{chatMessage.role === "assistant" && text ? (
-										<div className="mt-2 flex items-center gap-1">
-											<Tooltip>
-												<TooltipTrigger asChild>
-													<Button
-														type="button"
-														variant="ghost"
-														size="icon-sm"
-														className="size-7 text-muted-foreground hover:text-foreground"
-														aria-label="Copy response"
-														onClick={() => {
-															void navigator.clipboard
-																.writeText(text)
-																.then(() => toast.success("Copied"))
-																.catch(() => toast.error("Failed to copy"));
-														}}
-													>
-														<Copy className="size-3.5" />
-													</Button>
-												</TooltipTrigger>
-												<TooltipContent>Copy response</TooltipContent>
-											</Tooltip>
+								)}
+							</div>
+							{chatMessage.role === "assistant" && text ? (
+								<div className="mt-2 flex items-center gap-1 opacity-100 transition-opacity duration-150 md:pointer-events-none md:opacity-0 md:group-hover/message:pointer-events-auto md:group-hover/message:opacity-100 md:group-focus-within/message:pointer-events-auto md:group-focus-within/message:opacity-100">
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-7 text-muted-foreground hover:text-foreground"
+												aria-label="Regenerate"
+												disabled={!onRegenerateMessage}
+												onClick={() => onRegenerateMessage?.(chatMessage.id)}
+											>
+												<RotateCcw className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Regenerate</TooltipContent>
+									</Tooltip>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-7 text-muted-foreground hover:text-foreground"
+												aria-label="Copy"
+												onClick={() => {
+													void navigator.clipboard
+														.writeText(text)
+														.then(() => toast.success("Copied"))
+														.catch(() => toast.error("Failed to copy"));
+												}}
+											>
+												<Copy className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Copy</TooltipContent>
+									</Tooltip>
 
-											<Tooltip>
-												<TooltipTrigger asChild>
-													<Button
-														type="button"
-														variant="ghost"
-														size="icon-sm"
-														className="size-7 text-muted-foreground hover:text-foreground"
-														disabled={disableAddToNote}
-														aria-label="Add to note"
-														onClick={() => {
-															if (!onAddMessageToNote) {
-																return;
-															}
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-7 text-muted-foreground hover:text-foreground"
+												disabled={disableAddToNote}
+												aria-label="Add to note"
+												onClick={() => {
+													if (!onAddMessageToNote) {
+														return;
+													}
 
-															void Promise.resolve(
-																onAddMessageToNote(text),
-															).catch(() => toast.error("Failed to add"));
-														}}
-													>
-														<Plus className="size-3.5" />
-													</Button>
-												</TooltipTrigger>
-												<TooltipContent>Add to note</TooltipContent>
-											</Tooltip>
-
-											<Tooltip>
-												<TooltipTrigger asChild>
-													<Button
-														type="button"
-														variant="ghost"
-														size="icon-sm"
-														className={cn(
-															"size-7 hover:text-foreground",
-															reactionsByMessageId[chatMessage.id] === "like"
-																? "text-foreground"
-																: "text-muted-foreground",
-														)}
-														aria-label="Like response"
-														onClick={() =>
-															onReactionChange(chatMessage.id, "like")
-														}
-													>
-														<ThumbsUp className="size-3.5" />
-													</Button>
-												</TooltipTrigger>
-												<TooltipContent>Like response</TooltipContent>
-											</Tooltip>
-
-											<Tooltip>
-												<TooltipTrigger asChild>
-													<Button
-														type="button"
-														variant="ghost"
-														size="icon-sm"
-														className={cn(
-															"size-7 hover:text-foreground",
-															reactionsByMessageId[chatMessage.id] === "dislike"
-																? "text-foreground"
-																: "text-muted-foreground",
-														)}
-														aria-label="Dislike response"
-														onClick={() =>
-															onReactionChange(chatMessage.id, "dislike")
-														}
-													>
-														<ThumbsDown className="size-3.5" />
-													</Button>
-												</TooltipTrigger>
-												<TooltipContent>Dislike response</TooltipContent>
-											</Tooltip>
-										</div>
-									) : null}
-								</>
-							)}
+													void Promise.resolve(onAddMessageToNote(text)).catch(
+														() => toast.error("Failed to add"),
+													);
+												}}
+											>
+												<Plus className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Add to note</TooltipContent>
+									</Tooltip>
+								</div>
+							) : chatMessage.role === "user" && text ? (
+								<div className="mt-2 flex justify-end gap-1 opacity-100 transition-opacity duration-150 md:pointer-events-none md:opacity-0 md:group-hover/message:pointer-events-auto md:group-hover/message:opacity-100 md:group-focus-within/message:pointer-events-auto md:group-focus-within/message:opacity-100">
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-7 text-muted-foreground hover:text-foreground"
+												aria-label="Edit"
+												onClick={() => onEditMessage?.(chatMessage.id, text)}
+											>
+												<PenLine className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Edit</TooltipContent>
+									</Tooltip>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-7 text-muted-foreground hover:text-foreground"
+												aria-label="Delete"
+												disabled={!onDeleteMessage}
+												onClick={() => onDeleteMessage?.(chatMessage.id)}
+											>
+												<Trash2 className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Delete</TooltipContent>
+									</Tooltip>
+								</div>
+							) : null}
 						</div>
 					</div>
 				);
@@ -1840,6 +2008,22 @@ function ChatComposerForm({
 }) {
 	return (
 		<form onSubmit={controller.handleSubmit} className={formClassName}>
+			{controller.editingMessageId ? (
+				<div className="mb-3 flex justify-center">
+					<Button
+						type="button"
+						variant="ghost"
+						className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-background/95 px-4 py-1.5 text-sm text-foreground shadow-sm hover:bg-background/95"
+						aria-label="Cancel edit"
+						onClick={controller.handleCancelEdit}
+					>
+						<span>Cancel edit</span>
+						<span className="rounded-full border border-border/80 px-2 py-0.5 text-[10px] leading-none text-muted-foreground">
+							Esc
+						</span>
+					</Button>
+				</div>
+			) : null}
 			<ChatInlinePopoverFooter
 				activateInlineOnFocus={activateInlineOnFocus}
 				composerPlaceholder={controller.composerPlaceholder}
@@ -2177,14 +2361,9 @@ function NoteComposerPanels({
 			disablePadding={controller.isSidebarPresentation}
 			isChatLoading={controller.isChatLoading}
 			onAddMessageToNote={onAddMessageToNote}
-			onReactionChange={(messageId, reaction) => {
-				controller.setReactionsByMessageId((currentValue) => ({
-					...currentValue,
-					[messageId]:
-						currentValue[messageId] === reaction ? undefined : reaction,
-				}));
-			}}
-			reactionsByMessageId={controller.reactionsByMessageId}
+			onDeleteMessage={controller.handleDeleteMessage}
+			onEditMessage={controller.handleEditMessage}
+			onRegenerateMessage={controller.handleRegenerateMessage}
 		/>
 	);
 	const panelContent = (
