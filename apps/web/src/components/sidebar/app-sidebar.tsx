@@ -619,6 +619,7 @@ function AppSidebarDialogs({
 				sidebarState={sidebarState}
 				isMobile={isMobile}
 				desktopSafeTop={desktopSafeTop}
+				currentUser={user}
 				onMarkItemsRead={onMarkInboxItemsRead}
 				onMarkAllRead={() => {
 					if (!inboxItems) {

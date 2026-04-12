@@ -1,6 +1,11 @@
 "use client";
 
 import {
+	Avatar,
+	AvatarFallback,
+	AvatarImage,
+} from "@workspace/ui/components/avatar";
+import {
 	Breadcrumb,
 	BreadcrumbItem,
 	BreadcrumbList,
@@ -51,6 +56,7 @@ import {
 import * as React from "react";
 import { toast } from "sonner";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
+import { getAvatarSrc } from "@/lib/avatar";
 import {
 	DESKTOP_INBOX_PANEL_WIDTH,
 	DESKTOP_MAIN_HEADER_CONTENT_CLASS,
@@ -80,6 +86,7 @@ export function InboxSheet({
 	onOpenChange,
 	sidebarState,
 	isMobile,
+	currentUser,
 	desktopSafeTop = false,
 	onMarkItemsRead,
 	onMarkAllRead,
@@ -88,6 +95,11 @@ export function InboxSheet({
 	onOpenChange: (open: boolean) => void;
 	sidebarState: "expanded" | "collapsed";
 	isMobile: boolean;
+	currentUser: {
+		name: string;
+		email: string;
+		avatar: string;
+	};
 	desktopSafeTop?: boolean;
 	onMarkItemsRead?: (itemIds: string[]) => void;
 	onMarkAllRead?: () => void;
@@ -154,6 +166,7 @@ export function InboxSheet({
 						<div className="min-h-0 flex-1">
 							<InboxPanel
 								view={view}
+								currentUser={currentUser}
 								markAllReadRequestId={markAllReadRequestId}
 								archiveReadRequestId={archiveReadRequestId}
 								clearArchivedRequestId={clearArchivedRequestId}
@@ -194,6 +207,7 @@ export function InboxSheet({
 				/>
 				<InboxPanel
 					view={view}
+					currentUser={currentUser}
 					markAllReadRequestId={markAllReadRequestId}
 					archiveReadRequestId={archiveReadRequestId}
 					clearArchivedRequestId={clearArchivedRequestId}
@@ -202,6 +216,47 @@ export function InboxSheet({
 			</SheetContent>
 		</Sheet>
 	);
+}
+
+function getAvatarLabel(name?: string | null) {
+	return (
+		(name ?? "")
+			.split(/\s+/)
+			.filter(Boolean)
+			.slice(0, 2)
+			.map((part) => part[0]?.toUpperCase() ?? "")
+			.join("") || "?"
+	);
+}
+
+function getInboxAvatarProps({
+	item,
+	currentUser,
+}: {
+	item: {
+		provider: "jira" | "notes";
+		actorAvatarUrl?: string | null;
+		actorDisplayName?: string | null;
+	};
+	currentUser: {
+		name: string;
+		email: string;
+		avatar: string;
+	};
+}) {
+	if (item.provider === "jira") {
+		return null;
+	}
+
+	const resolvedName = item.actorDisplayName?.trim() || "Someone";
+	const avatarSrc =
+		item.actorAvatarUrl?.trim() ||
+		(resolvedName === "You" ? getAvatarSrc(currentUser) : undefined);
+
+	return {
+		name: resolvedName,
+		avatarSrc,
+	};
 }
 
 function InboxPaneHeader({
@@ -354,6 +409,7 @@ function InboxPaneHeader({
 							<span>Archive read</span>
 						</DropdownMenuItem>
 						<DropdownMenuItem
+							variant="destructive"
 							disabled={!activeWorkspaceId}
 							onSelect={handleClearArchived}
 						>
@@ -418,12 +474,18 @@ function InboxPaneHeader({
 
 function InboxPanel({
 	view,
+	currentUser,
 	markAllReadRequestId,
 	archiveReadRequestId,
 	clearArchivedRequestId,
 	onMarkItemsRead,
 }: {
 	view: InboxView;
+	currentUser: {
+		name: string;
+		email: string;
+		avatar: string;
+	};
 	markAllReadRequestId: number;
 	archiveReadRequestId: number;
 	clearArchivedRequestId: number;
@@ -529,10 +591,18 @@ function InboxPanel({
 
 	const handleOpenItem = async (item: {
 		_id: Id<"inboxItems">;
+		provider: "jira" | "notes";
+		kind: "jira-mention" | "note-comment";
 		url: string;
 		isRead: boolean;
 	}) => {
 		await handleMarkItemRead(item);
+
+		if (item.provider === "notes" && item.kind === "note-comment") {
+			window.history.pushState(null, "", item.url);
+			window.dispatchEvent(new PopStateEvent("popstate"));
+			return;
+		}
 
 		if (window.openGranDesktop?.openExternalUrl) {
 			await window.openGranDesktop.openExternalUrl(item.url);
@@ -610,6 +680,7 @@ function InboxPanel({
 				{visibleItems.map((item) => {
 					const isRead =
 						item.isRead || optimisticReadItemIds.has(String(item._id));
+					const avatarProps = getInboxAvatarProps({ item, currentUser });
 
 					return (
 						<div
@@ -637,12 +708,28 @@ function InboxPanel({
 									)}
 								>
 									<div className="flex pt-0.5">
-										<Icons.jiraLogo className="size-4" />
+										{item.provider === "jira" ? (
+											<Icons.jiraLogo className="size-4" />
+										) : (
+											<Avatar className="size-4">
+												<AvatarImage
+													src={avatarProps?.avatarSrc}
+													alt={avatarProps?.name ?? "Comment author"}
+												/>
+												<AvatarFallback className="text-[9px] font-medium">
+													{getAvatarLabel(avatarProps?.name)}
+												</AvatarFallback>
+											</Avatar>
+										)}
 									</div>
 									<div className="min-w-0">
 										<div className="flex items-start justify-between gap-3">
 											<p className="truncate text-sm font-medium text-foreground">
-												{formatInboxTitle(item.title, item.actorDisplayName)}
+												{formatInboxTitle(
+													item.kind,
+													item.title,
+													item.actorDisplayName,
+												)}
 											</p>
 											<p className="shrink-0 pt-0.5 text-xs text-muted-foreground">
 												{formatInboxTimestamp(item.occurredAt)}
@@ -665,7 +752,8 @@ function InboxPanel({
 								<Button
 									type="button"
 									variant="outline"
-									className="relative z-10 cursor-pointer"
+									size="sm"
+									className="relative z-10 cursor-pointer text-xs"
 									onClick={() => {
 										void handleOpenItem(item).catch((error) => {
 											toast.error(
@@ -719,12 +807,24 @@ function formatInboxPreview(value: string) {
 		.trim();
 }
 
-function formatInboxTitle(title: string, actorDisplayName?: string | null) {
-	if (actorDisplayName?.trim()) {
+function formatInboxTitle(
+	kind: "jira-mention" | "note-comment",
+	title: string,
+	actorDisplayName?: string | null,
+) {
+	if (kind === "note-comment" && actorDisplayName?.trim()) {
+		return `${actorDisplayName.trim()} ${title}`;
+	}
+
+	if (kind === "note-comment") {
+		return `Someone ${title}`;
+	}
+
+	if (kind === "jira-mention" && actorDisplayName?.trim()) {
 		return `${actorDisplayName.trim()} mentioned you`;
 	}
 
-	if (title.startsWith("Mentioned in ")) {
+	if (kind === "jira-mention" && title.startsWith("Mentioned in ")) {
 		return "Someone mentioned you";
 	}
 

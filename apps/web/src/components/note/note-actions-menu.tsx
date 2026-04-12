@@ -40,6 +40,11 @@ import {
 	PopoverAnchor,
 	PopoverContent,
 } from "@workspace/ui/components/popover";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
@@ -203,26 +208,31 @@ export function NoteStarButton({
 	const StarIcon = isStarred ? StarOff : Star;
 
 	return (
-		<Button
-			type="button"
-			variant="ghost"
-			size="icon"
-			className={cn(
-				"text-muted-foreground hover:text-foreground",
-				isStarred && "text-foreground",
-				className,
-			)}
-			aria-label={
-				isStarred ? "Remove note from favorites" : "Add note to favorites"
-			}
-			aria-pressed={isStarred}
-			disabled={!note || isUpdatingStar}
-			onClick={() => {
-				void handleToggleStar();
-			}}
-		>
-			<StarIcon className="size-4" />
-		</Button>
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon"
+					className={cn(
+						"text-muted-foreground hover:text-foreground",
+						isStarred && "text-foreground",
+						className,
+					)}
+					aria-label={
+						isStarred ? "Remove note from favorites" : "Add note to favorites"
+					}
+					aria-pressed={isStarred}
+					disabled={!note || isUpdatingStar}
+					onClick={() => {
+						void handleToggleStar();
+					}}
+				>
+					<StarIcon className="size-4" />
+				</Button>
+			</TooltipTrigger>
+			<TooltipContent>{isStarred ? "Unstar note" : "Star note"}</TooltipContent>
+		</Tooltip>
 	);
 }
 
@@ -230,6 +240,7 @@ type NoteActionsMenuProps = {
 	noteId: Id<"notes">;
 	onMoveToTrash?: (noteId: Id<"notes">) => void;
 	children: React.ReactNode;
+	triggerTooltip?: React.ReactNode;
 	renameAnchor?: React.ReactNode;
 	renamePopoverAlign?: "start" | "center" | "end";
 	renamePopoverSide?: "top" | "right" | "bottom" | "left";
@@ -586,6 +597,7 @@ export function NoteActionsMenu({
 	noteId,
 	onMoveToTrash,
 	children,
+	triggerTooltip,
 	renameAnchor,
 	renamePopoverAlign = "start",
 	renamePopoverSide = "bottom",
@@ -632,6 +644,16 @@ export function NoteActionsMenu({
 		onMoveToTrash,
 		onRenamePreviewChange,
 	});
+	const trigger = triggerTooltip ? (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+			</TooltipTrigger>
+			<TooltipContent>{triggerTooltip}</TooltipContent>
+		</Tooltip>
+	) : (
+		<DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+	);
 
 	return (
 		<>
@@ -639,7 +661,7 @@ export function NoteActionsMenu({
 				<Popover open={renameOpen} onOpenChange={handleRenameOpenChange}>
 					<PopoverAnchor asChild>{renameAnchor}</PopoverAnchor>
 					<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-						<DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+						{trigger}
 						<NoteActionsDropdownContent
 							align={align}
 							side={side}
@@ -689,7 +711,7 @@ export function NoteActionsMenu({
 			) : (
 				<>
 					<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-						<DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+						{trigger}
 						<NoteActionsDropdownContent
 							align={align}
 							side={side}

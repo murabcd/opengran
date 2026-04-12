@@ -4,8 +4,14 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
 
-const inboxItemProviderValidator = v.literal("jira");
-const inboxItemKindValidator = v.literal("jira-mention");
+const inboxItemProviderValidator = v.union(
+	v.literal("jira"),
+	v.literal("notes"),
+);
+const inboxItemKindValidator = v.union(
+	v.literal("jira-mention"),
+	v.literal("note-comment"),
+);
 const inboxViewValidator = v.union(
 	v.literal("all"),
 	v.literal("unread"),
@@ -30,7 +36,6 @@ const inboxItemValidator = v.object({
 
 const REMOVE_ALL_INBOX_ITEMS_BATCH_SIZE = 100;
 const BULK_INBOX_ITEMS_BATCH_SIZE = 100;
-
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
 
@@ -65,6 +70,7 @@ const getInboxItemByExternalId = async (
 	ctx: MutationCtx,
 	ownerTokenIdentifier: string,
 	workspaceId: Id<"workspaces">,
+	provider: "jira" | "notes",
 	externalId: string,
 ) =>
 	await ctx.db
@@ -75,7 +81,7 @@ const getInboxItemByExternalId = async (
 				q
 					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
 					.eq("workspaceId", workspaceId)
-					.eq("provider", "jira")
+					.eq("provider", provider)
 					.eq("externalId", externalId),
 		)
 		.unique();
@@ -179,6 +185,39 @@ export const markRead = mutation({
 			isRead: true,
 			readAt: Date.now(),
 			updatedAt: Date.now(),
+		});
+
+		return null;
+	},
+});
+
+export const setReadState = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		provider: inboxItemProviderValidator,
+		externalId: v.string(),
+		isRead: v.boolean(),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const existing = await getInboxItemByExternalId(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+			args.provider,
+			args.externalId,
+		);
+
+		if (!existing || existing.isRead === args.isRead) {
+			return null;
+		}
+
+		const now = Date.now();
+		await ctx.db.patch(existing._id, {
+			isRead: args.isRead,
+			readAt: args.isRead ? now : undefined,
+			updatedAt: now,
 		});
 
 		return null;
@@ -382,6 +421,7 @@ export const upsertJiraMention = internalMutation({
 			ctx,
 			args.ownerTokenIdentifier,
 			args.workspaceId,
+			"jira",
 			args.externalId,
 		);
 		const now = Date.now();
@@ -432,6 +472,78 @@ export const upsertJiraMention = internalMutation({
 	},
 });
 
+export const upsertNoteComment = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		externalId: v.string(),
+		noteTitle: v.string(),
+		title: v.string(),
+		preview: v.string(),
+		url: v.string(),
+		actorDisplayName: v.optional(v.string()),
+		occurredAt: v.number(),
+		markUnread: v.optional(v.boolean()),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const existing = await getInboxItemByExternalId(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+			"notes",
+			args.externalId,
+		);
+		const now = Date.now();
+
+		if (existing) {
+			await ctx.db.patch(existing._id, {
+				issueKey: args.noteTitle,
+				title: args.title,
+				preview: args.preview,
+				url: args.url,
+				occurredAt: args.occurredAt,
+				...(args.markUnread === false
+					? {}
+					: {
+							isRead: false,
+							readAt: undefined,
+							isArchived: false,
+							archivedAt: undefined,
+						}),
+				updatedAt: now,
+				actorDisplayName: args.actorDisplayName,
+				actorAvatarUrl: undefined,
+			});
+
+			return null;
+		}
+
+		await ctx.db.insert("inboxItems", {
+			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
+			provider: "notes",
+			kind: "note-comment",
+			externalId: args.externalId,
+			issueKey: args.noteTitle,
+			title: args.title,
+			preview: args.preview,
+			url: args.url,
+			occurredAt: args.occurredAt,
+			isRead: args.markUnread === false,
+			isArchived: false,
+			...(args.markUnread === false ? { readAt: now } : {}),
+			...(args.actorDisplayName
+				? { actorDisplayName: args.actorDisplayName }
+				: {}),
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		return null;
+	},
+});
+
 export const removeJiraMention = internalMutation({
 	args: {
 		ownerTokenIdentifier: v.string(),
@@ -444,6 +556,31 @@ export const removeJiraMention = internalMutation({
 			ctx,
 			args.ownerTokenIdentifier,
 			args.workspaceId,
+			"jira",
+			args.externalId,
+		);
+
+		if (existing) {
+			await ctx.db.delete(existing._id);
+		}
+
+		return null;
+	},
+});
+
+export const removeNoteComment = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		externalId: v.string(),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const existing = await getInboxItemByExternalId(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+			"notes",
 			args.externalId,
 		);
 

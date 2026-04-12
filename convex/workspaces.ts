@@ -354,6 +354,14 @@ export const remove = mutation({
 		});
 		await ctx.scheduler.runAfter(
 			0,
+			internal.noteComments.removeAllForWorkspace,
+			{
+				ownerTokenIdentifier: identity.tokenIdentifier,
+				workspaceId: args.workspaceId,
+			},
+		);
+		await ctx.scheduler.runAfter(
+			0,
 			internal.appConnections.removeAllForWorkspace,
 			{
 				ownerTokenIdentifier: identity.tokenIdentifier,

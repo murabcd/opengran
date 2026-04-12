@@ -61,6 +61,7 @@ import {
 	ExternalLink,
 	FileText,
 	LoaderCircle,
+	MessageSquareText,
 	Mic,
 	MoreHorizontal,
 	Plus,
@@ -77,7 +78,11 @@ import {
 	NoteActionsMenu,
 	NoteStarButton,
 } from "@/components/note/note-actions-menu";
-import { type NoteEditorActions, NotePage } from "@/components/note/note-page";
+import {
+	type NoteEditorActions,
+	NotePage,
+	OPEN_NOTE_COMMENTS_EVENT,
+} from "@/components/note/note-page";
 import { NoteTitleEditInput } from "@/components/note/note-title-edit-input";
 import { optimisticRenameNote } from "@/components/note/optimistic-rename-note";
 import { SharedNotePage } from "@/components/note/shared-note-page";
@@ -1969,6 +1974,8 @@ const useAppShellState = ({
 	const [currentNoteTitle, setCurrentNoteTitle] = React.useState("");
 	const [currentNoteEditorActions, setCurrentNoteEditorActions] =
 		React.useState<NoteEditorActions | null>(null);
+	const [currentNoteCommentsOpener, setCurrentNoteCommentsOpener] =
+		React.useState<(() => void) | null>(null);
 	const creatingNoteRef = React.useRef(false);
 	const lastNonSettingsLocationRef = React.useRef(
 		getInitialNonSettingsLocation(),
@@ -2021,6 +2028,7 @@ const useAppShellState = ({
 			setScheduledAutoStartNoteCaptureAt(input.scheduledAutoStartNoteCaptureAt);
 			setPendingCalendarEvent(input.pendingCalendarEvent);
 			setCurrentNoteEditorActions(null);
+			setCurrentNoteCommentsOpener(null);
 			setSettingsPage(input.settingsPage);
 			setSettingsOpen(input.settingsOpen);
 		},
@@ -2133,15 +2141,14 @@ const useAppShellState = ({
 		currentView === "note" &&
 			!hasInvalidCurrentNoteRoute &&
 			resolvedCurrentNoteId &&
-			resolvedActiveWorkspaceId &&
-			!listedSelectedNote
+			resolvedActiveWorkspaceId
 			? {
 					workspaceId: resolvedActiveWorkspaceId,
 					id: resolvedCurrentNoteId,
 				}
 			: "skip",
 	);
-	const resolvedSelectedNote = listedSelectedNote ?? selectedNote;
+	const resolvedSelectedNote = selectedNote ?? listedSelectedNote;
 	const isResolvingCurrentNote =
 		isResolvingCurrentNoteRouteId ||
 		(currentView === "note" &&
@@ -2448,6 +2455,7 @@ const useAppShellState = ({
 			setCurrentView(view);
 			setSettingsOpen(false);
 			setCurrentNoteEditorActions(null);
+			setCurrentNoteCommentsOpener(null);
 			const search =
 				view === "note" && resolvedCurrentNoteId
 					? `?noteId=${resolvedCurrentNoteId}`
@@ -2495,6 +2503,7 @@ const useAppShellState = ({
 			);
 			setPendingCalendarEvent(null);
 			setCurrentNoteEditorActions(null);
+			setCurrentNoteCommentsOpener(null);
 			window.history.pushState(
 				null,
 				"",
@@ -2584,6 +2593,7 @@ const useAppShellState = ({
 		setScheduledAutoStartNoteCaptureAt(null);
 		setPendingCalendarEvent(null);
 		setCurrentNoteEditorActions(null);
+		setCurrentNoteCommentsOpener(null);
 		window.history.pushState(null, "", "/note?capture=1");
 	}, []);
 
@@ -2777,6 +2787,7 @@ const useAppShellState = ({
 			setCurrentRouteNoteId(null);
 			setCurrentNoteTitle("");
 			setCurrentNoteEditorActions(null);
+			setCurrentNoteCommentsOpener(null);
 			handleViewChange("home");
 		},
 		[handleViewChange, resolvedCurrentNoteId],
@@ -2847,6 +2858,7 @@ const useAppShellState = ({
 		currentDayOfMonth,
 		currentMonthLabel,
 		currentNoteEditorActions,
+		currentNoteCommentsOpener,
 		currentNoteId: resolvedCurrentNoteId,
 		currentNoteTitle,
 		currentView: resolvedCurrentView,
@@ -2878,6 +2890,7 @@ const useAppShellState = ({
 		settingsPage,
 		setActiveWorkspaceId,
 		setCurrentNoteEditorActions,
+		setCurrentNoteCommentsOpener,
 		setCurrentNoteTitle,
 		shouldAutoStartNoteCapture,
 		shouldStopNoteCaptureWhenMeetingEnds,
@@ -2980,12 +2993,14 @@ function AppShell({
 						currentNoteTitle={controller.currentNoteTitle}
 						currentNoteTemplateSlug={controller.currentNoteTemplateSlug}
 						currentNoteEditorActions={controller.currentNoteEditorActions}
+						currentNoteCommentsOpener={controller.currentNoteCommentsOpener}
 						onCreateNote={controller.handleQuickNote}
 						onNoteTitleChange={controller.setCurrentNoteTitle}
 						onNoteTrashed={controller.handleNoteTrashed}
 						onNewChat={controller.handleNewChat}
 					/>
 					<AppShellContent
+						isDesktopMac={controller.isDesktopMac}
 						currentView={controller.currentView}
 						currentDate={controller.currentDate}
 						currentDayOfMonth={controller.currentDayOfMonth}
@@ -3024,6 +3039,9 @@ function AppShell({
 						}
 						onNoteTitleChange={controller.setCurrentNoteTitle}
 						onNoteEditorActionsChange={controller.setCurrentNoteEditorActions}
+						onNoteCommentsOpenChange={(opener) => {
+							controller.setCurrentNoteCommentsOpener(() => opener);
+						}}
 						onAutoStartNoteCaptureHandled={
 							controller.handleAutoStartNoteCaptureHandled
 						}
@@ -3050,6 +3068,7 @@ type AppShellHeaderProps = {
 	currentNoteTitle: string;
 	currentNoteTemplateSlug: string | null;
 	currentNoteEditorActions: NoteEditorActions | null;
+	currentNoteCommentsOpener: (() => void) | null;
 	onCreateNote: () => void;
 	onNoteTitleChange: (title: string) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
@@ -3067,6 +3086,7 @@ function AppShellHeader({
 	currentNoteTitle,
 	currentNoteTemplateSlug,
 	currentNoteEditorActions,
+	currentNoteCommentsOpener,
 	onCreateNote,
 	onNoteTitleChange,
 	onNoteTrashed,
@@ -3243,6 +3263,7 @@ function AppShellHeader({
 					currentNoteTitle={currentNoteTitle}
 					currentNoteTemplateSlug={currentNoteTemplateSlug}
 					currentNoteEditorActions={currentNoteEditorActions}
+					currentNoteCommentsOpener={currentNoteCommentsOpener}
 					isDesktopMac={isDesktopMac}
 					onCreateNote={onCreateNote}
 					onNoteTrashed={onNoteTrashed}
@@ -3365,6 +3386,7 @@ function AppShellHeaderActions({
 	currentNoteTitle,
 	currentNoteTemplateSlug,
 	currentNoteEditorActions,
+	currentNoteCommentsOpener,
 	isDesktopMac,
 	onCreateNote,
 	onNoteTrashed,
@@ -3376,6 +3398,7 @@ function AppShellHeaderActions({
 	| "currentNoteTitle"
 	| "currentNoteTemplateSlug"
 	| "currentNoteEditorActions"
+	| "currentNoteCommentsOpener"
 	| "isDesktopMac"
 	| "onCreateNote"
 	| "onNoteTrashed"
@@ -3430,6 +3453,28 @@ function AppShellHeaderActions({
 				/>
 			) : null}
 			<NoteStarButton noteId={currentNoteId} className="size-7" />
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon-sm"
+						data-app-region={isDesktopMac ? "no-drag" : undefined}
+						aria-label="Open comments"
+						onClick={() => {
+							if (currentNoteCommentsOpener) {
+								currentNoteCommentsOpener();
+								return;
+							}
+
+							window.dispatchEvent(new Event(OPEN_NOTE_COMMENTS_EVENT));
+						}}
+					>
+						<MessageSquareText className="size-4" />
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>Open comments</TooltipContent>
+			</Tooltip>
 			<NoteHeaderActionsMenu
 				noteId={currentNoteId}
 				noteTitle={currentNoteTitle}
@@ -3456,6 +3501,7 @@ function NoteHeaderActionsMenu({
 			noteId={noteId}
 			onMoveToTrash={onNoteTrashed}
 			align="end"
+			triggerTooltip="More actions"
 			showRename={false}
 			itemsBeforeDefaults={
 				noteEditorActions ? (
@@ -3526,6 +3572,7 @@ function NoteHeaderActionsMenu({
 }
 
 function AppShellContent({
+	isDesktopMac,
 	currentView,
 	currentDate,
 	currentDayOfMonth,
@@ -3556,11 +3603,13 @@ function AppShellContent({
 	onOpenConnectionsSettings,
 	onNoteTitleChange,
 	onNoteEditorActionsChange,
+	onNoteCommentsOpenChange,
 	onAutoStartNoteCaptureHandled,
 	shouldAutoStartNoteCapture,
 	shouldStopNoteCaptureWhenMeetingEnds,
 	onGoHome,
 }: {
+	isDesktopMac: boolean;
 	currentView: AppView;
 	currentDate: Date;
 	currentDayOfMonth: number;
@@ -3597,6 +3646,7 @@ function AppShellContent({
 	onOpenConnectionsSettings: () => void;
 	onNoteTitleChange: (title: string) => void;
 	onNoteEditorActionsChange: (actions: NoteEditorActions | null) => void;
+	onNoteCommentsOpenChange: (opener: (() => void) | null) => void;
 	onAutoStartNoteCaptureHandled: () => void;
 	shouldAutoStartNoteCapture: boolean;
 	shouldStopNoteCaptureWhenMeetingEnds: boolean;
@@ -3676,10 +3726,13 @@ function AppShellContent({
 			>
 				<NotePage
 					autoStartTranscription={shouldAutoStartNoteCapture}
+					currentUser={user}
+					isDesktopMac={isDesktopMac}
 					noteId={currentNoteId}
 					note={selectedNote}
 					externalTitle={currentNoteTitle}
 					onAutoStartTranscriptionHandled={onAutoStartNoteCaptureHandled}
+					onCommentsOpenChange={onNoteCommentsOpenChange}
 					onTitleChange={onNoteTitleChange}
 					onEditorActionsChange={onNoteEditorActionsChange}
 					scrollParentRef={noteViewScrollRef}

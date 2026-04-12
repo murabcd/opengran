@@ -40,7 +40,12 @@ import {
 } from "@/lib/structured-note";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
+import {
+	NoteCommentsSheet,
+	type PendingNoteCommentSelection,
+} from "./note-comments-sheet";
 import { NoteComposer } from "./note-composer";
+import { NoteSelectionMenu } from "./note-selection-menu";
 import { NoteTableOfContents } from "./note-table-of-contents";
 import { optimisticPatchNote } from "./optimistic-patch-note";
 import { writeRichTextToClipboard } from "./share-note";
@@ -173,6 +178,8 @@ const showActionError = (message: string, error: unknown) => {
 	toast.error(message);
 };
 
+export const OPEN_NOTE_COMMENTS_EVENT = "opengran:open-note-comments";
+
 export type NoteEditorActions = {
 	canCopyMarkdown: boolean;
 	canUndo: boolean;
@@ -183,6 +190,13 @@ export type NoteEditorActions = {
 	redo: () => void;
 	exportMarkdown: () => Promise<void>;
 	applyTemplate: (template: NoteTemplate) => Promise<boolean>;
+	openComments: () => void;
+};
+
+type NotePageCurrentUser = {
+	name: string;
+	email: string;
+	avatar: string;
 };
 
 const useNotePageController = ({
@@ -192,6 +206,8 @@ const useNotePageController = ({
 	onTitleChange,
 	onEditorActionsChange,
 	scrollParentRef,
+	onCommentThreadClick,
+	onOpenComments,
 }: {
 	noteId: Id<"notes"> | null;
 	note?: Doc<"notes"> | null;
@@ -199,6 +215,8 @@ const useNotePageController = ({
 	onTitleChange?: (title: string) => void;
 	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
 	scrollParentRef?: React.RefObject<HTMLDivElement | null>;
+	onCommentThreadClick?: (threadId: string) => void;
+	onOpenComments?: () => void;
 }) => {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const [title, setTitle] = React.useState("");
@@ -352,6 +370,7 @@ const useNotePageController = ({
 		extensions: createNoteEditorExtensions({
 			onTableOfContentsUpdate: setTableOfContents,
 			getTableOfContentsScrollParent,
+			onCommentThreadClick,
 		}),
 		immediatelyRender: false,
 		autofocus: "end",
@@ -432,7 +451,7 @@ const useNotePageController = ({
 			queuedSaveRef.current = null;
 			setTableOfContents([]);
 
-			if (editor && (!noteId || note === undefined)) {
+			if (editor && !noteId) {
 				applyDraftState({
 					title: "",
 					content: EMPTY_DOCUMENT_STRING,
@@ -980,6 +999,7 @@ const useNotePageController = ({
 				redo,
 				exportMarkdown: exportNote,
 				applyTemplate,
+				openComments: onOpenComments ?? (() => {}),
 			});
 		};
 
@@ -998,6 +1018,7 @@ const useNotePageController = ({
 		exportNote,
 		noteId,
 		onEditorActionsChange,
+		onOpenComments,
 		redo,
 		undo,
 	]);
@@ -1097,25 +1118,81 @@ const useNotePageController = ({
 
 export function NotePage({
 	autoStartTranscription = false,
+	currentUser = {
+		name: "Unknown user",
+		email: "",
+		avatar: "",
+	},
 	noteId,
 	note,
 	externalTitle,
 	onAutoStartTranscriptionHandled,
+	onCommentsOpenChange,
+	isDesktopMac = false,
 	onTitleChange,
 	onEditorActionsChange,
 	scrollParentRef,
 	stopTranscriptionWhenMeetingEnds = false,
 }: {
 	autoStartTranscription?: boolean;
+	currentUser?: NotePageCurrentUser;
 	noteId: Id<"notes"> | null;
 	note?: Doc<"notes"> | null;
 	externalTitle?: string;
 	onAutoStartTranscriptionHandled?: () => void;
+	onCommentsOpenChange?: (opener: (() => void) | null) => void;
+	isDesktopMac?: boolean;
 	onTitleChange?: (title: string) => void;
 	onEditorActionsChange?: (actions: NoteEditorActions | null) => void;
 	scrollParentRef?: React.RefObject<HTMLDivElement | null>;
 	stopTranscriptionWhenMeetingEnds?: boolean;
 }) {
+	const [commentsOpen, setCommentsOpen] = React.useState(false);
+	const [activeCommentThreadId, setActiveCommentThreadId] =
+		React.useState<Id<"noteCommentThreads"> | null>(null);
+	const [pendingCommentSelection, setPendingCommentSelection] =
+		React.useState<PendingNoteCommentSelection | null>(null);
+	const handleOpenComments = React.useCallback(() => {
+		setCommentsOpen(true);
+	}, []);
+	const handleCommentThreadClick = React.useCallback((threadId: string) => {
+		setPendingCommentSelection(null);
+		setActiveCommentThreadId(threadId as Id<"noteCommentThreads">);
+		setCommentsOpen(true);
+	}, []);
+	React.useEffect(() => {
+		if (!noteId) {
+			return;
+		}
+
+		const handleOpenCommentsRequest = () => {
+			handleOpenComments();
+		};
+
+		window.addEventListener(
+			OPEN_NOTE_COMMENTS_EVENT,
+			handleOpenCommentsRequest,
+		);
+
+		return () => {
+			window.removeEventListener(
+				OPEN_NOTE_COMMENTS_EVENT,
+				handleOpenCommentsRequest,
+			);
+		};
+	}, [handleOpenComments, noteId]);
+	React.useEffect(() => {
+		if (!noteId) {
+			onCommentsOpenChange?.(null);
+			return;
+		}
+
+		onCommentsOpenChange?.(handleOpenComments);
+
+		return () => {
+			onCommentsOpenChange?.(null);
+		};
+	}, [handleOpenComments, noteId, onCommentsOpenChange]);
 	const controller = useNotePageController({
 		noteId,
 		note,
@@ -1123,6 +1200,8 @@ export function NotePage({
 		onTitleChange,
 		onEditorActionsChange,
 		scrollParentRef,
+		onCommentThreadClick: handleCommentThreadClick,
+		onOpenComments: handleOpenComments,
 	});
 	const composerNoteContext = React.useMemo(
 		() => ({
@@ -1162,6 +1241,104 @@ export function NotePage({
 		},
 		[scrollParentRef],
 	);
+	const handleOpenCommentComposer = React.useCallback(() => {
+		if (!controller.editor) {
+			return;
+		}
+
+		const { from, to, empty } = controller.editor.state.selection;
+
+		if (empty || from === to) {
+			return;
+		}
+
+		const text = controller.editor.state.doc.textBetween(from, to, "\n").trim();
+
+		if (!text) {
+			return;
+		}
+
+		setActiveCommentThreadId(null);
+		setPendingCommentSelection({
+			from,
+			to,
+			text,
+		});
+		setCommentsOpen(true);
+	}, [controller.editor]);
+
+	React.useEffect(() => {
+		void noteId;
+		setCommentsOpen(false);
+		setActiveCommentThreadId(null);
+		setPendingCommentSelection(null);
+	}, [noteId]);
+
+	const syncCommentThreadSelectionFromLocation = React.useCallback(() => {
+		if (!noteId) {
+			return;
+		}
+
+		const url = new URL(window.location.href);
+		const threadId = url.searchParams.get("commentThreadId")?.trim();
+		const targetNoteId = url.searchParams.get("noteId")?.trim();
+
+		if (!threadId || targetNoteId !== String(noteId)) {
+			return;
+		}
+
+		setPendingCommentSelection(null);
+		setActiveCommentThreadId(threadId as Id<"noteCommentThreads">);
+		setCommentsOpen(true);
+	}, [noteId]);
+
+	React.useEffect(() => {
+		syncCommentThreadSelectionFromLocation();
+	}, [syncCommentThreadSelectionFromLocation]);
+
+	React.useEffect(() => {
+		window.addEventListener("popstate", syncCommentThreadSelectionFromLocation);
+
+		return () => {
+			window.removeEventListener(
+				"popstate",
+				syncCommentThreadSelectionFromLocation,
+			);
+		};
+	}, [syncCommentThreadSelectionFromLocation]);
+
+	React.useEffect(() => {
+		const editor = controller.editor;
+
+		if (!editor) {
+			return;
+		}
+
+		const syncActiveThreadMarkers = () => {
+			if (!editor.view?.dom) {
+				return;
+			}
+
+			const threadId = activeCommentThreadId;
+			const container = editor.view.dom;
+			const anchors = container.querySelectorAll<HTMLElement>(
+				"[data-note-comment-thread-id]",
+			);
+
+			for (const anchor of anchors) {
+				const isActive =
+					!!threadId && anchor.dataset.noteCommentThreadId === String(threadId);
+				anchor.dataset.activeThread = isActive ? "true" : "false";
+			}
+		};
+
+		syncActiveThreadMarkers();
+		editor.on("transaction", syncActiveThreadMarkers);
+
+		return () => {
+			editor.off("transaction", syncActiveThreadMarkers);
+		};
+	}, [activeCommentThreadId, controller.editor]);
 
 	return (
 		<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
@@ -1171,25 +1348,27 @@ export function NotePage({
 						<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
 							<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
 								<div className="flex flex-col gap-6">
-									<Textarea
-										ref={controller.titleTextareaRef}
-										value={controller.title}
-										onChange={(event) =>
-											controller.setTitle(event.target.value)
-										}
-										onKeyDown={(event) => {
-											if (event.key !== "Enter" || event.shiftKey) {
-												return;
+									<div>
+										<Textarea
+											ref={controller.titleTextareaRef}
+											value={controller.title}
+											onChange={(event) =>
+												controller.setTitle(event.target.value)
 											}
+											onKeyDown={(event) => {
+												if (event.key !== "Enter" || event.shiftKey) {
+													return;
+												}
 
-											event.preventDefault();
-											controller.focusEditor();
-										}}
-										placeholder="New note"
-										aria-label="Note title"
-										rows={1}
-										className="note-title min-h-0 resize-none overflow-hidden rounded-none border-0 !bg-transparent px-0 py-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
-									/>
+												event.preventDefault();
+												controller.focusEditor();
+											}}
+											placeholder="New note"
+											aria-label="Note title"
+											rows={1}
+											className="note-title min-h-0 flex-1 resize-none overflow-hidden rounded-none border-0 !bg-transparent px-0 py-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
+										/>
+									</div>
 
 									<EditorContent
 										editor={controller.editor}
@@ -1219,6 +1398,11 @@ export function NotePage({
 											</div>
 										)
 									) : null}
+
+									<NoteSelectionMenu
+										editor={controller.editor}
+										onComment={handleOpenCommentComposer}
+									/>
 								</div>
 							</div>
 
@@ -1254,6 +1438,19 @@ export function NotePage({
 					</div>
 				</div>
 			</div>
+
+			<NoteCommentsSheet
+				noteId={controller.noteId}
+				editor={controller.editor}
+				currentUser={currentUser}
+				open={commentsOpen}
+				desktopSafeTop={isDesktopMac}
+				onOpenChange={setCommentsOpen}
+				activeThreadId={activeCommentThreadId}
+				onActiveThreadIdChange={setActiveCommentThreadId}
+				pendingSelection={pendingCommentSelection}
+				onPendingSelectionChange={setPendingCommentSelection}
+			/>
 		</div>
 	);
 }

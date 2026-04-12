@@ -101,6 +101,18 @@ vi.mock("../src/components/note/note-composer", () => ({
 	NoteComposer: (_props: unknown) => <div data-testid="note-composer" />,
 }));
 
+vi.mock("../src/components/note/note-comments-sheet", () => ({
+	NoteCommentsSheet: (_props: unknown) => (
+		<div data-testid="note-comments-sheet" />
+	),
+}));
+
+vi.mock("../src/components/note/note-selection-menu", () => ({
+	NoteSelectionMenu: (_props: unknown) => (
+		<div data-testid="note-selection-menu" />
+	),
+}));
+
 vi.mock("../src/components/note/share-note", () => ({
 	writeRichTextToClipboard: vi.fn(),
 }));

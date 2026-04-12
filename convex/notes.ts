@@ -52,7 +52,7 @@ const removeAllNotesResultValidator = v.object({
 
 const REMOVE_ALL_NOTES_BATCH_SIZE = 100;
 const MAX_CHAT_CONTEXT_NOTES = 20;
-const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
+export const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
 
 	if (!identity) {
@@ -65,7 +65,9 @@ const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	return identity;
 };
 
-const getAuthorName = (identity: Awaited<ReturnType<typeof requireIdentity>>) =>
+export const getAuthorName = (
+	identity: Awaited<ReturnType<typeof requireIdentity>>,
+) =>
 	identity.name?.trim() || identity.email?.trim() || "Unknown user";
 
 const normalizeNote = (note: Doc<"notes">) => ({
@@ -81,7 +83,7 @@ const requireTokenIdentifier = async (ctx: QueryCtx | MutationCtx) => {
 	return identity.tokenIdentifier;
 };
 
-const requireOwnedWorkspace = async (
+export const requireOwnedWorkspace = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
 	workspaceId: Id<"workspaces">,
@@ -98,7 +100,7 @@ const requireOwnedWorkspace = async (
 	return workspace;
 };
 
-const ensureOwnedNote = ({
+export const ensureOwnedNote = ({
 	note,
 	ownerTokenIdentifier,
 	workspaceId,
@@ -127,7 +129,7 @@ const ensureOwnedNote = ({
 	return note;
 };
 
-const requireOwnedNote = async (
+export const requireOwnedNote = async (
 	ctx: QueryCtx | MutationCtx,
 	id: Doc<"notes">["_id"],
 	workspaceId: Id<"workspaces">,
@@ -143,6 +145,71 @@ const requireOwnedNote = async (
 };
 
 const createShareId = () => crypto.randomUUID().replaceAll("-", "");
+
+const collectNoteCommentAnchors = (
+	value: unknown,
+	anchors: Map<string, string>,
+): void => {
+	if (!value || typeof value !== "object") {
+		return;
+	}
+
+	if (Array.isArray(value)) {
+		for (const item of value) {
+			collectNoteCommentAnchors(item, anchors);
+		}
+		return;
+	}
+
+	const text =
+		"text" in value && typeof value.text === "string" ? value.text : null;
+	const marks =
+		"marks" in value && Array.isArray(value.marks) ? value.marks : null;
+
+	if (text && marks) {
+		for (const mark of marks) {
+			if (
+				!mark ||
+				typeof mark !== "object" ||
+				!("type" in mark) ||
+				mark.type !== "noteComment" ||
+				!("attrs" in mark) ||
+				!mark.attrs ||
+				typeof mark.attrs !== "object" ||
+				!("threadId" in mark.attrs) ||
+				typeof mark.attrs.threadId !== "string"
+			) {
+				continue;
+			}
+
+			const threadId = mark.attrs.threadId.trim();
+			if (!threadId) {
+				continue;
+			}
+
+			const currentText = anchors.get(threadId) ?? "";
+			anchors.set(threadId, `${currentText}${text}`);
+		}
+	}
+
+	for (const nested of Object.values(value)) {
+		collectNoteCommentAnchors(nested, anchors);
+	}
+};
+
+const extractNoteCommentAnchors = (content: string) => {
+	try {
+		const parsed = JSON.parse(content) as unknown;
+		const anchors = new Map<string, string>();
+		collectNoteCommentAnchors(parsed, anchors);
+		return [...anchors.entries()].flatMap(([threadId, excerpt]) => {
+			const trimmedExcerpt = excerpt.trim();
+			return trimmedExcerpt ? [{ threadId, excerpt: trimmedExcerpt }] : [];
+		});
+	} catch {
+		return null;
+	}
+};
 
 const deleteNoteBatch = async (
 	ctx: MutationCtx,
@@ -523,6 +590,27 @@ export const save = mutation({
 				archivedAt: undefined,
 				updatedAt: now,
 			});
+
+			const anchors = extractNoteCommentAnchors(args.content);
+			if (anchors) {
+				const normalizedAnchors = (
+					await Promise.all(
+						anchors.map(async ({ threadId, excerpt }) => ({
+							threadId: await ctx.db.normalizeId("noteCommentThreads", threadId),
+							excerpt,
+						})),
+					)
+				).flatMap(({ threadId, excerpt }) =>
+					threadId ? [{ threadId, excerpt }] : [],
+				);
+
+				await ctx.runMutation(internal.noteComments.syncAnchorsForNote, {
+					ownerTokenIdentifier,
+					workspaceId: args.workspaceId,
+					noteId: args.id,
+					activeAnchors: normalizedAnchors,
+				});
+			}
 
 			return args.id;
 		}

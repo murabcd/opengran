@@ -32,8 +32,14 @@ const appConnectionStatusValidator = v.union(
 	v.literal("disconnected"),
 );
 
-const inboxItemProviderValidator = v.literal("jira");
-const inboxItemKindValidator = v.literal("jira-mention");
+const inboxItemProviderValidator = v.union(
+	v.literal("jira"),
+	v.literal("notes"),
+);
+const inboxItemKindValidator = v.union(
+	v.literal("jira-mention"),
+	v.literal("note-comment"),
+);
 
 const appConnectionOrgTypeValidator = v.union(
 	v.literal("x-org-id"),
@@ -246,6 +252,68 @@ export default defineSchema({
 			"updatedAt",
 		])
 		.index("by_shareId", ["shareId"]),
+	noteCommentThreads: defineTable({
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		noteId: v.id("notes"),
+		createdByName: v.string(),
+		excerpt: v.string(),
+		isResolved: v.boolean(),
+		isRead: v.boolean(),
+		isMutedReplies: v.optional(v.boolean()),
+		readAt: v.optional(v.number()),
+		resolvedAt: v.optional(v.number()),
+	resolvedByName: v.optional(v.string()),
+	commentCount: v.number(),
+	latestCommentPreview: v.string(),
+	latestCommentIsReply: v.optional(v.boolean()),
+	createdAt: v.number(),
+	updatedAt: v.number(),
+	lastCommentAt: v.number(),
+	})
+		.index("by_owner_ws_note_updatedAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"noteId",
+			"updatedAt",
+		])
+		.index("by_owner_ws_note_resolved_updatedAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"noteId",
+			"isResolved",
+			"updatedAt",
+		])
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_createdAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"createdAt",
+		])
+		.index("by_ownerTokenIdentifier_and_createdAt", [
+			"ownerTokenIdentifier",
+			"createdAt",
+		]),
+	noteComments: defineTable({
+		threadId: v.id("noteCommentThreads"),
+		parentCommentId: v.optional(v.id("noteComments")),
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		noteId: v.id("notes"),
+		authorName: v.string(),
+		body: v.string(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_threadId_and_createdAt", ["threadId", "createdAt"])
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_createdAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"createdAt",
+		])
+		.index("by_ownerTokenIdentifier_and_createdAt", [
+			"ownerTokenIdentifier",
+			"createdAt",
+		]),
 	chats: defineTable({
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),

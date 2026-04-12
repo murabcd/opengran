@@ -9,6 +9,7 @@ import type { Node as ProseMirrorNode, Schema } from "@tiptap/pm/model";
 import { Node as PMNode, Slice } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
+import { NoteComment } from "./note-comment-extension";
 
 export const EMPTY_DOCUMENT: JSONContent = {
 	type: "doc",
@@ -197,12 +198,16 @@ export const normalizePastedSlice = (slice: Slice, schema: Schema) => {
 type NoteEditorExtensionsOptions = {
 	onTableOfContentsUpdate?: (anchors: TableOfContentData) => void;
 	getTableOfContentsScrollParent?: () => HTMLElement | Window;
+	onCommentThreadClick?: (threadId: string) => void;
 };
 
 export const createNoteEditorExtensions = (
 	options: NoteEditorExtensionsOptions = {},
 ) => [
 	StarterKit,
+	NoteComment.configure({
+		onThreadClick: options.onCommentThreadClick,
+	}),
 	TableOfContents.configure({
 		anchorTypes: ["heading"],
 		onUpdate: options.onTableOfContentsUpdate,
