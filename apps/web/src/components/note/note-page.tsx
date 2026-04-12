@@ -347,7 +347,7 @@ const useNotePageController = ({
 					: false;
 				if (!shouldFlushQueuedSave) {
 					queuedSaveRef.current = null;
-				} else {
+				} else if (queuedSave) {
 					queuedSaveRef.current = null;
 					void flushSave(
 						nextNoteId,

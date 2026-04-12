@@ -1,7 +1,11 @@
 "use client";
 
 import { Button } from "@workspace/ui/components/button";
-import { Calendar, CalendarDayButton } from "@workspace/ui/components/calendar";
+import {
+	Calendar,
+	CalendarDayButton,
+	type DateRange,
+} from "@workspace/ui/components/calendar";
 import {
 	Command,
 	CommandDialog,
@@ -33,7 +37,6 @@ import {
 	type LucideIcon,
 } from "lucide-react";
 import * as React from "react";
-import type { DateRange } from "react-day-picker";
 
 export interface SearchCommandItem {
 	id: string;

@@ -751,7 +751,7 @@ function DiscussionThreadSummary({
 							<p className="truncate text-sm font-medium">
 								{formatDiscussionTitle(
 									threadAuthor.name,
-									thread.latestCommentIsReply,
+									thread.latestCommentIsReply ?? false,
 								)}
 							</p>
 						</div>
@@ -1059,6 +1059,8 @@ function CommentsSheetPanel({
 	handleStartEditComment: (comment: ThreadComment) => void;
 	handleDeleteComment: (comment: ThreadComment) => void;
 }) {
+	const threadList = visibleThreads ?? [];
+
 	return (
 		<div className="flex h-full flex-col bg-background text-foreground">
 			<div
@@ -1157,7 +1159,7 @@ function CommentsSheetPanel({
 			) : null}
 
 			<ScrollArea className="min-h-0 flex-1" viewportClassName="h-full">
-				{visibleThreads === undefined ? null : visibleThreads.length === 0 ? (
+				{visibleThreads === undefined ? null : threadList.length === 0 ? (
 					pendingSelection ? null : (
 						<Empty className="min-h-[24rem] border-none">
 							<EmptyHeader>
@@ -1173,7 +1175,7 @@ function CommentsSheetPanel({
 					)
 				) : (
 					<div>
-						{visibleThreads.map((thread) => (
+						{threadList.map((thread) => (
 							<DiscussionThreadRow
 								key={thread._id}
 								thread={thread}

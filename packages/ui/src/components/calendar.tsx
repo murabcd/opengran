@@ -7,11 +7,14 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import {
+	type DateRange,
 	type DayButton,
 	DayPicker,
 	getDefaultClassNames,
 	type Locale,
 } from "react-day-picker";
+
+export type { DateRange };
 
 function Calendar({
 	className,

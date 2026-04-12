@@ -374,7 +374,10 @@ function AppSidebarHeaderSection({
 	desktopSafeTop: boolean;
 	inboxOpen: boolean;
 	navItems: Array<
-		(typeof navigation)[number] & { isActive: boolean; badge?: number }
+		(typeof SIDEBAR_NAVIGATION)[number] & {
+			isActive: boolean;
+			badge?: number;
+		}
 	>;
 	onInboxOpenChange: (open: boolean) => void;
 	onSearchOpen: () => void;
