@@ -59,6 +59,373 @@ interface SearchCommandProps {
 	onSelectItem: (itemId: string) => void;
 }
 
+type SearchFiltersState = {
+	projectFilter: "all" | "notes" | string;
+	filtersVisible: boolean;
+	dateFilter: "all" | "today" | "last7" | "last30" | "custom";
+	dateRange: DateRange | undefined;
+	projectPopoverOpen: boolean;
+	datePopoverOpen: boolean;
+	projectSearchValue: string;
+};
+
+const INITIAL_SEARCH_FILTERS_STATE: SearchFiltersState = {
+	projectFilter: "all",
+	filtersVisible: false,
+	dateFilter: "all",
+	dateRange: undefined,
+	projectPopoverOpen: false,
+	datePopoverOpen: false,
+	projectSearchValue: "",
+};
+
+const reduceSearchFiltersState = (
+	state: SearchFiltersState,
+	patch: Partial<SearchFiltersState>,
+) => ({ ...state, ...patch });
+
+function useSearchCommandFilters({
+	open,
+	projects,
+}: {
+	open: boolean;
+	projects: SearchCommandProject[];
+}) {
+	const [state, setState] = React.useReducer(
+		reduceSearchFiltersState,
+		INITIAL_SEARCH_FILTERS_STATE,
+	);
+	const {
+		projectFilter,
+		filtersVisible,
+		dateFilter,
+		dateRange,
+		projectPopoverOpen,
+		datePopoverOpen,
+		projectSearchValue,
+	} = state;
+
+	React.useEffect(() => {
+		if (!open) {
+			setState(INITIAL_SEARCH_FILTERS_STATE);
+		}
+	}, [open]);
+
+	React.useEffect(() => {
+		if (!projectPopoverOpen) {
+			setState({ projectSearchValue: "" });
+		}
+	}, [projectPopoverOpen]);
+
+	React.useEffect(() => {
+		if (
+			projectFilter !== "all" &&
+			projectFilter !== "notes" &&
+			!projects.some((project) => project.id === projectFilter)
+		) {
+			setState({ projectFilter: "all" });
+		}
+	}, [projectFilter, projects]);
+
+	const hideFilters = React.useCallback(() => {
+		setState({
+			filtersVisible: false,
+			projectFilter: "all",
+			dateFilter: "all",
+			dateRange: undefined,
+			projectPopoverOpen: false,
+			datePopoverOpen: false,
+			projectSearchValue: "",
+		});
+	}, []);
+
+	return {
+		projectFilter,
+		filtersVisible,
+		dateFilter,
+		dateRange,
+		projectPopoverOpen,
+		datePopoverOpen,
+		projectSearchValue,
+		setState,
+		hideFilters,
+	};
+}
+
+function SearchCommandFilters({
+	projects,
+	projectFilter,
+	filtersVisible,
+	dateFilter,
+	dateRange,
+	projectPopoverOpen,
+	datePopoverOpen,
+	projectSearchValue,
+	activeProject,
+	filteredProjects,
+	projectFilterLabel,
+	projectFilterIcon,
+	dateFilterLabel,
+	onOpenChange,
+	setState,
+	hideFilters,
+}: {
+	projects: SearchCommandProject[];
+	projectFilter: "all" | "notes" | string;
+	filtersVisible: boolean;
+	dateFilter: "all" | "today" | "last7" | "last30" | "custom";
+	dateRange: DateRange | undefined;
+	projectPopoverOpen: boolean;
+	datePopoverOpen: boolean;
+	projectSearchValue: string;
+	activeProject: SearchCommandProject | null;
+	filteredProjects: SearchCommandProject[];
+	projectFilterLabel: string;
+	projectFilterIcon: LucideIcon;
+	dateFilterLabel: string;
+	onOpenChange: (open: boolean) => void;
+	setState: React.ActionDispatch<[patch: Partial<SearchFiltersState>]>;
+	hideFilters: () => void;
+}) {
+	void activeProject;
+
+	return (
+		<>
+			<div className="flex items-start gap-1 px-1 pt-1">
+				<div className="relative min-w-0 flex-1">
+					<CommandInput placeholder="Search notes..." className="pr-14" />
+					<button
+						type="button"
+						onClick={() => onOpenChange(false)}
+						className="absolute top-5 right-4 z-10 flex -translate-y-1/2 items-center"
+						aria-label="Close search"
+					>
+						<Kbd className="font-mono text-[10px]">Esc</Kbd>
+					</button>
+				</div>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							aria-pressed={filtersVisible}
+							aria-label={filtersVisible ? "Hide filters" : "Show filters"}
+							onClick={() => {
+								if (filtersVisible) {
+									hideFilters();
+									return;
+								}
+
+								setState({ filtersVisible: true });
+							}}
+							className={cn(
+								"mt-1 size-8 rounded-lg p-0 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground",
+								filtersVisible && "bg-muted text-foreground",
+							)}
+						>
+							<ListFilter className="size-3.5" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent side="bottom">
+						{filtersVisible ? "Hide filters" : "Show filters"}
+					</TooltipContent>
+				</Tooltip>
+			</div>
+			{filtersVisible ? (
+				<div className="flex items-center gap-1.5 px-2 pb-2">
+					{projects.length > 0 ? (
+						<Popover
+							open={projectPopoverOpen}
+							onOpenChange={(nextOpen) =>
+								setState({ projectPopoverOpen: nextOpen })
+							}
+						>
+							<PopoverTrigger asChild>
+								<Button
+									type="button"
+									variant="ghost"
+									size="sm"
+									className={cn(
+										"h-7 rounded-full border border-transparent bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground aria-expanded:border-border/60 aria-expanded:bg-muted aria-expanded:text-foreground",
+										projectFilter !== "all" && "bg-muted text-foreground",
+									)}
+								>
+									{React.createElement(projectFilterIcon, {
+										className: "size-3.5",
+									})}
+									<span className="truncate">{projectFilterLabel}</span>
+									<ChevronDown className="size-3.5 opacity-70" />
+								</Button>
+							</PopoverTrigger>
+							<PopoverContent
+								align="start"
+								sideOffset={6}
+								className="w-64 gap-0 p-1.5"
+							>
+								<Command shouldFilter={false} className="bg-transparent p-0">
+									<div className="pb-1.5">
+										<CommandInput
+											value={projectSearchValue}
+											onValueChange={(value) =>
+												setState({ projectSearchValue: value })
+											}
+											placeholder="Search sources"
+										/>
+									</div>
+									<CommandList className="max-h-64">
+										<div className="flex flex-col gap-1 px-1 py-1">
+											<SearchProjectFilterOption
+												icon={GalleryHorizontalEnd}
+												label="All"
+												selected={projectFilter === "all"}
+												onSelect={() => {
+													setState({
+														projectFilter: "all",
+														projectPopoverOpen: false,
+													});
+												}}
+											/>
+											<SearchProjectFilterOption
+												icon={FileText}
+												label="Notes"
+												selected={projectFilter === "notes"}
+												onSelect={() => {
+													setState({
+														projectFilter: "notes",
+														projectPopoverOpen: false,
+													});
+												}}
+											/>
+											{filteredProjects.length > 0 ? (
+												filteredProjects.map((project) => (
+													<SearchProjectFilterOption
+														key={project.id}
+														icon={FolderClosed}
+														label={project.name}
+														selected={projectFilter === project.id}
+														onSelect={() => {
+															setState({
+																projectFilter: project.id,
+																projectPopoverOpen: false,
+															});
+														}}
+													/>
+												))
+											) : (
+												<div className="px-2 py-3 text-sm text-muted-foreground">
+													No projects found.
+												</div>
+											)}
+										</div>
+									</CommandList>
+								</Command>
+							</PopoverContent>
+						</Popover>
+					) : null}
+					<Popover
+						open={datePopoverOpen}
+						onOpenChange={(nextOpen) => setState({ datePopoverOpen: nextOpen })}
+					>
+						<PopoverTrigger asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								className={cn(
+									"h-7 rounded-full border border-transparent bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground aria-expanded:border-border/60 aria-expanded:bg-muted aria-expanded:text-foreground",
+									dateFilter !== "all" && "bg-muted text-foreground",
+								)}
+							>
+								<CalendarDays className="size-3.5" />
+								<span className="truncate">{dateFilterLabel}</span>
+								<ChevronDown className="size-3.5 opacity-70" />
+							</Button>
+						</PopoverTrigger>
+						<PopoverContent
+							align="start"
+							sideOffset={6}
+							className="w-fit gap-0 p-0"
+						>
+							<div className="flex flex-col gap-0.5 border-b border-border/80 px-2 pt-2 pb-2">
+								<SearchDatePresetOption
+									label="Today"
+									selected={dateFilter === "today"}
+									onSelect={() => {
+										setState({
+											dateFilter: "today",
+											dateRange: undefined,
+											datePopoverOpen: false,
+										});
+									}}
+								/>
+								<SearchDatePresetOption
+									label="Last 7 days"
+									selected={dateFilter === "last7"}
+									onSelect={() => {
+										setState({
+											dateFilter: "last7",
+											dateRange: undefined,
+											datePopoverOpen: false,
+										});
+									}}
+								/>
+								<SearchDatePresetOption
+									label="Last 30 days"
+									selected={dateFilter === "last30"}
+									onSelect={() => {
+										setState({
+											dateFilter: "last30",
+											dateRange: undefined,
+											datePopoverOpen: false,
+										});
+									}}
+								/>
+							</div>
+							<div className="px-2 py-2">
+								<Calendar
+									mode="range"
+									selected={dateRange}
+									defaultMonth={dateRange?.from ?? new Date()}
+									classNames={{
+										today:
+											"rounded-(--cell-radius) bg-muted text-foreground data-[selected=true]:rounded-(--cell-radius)",
+									}}
+									components={{
+										DayButton: SearchDateCalendarDayButton,
+									}}
+									onSelect={(range) => {
+										setState({
+											dateRange: range,
+											dateFilter: range?.from ? "custom" : "all",
+										});
+									}}
+									className="p-0"
+								/>
+							</div>
+							<div className="border-t border-border/80 px-3 py-2">
+								<button
+									type="button"
+									onClick={() => {
+										setState({
+											dateFilter: "all",
+											dateRange: undefined,
+											datePopoverOpen: false,
+										});
+									}}
+									className="cursor-pointer text-sm hover:text-foreground"
+								>
+									Clear
+								</button>
+							</div>
+						</PopoverContent>
+					</Popover>
+				</div>
+			) : null}
+		</>
+	);
+}
+
 export function SearchCommand({
 	open,
 	onOpenChange,
@@ -66,35 +433,17 @@ export function SearchCommand({
 	projects,
 	onSelectItem,
 }: SearchCommandProps) {
-	const [projectFilter, setProjectFilter] = React.useState<
-		"all" | "notes" | string
-	>("all");
-	const [filtersVisible, setFiltersVisible] = React.useState(false);
-	const [dateFilter, setDateFilter] = React.useState<
-		"all" | "today" | "last7" | "last30" | "custom"
-	>("all");
-	const [dateRange, setDateRange] = React.useState<DateRange | undefined>();
-	const [projectPopoverOpen, setProjectPopoverOpen] = React.useState(false);
-	const [datePopoverOpen, setDatePopoverOpen] = React.useState(false);
-	const [projectSearchValue, setProjectSearchValue] = React.useState("");
-
-	React.useEffect(() => {
-		if (!open) {
-			setProjectFilter("all");
-			setFiltersVisible(false);
-			setDateFilter("all");
-			setDateRange(undefined);
-			setProjectPopoverOpen(false);
-			setDatePopoverOpen(false);
-			setProjectSearchValue("");
-		}
-	}, [open]);
-
-	React.useEffect(() => {
-		if (!projectPopoverOpen) {
-			setProjectSearchValue("");
-		}
-	}, [projectPopoverOpen]);
+	const {
+		projectFilter,
+		filtersVisible,
+		dateFilter,
+		dateRange,
+		projectPopoverOpen,
+		datePopoverOpen,
+		projectSearchValue,
+		setState,
+		hideFilters,
+	} = useSearchCommandFilters({ open, projects });
 
 	const dateFilteredItems = React.useMemo(
 		() =>
@@ -103,16 +452,6 @@ export function SearchCommand({
 			),
 		[dateFilter, dateRange, items],
 	);
-
-	React.useEffect(() => {
-		if (
-			projectFilter !== "all" &&
-			projectFilter !== "notes" &&
-			!projects.some((project) => project.id === projectFilter)
-		) {
-			setProjectFilter("all");
-		}
-	}, [projectFilter, projects]);
 
 	const noteItems = React.useMemo(
 		() =>
@@ -189,220 +528,24 @@ export function SearchCommand({
 			className="top-1/2 max-w-[calc(100%-2rem)] -translate-y-1/2 rounded-lg sm:max-w-lg"
 		>
 			<Command className="**:[[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 **:[[cmdk-group-heading]]:px-1.5 **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 **:[[cmdk-input-wrapper]_svg]:size-5 **:[[cmdk-input]]:h-12">
-				<div className="flex items-start gap-1 px-1 pt-1">
-					<div className="relative min-w-0 flex-1">
-						<CommandInput placeholder="Search notes..." className="pr-14" />
-						<button
-							type="button"
-							onClick={() => onOpenChange(false)}
-							className="absolute top-5 right-4 z-10 flex -translate-y-1/2 items-center"
-							aria-label="Close search"
-						>
-							<Kbd className="font-mono text-[10px]">Esc</Kbd>
-						</button>
-					</div>
-					<Tooltip>
-						<TooltipTrigger asChild>
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								aria-pressed={filtersVisible}
-								aria-label={filtersVisible ? "Hide filters" : "Show filters"}
-								onClick={() => {
-									if (filtersVisible) {
-										setFiltersVisible(false);
-										setProjectFilter("all");
-										setDateFilter("all");
-										setDateRange(undefined);
-										setProjectPopoverOpen(false);
-										setDatePopoverOpen(false);
-										setProjectSearchValue("");
-										return;
-									}
-
-									setFiltersVisible(true);
-								}}
-								className={cn(
-									"mt-1 size-8 rounded-lg p-0 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground",
-									filtersVisible && "bg-muted text-foreground",
-								)}
-							>
-								<ListFilter className="size-3.5" />
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent side="bottom">
-							{filtersVisible ? "Hide filters" : "Show filters"}
-						</TooltipContent>
-					</Tooltip>
-				</div>
-				{filtersVisible ? (
-					<div className="flex items-center gap-1.5 px-2 pb-2">
-						{projects.length > 0 ? (
-							<Popover
-								open={projectPopoverOpen}
-								onOpenChange={setProjectPopoverOpen}
-							>
-								<PopoverTrigger asChild>
-									<Button
-										type="button"
-										variant="ghost"
-										size="sm"
-										className={cn(
-											"h-7 rounded-full border border-transparent bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground aria-expanded:border-border/60 aria-expanded:bg-muted aria-expanded:text-foreground",
-											projectFilter !== "all" && "bg-muted text-foreground",
-										)}
-									>
-										{React.createElement(projectFilterIcon, {
-											className: "size-3.5",
-										})}
-										<span className="truncate">{projectFilterLabel}</span>
-										<ChevronDown className="size-3.5 opacity-70" />
-									</Button>
-								</PopoverTrigger>
-								<PopoverContent
-									align="start"
-									sideOffset={6}
-									className="w-64 gap-0 p-1.5"
-								>
-									<Command shouldFilter={false} className="bg-transparent p-0">
-										<div className="pb-1.5">
-											<CommandInput
-												value={projectSearchValue}
-												onValueChange={setProjectSearchValue}
-												placeholder="Search sources"
-											/>
-										</div>
-										<CommandList className="max-h-64">
-											<div className="flex flex-col gap-1 px-1 py-1">
-												<SearchProjectFilterOption
-													icon={GalleryHorizontalEnd}
-													label="All"
-													selected={projectFilter === "all"}
-													onSelect={() => {
-														setProjectFilter("all");
-														setProjectPopoverOpen(false);
-													}}
-												/>
-												<SearchProjectFilterOption
-													icon={FileText}
-													label="Notes"
-													selected={projectFilter === "notes"}
-													onSelect={() => {
-														setProjectFilter("notes");
-														setProjectPopoverOpen(false);
-													}}
-												/>
-												{filteredProjects.length > 0 ? (
-													filteredProjects.map((project) => (
-														<SearchProjectFilterOption
-															key={project.id}
-															icon={FolderClosed}
-															label={project.name}
-															selected={projectFilter === project.id}
-															onSelect={() => {
-																setProjectFilter(project.id);
-																setProjectPopoverOpen(false);
-															}}
-														/>
-													))
-												) : (
-													<div className="px-2 py-3 text-sm text-muted-foreground">
-														No projects found.
-													</div>
-												)}
-											</div>
-										</CommandList>
-									</Command>
-								</PopoverContent>
-							</Popover>
-						) : null}
-						<Popover open={datePopoverOpen} onOpenChange={setDatePopoverOpen}>
-							<PopoverTrigger asChild>
-								<Button
-									type="button"
-									variant="ghost"
-									size="sm"
-									className={cn(
-										"h-7 rounded-full border border-transparent bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground aria-expanded:border-border/60 aria-expanded:bg-muted aria-expanded:text-foreground",
-										dateFilter !== "all" && "bg-muted text-foreground",
-									)}
-								>
-									<CalendarDays className="size-3.5" />
-									<span className="truncate">{dateFilterLabel}</span>
-									<ChevronDown className="size-3.5 opacity-70" />
-								</Button>
-							</PopoverTrigger>
-							<PopoverContent
-								align="start"
-								sideOffset={6}
-								className="w-fit gap-0 p-0"
-							>
-								<div className="flex flex-col gap-0.5 border-b border-border/80 px-2 pt-2 pb-2">
-									<SearchDatePresetOption
-										label="Today"
-										selected={dateFilter === "today"}
-										onSelect={() => {
-											setDateFilter("today");
-											setDateRange(undefined);
-											setDatePopoverOpen(false);
-										}}
-									/>
-									<SearchDatePresetOption
-										label="Last 7 days"
-										selected={dateFilter === "last7"}
-										onSelect={() => {
-											setDateFilter("last7");
-											setDateRange(undefined);
-											setDatePopoverOpen(false);
-										}}
-									/>
-									<SearchDatePresetOption
-										label="Last 30 days"
-										selected={dateFilter === "last30"}
-										onSelect={() => {
-											setDateFilter("last30");
-											setDateRange(undefined);
-											setDatePopoverOpen(false);
-										}}
-									/>
-								</div>
-								<div className="px-2 py-2">
-									<Calendar
-										mode="range"
-										selected={dateRange}
-										defaultMonth={dateRange?.from ?? new Date()}
-										classNames={{
-											today:
-												"rounded-(--cell-radius) bg-muted text-foreground data-[selected=true]:rounded-(--cell-radius)",
-										}}
-										components={{
-											DayButton: SearchDateCalendarDayButton,
-										}}
-										onSelect={(range) => {
-											setDateRange(range);
-											setDateFilter(range?.from ? "custom" : "all");
-										}}
-										className="p-0"
-									/>
-								</div>
-								<div className="border-t border-border/80 px-3 py-2">
-									<button
-										type="button"
-										onClick={() => {
-											setDateFilter("all");
-											setDateRange(undefined);
-											setDatePopoverOpen(false);
-										}}
-										className="cursor-pointer text-sm hover:text-foreground"
-									>
-										Clear
-									</button>
-								</div>
-							</PopoverContent>
-						</Popover>
-					</div>
-				) : null}
+				<SearchCommandFilters
+					projects={projects}
+					projectFilter={projectFilter}
+					filtersVisible={filtersVisible}
+					dateFilter={dateFilter}
+					dateRange={dateRange}
+					projectPopoverOpen={projectPopoverOpen}
+					datePopoverOpen={datePopoverOpen}
+					projectSearchValue={projectSearchValue}
+					activeProject={activeProject}
+					filteredProjects={filteredProjects}
+					projectFilterLabel={projectFilterLabel}
+					projectFilterIcon={projectFilterIcon}
+					dateFilterLabel={dateFilterLabel}
+					onOpenChange={onOpenChange}
+					setState={setState}
+					hideFilters={hideFilters}
+				/>
 				<CommandList className="h-[22rem] max-h-[calc(100vh-14rem)] min-h-[14rem]">
 					<CommandEmpty>No results found.</CommandEmpty>
 					{noteSections.map((section) =>

@@ -418,31 +418,7 @@ const useNotePageController = ({
 		},
 		[editor, syncTableOfContents],
 	);
-
-	React.useEffect(() => {
-		nextNoteIdRef.current = noteId;
-	}, [noteId]);
-
-	React.useEffect(() => {
-		if (!editor) {
-			return;
-		}
-
-		editor.setEditable(!templateApplyState.isRunning);
-	}, [editor, templateApplyState.isRunning]);
-
-	React.useEffect(() => {
-		latestEditorStateRef.current = {
-			title,
-			searchableText,
-			templateSlug: note?.templateSlug ?? null,
-			isApplyingTemplate: templateApplyState.isRunning,
-			canShowTemplateSelect: searchableText.trim().length > 0,
-		};
-		publishEditorActionsRef.current?.();
-	}, [note?.templateSlug, searchableText, templateApplyState.isRunning, title]);
-
-	React.useEffect(() => {
+	const syncHydratedNoteState = React.useCallback(() => {
 		if (hydratedNoteIdRef.current !== noteId) {
 			hydratedNoteIdRef.current = noteId;
 			hasHydratedRef.current = false;
@@ -493,6 +469,33 @@ const useNotePageController = ({
 
 		hasHydratedRef.current = true;
 	}, [applyDraftState, editor, note, noteId, setEditorDocument]);
+
+	React.useEffect(() => {
+		nextNoteIdRef.current = noteId;
+	}, [noteId]);
+
+	React.useEffect(() => {
+		if (!editor) {
+			return;
+		}
+
+		editor.setEditable(!templateApplyState.isRunning);
+	}, [editor, templateApplyState.isRunning]);
+
+	React.useEffect(() => {
+		latestEditorStateRef.current = {
+			title,
+			searchableText,
+			templateSlug: note?.templateSlug ?? null,
+			isApplyingTemplate: templateApplyState.isRunning,
+			canShowTemplateSelect: searchableText.trim().length > 0,
+		};
+		publishEditorActionsRef.current?.();
+	}, [note?.templateSlug, searchableText, templateApplyState.isRunning, title]);
+
+	React.useEffect(() => {
+		syncHydratedNoteState();
+	}, [syncHydratedNoteState]);
 
 	React.useEffect(() => {
 		if (!noteId || !hasHydratedRef.current) {
@@ -1116,6 +1119,177 @@ const useNotePageController = ({
 	};
 };
 
+function NotePageContent({
+	controller,
+	autoStartTranscription,
+	composerNoteContext,
+	onAutoStartTranscriptionHandled,
+	stopTranscriptionWhenMeetingEnds,
+	scrollParentRef,
+	shouldHideEmptyBodyPlaceholder,
+	onOpenCommentComposer,
+	commentsOpen,
+	activeCommentThreadId,
+	currentUser,
+	isDesktopMac,
+	handleCommentsOpenChange,
+	setCommentPanelState,
+	pendingCommentSelection,
+	handleTableOfContentsSelect,
+}: {
+	controller: ReturnType<typeof useNotePageController>;
+	autoStartTranscription: boolean;
+	composerNoteContext: {
+		noteId: Id<"notes"> | null;
+		templateSlug: string | null;
+	};
+	onAutoStartTranscriptionHandled?: () => void;
+	stopTranscriptionWhenMeetingEnds: boolean;
+	scrollParentRef?: React.RefObject<HTMLDivElement | null>;
+	shouldHideEmptyBodyPlaceholder: boolean;
+	onOpenCommentComposer: () => void;
+	commentsOpen: boolean;
+	activeCommentThreadId: Id<"noteCommentThreads"> | null;
+	currentUser: NotePageCurrentUser;
+	isDesktopMac: boolean;
+	handleCommentsOpenChange: (nextOpen: boolean) => void;
+	setCommentPanelState: React.Dispatch<
+		React.SetStateAction<{
+			commentsOpen: boolean;
+			activeCommentThreadId: Id<"noteCommentThreads"> | null;
+			pendingCommentSelection: PendingNoteCommentSelection | null;
+		}>
+	>;
+	pendingCommentSelection: PendingNoteCommentSelection | null;
+	handleTableOfContentsSelect: (anchor: TableOfContentDataItem) => void;
+}) {
+	void scrollParentRef;
+
+	return (
+		<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
+			<div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
+				<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-5xl flex-1 gap-4 md:min-h-[calc(100svh-5rem)]">
+					<div className="min-w-0 flex-1">
+						<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
+							<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
+								<div className="flex flex-col gap-6">
+									<div>
+										<Textarea
+											ref={controller.titleTextareaRef}
+											value={controller.title}
+											onChange={(event) =>
+												controller.setTitle(event.target.value)
+											}
+											onKeyDown={(event) => {
+												if (event.key !== "Enter" || event.shiftKey) {
+													return;
+												}
+
+												event.preventDefault();
+												controller.focusEditor();
+											}}
+											placeholder="New note"
+											aria-label="Note title"
+											rows={1}
+											className="note-title min-h-0 flex-1 resize-none overflow-hidden rounded-none border-0 !bg-transparent px-0 py-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
+										/>
+									</div>
+
+									<EditorContent
+										editor={controller.editor}
+										className={cn(
+											"min-h-[320px] text-base text-foreground",
+											"[&_.ProseMirror]:min-h-[320px]",
+											shouldHideEmptyBodyPlaceholder &&
+												"note-editor--hide-placeholder",
+											controller.templateApplyState.isRunning && "hidden",
+										)}
+									/>
+
+									{controller.templateApplyState.isRunning ? (
+										controller.templateApplyState.streamedMarkdown.trim()
+											.length > 0 ? (
+											<Streamdown
+												className="note-streamdown min-h-[320px] text-base text-foreground"
+												controls={false}
+												caret="block"
+												isAnimating
+											>
+												{controller.templateApplyState.streamedMarkdown}
+											</Streamdown>
+										) : (
+											<div className="min-h-[320px] text-base text-muted-foreground">
+												<ShimmerText>Thinking</ShimmerText>
+											</div>
+										)
+									) : null}
+
+									<NoteSelectionMenu
+										editor={controller.editor}
+										onComment={onOpenCommentComposer}
+									/>
+								</div>
+							</div>
+
+							<div className="sticky bottom-0 z-10 mt-auto h-0">
+								<div className="pointer-events-none absolute inset-x-0 bottom-0 -mx-4 bg-background pb-6 md:-mx-6">
+									<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
+										<NoteComposer
+											autoStartTranscription={autoStartTranscription}
+											getNoteContext={controller.getNoteContext}
+											noteContext={composerNoteContext}
+											onAutoStartTranscriptionHandled={
+												onAutoStartTranscriptionHandled
+											}
+											onAddMessageToNote={controller.appendChatResponseToNote}
+											onEnhanceTranscript={controller.handleEnhanceTranscript}
+											stopTranscriptionWhenMeetingEnds={
+												stopTranscriptionWhenMeetingEnds
+											}
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div className="hidden xl:block xl:w-10 xl:shrink-0">
+						<div className="sticky top-1/2 -translate-y-1/2">
+							<NoteTableOfContents
+								anchors={controller.tableOfContents}
+								onSelect={handleTableOfContentsSelect}
+							/>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<NoteCommentsSheet
+				noteId={controller.noteId}
+				editor={controller.editor}
+				currentUser={currentUser}
+				open={commentsOpen}
+				desktopSafeTop={isDesktopMac}
+				onOpenChange={handleCommentsOpenChange}
+				activeThreadId={activeCommentThreadId}
+				onActiveThreadIdChange={(threadId) =>
+					setCommentPanelState((current) => ({
+						...current,
+						activeCommentThreadId: threadId,
+					}))
+				}
+				pendingSelection={pendingCommentSelection}
+				onPendingSelectionChange={(selection) =>
+					setCommentPanelState((current) => ({
+						...current,
+						pendingCommentSelection: selection,
+					}))
+				}
+			/>
+		</div>
+	);
+}
+
 export function NotePage({
 	autoStartTranscription = false,
 	currentUser = {
@@ -1147,18 +1321,43 @@ export function NotePage({
 	scrollParentRef?: React.RefObject<HTMLDivElement | null>;
 	stopTranscriptionWhenMeetingEnds?: boolean;
 }) {
-	const [commentsOpen, setCommentsOpen] = React.useState(false);
-	const [activeCommentThreadId, setActiveCommentThreadId] =
-		React.useState<Id<"noteCommentThreads"> | null>(null);
-	const [pendingCommentSelection, setPendingCommentSelection] =
-		React.useState<PendingNoteCommentSelection | null>(null);
+	const [commentPanelState, setCommentPanelState] = React.useState<{
+		commentsOpen: boolean;
+		activeCommentThreadId: Id<"noteCommentThreads"> | null;
+		pendingCommentSelection: PendingNoteCommentSelection | null;
+	}>({
+		commentsOpen: false,
+		activeCommentThreadId: null,
+		pendingCommentSelection: null,
+	});
+	const { commentsOpen, activeCommentThreadId, pendingCommentSelection } =
+		commentPanelState;
 	const handleOpenComments = React.useCallback(() => {
-		setCommentsOpen(true);
+		setCommentPanelState((current) => ({
+			...current,
+			commentsOpen: true,
+		}));
+	}, []);
+	const handleCommentsOpenChange = React.useCallback((nextOpen: boolean) => {
+		setCommentPanelState((current) =>
+			nextOpen
+				? {
+						...current,
+						commentsOpen: true,
+					}
+				: {
+						commentsOpen: false,
+						activeCommentThreadId: null,
+						pendingCommentSelection: null,
+					},
+		);
 	}, []);
 	const handleCommentThreadClick = React.useCallback((threadId: string) => {
-		setPendingCommentSelection(null);
-		setActiveCommentThreadId(threadId as Id<"noteCommentThreads">);
-		setCommentsOpen(true);
+		setCommentPanelState({
+			commentsOpen: true,
+			activeCommentThreadId: threadId as Id<"noteCommentThreads">,
+			pendingCommentSelection: null,
+		});
 	}, []);
 	React.useEffect(() => {
 		if (!noteId) {
@@ -1258,20 +1457,24 @@ export function NotePage({
 			return;
 		}
 
-		setActiveCommentThreadId(null);
-		setPendingCommentSelection({
-			from,
-			to,
-			text,
+		setCommentPanelState({
+			commentsOpen: true,
+			activeCommentThreadId: null,
+			pendingCommentSelection: {
+				from,
+				to,
+				text,
+			},
 		});
-		setCommentsOpen(true);
 	}, [controller.editor]);
 
 	React.useEffect(() => {
 		void noteId;
-		setCommentsOpen(false);
-		setActiveCommentThreadId(null);
-		setPendingCommentSelection(null);
+		setCommentPanelState({
+			commentsOpen: false,
+			activeCommentThreadId: null,
+			pendingCommentSelection: null,
+		});
 	}, [noteId]);
 
 	const syncCommentThreadSelectionFromLocation = React.useCallback(() => {
@@ -1287,9 +1490,11 @@ export function NotePage({
 			return;
 		}
 
-		setPendingCommentSelection(null);
-		setActiveCommentThreadId(threadId as Id<"noteCommentThreads">);
-		setCommentsOpen(true);
+		setCommentPanelState({
+			commentsOpen: true,
+			activeCommentThreadId: threadId as Id<"noteCommentThreads">,
+			pendingCommentSelection: null,
+		});
 	}, [noteId]);
 
 	React.useEffect(() => {
@@ -1341,116 +1546,23 @@ export function NotePage({
 	}, [activeCommentThreadId, controller.editor]);
 
 	return (
-		<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
-			<div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
-				<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-5xl flex-1 gap-4 md:min-h-[calc(100svh-5rem)]">
-					<div className="min-w-0 flex-1">
-						<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
-							<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
-								<div className="flex flex-col gap-6">
-									<div>
-										<Textarea
-											ref={controller.titleTextareaRef}
-											value={controller.title}
-											onChange={(event) =>
-												controller.setTitle(event.target.value)
-											}
-											onKeyDown={(event) => {
-												if (event.key !== "Enter" || event.shiftKey) {
-													return;
-												}
-
-												event.preventDefault();
-												controller.focusEditor();
-											}}
-											placeholder="New note"
-											aria-label="Note title"
-											rows={1}
-											className="note-title min-h-0 flex-1 resize-none overflow-hidden rounded-none border-0 !bg-transparent px-0 py-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
-										/>
-									</div>
-
-									<EditorContent
-										editor={controller.editor}
-										className={cn(
-											"min-h-[320px] text-base text-foreground",
-											"[&_.ProseMirror]:min-h-[320px]",
-											shouldHideEmptyBodyPlaceholder &&
-												"note-editor--hide-placeholder",
-											controller.templateApplyState.isRunning && "hidden",
-										)}
-									/>
-
-									{controller.templateApplyState.isRunning ? (
-										controller.templateApplyState.streamedMarkdown.trim()
-											.length > 0 ? (
-											<Streamdown
-												className="note-streamdown min-h-[320px] text-base text-foreground"
-												controls={false}
-												caret="block"
-												isAnimating
-											>
-												{controller.templateApplyState.streamedMarkdown}
-											</Streamdown>
-										) : (
-											<div className="min-h-[320px] text-base text-muted-foreground">
-												<ShimmerText>Thinking</ShimmerText>
-											</div>
-										)
-									) : null}
-
-									<NoteSelectionMenu
-										editor={controller.editor}
-										onComment={handleOpenCommentComposer}
-									/>
-								</div>
-							</div>
-
-							<div className="sticky bottom-0 z-10 mt-auto h-0">
-								<div className="pointer-events-none absolute inset-x-0 bottom-0 -mx-4 bg-background pb-6 md:-mx-6">
-									<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
-										<NoteComposer
-											autoStartTranscription={autoStartTranscription}
-											getNoteContext={controller.getNoteContext}
-											noteContext={composerNoteContext}
-											onAutoStartTranscriptionHandled={
-												onAutoStartTranscriptionHandled
-											}
-											onAddMessageToNote={controller.appendChatResponseToNote}
-											onEnhanceTranscript={controller.handleEnhanceTranscript}
-											stopTranscriptionWhenMeetingEnds={
-												stopTranscriptionWhenMeetingEnds
-											}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
-
-					<div className="hidden xl:block xl:w-10 xl:shrink-0">
-						<div className="sticky top-1/2 -translate-y-1/2">
-							<NoteTableOfContents
-								anchors={controller.tableOfContents}
-								onSelect={handleTableOfContentsSelect}
-							/>
-						</div>
-					</div>
-				</div>
-			</div>
-
-			<NoteCommentsSheet
-				noteId={controller.noteId}
-				editor={controller.editor}
-				currentUser={currentUser}
-				open={commentsOpen}
-				desktopSafeTop={isDesktopMac}
-				onOpenChange={setCommentsOpen}
-				activeThreadId={activeCommentThreadId}
-				onActiveThreadIdChange={setActiveCommentThreadId}
-				pendingSelection={pendingCommentSelection}
-				onPendingSelectionChange={setPendingCommentSelection}
-			/>
-		</div>
+		<NotePageContent
+			controller={controller}
+			autoStartTranscription={autoStartTranscription}
+			composerNoteContext={composerNoteContext}
+			onAutoStartTranscriptionHandled={onAutoStartTranscriptionHandled}
+			stopTranscriptionWhenMeetingEnds={stopTranscriptionWhenMeetingEnds}
+			scrollParentRef={scrollParentRef}
+			shouldHideEmptyBodyPlaceholder={shouldHideEmptyBodyPlaceholder}
+			onOpenCommentComposer={handleOpenCommentComposer}
+			commentsOpen={commentsOpen}
+			activeCommentThreadId={activeCommentThreadId}
+			currentUser={currentUser}
+			isDesktopMac={isDesktopMac}
+			handleCommentsOpenChange={handleCommentsOpenChange}
+			setCommentPanelState={setCommentPanelState}
+			pendingCommentSelection={pendingCommentSelection}
+			handleTableOfContentsSelect={handleTableOfContentsSelect}
+		/>
 	);
 }
