@@ -18,6 +18,7 @@
 /.tmp
 /dist
 /.turbo
+/.reference
 /apps/*/dist
 /apps/*/.bundle-root
 /apps/*/.generated
