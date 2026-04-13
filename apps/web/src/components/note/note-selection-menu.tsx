@@ -163,6 +163,9 @@ export function NoteSelectionMenu({ onComment }: { onComment: () => void }) {
 	const { editor } = useTiptap();
 	const [blockMenuOpen, setBlockMenuOpen] = React.useState(false);
 	const bubbleMenuRef = React.useRef<HTMLDivElement | null>(null);
+	const blockMenuCloseReasonRef = React.useRef<"apply" | "dismiss" | null>(
+		null,
+	);
 	const editorState = useTiptapState(({ editor: currentEditor }) => ({
 		activeBlockStyleId:
 			BLOCK_STYLE_OPTIONS.find((option) => option.isActive(currentEditor))
@@ -181,6 +184,11 @@ export function NoteSelectionMenu({ onComment }: { onComment: () => void }) {
 	const preventEditorBlur = (event: React.MouseEvent<HTMLElement>) => {
 		event.preventDefault();
 	};
+	const dismissBlockSelectionMenu = React.useCallback(() => {
+		const collapsePosition = editor.state.selection.to;
+
+		editor.chain().setTextSelection(collapsePosition).blur().run();
+	}, [editor]);
 
 	return (
 		<BubbleMenu
@@ -195,7 +203,13 @@ export function NoteSelectionMenu({ onComment }: { onComment: () => void }) {
 				<DropdownMenu
 					modal={false}
 					open={blockMenuOpen}
-					onOpenChange={setBlockMenuOpen}
+					onOpenChange={(nextOpen) => {
+						if (nextOpen) {
+							blockMenuCloseReasonRef.current = null;
+						}
+
+						setBlockMenuOpen(nextOpen);
+					}}
 				>
 					<DropdownMenuTrigger asChild>
 						<Button
@@ -214,13 +228,27 @@ export function NoteSelectionMenu({ onComment }: { onComment: () => void }) {
 						align="start"
 						sideOffset={8}
 						container={bubbleMenuRef.current?.parentElement ?? undefined}
+						disableCloseAnimation
 						className="min-w-44 bg-background text-foreground"
 						onOpenAutoFocus={(event) => {
 							event.preventDefault();
 						}}
+						onEscapeKeyDown={() => {
+							blockMenuCloseReasonRef.current = "dismiss";
+						}}
+						onPointerDownOutside={() => {
+							blockMenuCloseReasonRef.current = "dismiss";
+						}}
 						onCloseAutoFocus={(event) => {
 							event.preventDefault();
-							editor.chain().focus().run();
+
+							if (blockMenuCloseReasonRef.current === "apply") {
+								editor.chain().focus().run();
+							} else {
+								dismissBlockSelectionMenu();
+							}
+
+							blockMenuCloseReasonRef.current = null;
 						}}
 					>
 						{BLOCK_STYLE_OPTIONS.map((option) => {
@@ -231,7 +259,10 @@ export function NoteSelectionMenu({ onComment }: { onComment: () => void }) {
 								<DropdownMenuItem
 									key={option.id}
 									onMouseDown={preventEditorBlur}
-									onSelect={() => option.apply(editor)}
+									onSelect={() => {
+										blockMenuCloseReasonRef.current = "apply";
+										option.apply(editor);
+									}}
 									className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
 								>
 									<Icon className="size-4 text-muted-foreground" />
