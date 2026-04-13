@@ -60,6 +60,14 @@ vi.mock("convex/react", () => ({
 }));
 
 vi.mock("@tiptap/react", () => ({
+	Tiptap: Object.assign(
+		({ children }: React.PropsWithChildren) => <>{children}</>,
+		{
+			Content: ({ className }: { className?: string }) => (
+				<div data-testid="editor-content" className={className} />
+			),
+		},
+	),
 	EditorContent: ({ className }: { className?: string }) => (
 		<div data-testid="editor-content" className={className} />
 	),

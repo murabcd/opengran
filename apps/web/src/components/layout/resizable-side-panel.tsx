@@ -1,0 +1,459 @@
+"use client";
+
+import { cn } from "@workspace/ui/lib/utils";
+import * as React from "react";
+
+type PanelSide = "left" | "right";
+type ResizeGripOrientation = "vertical" | "horizontal";
+type ResizeHandleCursor = "col-resize" | "row-resize";
+
+type ResizablePanelWidthBounds = {
+	min: number;
+	max: number;
+};
+
+type UseResizableSidePanelOptions = {
+	isMobile: boolean;
+	side: PanelSide;
+	desktopStorageKey: string;
+	mobileStorageKey: string;
+	defaultDesktopWidth: number;
+	desktopMinWidth: number;
+	desktopMaxWidth: number;
+	mobileMinWidth: number;
+	keyboardStep?: number;
+	desktopViewportGutter?: number;
+	desktopLeadingOffset?: number;
+};
+
+type UseResizeHandleOptions = {
+	cursor: ResizeHandleCursor;
+	onResizeMove: (event: PointerEvent) => void;
+	onResizeStart?: (event: React.PointerEvent<HTMLElement>) => void;
+	onResizeEnd?: () => void;
+	onKeyDown?: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
+};
+
+const DEFAULT_KEYBOARD_STEP = 24;
+const DEFAULT_DESKTOP_VIEWPORT_GUTTER = 80;
+
+const clampPanelWidth = (width: number, bounds: ResizablePanelWidthBounds) =>
+	Math.min(bounds.max, Math.max(bounds.min, width));
+
+const getPanelWidthBounds = (
+	viewportWidth: number,
+	isMobile: boolean,
+	desktopMinWidth: number,
+	desktopMaxWidth: number,
+	mobileMinWidth: number,
+	desktopViewportGutter: number,
+	desktopLeadingOffset: number,
+): ResizablePanelWidthBounds => {
+	if (isMobile) {
+		const maxWidth = Math.max(mobileMinWidth, viewportWidth);
+		return {
+			min: Math.min(mobileMinWidth, maxWidth),
+			max: maxWidth,
+		};
+	}
+
+	const maxWidth = Math.max(
+		desktopMinWidth,
+		Math.min(
+			desktopMaxWidth,
+			viewportWidth - desktopViewportGutter - desktopLeadingOffset,
+		),
+	);
+
+	return {
+		min: Math.min(desktopMinWidth, maxWidth),
+		max: maxWidth,
+	};
+};
+
+const getWidthFromClientX = (
+	clientX: number,
+	viewportWidth: number,
+	side: PanelSide,
+	leadingOffset: number,
+) => (side === "right" ? viewportWidth - clientX : clientX - leadingOffset);
+
+function useResizeHandle({
+	cursor,
+	onResizeMove,
+	onResizeStart,
+	onResizeEnd,
+	onKeyDown,
+}: UseResizeHandleOptions) {
+	const [isResizing, setIsResizing] = React.useState(false);
+
+	React.useEffect(() => {
+		if (!isResizing || typeof document === "undefined") {
+			return;
+		}
+
+		const previousUserSelect = document.body.style.userSelect;
+		const previousCursor = document.body.style.cursor;
+
+		document.body.style.userSelect = "none";
+		document.body.style.cursor = cursor;
+
+		return () => {
+			document.body.style.userSelect = previousUserSelect;
+			document.body.style.cursor = previousCursor;
+		};
+	}, [cursor, isResizing]);
+
+	const handleResizeStart = React.useCallback(
+		(event: React.PointerEvent<HTMLElement>) => {
+			if (event.pointerType !== "touch" && event.button !== 0) {
+				return;
+			}
+
+			event.preventDefault();
+			event.stopPropagation();
+			event.currentTarget.setPointerCapture?.(event.pointerId);
+			onResizeStart?.(event);
+			setIsResizing(true);
+
+			const stopResizing = () => {
+				setIsResizing(false);
+				onResizeEnd?.();
+				window.removeEventListener("pointermove", onResizeMove);
+				window.removeEventListener("pointerup", stopResizing);
+				window.removeEventListener("pointercancel", stopResizing);
+			};
+
+			window.addEventListener("pointermove", onResizeMove);
+			window.addEventListener("pointerup", stopResizing);
+			window.addEventListener("pointercancel", stopResizing);
+		},
+		[onResizeEnd, onResizeMove, onResizeStart],
+	);
+
+	const handleResizeKeyDown = React.useCallback(
+		(event: React.KeyboardEvent<HTMLButtonElement>) => {
+			onKeyDown?.(event);
+		},
+		[onKeyDown],
+	);
+
+	return {
+		handleResizeKeyDown,
+		handleResizeStart,
+		isResizing,
+	};
+}
+
+function useResizableSidePanel({
+	isMobile,
+	side,
+	desktopStorageKey,
+	mobileStorageKey,
+	defaultDesktopWidth,
+	desktopMinWidth,
+	desktopMaxWidth,
+	mobileMinWidth,
+	keyboardStep = DEFAULT_KEYBOARD_STEP,
+	desktopViewportGutter = DEFAULT_DESKTOP_VIEWPORT_GUTTER,
+	desktopLeadingOffset = 0,
+}: UseResizableSidePanelOptions) {
+	const [viewportWidth, setViewportWidth] = React.useState(() =>
+		typeof window === "undefined" ? defaultDesktopWidth : window.innerWidth,
+	);
+	const effectiveDesktopLeadingOffset = isMobile ? 0 : desktopLeadingOffset;
+	const bounds = React.useMemo(
+		() =>
+			getPanelWidthBounds(
+				viewportWidth,
+				isMobile,
+				desktopMinWidth,
+				desktopMaxWidth,
+				mobileMinWidth,
+				desktopViewportGutter,
+				effectiveDesktopLeadingOffset,
+			),
+		[
+			desktopMaxWidth,
+			effectiveDesktopLeadingOffset,
+			desktopMinWidth,
+			desktopViewportGutter,
+			isMobile,
+			mobileMinWidth,
+			viewportWidth,
+		],
+	);
+	const [panelWidth, setPanelWidth] = React.useState(() =>
+		clampPanelWidth(
+			isMobile
+				? typeof window === "undefined"
+					? defaultDesktopWidth
+					: window.innerWidth
+				: defaultDesktopWidth,
+			bounds,
+		),
+	);
+	const storageKey = isMobile ? mobileStorageKey : desktopStorageKey;
+	const updateWidthFromClientX = React.useCallback(
+		(clientX: number) => {
+			const nextWidth = clampPanelWidth(
+				getWidthFromClientX(
+					clientX,
+					viewportWidth,
+					side,
+					effectiveDesktopLeadingOffset,
+				),
+				bounds,
+			);
+			setPanelWidth(nextWidth);
+		},
+		[bounds, effectiveDesktopLeadingOffset, side, viewportWidth],
+	);
+
+	React.useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+
+		const handleResize = () => {
+			setViewportWidth(window.innerWidth);
+		};
+
+		window.addEventListener("resize", handleResize);
+		return () => {
+			window.removeEventListener("resize", handleResize);
+		};
+	}, []);
+
+	React.useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+
+		const storedValue = window.localStorage.getItem(storageKey);
+		const parsedWidth = storedValue ? Number.parseFloat(storedValue) : NaN;
+		const nextBounds = getPanelWidthBounds(
+			window.innerWidth,
+			isMobile,
+			desktopMinWidth,
+			desktopMaxWidth,
+			mobileMinWidth,
+			desktopViewportGutter,
+			effectiveDesktopLeadingOffset,
+		);
+		const defaultWidth = isMobile ? window.innerWidth : defaultDesktopWidth;
+		const nextWidth = Number.isFinite(parsedWidth) ? parsedWidth : defaultWidth;
+
+		setPanelWidth(clampPanelWidth(nextWidth, nextBounds));
+	}, [
+		defaultDesktopWidth,
+		desktopMaxWidth,
+		effectiveDesktopLeadingOffset,
+		desktopMinWidth,
+		desktopViewportGutter,
+		isMobile,
+		mobileMinWidth,
+		storageKey,
+	]);
+
+	React.useEffect(() => {
+		setPanelWidth((currentWidth) => clampPanelWidth(currentWidth, bounds));
+	}, [bounds]);
+
+	React.useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+
+		window.localStorage.setItem(storageKey, String(Math.round(panelWidth)));
+	}, [panelWidth, storageKey]);
+
+	const resizeHandleKeyDown = React.useCallback(
+		(event: React.KeyboardEvent<HTMLButtonElement>) => {
+			let nextWidth: number | null = null;
+
+			switch (event.key) {
+				case "ArrowLeft":
+					nextWidth =
+						panelWidth + (side === "right" ? keyboardStep : -keyboardStep);
+					break;
+				case "ArrowRight":
+					nextWidth =
+						panelWidth + (side === "right" ? -keyboardStep : keyboardStep);
+					break;
+				case "Home":
+					nextWidth = bounds.min;
+					break;
+				case "End":
+					nextWidth = bounds.max;
+					break;
+				default:
+					return;
+			}
+
+			event.preventDefault();
+			setPanelWidth(clampPanelWidth(nextWidth, bounds));
+		},
+		[bounds, keyboardStep, panelWidth, side],
+	);
+
+	const { handleResizeKeyDown, handleResizeStart, isResizing } =
+		useResizeHandle({
+			cursor: "col-resize",
+			onResizeStart: (event) => {
+				updateWidthFromClientX(event.clientX);
+			},
+			onResizeMove: (event) => {
+				updateWidthFromClientX(event.clientX);
+			},
+			onKeyDown: resizeHandleKeyDown,
+		});
+
+	return {
+		handleResizeKeyDown,
+		handleResizeStart,
+		isResizing,
+		panelWidth,
+	};
+}
+
+function ResizeHandleButton({
+	label,
+	title,
+	orientation,
+	isResizing,
+	cursorClass,
+	className,
+	onPointerDown,
+	onKeyDown,
+}: {
+	label: string;
+	title: string;
+	orientation: ResizeGripOrientation;
+	isResizing: boolean;
+	cursorClass: string;
+	className?: string;
+	onPointerDown: (event: React.PointerEvent<HTMLElement>) => void;
+	onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
+}) {
+	return (
+		<button
+			type="button"
+			aria-label={label}
+			title={title}
+			data-app-region="no-drag"
+			className={cn(
+				"touch-none outline-none",
+				cursorClass,
+				className,
+				isResizing && orientation === "vertical" && "cursor-col-resize",
+				isResizing && orientation === "horizontal" && "cursor-row-resize",
+			)}
+			onPointerDown={onPointerDown}
+			onKeyDown={onKeyDown}
+		>
+			<ResizeHandleGrip orientation={orientation} active={isResizing} />
+		</button>
+	);
+}
+
+function ResizableSidePanelHandle({
+	side,
+	panelWidth,
+	isResizing,
+	onPointerDown,
+	onKeyDown,
+	label,
+	className,
+}: {
+	side: PanelSide;
+	panelWidth: number;
+	isResizing: boolean;
+	onPointerDown: (event: React.PointerEvent<HTMLElement>) => void;
+	onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
+	label: string;
+	className?: string;
+}) {
+	return (
+		<ResizeHandleButton
+			label={label}
+			title={`${label}: ${Math.round(panelWidth)}px`}
+			orientation="vertical"
+			isResizing={isResizing}
+			cursorClass="cursor-ew-resize"
+			className={cn(
+				"absolute inset-y-0 z-20 flex w-5 items-center justify-center",
+				side === "right" ? "left-0" : "right-0",
+				className,
+				isResizing && "opacity-100",
+			)}
+			onPointerDown={onPointerDown}
+			onKeyDown={onKeyDown}
+		/>
+	);
+}
+
+function ResizableTopPanelHandle({
+	label,
+	title,
+	isResizing,
+	className,
+	onPointerDown,
+	onKeyDown,
+}: {
+	label: string;
+	title: string;
+	isResizing: boolean;
+	className?: string;
+	onPointerDown: (event: React.PointerEvent<HTMLElement>) => void;
+	onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
+}) {
+	return (
+		<div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-5 items-start justify-center">
+			<ResizeHandleButton
+				label={label}
+				title={title}
+				orientation="horizontal"
+				isResizing={isResizing}
+				cursorClass="cursor-row-resize"
+				className={cn(
+					"pointer-events-auto mt-1 flex h-4 w-24 items-center justify-center",
+					className,
+					isResizing && "opacity-100",
+				)}
+				onPointerDown={onPointerDown}
+				onKeyDown={onKeyDown}
+			/>
+		</div>
+	);
+}
+
+function ResizeHandleGrip({
+	orientation,
+	active = false,
+	className,
+}: {
+	orientation: ResizeGripOrientation;
+	active?: boolean;
+	className?: string;
+}) {
+	return (
+		<div
+			className={cn(
+				"rounded-full bg-border/80 transition-colors duration-150",
+				orientation === "vertical" ? "h-16 w-1.5" : "h-1.5 w-16",
+				active && "bg-foreground/40",
+				className,
+			)}
+		/>
+	);
+}
+
+export {
+	ResizableSidePanelHandle,
+	ResizableTopPanelHandle,
+	ResizeHandleButton,
+	ResizeHandleGrip,
+	useResizableSidePanel,
+	useResizeHandle,
+};

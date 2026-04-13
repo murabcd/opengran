@@ -3170,7 +3170,11 @@ function AppShellHeader({
 	onNewChat,
 }: AppShellHeaderProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
-	const { state: sidebarState } = useSidebar();
+	const {
+		leftInsetPanelWidth,
+		leftOverlayPanelWidth,
+		state: sidebarState,
+	} = useSidebar();
 	const breadcrumbRenameInitialTitleRef = React.useRef(currentNoteTitle);
 	const breadcrumbRenameSavedTitleRef = React.useRef(currentNoteTitle);
 	const [titleEditOpen, setTitleEditOpen] = React.useState(false);
@@ -3272,7 +3276,10 @@ function AppShellHeader({
 					data-app-region="drag"
 					className="absolute inset-y-0 right-0"
 					style={{
-						left: inboxOpen ? DESKTOP_INBOX_PANEL_WIDTH : 0,
+						left:
+							!inboxOpen || leftInsetPanelWidth
+								? 0
+								: (leftOverlayPanelWidth ?? DESKTOP_INBOX_PANEL_WIDTH),
 					}}
 				/>
 			) : null}
@@ -3942,31 +3949,31 @@ function HomeView({
 				<section className="mx-auto w-full max-w-xl space-y-6">
 					<h1 className="text-lg md:text-xl">Coming up</h1>
 					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
-					<CardContent className="p-0">
-						<div className="grid min-h-[152px] md:grid-cols-[184px_minmax(0,1fr)]">
-							<div className="flex items-start border-b border-border/60 px-5 py-4 md:border-b-0 md:border-r">
-								<div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1">
-									<div className="row-span-2 text-5xl leading-none tracking-tight tabular-nums">
-										{currentDayOfMonth}
-									</div>
-									<div className="flex min-w-0 items-center gap-2 pt-1 text-base leading-none">
-										<span>{currentMonthLabel}</span>
-										<span
-											role="status"
-											aria-label={`Calendar status: ${upcomingCalendarIndicator.label}`}
-											className="inline-flex"
-										>
+						<CardContent className="p-0">
+							<div className="grid min-h-[152px] md:grid-cols-[184px_minmax(0,1fr)]">
+								<div className="flex items-start border-b border-border/60 px-5 py-4 md:border-b-0 md:border-r">
+									<div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1">
+										<div className="row-span-2 text-5xl leading-none tracking-tight tabular-nums">
+											{currentDayOfMonth}
+										</div>
+										<div className="flex min-w-0 items-center gap-2 pt-1 text-base leading-none">
+											<span>{currentMonthLabel}</span>
 											<span
-												className={cn(
-													"size-2 rounded-full",
-													upcomingCalendarIndicator.dotClassName,
-												)}
-											/>
-										</span>
-									</div>
-									<p className="text-base leading-none text-muted-foreground">
-										{currentWeekdayLabel}
-									</p>
+												role="status"
+												aria-label={`Calendar status: ${upcomingCalendarIndicator.label}`}
+												className="inline-flex"
+											>
+												<span
+													className={cn(
+														"size-2 rounded-full",
+														upcomingCalendarIndicator.dotClassName,
+													)}
+												/>
+											</span>
+										</div>
+										<p className="text-base leading-none text-muted-foreground">
+											{currentWeekdayLabel}
+										</p>
 									</div>
 								</div>
 								<div className="flex min-h-[152px] w-full items-start justify-center p-3">

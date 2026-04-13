@@ -3,8 +3,9 @@ import type {
 	TableOfContentData,
 	TableOfContentDataItem,
 } from "@tiptap/extension-table-of-contents";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { Tiptap, useEditor } from "@tiptap/react";
 import { Textarea } from "@workspace/ui/components/textarea";
+import { useIsMobile } from "@workspace/ui/hooks/use-mobile";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation } from "convex/react";
 import * as React from "react";
@@ -40,6 +41,7 @@ import {
 } from "@/lib/structured-note";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
+import { readDesktopCommentsPanelPinnedState } from "./note-comments-panel-state";
 import {
 	NoteCommentsSheet,
 	type PendingNoteCommentSelection,
@@ -1194,17 +1196,21 @@ function NotePageContent({
 										/>
 									</div>
 
-									<EditorContent
-										editor={controller.editor}
-										className={cn(
-											"min-h-[320px] text-base text-foreground",
-											"[&_.ProseMirror]:min-h-[320px]",
-											shouldHideEmptyBodyPlaceholder &&
-												"note-editor--hide-placeholder",
-											controller.templateApplyState.isRunning && "hidden",
-										)}
-									/>
+									{controller.editor ? (
+										<Tiptap editor={controller.editor}>
+											<Tiptap.Content
+												className={cn(
+													"min-h-[320px] text-base text-foreground",
+													"[&_.ProseMirror]:min-h-[320px]",
+													shouldHideEmptyBodyPlaceholder &&
+														"note-editor--hide-placeholder",
+													controller.templateApplyState.isRunning && "hidden",
+												)}
+											/>
 
+											<NoteSelectionMenu onComment={onOpenCommentComposer} />
+										</Tiptap>
+									) : null}
 									{controller.templateApplyState.isRunning ? (
 										controller.templateApplyState.streamedMarkdown.trim()
 											.length > 0 ? (
@@ -1222,11 +1228,6 @@ function NotePageContent({
 											</div>
 										)
 									) : null}
-
-									<NoteSelectionMenu
-										editor={controller.editor}
-										onComment={onOpenCommentComposer}
-									/>
 								</div>
 							</div>
 
@@ -1235,6 +1236,7 @@ function NotePageContent({
 									<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
 										<NoteComposer
 											autoStartTranscription={autoStartTranscription}
+											desktopSafeTop={isDesktopMac}
 											getNoteContext={controller.getNoteContext}
 											noteContext={composerNoteContext}
 											onAutoStartTranscriptionHandled={
@@ -1320,6 +1322,7 @@ export function NotePage({
 	scrollParentRef?: React.RefObject<HTMLDivElement | null>;
 	stopTranscriptionWhenMeetingEnds?: boolean;
 }) {
+	const isMobile = useIsMobile();
 	const [commentPanelState, setCommentPanelState] = React.useState<{
 		commentsOpen: boolean;
 		activeCommentThreadId: Id<"noteCommentThreads"> | null;
@@ -1332,11 +1335,29 @@ export function NotePage({
 	const { commentsOpen, activeCommentThreadId, pendingCommentSelection } =
 		commentPanelState;
 	const handleOpenComments = React.useCallback(() => {
-		setCommentPanelState((current) => ({
-			...current,
-			commentsOpen: true,
-		}));
-	}, []);
+		setCommentPanelState((current) => {
+			const shouldTogglePinnedDesktopComments =
+				!isMobile && readDesktopCommentsPanelPinnedState();
+
+			if (shouldTogglePinnedDesktopComments) {
+				return current.commentsOpen
+					? {
+							commentsOpen: false,
+							activeCommentThreadId: null,
+							pendingCommentSelection: null,
+						}
+					: {
+							...current,
+							commentsOpen: true,
+						};
+			}
+
+			return {
+				...current,
+				commentsOpen: true,
+			};
+		});
+	}, [isMobile]);
 	const handleCommentsOpenChange = React.useCallback((nextOpen: boolean) => {
 		setCommentPanelState((current) =>
 			nextOpen

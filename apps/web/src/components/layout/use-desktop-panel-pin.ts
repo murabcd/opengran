@@ -1,0 +1,50 @@
+"use client";
+
+import * as React from "react";
+
+const readStoredPinState = (storageKey: string, fallback: boolean) => {
+	if (typeof window === "undefined") {
+		return fallback;
+	}
+
+	try {
+		const value = window.localStorage.getItem(storageKey);
+		return value === null ? fallback : value === "true";
+	} catch {
+		return fallback;
+	}
+};
+
+export function useDesktopPanelPin({
+	storageKey,
+	defaultPinned = false,
+}: {
+	storageKey: string;
+	defaultPinned?: boolean;
+}) {
+	const [isPinned, setIsPinned] = React.useState(() =>
+		readStoredPinState(storageKey, defaultPinned),
+	);
+
+	React.useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+
+		try {
+			window.localStorage.setItem(storageKey, String(isPinned));
+		} catch {
+			// Ignore storage failures and keep the in-memory state.
+		}
+	}, [isPinned, storageKey]);
+
+	const togglePinned = React.useCallback(() => {
+		setIsPinned((currentValue) => !currentValue);
+	}, []);
+
+	return {
+		isPinned,
+		setIsPinned,
+		togglePinned,
+	};
+}

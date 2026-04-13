@@ -35,6 +35,7 @@ import {
 import {
 	SIDEBAR_WIDTH,
 	SIDEBAR_WIDTH_ICON,
+	useSidebar,
 } from "@workspace/ui/components/sidebar";
 import {
 	Tooltip,
@@ -55,14 +56,34 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import {
+	DESKTOP_DOCKED_PANEL_DEFAULT_WIDTH,
+	DESKTOP_DOCKED_PANEL_MAX_WIDTH,
+	DESKTOP_DOCKED_PANEL_MIN_WIDTH,
+	MOBILE_DOCKED_PANEL_MIN_WIDTH,
+} from "@/components/layout/docked-panel-dimensions";
+import {
+	DesktopDockedSidePanel,
+	DockedPanelPinButton,
+	useDockedPanelInset,
+	useDockedPanelOverlayWidth,
+} from "@/components/layout/docked-side-panel";
+import {
+	ResizableSidePanelHandle,
+	useResizableSidePanel,
+} from "@/components/layout/resizable-side-panel";
+import { useDesktopPanelPin } from "@/components/layout/use-desktop-panel-pin";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { getAvatarSrc } from "@/lib/avatar";
-import {
-	DESKTOP_INBOX_PANEL_WIDTH,
-	DESKTOP_MAIN_HEADER_CONTENT_CLASS,
-} from "@/lib/desktop-chrome";
+import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+
+const INBOX_PANEL_STORAGE_KEY_DESKTOP = "opengran.inbox-panel-width.desktop";
+const INBOX_PANEL_STORAGE_KEY_MOBILE = "opengran.inbox-panel-width.mobile";
+const INBOX_PANEL_PINNED_STORAGE_KEY = "opengran.inbox-panel-pinned.desktop";
+const DESKTOP_APP_SIDEBAR_EXPANDED_WIDTH = 256;
+const DESKTOP_APP_SIDEBAR_COLLAPSED_WIDTH = 48;
 
 type InboxView = "all" | "unread" | "archived";
 
@@ -106,76 +127,94 @@ export function InboxSheet({
 }) {
 	const sidebarOffset =
 		sidebarState === "collapsed" ? SIDEBAR_WIDTH_ICON : SIDEBAR_WIDTH;
-	const panelWidth = DESKTOP_INBOX_PANEL_WIDTH;
+	const sidebarOffsetPx =
+		sidebarState === "collapsed"
+			? DESKTOP_APP_SIDEBAR_COLLAPSED_WIDTH
+			: DESKTOP_APP_SIDEBAR_EXPANDED_WIDTH;
+	const { setLeftInsetPanelWidth, setLeftOverlayPanelWidth } = useSidebar();
+	const { handleResizeKeyDown, handleResizeStart, isResizing, panelWidth } =
+		useResizableSidePanel({
+			isMobile,
+			side: "left",
+			desktopStorageKey: INBOX_PANEL_STORAGE_KEY_DESKTOP,
+			mobileStorageKey: INBOX_PANEL_STORAGE_KEY_MOBILE,
+			defaultDesktopWidth: DESKTOP_DOCKED_PANEL_DEFAULT_WIDTH,
+			desktopMinWidth: DESKTOP_DOCKED_PANEL_MIN_WIDTH,
+			desktopMaxWidth: DESKTOP_DOCKED_PANEL_MAX_WIDTH,
+			mobileMinWidth: MOBILE_DOCKED_PANEL_MIN_WIDTH,
+			desktopLeadingOffset: sidebarOffsetPx,
+		});
+	const { isPinned, togglePinned } = useDesktopPanelPin({
+		storageKey: INBOX_PANEL_PINNED_STORAGE_KEY,
+	});
 	const [view, setView] = React.useState<InboxView>("all");
 	const [markAllReadRequestId, setMarkAllReadRequestId] = React.useState(0);
 	const [archiveReadRequestId, setArchiveReadRequestId] = React.useState(0);
 	const [clearArchivedRequestId, setClearArchivedRequestId] = React.useState(0);
 
+	useDockedPanelInset({
+		isMobile,
+		isPinned,
+		open,
+		panelWidth,
+		setInsetPanelWidth: setLeftInsetPanelWidth,
+	});
+	useDockedPanelOverlayWidth({
+		isMobile,
+		isPinned,
+		open,
+		panelWidth,
+		setOverlayPanelWidth: setLeftOverlayPanelWidth,
+	});
+
 	if (!isMobile) {
 		return (
-			<>
-				{open ? (
-					<button
-						type="button"
-						aria-label="Close inbox"
-						className="fixed inset-y-0 right-0 z-20 hidden bg-transparent md:block"
-						style={{
-							left: `calc(${sidebarOffset} + ${panelWidth})`,
+			<DesktopDockedSidePanel
+				side="left"
+				open={open}
+				isPinned={isPinned}
+				panelWidth={panelWidth}
+				panelOffset={sidebarOffset}
+				desktopSafeTop={desktopSafeTop}
+				onOpenChange={onOpenChange}
+				panelName="inbox"
+				resizeLabel="Resize inbox panel"
+				isResizing={isResizing}
+				onResizeStart={handleResizeStart}
+				onResizeKeyDown={handleResizeKeyDown}
+			>
+				<div className="px-2">
+					<InboxPaneHeader
+						isMobile={false}
+						open={open}
+						desktopSafeTop={desktopSafeTop}
+						view={view}
+						onViewChange={setView}
+						onMarkAllRead={() => {
+							setMarkAllReadRequestId((current) => current + 1);
+							onMarkAllRead?.();
 						}}
-						onClick={() => onOpenChange(false)}
+						onArchiveRead={() => {
+							setArchiveReadRequestId((current) => current + 1);
+						}}
+						onClearArchived={() => {
+							setClearArchivedRequestId((current) => current + 1);
+						}}
+						isPinned={isPinned}
+						onTogglePinned={togglePinned}
 					/>
-				) : null}
-				<div
-					aria-hidden={!open}
-					data-app-region={desktopSafeTop && open ? "no-drag" : undefined}
-					className="pointer-events-none fixed inset-y-0 z-30 hidden overflow-hidden md:block"
-					style={{
-						left: sidebarOffset,
-						width: panelWidth,
-					}}
-				>
-					<div
-						data-app-region={desktopSafeTop && open ? "no-drag" : undefined}
-						className={cn(
-							"flex h-svh w-[16rem] flex-col border-r bg-background text-foreground transition-transform duration-200 ease-linear",
-							open
-								? "pointer-events-auto translate-x-0"
-								: "pointer-events-none -translate-x-full",
-						)}
-					>
-						<div className="px-2">
-							<InboxPaneHeader
-								isMobile={false}
-								open={open}
-								desktopSafeTop={desktopSafeTop}
-								view={view}
-								onViewChange={setView}
-								onMarkAllRead={() => {
-									setMarkAllReadRequestId((current) => current + 1);
-									onMarkAllRead?.();
-								}}
-								onArchiveRead={() => {
-									setArchiveReadRequestId((current) => current + 1);
-								}}
-								onClearArchived={() => {
-									setClearArchivedRequestId((current) => current + 1);
-								}}
-							/>
-						</div>
-						<div className="min-h-0 flex-1">
-							<InboxPanel
-								view={view}
-								currentUser={currentUser}
-								markAllReadRequestId={markAllReadRequestId}
-								archiveReadRequestId={archiveReadRequestId}
-								clearArchivedRequestId={clearArchivedRequestId}
-								onMarkItemsRead={onMarkItemsRead}
-							/>
-						</div>
-					</div>
 				</div>
-			</>
+				<div className="min-h-0 flex-1">
+					<InboxPanel
+						view={view}
+						currentUser={currentUser}
+						markAllReadRequestId={markAllReadRequestId}
+						archiveReadRequestId={archiveReadRequestId}
+						clearArchivedRequestId={clearArchivedRequestId}
+						onMarkItemsRead={onMarkItemsRead}
+					/>
+				</div>
+			</DesktopDockedSidePanel>
 		);
 	}
 
@@ -185,10 +224,23 @@ export function InboxSheet({
 				side="left"
 				showCloseButton={false}
 				className={cn(
-					"gap-0 border-r bg-background p-0 shadow-none",
-					"data-[side=left]:left-0 data-[side=left]:w-full data-[side=left]:sm:max-w-none",
+					"group/docked-sheet gap-0 border-r bg-background p-0 shadow-none",
+					"data-[side=left]:left-0 data-[side=left]:sm:max-w-none",
 				)}
+				style={{
+					width: panelWidth,
+					maxWidth: "100vw",
+				}}
 			>
+				<ResizableSidePanelHandle
+					side="left"
+					label="Resize inbox panel"
+					panelWidth={panelWidth}
+					isResizing={isResizing}
+					className="opacity-0 transition-opacity duration-150 group-hover/docked-sheet:opacity-100 group-focus-within/docked-sheet:opacity-100"
+					onPointerDown={handleResizeStart}
+					onKeyDown={handleResizeKeyDown}
+				/>
 				<InboxPaneHeader
 					isMobile
 					open={open}
@@ -204,6 +256,8 @@ export function InboxSheet({
 					onClearArchived={() => {
 						setClearArchivedRequestId((current) => current + 1);
 					}}
+					isPinned={false}
+					onTogglePinned={() => {}}
 				/>
 				<InboxPanel
 					view={view}
@@ -268,6 +322,8 @@ function InboxPaneHeader({
 	onMarkAllRead,
 	onArchiveRead,
 	onClearArchived,
+	isPinned,
+	onTogglePinned,
 }: {
 	isMobile?: boolean;
 	open?: boolean;
@@ -277,6 +333,8 @@ function InboxPaneHeader({
 	onMarkAllRead: () => void;
 	onArchiveRead: () => void;
 	onClearArchived: () => void;
+	isPinned: boolean;
+	onTogglePinned: () => void;
 }) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const markAllRead = useMutation(api.inboxItems.markAllRead);
@@ -418,6 +476,13 @@ function InboxPaneHeader({
 						</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenu>
+				{!isMobile ? (
+					<DockedPanelPinButton
+						isPinned={isPinned}
+						label="inbox"
+						onTogglePinned={onTogglePinned}
+					/>
+				) : null}
 				<DropdownMenu
 					open={filtersOpen}
 					onOpenChange={(open) => {

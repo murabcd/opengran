@@ -173,6 +173,7 @@ describe("NoteComposer", () => {
 
 		useSidebarMock.mockReturnValue({
 			isMobile: false,
+			rightInsetPanelWidth: null,
 			rightMode: "sidebar",
 			rightOpen: false,
 			rightOpenMobile: false,
@@ -180,6 +181,8 @@ describe("NoteComposer", () => {
 			setRightMode: vi.fn(),
 			setRightOpen: vi.fn(),
 			setRightOpenMobile: vi.fn(),
+			setRightSidebarWidthMobileOverride: vi.fn(),
+			setRightSidebarWidthOverride: vi.fn(),
 		});
 
 		useQueryMock.mockReturnValue(undefined);
@@ -515,6 +518,36 @@ describe("NoteComposer", () => {
 		});
 
 		expect(selector.getAttribute("title")).toBe(fullTitle);
+	});
+
+	it("keeps rendering the desktop sidebar chat header", async () => {
+		const { NoteChatHeader } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteChatHeader
+				chatTitle="New chat"
+				currentChatId="chat-1"
+				groupedNoteChats={{ previous: [], today: [] }}
+				noteChats={[]}
+				onHideChat={vi.fn()}
+				onNewChat={vi.fn()}
+				onSelectChat={vi.fn()}
+				onSelectInlinePresentation={vi.fn()}
+				onSelectRightPresentation={vi.fn()}
+				presentationMode="sidebar"
+				isMobile={false}
+				desktopSafeTop
+				sidebarCompact
+			/>,
+		);
+
+		expect(
+			screen.getByRole("button", { name: "Switch chat mode" }),
+		).toBeDefined();
+		expect(screen.getByRole("button", { name: "Hide chat" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "New chat" })).toBeDefined();
 	});
 
 	it("closes the inline transcript panel on outside press without changing listening state", async () => {

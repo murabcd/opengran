@@ -97,6 +97,103 @@ function sidebarUiReducer(
 	}
 }
 
+function useMobileSidebarNavigation({
+	dispatchUi,
+	isMobile,
+	onChatSelect,
+	onCreateNote,
+	onInboxOpenChange,
+	onNoteSelect,
+	onViewChange,
+	onWorkspaceSelect,
+	setOpenMobile,
+}: {
+	dispatchUi: React.ActionDispatch<[action: SidebarUiAction]>;
+	isMobile: boolean;
+	onChatSelect: (chatId: string) => void;
+	onCreateNote: () => void;
+	onInboxOpenChange: (open: boolean) => void;
+	onNoteSelect: (noteId: Id<"notes">) => void;
+	onViewChange: (view: "home" | "chat" | "inbox" | "shared" | "note") => void;
+	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
+	setOpenMobile: (open: boolean) => void;
+}) {
+	const closeMobileSidebar = React.useCallback(() => {
+		if (!isMobile) {
+			return;
+		}
+
+		setOpenMobile(false);
+	}, [isMobile, setOpenMobile]);
+
+	const handleSearchOpen = React.useCallback(() => {
+		closeMobileSidebar();
+		dispatchUi({
+			type: "setOpen",
+			key: "searchOpen",
+			value: true,
+		});
+	}, [closeMobileSidebar, dispatchUi]);
+
+	const handleInboxOpenChange = React.useCallback(
+		(open: boolean) => {
+			if (open) {
+				closeMobileSidebar();
+			}
+
+			onInboxOpenChange(open);
+		},
+		[closeMobileSidebar, onInboxOpenChange],
+	);
+
+	const handleViewChange = React.useCallback(
+		(view: "home" | "chat" | "inbox" | "shared" | "note") => {
+			closeMobileSidebar();
+			onViewChange(view);
+		},
+		[closeMobileSidebar, onViewChange],
+	);
+
+	const handleWorkspaceSelect = React.useCallback(
+		(workspaceId: Id<"workspaces">) => {
+			closeMobileSidebar();
+			onWorkspaceSelect(workspaceId);
+		},
+		[closeMobileSidebar, onWorkspaceSelect],
+	);
+
+	const handleChatSelect = React.useCallback(
+		(chatId: string) => {
+			closeMobileSidebar();
+			onChatSelect(chatId);
+		},
+		[closeMobileSidebar, onChatSelect],
+	);
+
+	const handleNoteSelect = React.useCallback(
+		(noteId: Id<"notes">) => {
+			closeMobileSidebar();
+			onNoteSelect(noteId);
+		},
+		[closeMobileSidebar, onNoteSelect],
+	);
+
+	const handleCreateNote = React.useCallback(() => {
+		closeMobileSidebar();
+		onCreateNote();
+	}, [closeMobileSidebar, onCreateNote]);
+
+	return {
+		handleChatSelect,
+		handleCreateNote,
+		handleInboxOpenChange,
+		handleNoteSelect,
+		handleSearchOpen,
+		handleViewChange,
+		handleWorkspaceSelect,
+	};
+}
+
 export function AppSidebar({
 	workspaces,
 	activeWorkspaceId,
@@ -155,12 +252,31 @@ export function AppSidebar({
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
 	onCreateNote: () => void;
 }) {
-	const { isMobile, state } = useSidebar();
+	const { isMobile, setOpenMobile, state } = useSidebar();
 	const [uiState, dispatchUi] = React.useReducer(
 		sidebarUiReducer,
 		undefined,
 		createInitialSidebarUiState,
 	);
+	const {
+		handleChatSelect,
+		handleCreateNote,
+		handleInboxOpenChange,
+		handleNoteSelect,
+		handleSearchOpen,
+		handleViewChange,
+		handleWorkspaceSelect,
+	} = useMobileSidebarNavigation({
+		dispatchUi,
+		isMobile,
+		onChatSelect,
+		onCreateNote,
+		onInboxOpenChange,
+		onNoteSelect,
+		onViewChange,
+		onWorkspaceSelect,
+		setOpenMobile,
+	});
 	const transcriptionSession = useTranscriptionSession();
 	const inboxItems = useQuery(
 		api.inboxItems.list,
@@ -261,17 +377,11 @@ export function AppSidebar({
 					desktopSafeTop={desktopSafeTop}
 					inboxOpen={inboxOpen}
 					navItems={navItems}
-					onInboxOpenChange={onInboxOpenChange}
-					onSearchOpen={() =>
-						dispatchUi({
-							type: "setOpen",
-							key: "searchOpen",
-							value: true,
-						})
-					}
-					onViewChange={onViewChange}
+					onInboxOpenChange={handleInboxOpenChange}
+					onSearchOpen={handleSearchOpen}
+					onViewChange={handleViewChange}
 					onWorkspaceCreate={onWorkspaceCreate}
-					onWorkspaceSelect={onWorkspaceSelect}
+					onWorkspaceSelect={handleWorkspaceSelect}
 					workspaces={workspaces}
 				/>
 				<AppSidebarContentSection
@@ -280,8 +390,8 @@ export function AppSidebar({
 					currentNoteTitle={currentNoteTitle}
 					currentView={currentView}
 					notes={notes}
-					onCreateNote={onCreateNote}
-					onNoteSelect={onNoteSelect}
+					onCreateNote={handleCreateNote}
+					onNoteSelect={handleNoteSelect}
 					onNoteTitleChange={onNoteTitleChange}
 					onNoteTrashed={onNoteTrashed}
 					projects={projects}
@@ -327,9 +437,9 @@ export function AppSidebar({
 				inboxItems={inboxItems}
 				inboxOpen={inboxOpen}
 				isMobile={isMobile}
-				onChatSelect={onChatSelect}
-				onInboxOpenChange={onInboxOpenChange}
-				onNoteSelect={onNoteSelect}
+				onChatSelect={handleChatSelect}
+				onInboxOpenChange={handleInboxOpenChange}
+				onNoteSelect={handleNoteSelect}
 				onOpenChange={(key, value) =>
 					dispatchUi({
 						type: "setOpen",

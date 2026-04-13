@@ -1,4 +1,4 @@
-import { EditorContent, useEditor } from "@tiptap/react";
+import { Tiptap, useEditor } from "@tiptap/react";
 import {
 	Empty,
 	EmptyDescription,
@@ -101,13 +101,16 @@ export function SharedNotePage({
 								className="note-title h-auto border-0 !bg-transparent px-0 py-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
 							/>
 
-							<EditorContent
-								editor={editor}
-								className={cn(
-									"min-h-[320px] text-base text-foreground",
-									"[&_.ProseMirror]:min-h-[320px]",
-								)}
-							/>
+							{editor ? (
+								<Tiptap editor={editor}>
+									<Tiptap.Content
+										className={cn(
+											"min-h-[320px] text-base text-foreground",
+											"[&_.ProseMirror]:min-h-[320px]",
+										)}
+									/>
+								</Tiptap>
+							) : null}
 						</div>
 					</div>
 				</div>

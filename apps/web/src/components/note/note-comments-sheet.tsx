@@ -40,6 +40,7 @@ import {
 	SheetDescription,
 	SheetTitle,
 } from "@workspace/ui/components/sheet";
+import { useSidebar } from "@workspace/ui/components/sidebar";
 import {
 	Tooltip,
 	TooltipContent,
@@ -66,18 +67,35 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import {
+	DESKTOP_DOCKED_PANEL_DEFAULT_WIDTH,
+	DESKTOP_DOCKED_PANEL_MAX_WIDTH,
+	DESKTOP_DOCKED_PANEL_MIN_WIDTH,
+	MOBILE_DOCKED_PANEL_MIN_WIDTH,
+} from "@/components/layout/docked-panel-dimensions";
+import {
+	DesktopDockedSidePanel,
+	DockedPanelPinButton,
+	useDockedPanelInset,
+} from "@/components/layout/docked-side-panel";
+import {
+	ResizableSidePanelHandle,
+	useResizableSidePanel,
+} from "@/components/layout/resizable-side-panel";
+import { useDesktopPanelPin } from "@/components/layout/use-desktop-panel-pin";
+import { COMMENTS_PANEL_PINNED_STORAGE_KEY } from "@/components/note/note-comments-panel-state";
 import { writeTextToClipboard } from "@/components/note/share-note";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { getAvatarSrc } from "@/lib/avatar";
-import {
-	DESKTOP_INBOX_PANEL_WIDTH,
-	DESKTOP_MAIN_HEADER_CONTENT_CLASS,
-} from "@/lib/desktop-chrome";
+import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
-const DESKTOP_COMMENTS_PANEL_WIDTH = DESKTOP_INBOX_PANEL_WIDTH;
 const MAX_VISIBLE_THREAD_DEPTH = 3;
+const COMMENTS_PANEL_STORAGE_KEY_DESKTOP =
+	"opengran.note-comments-panel-width.desktop";
+const COMMENTS_PANEL_STORAGE_KEY_MOBILE =
+	"opengran.note-comments-panel-width.mobile";
 
 type ThreadView = "all" | "open" | "resolved";
 
@@ -968,10 +986,12 @@ function CommentsSheetPanel({
 	isMobile,
 	open,
 	desktopSafeTop,
+	isPinned,
 	filtersOpen,
 	setFiltersOpen,
 	view,
 	setView,
+	onTogglePinned,
 	onOpenChange,
 	pendingSelection,
 	draftBody,
@@ -1015,10 +1035,12 @@ function CommentsSheetPanel({
 	isMobile: boolean;
 	open: boolean;
 	desktopSafeTop: boolean;
+	isPinned: boolean;
 	filtersOpen: boolean;
 	setFiltersOpen: (open: boolean) => void;
 	view: ThreadView;
 	setView: (view: ThreadView) => void;
+	onTogglePinned: () => void;
 	onOpenChange: (open: boolean) => void;
 	pendingSelection: PendingNoteCommentSelection | null;
 	draftBody: string;
@@ -1129,6 +1151,13 @@ function CommentsSheetPanel({
 							))}
 						</DropdownMenuContent>
 					</DropdownMenu>
+					{!isMobile ? (
+						<DockedPanelPinButton
+							isPinned={isPinned}
+							label="comments"
+							onTogglePinned={onTogglePinned}
+						/>
+					) : null}
 					<Button
 						type="button"
 						variant="ghost"
@@ -1235,19 +1264,37 @@ type NoteCommentsSheetProps = {
 	) => void;
 };
 
+type NoteCommentsSheetControllerProps = NoteCommentsSheetProps & {
+	isPinned: boolean;
+	onTogglePinned: () => void;
+};
+
 function useNoteCommentsSheetController({
 	noteId,
 	editor,
 	currentUser,
 	open,
 	desktopSafeTop = false,
+	isPinned,
+	onTogglePinned,
 	onOpenChange,
 	activeThreadId,
 	onActiveThreadIdChange,
 	pendingSelection,
 	onPendingSelectionChange,
-}: NoteCommentsSheetProps) {
+}: NoteCommentsSheetControllerProps) {
 	const isMobile = useIsMobile();
+	const { handleResizeKeyDown, handleResizeStart, isResizing, panelWidth } =
+		useResizableSidePanel({
+			isMobile,
+			side: "right",
+			desktopStorageKey: COMMENTS_PANEL_STORAGE_KEY_DESKTOP,
+			mobileStorageKey: COMMENTS_PANEL_STORAGE_KEY_MOBILE,
+			defaultDesktopWidth: DESKTOP_DOCKED_PANEL_DEFAULT_WIDTH,
+			desktopMinWidth: DESKTOP_DOCKED_PANEL_MIN_WIDTH,
+			desktopMaxWidth: DESKTOP_DOCKED_PANEL_MAX_WIDTH,
+			mobileMinWidth: MOBILE_DOCKED_PANEL_MIN_WIDTH,
+		});
 	const workspaceId = useActiveWorkspaceId();
 	const [uiState, setUiState] = React.useReducer(
 		commentsUiReducer,
@@ -1970,10 +2017,12 @@ function useNoteCommentsSheetController({
 			isMobile={isMobile}
 			open={open}
 			desktopSafeTop={desktopSafeTop}
+			isPinned={isPinned}
 			filtersOpen={filtersOpen}
 			setFiltersOpen={(nextOpen) => setUiState({ filtersOpen: nextOpen })}
 			view={view}
 			setView={(nextView) => setUiState({ view: nextView })}
+			onTogglePinned={onTogglePinned}
 			onOpenChange={onOpenChange}
 			pendingSelection={pendingSelection}
 			draftBody={draftBody}
@@ -2020,12 +2069,42 @@ function useNoteCommentsSheetController({
 		/>
 	);
 
-	return { isMobile, panel };
+	return {
+		handleResizeKeyDown,
+		handleResizeStart,
+		isMobile,
+		isResizing,
+		panel,
+		panelWidth,
+	};
 }
 
 export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
 	const { open, onOpenChange } = props;
-	const { isMobile, panel } = useNoteCommentsSheetController(props);
+	const { setRightInsetPanelWidth } = useSidebar();
+	const { isPinned, togglePinned } = useDesktopPanelPin({
+		storageKey: COMMENTS_PANEL_PINNED_STORAGE_KEY,
+	});
+	const {
+		handleResizeKeyDown,
+		handleResizeStart,
+		isMobile,
+		isResizing,
+		panel,
+		panelWidth,
+	} = useNoteCommentsSheetController({
+		...props,
+		isPinned,
+		onTogglePinned: togglePinned,
+	});
+
+	useDockedPanelInset({
+		isMobile,
+		isPinned,
+		open,
+		panelWidth,
+		setInsetPanelWidth: setRightInsetPanelWidth,
+	});
 
 	if (isMobile) {
 		return (
@@ -2033,12 +2112,25 @@ export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
 				<SheetContent
 					side="right"
 					showCloseButton={false}
-					className="gap-0 border-l bg-background p-0 shadow-none data-[side=right]:w-full data-[side=right]:sm:max-w-none"
+					className="group/docked-sheet gap-0 border-l bg-background p-0 shadow-none data-[side=right]:sm:max-w-none"
+					style={{
+						width: panelWidth,
+						maxWidth: "100vw",
+					}}
 				>
 					<SheetTitle className="sr-only">Comments</SheetTitle>
 					<SheetDescription className="sr-only">
 						Review and reply to note comment threads.
 					</SheetDescription>
+					<ResizableSidePanelHandle
+						side="right"
+						label="Resize comments panel"
+						panelWidth={panelWidth}
+						isResizing={isResizing}
+						className="opacity-0 transition-opacity duration-150 group-hover/docked-sheet:opacity-100 group-focus-within/docked-sheet:opacity-100"
+						onPointerDown={handleResizeStart}
+						onKeyDown={handleResizeKeyDown}
+					/>
 					{panel}
 				</SheetContent>
 			</Sheet>
@@ -2046,39 +2138,20 @@ export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
 	}
 
 	return (
-		<>
-			{open ? (
-				<button
-					type="button"
-					aria-label="Close comments"
-					className="fixed inset-y-0 left-0 z-20 hidden bg-transparent md:block"
-					style={{
-						right: DESKTOP_COMMENTS_PANEL_WIDTH,
-					}}
-					onClick={() => onOpenChange(false)}
-				/>
-			) : null}
-			<div
-				aria-hidden={!open}
-				className="pointer-events-none fixed inset-y-0 right-0 z-30 hidden overflow-hidden md:block"
-				style={{
-					width: DESKTOP_COMMENTS_PANEL_WIDTH,
-				}}
-			>
-				<div
-					className={cn(
-						"flex h-svh flex-col border-l bg-background text-foreground transition-transform duration-200 ease-linear",
-						open
-							? "pointer-events-auto translate-x-0"
-							: "pointer-events-none translate-x-full",
-					)}
-					style={{
-						width: DESKTOP_COMMENTS_PANEL_WIDTH,
-					}}
-				>
-					{panel}
-				</div>
-			</div>
-		</>
+		<DesktopDockedSidePanel
+			side="right"
+			open={open}
+			isPinned={isPinned}
+			panelWidth={panelWidth}
+			desktopSafeTop={props.desktopSafeTop}
+			onOpenChange={onOpenChange}
+			panelName="comments"
+			resizeLabel="Resize comments panel"
+			isResizing={isResizing}
+			onResizeStart={handleResizeStart}
+			onResizeKeyDown={handleResizeKeyDown}
+		>
+			{panel}
+		</DesktopDockedSidePanel>
 	);
 }

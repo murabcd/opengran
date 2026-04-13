@@ -71,6 +71,12 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
+import {
+	ResizableSidePanelHandle,
+	ResizableTopPanelHandle,
+	useResizableSidePanel,
+	useResizeHandle,
+} from "@/components/layout/resizable-side-panel";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
@@ -78,6 +84,7 @@ import { getChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import { getChatText } from "@/lib/chat-message";
 import { getMessagesBefore } from "@/lib/chat-thread";
+import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import { ENHANCED_NOTE_TEMPLATE_SLUG } from "@/lib/note-templates";
 import {
 	RECIPE_ICONS,
@@ -94,53 +101,92 @@ import {
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { SpeechInput } from "../ai-elements/speech-input";
+import {
+	DESKTOP_DOCKED_PANEL_DEFAULT_WIDTH,
+	DESKTOP_DOCKED_PANEL_MAX_WIDTH,
+	DESKTOP_DOCKED_PANEL_MIN_WIDTH,
+	MOBILE_DOCKED_PANEL_MIN_WIDTH,
+} from "../layout/docked-panel-dimensions";
 
 type NoteChatPresentation = "inline" | "floating" | "sidebar";
 const NOTE_CHAT_MODEL = getChatModel("gpt-5.4-mini");
 const NOTE_CHAT_FLOATING_WIDTH = "min(28rem, calc(100vw - 2rem))";
+const NOTE_CHAT_FLOATING_HEIGHT_STORAGE_KEY_PREFIX =
+	"opengran.noteComposer.floatingHeight";
+const NOTE_CHAT_FLOATING_DEFAULT_HEIGHT = 512;
+const NOTE_CHAT_PANEL_MIN_HEIGHT = 320;
+const NOTE_CHAT_PANEL_MAX_HEIGHT = 680;
 const INLINE_POPOVER_FOOTER_CONTAINER_CLASS = "px-6 pt-2 pb-4";
 const INLINE_POPOVER_FOOTER_DEFAULT_HEIGHT = 120;
 const INLINE_POPOVER_DEFAULT_HEIGHT = 384;
-const INLINE_POPOVER_MIN_HEIGHT = INLINE_POPOVER_DEFAULT_HEIGHT;
-const INLINE_POPOVER_MAX_HEIGHT = 680;
-const INLINE_POPOVER_HEIGHT_STORAGE_KEY =
+const INLINE_POPOVER_HEIGHT_STORAGE_KEY_PREFIX =
 	"opengran.noteComposer.inlinePopoverHeight";
+const INLINE_POPOVER_HEIGHT_LEGACY_STORAGE_KEY =
+	"opengran.noteComposer.inlinePopoverHeight";
+const NOTE_CHAT_SIDEBAR_WIDTH_STORAGE_KEY_PREFIX =
+	"opengran.noteComposer.sidebarWidth";
 const LONG_TRANSCRIPT_RENDER_THRESHOLD = 96;
 const LONG_TRANSCRIPT_INITIAL_WINDOW_SIZE = 48;
 
-const readStoredInlinePopoverHeight = () => {
+const getNoteStorageScopeKey = (noteId: Id<"notes"> | null) =>
+	noteId ? `note:${noteId}` : "note:draft";
+
+const getNoteScopedStorageKey = ({
+	prefix,
+	noteScopeKey,
+	platform,
+}: {
+	prefix: string;
+	noteScopeKey: string;
+	platform: "desktop" | "mobile";
+}) => `${prefix}.${noteScopeKey}.${platform}`;
+
+const readStoredPanelHeight = (
+	storageKeys: string | string[],
+	fallback: number,
+) => {
 	if (typeof window === "undefined") {
-		return INLINE_POPOVER_DEFAULT_HEIGHT;
+		return fallback;
 	}
 
 	try {
-		const storedValue = window.localStorage.getItem(
-			INLINE_POPOVER_HEIGHT_STORAGE_KEY,
-		);
+		const candidateKeys = Array.isArray(storageKeys)
+			? storageKeys
+			: [storageKeys];
 
-		if (!storedValue) {
-			return INLINE_POPOVER_DEFAULT_HEIGHT;
+		for (const storageKey of candidateKeys) {
+			const storedValue = window.localStorage.getItem(storageKey);
+
+			if (!storedValue) {
+				continue;
+			}
+
+			const parsedValue = Number(storedValue);
+
+			if (Number.isFinite(parsedValue)) {
+				return parsedValue;
+			}
 		}
 
-		const parsedValue = Number(storedValue);
-		return Number.isFinite(parsedValue)
-			? parsedValue
-			: INLINE_POPOVER_DEFAULT_HEIGHT;
+		return fallback;
 	} catch {
-		return INLINE_POPOVER_DEFAULT_HEIGHT;
+		return fallback;
 	}
 };
 
-const storeInlinePopoverHeight = (height: number) => {
+const storePanelHeight = (storageKeys: string | string[], height: number) => {
 	if (typeof window === "undefined") {
 		return;
 	}
 
 	try {
-		window.localStorage.setItem(
-			INLINE_POPOVER_HEIGHT_STORAGE_KEY,
-			String(height),
-		);
+		const candidateKeys = Array.isArray(storageKeys)
+			? storageKeys
+			: [storageKeys];
+
+		for (const storageKey of candidateKeys) {
+			window.localStorage.setItem(storageKey, String(height));
+		}
 	} catch {
 		// Ignore storage failures and keep the in-memory size.
 	}
@@ -158,6 +204,7 @@ type NoteComposerProps = {
 		title?: string;
 		text?: string;
 	};
+	desktopSafeTop?: boolean;
 	getNoteContext?: () => {
 		noteId: string | null;
 		templateSlug?: string | null;
@@ -240,10 +287,13 @@ const useNoteComposerController = ({
 		rightMode,
 		rightOpen,
 		rightOpenMobile,
+		rightInsetPanelWidth,
 		setHasRightSidebar,
 		setRightMode,
 		setRightOpen,
 		setRightOpenMobile,
+		setRightSidebarWidthMobileOverride,
+		setRightSidebarWidthOverride,
 	} = useSidebar();
 	const [message, setMessage] = React.useState("");
 	const [, setIsExpanded] = React.useState(false);
@@ -256,8 +306,61 @@ const useNoteComposerController = ({
 		createDraftChatId(),
 	);
 	const [isPreparingRequest, setIsPreparingRequest] = React.useState(false);
+	const noteId = (noteContext.noteId as Id<"notes"> | null) ?? null;
+	const noteStorageScopeKey = getNoteStorageScopeKey(noteId);
+	const inlinePopoverHeightStorageKey = isMobile
+		? getNoteScopedStorageKey({
+				prefix: INLINE_POPOVER_HEIGHT_STORAGE_KEY_PREFIX,
+				noteScopeKey: noteStorageScopeKey,
+				platform: "mobile",
+			})
+		: getNoteScopedStorageKey({
+				prefix: INLINE_POPOVER_HEIGHT_STORAGE_KEY_PREFIX,
+				noteScopeKey: noteStorageScopeKey,
+				platform: "desktop",
+			});
+	const floatingPanelHeightStorageKey = isMobile
+		? getNoteScopedStorageKey({
+				prefix: NOTE_CHAT_FLOATING_HEIGHT_STORAGE_KEY_PREFIX,
+				noteScopeKey: noteStorageScopeKey,
+				platform: "mobile",
+			})
+		: getNoteScopedStorageKey({
+				prefix: NOTE_CHAT_FLOATING_HEIGHT_STORAGE_KEY_PREFIX,
+				noteScopeKey: noteStorageScopeKey,
+				platform: "desktop",
+			});
 	const [inlinePanelHeight, setInlinePanelHeight] = React.useState(() =>
-		readStoredInlinePopoverHeight(),
+		readStoredPanelHeight(
+			typeof window !== "undefined" && window.innerWidth < 768
+				? getNoteScopedStorageKey({
+						prefix: INLINE_POPOVER_HEIGHT_STORAGE_KEY_PREFIX,
+						noteScopeKey: noteStorageScopeKey,
+						platform: "mobile",
+					})
+				: getNoteScopedStorageKey({
+						prefix: INLINE_POPOVER_HEIGHT_STORAGE_KEY_PREFIX,
+						noteScopeKey: noteStorageScopeKey,
+						platform: "desktop",
+					}),
+			INLINE_POPOVER_DEFAULT_HEIGHT,
+		),
+	);
+	const [floatingPanelHeight, setFloatingPanelHeight] = React.useState(() =>
+		readStoredPanelHeight(
+			typeof window !== "undefined" && window.innerWidth < 768
+				? getNoteScopedStorageKey({
+						prefix: NOTE_CHAT_FLOATING_HEIGHT_STORAGE_KEY_PREFIX,
+						noteScopeKey: noteStorageScopeKey,
+						platform: "mobile",
+					})
+				: getNoteScopedStorageKey({
+						prefix: NOTE_CHAT_FLOATING_HEIGHT_STORAGE_KEY_PREFIX,
+						noteScopeKey: noteStorageScopeKey,
+						platform: "desktop",
+					}),
+			NOTE_CHAT_FLOATING_DEFAULT_HEIGHT,
+		),
 	);
 	const [recipePopoverOpen, setRecipePopoverOpen] = React.useState(false);
 	const [selectedRecipeSlug, setSelectedRecipeSlug] =
@@ -269,6 +372,29 @@ const useNoteComposerController = ({
 	const inlinePanelRef = React.useRef<HTMLDivElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 	const {
+		handleResizeKeyDown: handleSidebarResizeKeyDown,
+		handleResizeStart: handleSidebarResizeStart,
+		isResizing: isSidebarResizing,
+		panelWidth: sidebarPanelWidth,
+	} = useResizableSidePanel({
+		isMobile,
+		side: "right",
+		desktopStorageKey: getNoteScopedStorageKey({
+			prefix: NOTE_CHAT_SIDEBAR_WIDTH_STORAGE_KEY_PREFIX,
+			noteScopeKey: noteStorageScopeKey,
+			platform: "desktop",
+		}),
+		mobileStorageKey: getNoteScopedStorageKey({
+			prefix: NOTE_CHAT_SIDEBAR_WIDTH_STORAGE_KEY_PREFIX,
+			noteScopeKey: noteStorageScopeKey,
+			platform: "mobile",
+		}),
+		defaultDesktopWidth: DESKTOP_DOCKED_PANEL_DEFAULT_WIDTH,
+		desktopMinWidth: DESKTOP_DOCKED_PANEL_MIN_WIDTH,
+		desktopMaxWidth: DESKTOP_DOCKED_PANEL_MAX_WIDTH,
+		mobileMinWidth: MOBILE_DOCKED_PANEL_MIN_WIDTH,
+	});
+	const {
 		containerRef: chatViewportRef,
 		isAtBottom: isChatViewportAtBottom,
 		scrollToBottom: scrollChatToBottom,
@@ -277,9 +403,9 @@ const useNoteComposerController = ({
 	const panelModeRef = React.useRef(panelModeState);
 	const presentationModeRef = React.useRef(presentationModeState);
 	const shouldFocusInlineChatRef = React.useRef(false);
-	const noteId = (noteContext.noteId as Id<"notes"> | null) ?? null;
 	const panelMode = panelModeState;
 	const presentationMode = presentationModeState;
+
 	const readNoteContext = React.useCallback(
 		() =>
 			getNoteContext?.() ?? {
@@ -465,12 +591,22 @@ const useNoteComposerController = ({
 
 	const getInlinePanelMaxHeight = React.useCallback(() => {
 		if (typeof window === "undefined") {
-			return INLINE_POPOVER_MAX_HEIGHT;
+			return NOTE_CHAT_PANEL_MAX_HEIGHT;
 		}
 
 		return Math.max(
-			INLINE_POPOVER_MIN_HEIGHT,
-			Math.min(INLINE_POPOVER_MAX_HEIGHT, window.innerHeight - 112),
+			NOTE_CHAT_PANEL_MIN_HEIGHT,
+			Math.min(NOTE_CHAT_PANEL_MAX_HEIGHT, window.innerHeight - 112),
+		);
+	}, []);
+	const getFloatingPanelMaxHeight = React.useCallback(() => {
+		if (typeof window === "undefined") {
+			return NOTE_CHAT_PANEL_MAX_HEIGHT;
+		}
+
+		return Math.max(
+			NOTE_CHAT_PANEL_MIN_HEIGHT,
+			Math.min(NOTE_CHAT_PANEL_MAX_HEIGHT, window.innerHeight - 32),
 		);
 	}, []);
 
@@ -478,10 +614,19 @@ const useNoteComposerController = ({
 		(nextHeight: number) => {
 			return Math.min(
 				getInlinePanelMaxHeight(),
-				Math.max(INLINE_POPOVER_MIN_HEIGHT, nextHeight),
+				Math.max(NOTE_CHAT_PANEL_MIN_HEIGHT, nextHeight),
 			);
 		},
 		[getInlinePanelMaxHeight],
+	);
+	const clampFloatingPanelHeight = React.useCallback(
+		(nextHeight: number) => {
+			return Math.min(
+				getFloatingPanelMaxHeight(),
+				Math.max(NOTE_CHAT_PANEL_MIN_HEIGHT, nextHeight),
+			);
+		},
+		[getFloatingPanelMaxHeight],
 	);
 
 	React.useEffect(() => {
@@ -489,11 +634,19 @@ const useNoteComposerController = ({
 			clampInlinePanelHeight(currentHeight),
 		);
 	}, [clampInlinePanelHeight]);
+	React.useEffect(() => {
+		setFloatingPanelHeight((currentHeight) =>
+			clampFloatingPanelHeight(currentHeight),
+		);
+	}, [clampFloatingPanelHeight]);
 
 	React.useEffect(() => {
 		const handleWindowResize = () => {
 			setInlinePanelHeight((currentHeight) =>
 				clampInlinePanelHeight(currentHeight),
+			);
+			setFloatingPanelHeight((currentHeight) =>
+				clampFloatingPanelHeight(currentHeight),
 			);
 		};
 
@@ -501,50 +654,190 @@ const useNoteComposerController = ({
 		return () => {
 			window.removeEventListener("resize", handleWindowResize);
 		};
-	}, [clampInlinePanelHeight]);
+	}, [clampFloatingPanelHeight, clampInlinePanelHeight]);
 
 	React.useEffect(() => {
-		storeInlinePopoverHeight(inlinePanelHeight);
-	}, [inlinePanelHeight]);
+		setInlinePanelHeight(
+			clampInlinePanelHeight(
+				readStoredPanelHeight(
+					[
+						inlinePopoverHeightStorageKey,
+						INLINE_POPOVER_HEIGHT_LEGACY_STORAGE_KEY,
+					],
+					INLINE_POPOVER_DEFAULT_HEIGHT,
+				),
+			),
+		);
+	}, [clampInlinePanelHeight, inlinePopoverHeightStorageKey]);
 
-	const handleInlinePanelResizeStart = React.useCallback(
-		(event: React.PointerEvent<HTMLDivElement>) => {
-			if (event.button !== 0) {
-				return;
+	React.useEffect(() => {
+		storePanelHeight(
+			[inlinePopoverHeightStorageKey, INLINE_POPOVER_HEIGHT_LEGACY_STORAGE_KEY],
+			inlinePanelHeight,
+		);
+	}, [inlinePanelHeight, inlinePopoverHeightStorageKey]);
+	React.useEffect(() => {
+		setFloatingPanelHeight(
+			clampFloatingPanelHeight(
+				readStoredPanelHeight(
+					floatingPanelHeightStorageKey,
+					NOTE_CHAT_FLOATING_DEFAULT_HEIGHT,
+				),
+			),
+		);
+	}, [clampFloatingPanelHeight, floatingPanelHeightStorageKey]);
+	React.useEffect(() => {
+		storePanelHeight(floatingPanelHeightStorageKey, floatingPanelHeight);
+	}, [floatingPanelHeight, floatingPanelHeightStorageKey]);
+
+	const inlinePanelResizeStartHeightRef = React.useRef(inlinePanelHeight);
+	const inlinePanelResizeStartYRef = React.useRef(0);
+	const floatingPanelResizeStartHeightRef = React.useRef(floatingPanelHeight);
+	const floatingPanelResizeStartYRef = React.useRef(0);
+	const handleInlinePanelResizeKeyDown = React.useCallback(
+		(event: React.KeyboardEvent<HTMLButtonElement>) => {
+			let nextHeight: number | null = null;
+
+			switch (event.key) {
+				case "ArrowUp":
+					nextHeight = inlinePanelHeight + 24;
+					break;
+				case "ArrowDown":
+					nextHeight = inlinePanelHeight - 24;
+					break;
+				case "Home":
+					nextHeight = NOTE_CHAT_PANEL_MIN_HEIGHT;
+					break;
+				case "End":
+					nextHeight = getInlinePanelMaxHeight();
+					break;
+				default:
+					return;
 			}
 
 			event.preventDefault();
-			const startY = event.clientY;
-			const startHeight =
+			setInlinePanelHeight(clampInlinePanelHeight(nextHeight));
+		},
+		[clampInlinePanelHeight, getInlinePanelMaxHeight, inlinePanelHeight],
+	);
+	const {
+		handleResizeKeyDown: handleInlinePanelResizeKeyDownInternal,
+		handleResizeStart: handleInlinePanelResizeStart,
+		isResizing: isInlinePanelResizing,
+	} = useResizeHandle({
+		cursor: "row-resize",
+		onResizeStart: (event) => {
+			inlinePanelResizeStartYRef.current = event.clientY;
+			inlinePanelResizeStartHeightRef.current =
 				inlinePanelRef.current?.getBoundingClientRect().height ??
 				inlinePanelHeight;
-
-			const handlePointerMove = (moveEvent: PointerEvent) => {
-				const nextHeight = startHeight + (startY - moveEvent.clientY);
-				setInlinePanelHeight(clampInlinePanelHeight(nextHeight));
-			};
-
-			const handlePointerUp = () => {
-				window.removeEventListener("pointermove", handlePointerMove);
-				window.removeEventListener("pointerup", handlePointerUp);
-			};
-
-			window.addEventListener("pointermove", handlePointerMove);
-			window.addEventListener("pointerup", handlePointerUp, { once: true });
 		},
-		[clampInlinePanelHeight, inlinePanelHeight],
+		onResizeMove: (event) => {
+			const nextHeight =
+				inlinePanelResizeStartHeightRef.current +
+				(inlinePanelResizeStartYRef.current - event.clientY);
+			setInlinePanelHeight(clampInlinePanelHeight(nextHeight));
+		},
+		onKeyDown: handleInlinePanelResizeKeyDown,
+	});
+	const handleFloatingPanelResizeKeyDown = React.useCallback(
+		(event: React.KeyboardEvent<HTMLButtonElement>) => {
+			let nextHeight: number | null = null;
+
+			switch (event.key) {
+				case "ArrowUp":
+					nextHeight = floatingPanelHeight + 24;
+					break;
+				case "ArrowDown":
+					nextHeight = floatingPanelHeight - 24;
+					break;
+				case "Home":
+					nextHeight = NOTE_CHAT_PANEL_MIN_HEIGHT;
+					break;
+				case "End":
+					nextHeight = getFloatingPanelMaxHeight();
+					break;
+				default:
+					return;
+			}
+
+			event.preventDefault();
+			setFloatingPanelHeight(clampFloatingPanelHeight(nextHeight));
+		},
+		[clampFloatingPanelHeight, floatingPanelHeight, getFloatingPanelMaxHeight],
 	);
+	const {
+		handleResizeKeyDown: handleFloatingPanelResizeKeyDownInternal,
+		handleResizeStart: handleFloatingPanelResizeStart,
+		isResizing: isFloatingPanelResizing,
+	} = useResizeHandle({
+		cursor: "row-resize",
+		onResizeStart: (event) => {
+			floatingPanelResizeStartYRef.current = event.clientY;
+			floatingPanelResizeStartHeightRef.current = floatingPanelHeight;
+		},
+		onResizeMove: (event) => {
+			const nextHeight =
+				floatingPanelResizeStartHeightRef.current +
+				(floatingPanelResizeStartYRef.current - event.clientY);
+			setFloatingPanelHeight(clampFloatingPanelHeight(nextHeight));
+		},
+		onKeyDown: handleFloatingPanelResizeKeyDown,
+	});
 
 	const isChatOpen = panelMode === "chat";
 	const isTranscriptOpen = panelMode === "transcript";
 	const isRightSidebarOpen = isMobile ? rightOpenMobile : rightOpen;
+	const resolvedPresentationMode =
+		!isMobile && rightInsetPanelWidth && presentationMode === "sidebar"
+			? "floating"
+			: presentationMode;
 	const shouldShowInlinePanel =
-		presentationMode === "inline" || isTranscriptOpen;
+		resolvedPresentationMode === "inline" || isTranscriptOpen;
+	const isFloatingPresentation =
+		isChatOpen &&
+		resolvedPresentationMode === "floating" &&
+		isRightSidebarOpen &&
+		rightMode === "floating";
 	const isSidebarPresentation =
 		isChatOpen &&
-		presentationMode === "sidebar" &&
+		resolvedPresentationMode === "sidebar" &&
 		isRightSidebarOpen &&
 		rightMode === "sidebar";
+	const sidebarPanelWidthCss = `${sidebarPanelWidth}px`;
+	const activeSidebarWidthOverride = isSidebarPresentation
+		? sidebarPanelWidthCss
+		: null;
+	React.useEffect(() => {
+		if (isMobile) {
+			return;
+		}
+
+		setRightSidebarWidthOverride(activeSidebarWidthOverride);
+	}, [activeSidebarWidthOverride, isMobile, setRightSidebarWidthOverride]);
+	React.useEffect(() => {
+		if (!isMobile) {
+			return;
+		}
+
+		setRightSidebarWidthMobileOverride(activeSidebarWidthOverride);
+	}, [
+		activeSidebarWidthOverride,
+		isMobile,
+		setRightSidebarWidthMobileOverride,
+	]);
+	React.useEffect(
+		() => () => {
+			setRightSidebarWidthOverride(null);
+		},
+		[setRightSidebarWidthOverride],
+	);
+	React.useEffect(
+		() => () => {
+			setRightSidebarWidthMobileOverride(null);
+		},
+		[setRightSidebarWidthMobileOverride],
+	);
 	const isChatLoading =
 		chatStatus === "submitted" ||
 		chatStatus === "streaming" ||
@@ -602,40 +895,65 @@ const useNoteComposerController = ({
 
 	const setPanelMode = React.useCallback(
 		(nextValue: React.SetStateAction<"chat" | "transcript" | null>) => {
-			setPanelModeState((currentValue) => {
-				const resolvedValue = resolveStateUpdate(nextValue, currentValue);
-				panelModeRef.current = resolvedValue;
-				setHasRightSidebar(
-					resolvedValue === "chat" && presentationModeRef.current !== "inline",
-				);
-				return resolvedValue;
-			});
+			const resolvedValue = resolveStateUpdate(nextValue, panelModeRef.current);
+			panelModeRef.current = resolvedValue;
+			setPanelModeState(resolvedValue);
+			setHasRightSidebar(
+				resolvedValue === "chat" && presentationModeRef.current !== "inline",
+			);
 		},
 		[setHasRightSidebar],
 	);
 
 	const setPresentationMode = React.useCallback(
 		(nextValue: React.SetStateAction<NoteChatPresentation>) => {
-			setPresentationModeState((currentValue) => {
-				const resolvedValue = resolveStateUpdate(nextValue, currentValue);
-				presentationModeRef.current = resolvedValue;
-				setHasRightSidebar(
-					panelModeRef.current === "chat" && resolvedValue !== "inline",
-				);
-				return resolvedValue;
-			});
+			const resolvedValue = resolveStateUpdate(
+				nextValue,
+				presentationModeRef.current,
+			);
+			presentationModeRef.current = resolvedValue;
+			setPresentationModeState(resolvedValue);
+			setHasRightSidebar(
+				panelModeRef.current === "chat" && resolvedValue !== "inline",
+			);
 		},
 		[setHasRightSidebar],
 	);
 
+	React.useEffect(() => {
+		if (isMobile || !rightInsetPanelWidth || presentationMode !== "sidebar") {
+			return;
+		}
+
+		setPresentationMode("floating");
+		setRightMode("floating");
+	}, [
+		isMobile,
+		presentationMode,
+		rightInsetPanelWidth,
+		setPresentationMode,
+		setRightMode,
+	]);
+
 	const openRightSidebar = React.useCallback(
 		(mode: Exclude<NoteChatPresentation, "inline">) => {
-			setPresentationMode(mode);
-			setRightMode(mode);
+			const nextMode =
+				!isMobile && rightInsetPanelWidth && mode === "sidebar"
+					? "floating"
+					: mode;
+			setPresentationMode(nextMode);
+			setRightMode(nextMode);
 			setRightSidebarOpen(true);
 			setPanelMode("chat");
 		},
-		[setPanelMode, setPresentationMode, setRightMode, setRightSidebarOpen],
+		[
+			isMobile,
+			rightInsetPanelWidth,
+			setPanelMode,
+			setPresentationMode,
+			setRightMode,
+			setRightSidebarOpen,
+		],
 	);
 
 	const closeRightSidebar = React.useCallback(() => {
@@ -1135,11 +1453,16 @@ const useNoteComposerController = ({
 		handleGenerateNotes: transcriptSession.handleGenerateNotes,
 		handleHideChat,
 		handleKeyDown,
+		getFloatingPanelMaxHeight,
 		getInlinePanelMaxHeight,
+		handleFloatingPanelResizeKeyDown: handleFloatingPanelResizeKeyDownInternal,
+		handleFloatingPanelResizeStart,
 		handleSelectChat,
 		handleSelectInlinePresentation,
 		handleSelectRightPresentation,
 		handleRegenerateMessage,
+		handleSidebarResizeKeyDown,
+		handleSidebarResizeStart,
 		handleSubmit,
 		handleTextareaChange,
 		hasMessage,
@@ -1151,6 +1474,9 @@ const useNoteComposerController = ({
 		inlinePanelHeight,
 		isChatLoading,
 		isChatOpen,
+		isFloatingPanelResizing,
+		isFloatingPresentation,
+		isSidebarResizing,
 		displayTranscriptEntries: transcriptSession.displayTranscriptEntries,
 		isGeneratingNotes: transcriptSession.isGeneratingNotes,
 		isMobile,
@@ -1165,7 +1491,8 @@ const useNoteComposerController = ({
 		orderedTranscriptUtterances: transcriptSession.orderedTranscriptUtterances,
 		openDraftChat,
 		panelMode,
-		presentationMode,
+		presentationMode: resolvedPresentationMode,
+		floatingPanelHeight,
 		transcriptViewportRef: transcriptSession.transcriptViewportRef,
 		rootRef,
 		recipePopoverOpen,
@@ -1173,6 +1500,8 @@ const useNoteComposerController = ({
 		scrollChatToBottom,
 		scrollTranscriptToBottom: transcriptSession.scrollTranscriptToBottom,
 		selectedRecipe,
+		sidebarPanelWidth,
+		sidebarPanelWidthCss,
 		setPanelMode,
 		setRecipePopoverOpen,
 		setSelectedRecipeSlug,
@@ -1198,7 +1527,9 @@ const useNoteComposerController = ({
 		transcriptStartedAt: transcriptSession.transcriptStartedAt,
 		transcriptionLanguageReady: isTranscriptionLanguageReady,
 		transcriptionLanguage,
+		handleInlinePanelResizeKeyDown: handleInlinePanelResizeKeyDownInternal,
 		handleInlinePanelResizeStart,
+		isInlinePanelResizing,
 	};
 };
 
@@ -1507,7 +1838,7 @@ function NoteChatMessages({
 	);
 }
 
-function NoteChatHeader({
+export function NoteChatHeader({
 	chatTitle,
 	currentChatId,
 	groupedNoteChats,
@@ -1518,6 +1849,8 @@ function NoteChatHeader({
 	onSelectInlinePresentation,
 	onSelectRightPresentation,
 	presentationMode,
+	isMobile,
+	desktopSafeTop,
 	sidebarCompact,
 }: {
 	chatTitle: string;
@@ -1532,6 +1865,8 @@ function NoteChatHeader({
 		mode: Exclude<NoteChatPresentation, "inline">,
 	) => void;
 	presentationMode: NoteChatPresentation;
+	isMobile: boolean;
+	desktopSafeTop: boolean;
 	sidebarCompact: boolean;
 }) {
 	const chatModeIcon =
@@ -1542,29 +1877,52 @@ function NoteChatHeader({
 		) : (
 			<PanelRight className="size-4" />
 		);
+	const isDesktopSidebarHeader = sidebarCompact && !isMobile;
 
 	return (
 		<CardHeader
+			data-app-region={isDesktopSidebarHeader ? "no-drag" : undefined}
 			className={cn(
 				"flex items-center justify-between gap-3",
-				sidebarCompact ? "px-2 py-2" : "px-4 py-4",
+				isDesktopSidebarHeader
+					? desktopSafeTop
+						? "h-10 px-2 py-0"
+						: "h-16 px-4 py-0"
+					: sidebarCompact
+						? "px-2 py-2"
+						: "px-4 py-4",
 			)}
 		>
-			<div className="flex min-w-0 flex-1 items-center gap-2">
+			<div
+				className={cn(
+					"flex min-w-0 flex-1 items-center gap-2",
+					isDesktopSidebarHeader &&
+						desktopSafeTop &&
+						DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+				)}
+			>
 				<Select value={currentChatId} onValueChange={onSelectChat}>
 					<SelectTrigger
 						size="sm"
 						title={chatTitle}
 						aria-label="Select note chat"
 						className={cn(
-							"h-8 min-w-0 max-w-full cursor-pointer justify-start gap-0.5 border-0 !bg-transparent px-2 pr-1.5 text-left shadow-none hover:!bg-accent/50 focus-visible:!bg-accent/50 focus-visible:ring-0 data-[state=open]:!bg-accent/50 dark:!bg-transparent dark:hover:!bg-accent/50 dark:data-[state=open]:!bg-accent/50",
+							"min-w-0 max-w-full cursor-pointer justify-start gap-0.5 border-0 !bg-transparent text-left shadow-none hover:!bg-accent/50 focus-visible:!bg-accent/50 focus-visible:ring-0 data-[state=open]:!bg-accent/50 dark:!bg-transparent dark:hover:!bg-accent/50 dark:data-[state=open]:!bg-accent/50",
+							isDesktopSidebarHeader
+								? "h-9 px-2.5 pr-1.5 text-[15px]"
+								: "h-8 px-2 pr-1.5 text-sm",
 							sidebarCompact
 								? "max-w-[min(100%,18rem)]"
 								: "max-w-[min(100%,36rem)]",
 							sidebarCompact ? "-ml-1" : "-ml-2",
 						)}
 					>
-						<span className="min-w-0 truncate text-sm font-medium text-foreground">
+						<span
+							className={cn(
+								"min-w-0 truncate text-foreground",
+								isDesktopSidebarHeader ? "text-[15px]" : "text-sm",
+							)}
+						>
 							{chatTitle}
 						</span>
 					</SelectTrigger>
@@ -1605,6 +1963,9 @@ function NoteChatHeader({
 				className={cn(
 					"flex items-center gap-1",
 					sidebarCompact ? "-mr-1" : "-mr-2",
+					isDesktopSidebarHeader &&
+						desktopSafeTop &&
+						DESKTOP_MAIN_HEADER_CONTENT_CLASS,
 				)}
 			>
 				<Tooltip>
@@ -1985,6 +2346,7 @@ export const NoteComposer = React.memo(function NoteComposer(
 			<NoteComposerPanels
 				controller={controller}
 				onAddMessageToNote={props.onAddMessageToNote}
+				desktopSafeTop={props.desktopSafeTop ?? false}
 			/>
 			<NoteComposerDock controller={controller} />
 		</div>
@@ -2275,7 +2637,7 @@ function NoteComposerChatPanelContent({
 				className={cn(
 					"flex flex-1 overflow-hidden",
 					controller.isSidebarPresentation
-						? "px-2 pb-2"
+						? "px-2 pt-2 pb-2"
 						: isOverlayComposer
 							? "px-4"
 							: "px-4 pb-4",
@@ -2330,7 +2692,7 @@ function NoteComposerTranscriptPanelContent({
 				className={cn(
 					"flex flex-1 overflow-hidden",
 					controller.isSidebarPresentation
-						? "px-2 pb-2"
+						? "px-2 pt-2 pb-2"
 						: shouldRenderInlineComposer
 							? "px-4"
 							: "px-4 pb-4",
@@ -2395,9 +2757,11 @@ function NoteComposerTranscriptPanelContent({
 function NoteComposerPanels({
 	controller,
 	onAddMessageToNote,
+	desktopSafeTop,
 }: {
 	controller: NoteComposerController;
 	onAddMessageToNote?: NoteComposerProps["onAddMessageToNote"];
+	desktopSafeTop: boolean;
 }) {
 	const chatPanelHeader = (
 		<NoteChatHeader
@@ -2411,6 +2775,8 @@ function NoteComposerPanels({
 			onSelectInlinePresentation={controller.handleSelectInlinePresentation}
 			onSelectRightPresentation={controller.handleSelectRightPresentation}
 			presentationMode={controller.presentationMode}
+			isMobile={controller.isMobile}
+			desktopSafeTop={desktopSafeTop}
 			sidebarCompact={controller.isSidebarPresentation}
 		/>
 	);
@@ -2448,19 +2814,21 @@ function NoteComposerPanels({
 			>
 				<div className="relative flex items-end gap-3">
 					<Card
-						className="pointer-events-auto relative -mx-[6px] max-h-[calc(100dvh-6rem)] min-h-[20rem] w-[calc(100%+12px)] gap-0 overflow-hidden bg-sidebar py-0 text-sidebar-foreground ring-sidebar-border"
+						className="group/note-chat-panel pointer-events-auto relative -mx-[6px] max-h-[calc(100dvh-6rem)] min-h-[20rem] w-[calc(100%+12px)] gap-0 overflow-hidden bg-sidebar py-0 text-sidebar-foreground ring-sidebar-border"
 						style={{
 							height: controller.inlinePanelHeight,
 							maxHeight: controller.getInlinePanelMaxHeight(),
-							minHeight: INLINE_POPOVER_MIN_HEIGHT,
+							minHeight: NOTE_CHAT_PANEL_MIN_HEIGHT,
 						}}
 					>
-						<div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-5 items-start justify-center">
-							<div
-								className="pointer-events-auto mt-1 h-1.5 w-16 cursor-row-resize rounded-full bg-border/80 transition-colors hover:bg-border"
-								onPointerDown={controller.handleInlinePanelResizeStart}
-							/>
-						</div>
+						<ResizableTopPanelHandle
+							label="Resize note panel"
+							title={`Note panel height: ${Math.round(controller.inlinePanelHeight)}px`}
+							isResizing={controller.isInlinePanelResizing}
+							className="opacity-0 transition-opacity duration-150 group-hover/note-chat-panel:opacity-100 group-focus-within/note-chat-panel:opacity-100"
+							onPointerDown={controller.handleInlinePanelResizeStart}
+							onKeyDown={controller.handleInlinePanelResizeKeyDown}
+						/>
 						{panelContent}
 					</Card>
 				</div>
@@ -2480,25 +2848,51 @@ function NoteComposerPanels({
 			}
 			collapsible="offcanvas"
 			style={
-				controller.presentationMode === "floating" && !controller.isMobile
+				controller.isFloatingPresentation && !controller.isMobile
 					? ({
 							"--sidebar-width": `calc(${NOTE_CHAT_FLOATING_WIDTH} - 20px)`,
+							height: controller.floatingPanelHeight,
+							maxHeight: controller.getFloatingPanelMaxHeight(),
+							minHeight: NOTE_CHAT_PANEL_MIN_HEIGHT,
 						} as React.CSSProperties)
 					: undefined
 			}
 			className={cn(
-				"flex flex-col",
+				"group/note-chat-panel flex flex-col",
 				controller.presentationMode === "floating"
-					? "md:right-[18px] md:top-auto md:bottom-[5px] md:h-[min(32rem,calc(100svh-2rem))]"
+					? "md:right-[18px] md:top-auto md:bottom-[5px]"
 					: "border-l",
 			)}
 		>
 			<div
 				className={cn(
 					"flex h-full flex-col",
-					controller.presentationMode === "floating" && "relative",
+					(controller.presentationMode === "floating" ||
+						controller.isSidebarPresentation) &&
+						"relative",
 				)}
 			>
+				{controller.isFloatingPresentation && !controller.isMobile ? (
+					<ResizableTopPanelHandle
+						label="Resize floating note chat"
+						title={`Floating note chat height: ${Math.round(controller.floatingPanelHeight)}px`}
+						isResizing={controller.isFloatingPanelResizing}
+						className="opacity-0 transition-opacity duration-150 group-hover/note-chat-panel:opacity-100 group-focus-within/note-chat-panel:opacity-100"
+						onPointerDown={controller.handleFloatingPanelResizeStart}
+						onKeyDown={controller.handleFloatingPanelResizeKeyDown}
+					/>
+				) : null}
+				{controller.isSidebarPresentation ? (
+					<ResizableSidePanelHandle
+						side="right"
+						label="Resize note chat sidebar"
+						panelWidth={controller.sidebarPanelWidth}
+						isResizing={controller.isSidebarResizing}
+						className="opacity-0 transition-opacity duration-150 group-hover/note-chat-panel:opacity-100 group-focus-within/note-chat-panel:opacity-100"
+						onPointerDown={controller.handleSidebarResizeStart}
+						onKeyDown={controller.handleSidebarResizeKeyDown}
+					/>
+				) : null}
 				{panelContent}
 			</div>
 		</Sidebar>
@@ -2537,26 +2931,20 @@ function NoteTranscriptPanel({
 	);
 	const isDeferringTranscriptEntries =
 		deferredDisplayTranscriptEntries !== controller.displayTranscriptEntries;
-	const [renderFullTranscriptEntries, setRenderFullTranscriptEntries] =
-		React.useState(
-			deferredDisplayTranscriptEntries.length <=
-				LONG_TRANSCRIPT_RENDER_THRESHOLD,
-		);
+	const transcriptEntryCount = deferredDisplayTranscriptEntries.length;
+	const [
+		fullyRenderedTranscriptEntryCount,
+		setFullyRenderedTranscriptEntryCount,
+	] = React.useState(transcriptEntryCount);
 
 	React.useEffect(() => {
-		if (
-			deferredDisplayTranscriptEntries.length <=
-			LONG_TRANSCRIPT_RENDER_THRESHOLD
-		) {
-			setRenderFullTranscriptEntries(true);
+		if (transcriptEntryCount <= LONG_TRANSCRIPT_RENDER_THRESHOLD) {
 			return;
 		}
 
-		setRenderFullTranscriptEntries(false);
-
 		const promoteFullTranscriptEntries = () => {
 			React.startTransition(() => {
-				setRenderFullTranscriptEntries(true);
+				setFullyRenderedTranscriptEntryCount(transcriptEntryCount);
 			});
 		};
 
@@ -2577,7 +2965,10 @@ function NoteTranscriptPanel({
 		return () => {
 			globalThis.clearTimeout(timeoutId);
 		};
-	}, [deferredDisplayTranscriptEntries.length]);
+	}, [transcriptEntryCount]);
+	const renderFullTranscriptEntries =
+		transcriptEntryCount <= LONG_TRANSCRIPT_RENDER_THRESHOLD ||
+		fullyRenderedTranscriptEntryCount === transcriptEntryCount;
 	const renderedTranscriptEntries = renderFullTranscriptEntries
 		? deferredDisplayTranscriptEntries
 		: deferredDisplayTranscriptEntries.slice(

@@ -28,6 +28,8 @@ import * as React from "react";
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_RIGHT_COOKIE_NAME = "sidebar_right_state";
 const SIDEBAR_RIGHT_MODE_COOKIE_NAME = "sidebar_right_mode";
+const SIDEBAR_RIGHT_WIDTH_STORAGE_KEY = "sidebar_right_width";
+const SIDEBAR_RIGHT_WIDTH_MOBILE_STORAGE_KEY = "sidebar_right_width_mobile";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
@@ -68,6 +70,31 @@ const getCookieBoolean = (name: string, defaultValue: boolean) => {
 	return value === "true";
 };
 
+const readStoredSidebarWidth = (key: string, fallback: string) => {
+	if (typeof window === "undefined") {
+		return fallback;
+	}
+
+	try {
+		const value = window.localStorage.getItem(key)?.trim();
+		return value && value.length > 0 ? value : fallback;
+	} catch {
+		return fallback;
+	}
+};
+
+const storeSidebarWidth = (key: string, width: string) => {
+	if (typeof window === "undefined") {
+		return;
+	}
+
+	try {
+		window.localStorage.setItem(key, width);
+	} catch {
+		// Ignore storage errors; width will fall back to defaults.
+	}
+};
+
 export type RightSidebarMode = "sidebar" | "floating";
 
 type SidebarContextProps = {
@@ -85,6 +112,20 @@ type SidebarContextProps = {
 	toggleRightSidebar: () => void;
 	rightMode: RightSidebarMode;
 	setRightMode: (mode: RightSidebarMode) => void;
+	rightSidebarWidth: string;
+	setRightSidebarWidth: (width: string) => void;
+	rightSidebarWidthMobile: string;
+	setRightSidebarWidthMobile: (width: string) => void;
+	rightSidebarWidthOverride: string | null;
+	setRightSidebarWidthOverride: (width: string | null) => void;
+	rightSidebarWidthMobileOverride: string | null;
+	setRightSidebarWidthMobileOverride: (width: string | null) => void;
+	leftInsetPanelWidth: string | null;
+	setLeftInsetPanelWidth: (width: string | null) => void;
+	leftOverlayPanelWidth: string | null;
+	setLeftOverlayPanelWidth: (width: string | null) => void;
+	rightInsetPanelWidth: string | null;
+	setRightInsetPanelWidth: (width: string | null) => void;
 	hasRightSidebar: boolean;
 	setHasRightSidebar: (hasRightSidebar: boolean) => void;
 };
@@ -119,6 +160,23 @@ function SidebarProvider({
 	const [rightOpenMobile, setRightOpenMobile] = React.useState(false);
 	const [rightMode, setRightModeState] =
 		React.useState<RightSidebarMode>("sidebar");
+	const [rightSidebarWidth, setRightSidebarWidthState] =
+		React.useState(SIDEBAR_RIGHT_WIDTH);
+	const [rightSidebarWidthMobile, setRightSidebarWidthMobileState] =
+		React.useState(SIDEBAR_RIGHT_WIDTH_MOBILE);
+	const [rightSidebarWidthOverride, setRightSidebarWidthOverride] =
+		React.useState<string | null>(null);
+	const [rightSidebarWidthMobileOverride, setRightSidebarWidthMobileOverride] =
+		React.useState<string | null>(null);
+	const [leftInsetPanelWidth, setLeftInsetPanelWidth] = React.useState<
+		string | null
+	>(null);
+	const [leftOverlayPanelWidth, setLeftOverlayPanelWidth] = React.useState<
+		string | null
+	>(null);
+	const [rightInsetPanelWidth, setRightInsetPanelWidth] = React.useState<
+		string | null
+	>(null);
 	const [hasRightSidebar, setHasRightSidebar] = React.useState(false);
 
 	const [_open, _setOpen] = React.useState(defaultOpen);
@@ -158,6 +216,19 @@ function SidebarProvider({
 		if (savedRightMode === "floating" || savedRightMode === "sidebar") {
 			setRightModeState(savedRightMode);
 		}
+
+		setRightSidebarWidthState(
+			readStoredSidebarWidth(
+				SIDEBAR_RIGHT_WIDTH_STORAGE_KEY,
+				SIDEBAR_RIGHT_WIDTH,
+			),
+		);
+		setRightSidebarWidthMobileState(
+			readStoredSidebarWidth(
+				SIDEBAR_RIGHT_WIDTH_MOBILE_STORAGE_KEY,
+				SIDEBAR_RIGHT_WIDTH_MOBILE,
+			),
+		);
 	}, []);
 
 	const setRightOpenWithCookie = React.useCallback(
@@ -172,6 +243,16 @@ function SidebarProvider({
 	const setRightMode = React.useCallback((mode: RightSidebarMode) => {
 		setRightModeState(mode);
 		document.cookie = `${SIDEBAR_RIGHT_MODE_COOKIE_NAME}=${mode}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+	}, []);
+
+	const setRightSidebarWidth = React.useCallback((width: string) => {
+		setRightSidebarWidthState(width);
+		storeSidebarWidth(SIDEBAR_RIGHT_WIDTH_STORAGE_KEY, width);
+	}, []);
+
+	const setRightSidebarWidthMobile = React.useCallback((width: string) => {
+		setRightSidebarWidthMobileState(width);
+		storeSidebarWidth(SIDEBAR_RIGHT_WIDTH_MOBILE_STORAGE_KEY, width);
 	}, []);
 
 	const toggleSidebar = React.useCallback(() => {
@@ -227,6 +308,20 @@ function SidebarProvider({
 			toggleRightSidebar,
 			rightMode,
 			setRightMode,
+			rightSidebarWidth,
+			setRightSidebarWidth,
+			rightSidebarWidthMobile,
+			setRightSidebarWidthMobile,
+			rightSidebarWidthOverride,
+			setRightSidebarWidthOverride,
+			rightSidebarWidthMobileOverride,
+			setRightSidebarWidthMobileOverride,
+			leftInsetPanelWidth,
+			setLeftInsetPanelWidth,
+			leftOverlayPanelWidth,
+			setLeftOverlayPanelWidth,
+			rightInsetPanelWidth,
+			setRightInsetPanelWidth,
 			hasRightSidebar,
 			setHasRightSidebar,
 		}),
@@ -243,6 +338,15 @@ function SidebarProvider({
 			toggleRightSidebar,
 			rightMode,
 			setRightMode,
+			rightSidebarWidth,
+			setRightSidebarWidth,
+			rightSidebarWidthMobile,
+			setRightSidebarWidthMobile,
+			rightSidebarWidthOverride,
+			rightSidebarWidthMobileOverride,
+			leftInsetPanelWidth,
+			leftOverlayPanelWidth,
+			rightInsetPanelWidth,
 			hasRightSidebar,
 		],
 	);
@@ -279,6 +383,7 @@ function Sidebar({
 	className,
 	children,
 	dir,
+	style: styleProp,
 	...props
 }: React.ComponentProps<"div"> & {
 	side?: "left" | "right";
@@ -292,6 +397,10 @@ function Sidebar({
 		setOpenMobile,
 		rightOpen,
 		rightOpenMobile,
+		rightSidebarWidth,
+		rightSidebarWidthMobile,
+		rightSidebarWidthOverride,
+		rightSidebarWidthMobileOverride,
 		setRightOpenMobile,
 	} = useSidebar();
 	const isRightSide = side === "right";
@@ -330,7 +439,7 @@ function Sidebar({
 					style={
 						{
 							"--sidebar-width": isRightSide
-								? SIDEBAR_RIGHT_WIDTH_MOBILE
+								? (rightSidebarWidthMobileOverride ?? rightSidebarWidthMobile)
 								: SIDEBAR_WIDTH_MOBILE,
 						} as React.CSSProperties
 					}
@@ -358,7 +467,17 @@ function Sidebar({
 		: state === "collapsed"
 			? collapsible
 			: "";
-	const desktopWidth = isRightSide ? SIDEBAR_RIGHT_WIDTH : SIDEBAR_WIDTH;
+	const desktopWidth = isRightSide
+		? (rightSidebarWidthOverride ?? rightSidebarWidth)
+		: SIDEBAR_WIDTH;
+	const styleSidebarWidth = styleProp?.[
+		"--sidebar-width" as keyof React.CSSProperties
+	] as string | number | undefined;
+	const effectiveDesktopWidth = styleSidebarWidth ?? desktopWidth;
+	const desktopSidebarStyle = {
+		...styleProp,
+		"--sidebar-width": effectiveDesktopWidth,
+	} as React.CSSProperties;
 
 	return (
 		<div
@@ -383,7 +502,7 @@ function Sidebar({
 				)}
 				style={
 					{
-						"--sidebar-width": desktopWidth,
+						"--sidebar-width": effectiveDesktopWidth,
 					} as React.CSSProperties
 				}
 			/>
@@ -399,11 +518,7 @@ function Sidebar({
 						: "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
 					className,
 				)}
-				style={
-					{
-						"--sidebar-width": desktopWidth,
-					} as React.CSSProperties
-				}
+				style={desktopSidebarStyle}
 				{...props}
 			>
 				<div
@@ -489,7 +604,16 @@ function SidebarInset({
 	style,
 	...props
 }: React.ComponentProps<"main"> & { reserveRightSidebar?: boolean }) {
-	const { rightOpen, rightMode, isMobile, hasRightSidebar } = useSidebar();
+	const {
+		leftInsetPanelWidth,
+		rightOpen,
+		rightMode,
+		isMobile,
+		hasRightSidebar,
+		rightSidebarWidth,
+		rightSidebarWidthOverride,
+		rightInsetPanelWidth,
+	} = useSidebar();
 
 	return (
 		<main
@@ -500,14 +624,20 @@ function SidebarInset({
 			)}
 			style={{
 				...style,
+				paddingLeft:
+					!isMobile && leftInsetPanelWidth
+						? leftInsetPanelWidth
+						: style?.paddingLeft,
 				paddingRight:
-					reserveRightSidebar &&
-					hasRightSidebar &&
-					rightOpen &&
-					!isMobile &&
-					rightMode === "sidebar"
-						? SIDEBAR_RIGHT_WIDTH
-						: style?.paddingRight,
+					!isMobile && rightInsetPanelWidth
+						? rightInsetPanelWidth
+						: reserveRightSidebar &&
+								hasRightSidebar &&
+								rightOpen &&
+								!isMobile &&
+								rightMode === "sidebar"
+							? (rightSidebarWidthOverride ?? rightSidebarWidth)
+							: style?.paddingRight,
 			}}
 			{...props}
 		/>
