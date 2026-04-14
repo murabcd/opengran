@@ -35,7 +35,6 @@ import {
 import {
 	SIDEBAR_WIDTH,
 	SIDEBAR_WIDTH_ICON,
-	useSidebar,
 } from "@workspace/ui/components/sidebar";
 import {
 	Tooltip,
@@ -131,7 +130,6 @@ export function InboxSheet({
 		sidebarState === "collapsed"
 			? DESKTOP_APP_SIDEBAR_COLLAPSED_WIDTH
 			: DESKTOP_APP_SIDEBAR_EXPANDED_WIDTH;
-	const { setLeftInsetPanelWidth, setLeftOverlayPanelWidth } = useSidebar();
 	const { handleResizeKeyDown, handleResizeStart, isResizing, panelWidth } =
 		useResizableSidePanel({
 			isMobile,
@@ -153,18 +151,18 @@ export function InboxSheet({
 	const [clearArchivedRequestId, setClearArchivedRequestId] = React.useState(0);
 
 	useDockedPanelInset({
+		side: "left",
 		isMobile,
 		isPinned,
 		open,
 		panelWidth,
-		setInsetPanelWidth: setLeftInsetPanelWidth,
 	});
 	useDockedPanelOverlayWidth({
+		side: "left",
 		isMobile,
 		isPinned,
 		open,
 		panelWidth,
-		setOverlayPanelWidth: setLeftOverlayPanelWidth,
 	});
 
 	if (!isMobile) {

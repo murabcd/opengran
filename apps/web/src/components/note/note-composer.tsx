@@ -1932,7 +1932,7 @@ export function NoteChatHeader({
 						className={cn(
 							"min-w-0 max-w-full cursor-pointer justify-start gap-0.5 border-0 !bg-transparent text-left shadow-none hover:!bg-accent/50 focus-visible:!bg-accent/50 focus-visible:ring-0 data-[state=open]:!bg-accent/50 dark:!bg-transparent dark:hover:!bg-accent/50 dark:data-[state=open]:!bg-accent/50",
 							isDesktopSidebarHeader
-								? "h-9 px-2.5 pr-1.5 text-[15px]"
+								? "h-9 px-2.5 pr-1.5 text-sm"
 								: "h-8 px-2 pr-1.5 text-sm",
 							sidebarCompact
 								? "max-w-[min(100%,18rem)]"
@@ -1940,12 +1940,7 @@ export function NoteChatHeader({
 							sidebarCompact ? "-ml-1" : "-ml-2",
 						)}
 					>
-						<span
-							className={cn(
-								"min-w-0 truncate text-foreground",
-								isDesktopSidebarHeader ? "text-[15px]" : "text-sm",
-							)}
-						>
+						<span className="min-w-0 truncate text-sm text-foreground">
 							{chatTitle}
 						</span>
 					</SelectTrigger>

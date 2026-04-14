@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@workspace/ui/components/button";
+import { useSidebar } from "@workspace/ui/components/sidebar";
 import {
 	Tooltip,
 	TooltipContent,
@@ -13,56 +14,103 @@ import { ResizableSidePanelHandle } from "@/components/layout/resizable-side-pan
 
 type DockedPanelSide = "left" | "right";
 
-export function useDockedPanelInset({
+type DockedPanelWidthsUpdate = {
+	leftInsetPanelWidth?: string | null;
+	leftOverlayPanelWidth?: string | null;
+	rightInsetPanelWidth?: string | null;
+};
+
+function getDockedPanelInsetWidth({
 	isMobile,
 	isPinned,
 	open,
 	panelWidth,
-	setInsetPanelWidth,
 }: {
 	isMobile: boolean;
 	isPinned: boolean;
 	open: boolean;
 	panelWidth: number;
-	setInsetPanelWidth: (width: string | null) => void;
 }) {
-	React.useEffect(() => {
-		if (isMobile || !open || !isPinned) {
-			setInsetPanelWidth(null);
-			return;
-		}
-
-		setInsetPanelWidth(`${panelWidth}px`);
-		return () => {
-			setInsetPanelWidth(null);
-		};
-	}, [isMobile, isPinned, open, panelWidth, setInsetPanelWidth]);
+	return !isMobile && open && isPinned ? `${panelWidth}px` : null;
 }
 
-export function useDockedPanelOverlayWidth({
+function getDockedPanelOverlayWidth({
 	isMobile,
 	isPinned,
 	open,
 	panelWidth,
-	setOverlayPanelWidth,
 }: {
 	isMobile: boolean;
 	isPinned: boolean;
 	open: boolean;
 	panelWidth: number;
-	setOverlayPanelWidth: (width: string | null) => void;
 }) {
-	React.useEffect(() => {
-		if (isMobile || !open || isPinned) {
-			setOverlayPanelWidth(null);
-			return;
-		}
+	return !isMobile && open && !isPinned ? `${panelWidth}px` : null;
+}
 
-		setOverlayPanelWidth(`${panelWidth}px`);
+const clearDockedPanelWidths = (
+	widths: DockedPanelWidthsUpdate,
+): DockedPanelWidthsUpdate => ({
+	leftInsetPanelWidth:
+		widths.leftInsetPanelWidth === undefined ? undefined : null,
+	leftOverlayPanelWidth:
+		widths.leftOverlayPanelWidth === undefined ? undefined : null,
+	rightInsetPanelWidth:
+		widths.rightInsetPanelWidth === undefined ? undefined : null,
+});
+
+export function useSyncDockedPanelWidths({
+	leftInsetPanelWidth,
+	leftOverlayPanelWidth,
+	rightInsetPanelWidth,
+}: DockedPanelWidthsUpdate) {
+	const { syncDockedPanelWidths } = useSidebar();
+
+	React.useEffect(() => {
+		const widths = {
+			leftInsetPanelWidth,
+			leftOverlayPanelWidth,
+			rightInsetPanelWidth,
+		} satisfies DockedPanelWidthsUpdate;
+		syncDockedPanelWidths(widths);
+
 		return () => {
-			setOverlayPanelWidth(null);
+			syncDockedPanelWidths(clearDockedPanelWidths(widths));
 		};
-	}, [isMobile, isPinned, open, panelWidth, setOverlayPanelWidth]);
+	}, [
+		leftInsetPanelWidth,
+		leftOverlayPanelWidth,
+		rightInsetPanelWidth,
+		syncDockedPanelWidths,
+	]);
+}
+
+export function useDockedPanelInset(args: {
+	side: DockedPanelSide;
+	isMobile: boolean;
+	isPinned: boolean;
+	open: boolean;
+	panelWidth: number;
+}) {
+	const insetPanelWidth = getDockedPanelInsetWidth(args);
+
+	useSyncDockedPanelWidths(
+		args.side === "left"
+			? { leftInsetPanelWidth: insetPanelWidth }
+			: { rightInsetPanelWidth: insetPanelWidth },
+	);
+}
+
+export function useDockedPanelOverlayWidth(args: {
+	side: DockedPanelSide;
+	isMobile: boolean;
+	isPinned: boolean;
+	open: boolean;
+	panelWidth: number;
+}) {
+	useSyncDockedPanelWidths({
+		leftOverlayPanelWidth: getDockedPanelOverlayWidth(args),
+	});
 }
 
 export function DockedPanelPinButton({

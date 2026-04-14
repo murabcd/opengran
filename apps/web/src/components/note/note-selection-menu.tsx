@@ -230,9 +230,6 @@ export function NoteSelectionMenu({ onComment }: { onComment: () => void }) {
 						container={bubbleMenuRef.current?.parentElement ?? undefined}
 						disableCloseAnimation
 						className="min-w-44 bg-background text-foreground"
-						onOpenAutoFocus={(event) => {
-							event.preventDefault();
-						}}
 						onEscapeKeyDown={() => {
 							blockMenuCloseReasonRef.current = "dismiss";
 						}}

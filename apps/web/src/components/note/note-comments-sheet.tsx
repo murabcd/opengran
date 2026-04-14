@@ -40,7 +40,6 @@ import {
 	SheetDescription,
 	SheetTitle,
 } from "@workspace/ui/components/sheet";
-import { useSidebar } from "@workspace/ui/components/sidebar";
 import {
 	Tooltip,
 	TooltipContent,
@@ -2081,7 +2080,6 @@ function useNoteCommentsSheetController({
 
 export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
 	const { open, onOpenChange } = props;
-	const { setRightInsetPanelWidth } = useSidebar();
 	const { isPinned, togglePinned } = useDesktopPanelPin({
 		storageKey: COMMENTS_PANEL_PINNED_STORAGE_KEY,
 	});
@@ -2099,11 +2097,11 @@ export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
 	});
 
 	useDockedPanelInset({
+		side: "right",
 		isMobile,
 		isPinned,
 		open,
 		panelWidth,
-		setInsetPanelWidth: setRightInsetPanelWidth,
 	});
 
 	if (isMobile) {

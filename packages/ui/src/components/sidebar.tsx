@@ -126,9 +126,54 @@ type SidebarContextProps = {
 	setLeftOverlayPanelWidth: (width: string | null) => void;
 	rightInsetPanelWidth: string | null;
 	setRightInsetPanelWidth: (width: string | null) => void;
+	syncDockedPanelWidths: (widths: DockedPanelWidthsUpdate) => void;
 	hasRightSidebar: boolean;
 	setHasRightSidebar: (hasRightSidebar: boolean) => void;
 };
+
+type DockedPanelWidthsState = {
+	leftInsetPanelWidth: string | null;
+	leftOverlayPanelWidth: string | null;
+	rightInsetPanelWidth: string | null;
+};
+
+type DockedPanelWidthsUpdate = Partial<DockedPanelWidthsState>;
+
+const INITIAL_DOCKED_PANEL_WIDTHS: DockedPanelWidthsState = {
+	leftInsetPanelWidth: null,
+	leftOverlayPanelWidth: null,
+	rightInsetPanelWidth: null,
+};
+
+const DOCKED_PANEL_WIDTH_KEYS = [
+	"leftInsetPanelWidth",
+	"leftOverlayPanelWidth",
+	"rightInsetPanelWidth",
+] as const satisfies Array<keyof DockedPanelWidthsState>;
+
+function dockedPanelWidthsReducer(
+	state: DockedPanelWidthsState,
+	widths: DockedPanelWidthsUpdate,
+) {
+	let hasChanges = false;
+	const nextState = { ...state };
+
+	for (const key of DOCKED_PANEL_WIDTH_KEYS) {
+		if (!(key in widths)) {
+			continue;
+		}
+
+		const nextWidth = widths[key] ?? null;
+		if (nextState[key] === nextWidth) {
+			continue;
+		}
+
+		nextState[key] = nextWidth;
+		hasChanges = true;
+	}
+
+	return hasChanges ? nextState : state;
+}
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
 
@@ -168,16 +213,13 @@ function SidebarProvider({
 		React.useState<string | null>(null);
 	const [rightSidebarWidthMobileOverride, setRightSidebarWidthMobileOverride] =
 		React.useState<string | null>(null);
-	const [leftInsetPanelWidth, setLeftInsetPanelWidth] = React.useState<
-		string | null
-	>(null);
-	const [leftOverlayPanelWidth, setLeftOverlayPanelWidth] = React.useState<
-		string | null
-	>(null);
-	const [rightInsetPanelWidth, setRightInsetPanelWidth] = React.useState<
-		string | null
-	>(null);
+	const [dockedPanelWidths, dispatchDockedPanelWidths] = React.useReducer(
+		dockedPanelWidthsReducer,
+		INITIAL_DOCKED_PANEL_WIDTHS,
+	);
 	const [hasRightSidebar, setHasRightSidebar] = React.useState(false);
+	const { leftInsetPanelWidth, leftOverlayPanelWidth, rightInsetPanelWidth } =
+		dockedPanelWidths;
 
 	const [_open, _setOpen] = React.useState(defaultOpen);
 	const open = openProp ?? _open;
@@ -255,6 +297,31 @@ function SidebarProvider({
 		storeSidebarWidth(SIDEBAR_RIGHT_WIDTH_MOBILE_STORAGE_KEY, width);
 	}, []);
 
+	const syncDockedPanelWidths = React.useCallback(
+		(widths: DockedPanelWidthsUpdate) => {
+			dispatchDockedPanelWidths(widths);
+		},
+		[],
+	);
+	const setLeftInsetPanelWidth = React.useCallback(
+		(width: string | null) => {
+			syncDockedPanelWidths({ leftInsetPanelWidth: width });
+		},
+		[syncDockedPanelWidths],
+	);
+	const setLeftOverlayPanelWidth = React.useCallback(
+		(width: string | null) => {
+			syncDockedPanelWidths({ leftOverlayPanelWidth: width });
+		},
+		[syncDockedPanelWidths],
+	);
+	const setRightInsetPanelWidth = React.useCallback(
+		(width: string | null) => {
+			syncDockedPanelWidths({ rightInsetPanelWidth: width });
+		},
+		[syncDockedPanelWidths],
+	);
+
 	const toggleSidebar = React.useCallback(() => {
 		return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
 	}, [isMobile, setOpen]);
@@ -322,6 +389,7 @@ function SidebarProvider({
 			setLeftOverlayPanelWidth,
 			rightInsetPanelWidth,
 			setRightInsetPanelWidth,
+			syncDockedPanelWidths,
 			hasRightSidebar,
 			setHasRightSidebar,
 		}),
@@ -345,8 +413,12 @@ function SidebarProvider({
 			rightSidebarWidthOverride,
 			rightSidebarWidthMobileOverride,
 			leftInsetPanelWidth,
+			setLeftInsetPanelWidth,
 			leftOverlayPanelWidth,
+			setLeftOverlayPanelWidth,
 			rightInsetPanelWidth,
+			setRightInsetPanelWidth,
+			syncDockedPanelWidths,
 			hasRightSidebar,
 		],
 	);
