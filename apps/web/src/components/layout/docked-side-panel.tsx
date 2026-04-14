@@ -209,7 +209,7 @@ export function DesktopDockedSidePanel({
 					style={
 						isLeft
 							? { left: `calc(${panelOffset ?? "0px"} + ${panelWidth}px)` }
-							: { right: panelWidth }
+							: { right: `calc(${panelOffset ?? "0px"} + ${panelWidth}px)` }
 					}
 					onClick={() => onOpenChange(false)}
 				/>
@@ -227,7 +227,10 @@ export function DesktopDockedSidePanel({
 								left: panelOffset,
 								width: panelWidth,
 							}
-						: { width: panelWidth }
+						: {
+								right: panelOffset,
+								width: panelWidth,
+							}
 				}
 			>
 				<div

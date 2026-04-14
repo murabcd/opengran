@@ -41,6 +41,10 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import {
+	APP_SIDEBAR_COLLAPSED_WIDTH,
+	APP_SIDEBAR_EXPANDED_WIDTH,
+} from "@workspace/ui/lib/panel-dimensions";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
@@ -81,8 +85,6 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 const INBOX_PANEL_STORAGE_KEY_DESKTOP = "opengran.inbox-panel-width.desktop";
 const INBOX_PANEL_STORAGE_KEY_MOBILE = "opengran.inbox-panel-width.mobile";
 const INBOX_PANEL_PINNED_STORAGE_KEY = "opengran.inbox-panel-pinned.desktop";
-const DESKTOP_APP_SIDEBAR_EXPANDED_WIDTH = 256;
-const DESKTOP_APP_SIDEBAR_COLLAPSED_WIDTH = 48;
 
 type InboxView = "all" | "unread" | "archived";
 
@@ -128,8 +130,8 @@ export function InboxSheet({
 		sidebarState === "collapsed" ? SIDEBAR_WIDTH_ICON : SIDEBAR_WIDTH;
 	const sidebarOffsetPx =
 		sidebarState === "collapsed"
-			? DESKTOP_APP_SIDEBAR_COLLAPSED_WIDTH
-			: DESKTOP_APP_SIDEBAR_EXPANDED_WIDTH;
+			? APP_SIDEBAR_COLLAPSED_WIDTH
+			: APP_SIDEBAR_EXPANDED_WIDTH;
 	const { handleResizeKeyDown, handleResizeStart, isResizing, panelWidth } =
 		useResizableSidePanel({
 			isMobile,

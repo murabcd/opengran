@@ -206,3 +206,13 @@
 		@apply font-sans;
 	}
 }
+
+@layer utilities {
+	:root[data-panel-resizing="true"] [data-slot="sidebar-gap"],
+	:root[data-panel-resizing="true"] [data-slot="sidebar-container"],
+	:root[data-panel-resizing="true"] [data-slot="sidebar-inner"],
+	:root[data-panel-resizing="true"] [data-slot="sidebar-inset"],
+	:root[data-panel-resizing="true"] .group\/docked-sheet {
+		transition: none;
+	}
+}

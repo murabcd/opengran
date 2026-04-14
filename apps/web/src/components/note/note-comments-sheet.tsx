@@ -40,12 +40,17 @@ import {
 	SheetDescription,
 	SheetTitle,
 } from "@workspace/ui/components/sheet";
+import { useSidebar } from "@workspace/ui/components/sidebar";
 import {
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { useIsMobile } from "@workspace/ui/hooks/use-mobile";
+import {
+	APP_SIDEBAR_COLLAPSED_WIDTH,
+	APP_SIDEBAR_EXPANDED_WIDTH,
+} from "@workspace/ui/lib/panel-dimensions";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
@@ -77,6 +82,7 @@ import {
 	DockedPanelPinButton,
 	useDockedPanelInset,
 } from "@/components/layout/docked-side-panel";
+import { parseCssLengthToPixels } from "@/components/layout/parse-css-length";
 import {
 	ResizableSidePanelHandle,
 	useResizableSidePanel,
@@ -1265,7 +1271,9 @@ type NoteCommentsSheetProps = {
 
 type NoteCommentsSheetControllerProps = NoteCommentsSheetProps & {
 	isPinned: boolean;
+	leftSidebarReservedWidth: number;
 	onTogglePinned: () => void;
+	rightSidebarReservedWidth: number;
 };
 
 function useNoteCommentsSheetController({
@@ -1275,7 +1283,9 @@ function useNoteCommentsSheetController({
 	open,
 	desktopSafeTop = false,
 	isPinned,
+	leftSidebarReservedWidth,
 	onTogglePinned,
+	rightSidebarReservedWidth,
 	onOpenChange,
 	activeThreadId,
 	onActiveThreadIdChange,
@@ -1293,6 +1303,8 @@ function useNoteCommentsSheetController({
 			desktopMinWidth: DESKTOP_DOCKED_PANEL_MIN_WIDTH,
 			desktopMaxWidth: DESKTOP_DOCKED_PANEL_MAX_WIDTH,
 			mobileMinWidth: MOBILE_DOCKED_PANEL_MIN_WIDTH,
+			desktopLeadingOffset: leftSidebarReservedWidth,
+			desktopTrailingOffset: rightSidebarReservedWidth,
 		});
 	const workspaceId = useActiveWorkspaceId();
 	const [uiState, setUiState] = React.useReducer(
@@ -2080,9 +2092,29 @@ function useNoteCommentsSheetController({
 
 export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
 	const { open, onOpenChange } = props;
+	const {
+		state,
+		hasRightSidebar,
+		rightMode,
+		rightOpen,
+		rightSidebarWidth,
+		rightSidebarWidthOverride,
+	} = useSidebar();
 	const { isPinned, togglePinned } = useDesktopPanelPin({
 		storageKey: COMMENTS_PANEL_PINNED_STORAGE_KEY,
 	});
+	const rightSidebarOffset =
+		hasRightSidebar && rightOpen && rightMode === "sidebar"
+			? (rightSidebarWidthOverride ?? rightSidebarWidth)
+			: undefined;
+	const rightSidebarReservedWidth = React.useMemo(
+		() => parseCssLengthToPixels(rightSidebarOffset),
+		[rightSidebarOffset],
+	);
+	const leftSidebarReservedWidth =
+		state === "collapsed"
+			? APP_SIDEBAR_COLLAPSED_WIDTH
+			: APP_SIDEBAR_EXPANDED_WIDTH;
 	const {
 		handleResizeKeyDown,
 		handleResizeStart,
@@ -2093,7 +2125,9 @@ export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
 	} = useNoteCommentsSheetController({
 		...props,
 		isPinned,
+		leftSidebarReservedWidth,
 		onTogglePinned: togglePinned,
+		rightSidebarReservedWidth,
 	});
 
 	useDockedPanelInset({
@@ -2103,6 +2137,9 @@ export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
 		open,
 		panelWidth,
 	});
+
+	const effectiveRightSidebarOffset =
+		!isMobile && rightSidebarOffset ? rightSidebarOffset : undefined;
 
 	if (isMobile) {
 		return (
@@ -2141,6 +2178,7 @@ export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
 			open={open}
 			isPinned={isPinned}
 			panelWidth={panelWidth}
+			panelOffset={effectiveRightSidebarOffset}
 			desktopSafeTop={props.desktopSafeTop}
 			onOpenChange={onOpenChange}
 			panelName="comments"

@@ -19,6 +19,12 @@ import {
 	TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { useIsMobile } from "@workspace/ui/hooks/use-mobile";
+import {
+	APP_SIDEBAR_COLLAPSED_WIDTH_CSS,
+	APP_SIDEBAR_EXPANDED_WIDTH_CSS,
+	DESKTOP_DOCKED_PANEL_DEFAULT_WIDTH,
+	MOBILE_DOCKED_PANEL_DEFAULT_WIDTH_CSS,
+} from "@workspace/ui/lib/panel-dimensions";
 import { cn } from "@workspace/ui/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
 import { PanelLeftIcon } from "lucide-react";
@@ -31,11 +37,11 @@ const SIDEBAR_RIGHT_MODE_COOKIE_NAME = "sidebar_right_mode";
 const SIDEBAR_RIGHT_WIDTH_STORAGE_KEY = "sidebar_right_width";
 const SIDEBAR_RIGHT_WIDTH_MOBILE_STORAGE_KEY = "sidebar_right_width_mobile";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = "16rem";
+const SIDEBAR_WIDTH = APP_SIDEBAR_EXPANDED_WIDTH_CSS;
 const SIDEBAR_WIDTH_MOBILE = "18rem";
-const SIDEBAR_RIGHT_WIDTH = "16rem";
-const SIDEBAR_RIGHT_WIDTH_MOBILE = "18rem";
-const SIDEBAR_WIDTH_ICON = "3rem";
+const SIDEBAR_RIGHT_WIDTH = `${DESKTOP_DOCKED_PANEL_DEFAULT_WIDTH}px`;
+const SIDEBAR_RIGHT_WIDTH_MOBILE = MOBILE_DOCKED_PANEL_DEFAULT_WIDTH_CSS;
+const SIDEBAR_WIDTH_ICON = APP_SIDEBAR_COLLAPSED_WIDTH_CSS;
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 const persistSidebarState = (openState: boolean) => {
@@ -686,6 +692,20 @@ function SidebarInset({
 		rightSidebarWidthOverride,
 		rightInsetPanelWidth,
 	} = useSidebar();
+	const reservedRightSidebarWidth =
+		reserveRightSidebar &&
+		hasRightSidebar &&
+		rightOpen &&
+		!isMobile &&
+		rightMode === "sidebar"
+			? (rightSidebarWidthOverride ?? rightSidebarWidth)
+			: null;
+	const effectiveRightPadding =
+		!isMobile && rightInsetPanelWidth
+			? reservedRightSidebarWidth
+				? `calc(${rightInsetPanelWidth} + ${reservedRightSidebarWidth})`
+				: rightInsetPanelWidth
+			: reservedRightSidebarWidth;
 
 	return (
 		<main
@@ -700,16 +720,7 @@ function SidebarInset({
 					!isMobile && leftInsetPanelWidth
 						? leftInsetPanelWidth
 						: style?.paddingLeft,
-				paddingRight:
-					!isMobile && rightInsetPanelWidth
-						? rightInsetPanelWidth
-						: reserveRightSidebar &&
-								hasRightSidebar &&
-								rightOpen &&
-								!isMobile &&
-								rightMode === "sidebar"
-							? (rightSidebarWidthOverride ?? rightSidebarWidth)
-							: style?.paddingRight,
+				paddingRight: effectiveRightPadding ?? style?.paddingRight,
 			}}
 			{...props}
 		/>

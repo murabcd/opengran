@@ -42,6 +42,10 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import {
+	APP_SIDEBAR_COLLAPSED_WIDTH,
+	APP_SIDEBAR_EXPANDED_WIDTH,
+} from "@workspace/ui/lib/panel-dimensions";
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
@@ -76,6 +80,7 @@ import {
 	COMPOSER_OVERLAY_FOOTER_PADDING,
 	COMPOSER_OVERLAY_FOOTER_CONTAINER_CLASS as NOTE_COMPOSER_OVERLAY_FOOTER_CONTAINER_CLASS,
 } from "@/components/layout/composer-dock";
+import { parseCssLengthToPixels } from "@/components/layout/parse-css-length";
 import {
 	ResizableSidePanelHandle,
 	ResizableTopPanelHandle,
@@ -301,6 +306,7 @@ const useNoteComposerController = ({
 }: NoteComposerProps) => {
 	const {
 		isMobile,
+		state,
 		rightMode,
 		rightOpen,
 		rightOpenMobile,
@@ -388,6 +394,14 @@ const useNoteComposerController = ({
 	const rootRef = React.useRef<HTMLDivElement>(null);
 	const inlinePanelRef = React.useRef<HTMLDivElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+	const reservedCommentsPanelWidth = React.useMemo(
+		() => parseCssLengthToPixels(rightInsetPanelWidth ?? undefined),
+		[rightInsetPanelWidth],
+	);
+	const leftSidebarReservedWidth =
+		state === "collapsed"
+			? APP_SIDEBAR_COLLAPSED_WIDTH
+			: APP_SIDEBAR_EXPANDED_WIDTH;
 	const {
 		handleResizeKeyDown: handleSidebarResizeKeyDown,
 		handleResizeStart: handleSidebarResizeStart,
@@ -410,6 +424,8 @@ const useNoteComposerController = ({
 		desktopMinWidth: DESKTOP_DOCKED_PANEL_MIN_WIDTH,
 		desktopMaxWidth: DESKTOP_DOCKED_PANEL_MAX_WIDTH,
 		mobileMinWidth: MOBILE_DOCKED_PANEL_MIN_WIDTH,
+		desktopLeadingOffset: leftSidebarReservedWidth,
+		desktopTrailingOffset: reservedCommentsPanelWidth,
 	});
 	const {
 		containerRef: chatViewportRef,
@@ -811,10 +827,7 @@ const useNoteComposerController = ({
 	const isChatOpen = panelMode === "chat";
 	const isTranscriptOpen = panelMode === "transcript";
 	const isRightSidebarOpen = isMobile ? rightOpenMobile : rightOpen;
-	const resolvedPresentationMode =
-		!isMobile && rightInsetPanelWidth && presentationMode === "sidebar"
-			? "floating"
-			: presentationMode;
+	const resolvedPresentationMode = presentationMode;
 	const shouldShowInlinePanel =
 		resolvedPresentationMode === "inline" || isTranscriptOpen;
 	const isFloatingPresentation =
@@ -827,6 +840,10 @@ const useNoteComposerController = ({
 		resolvedPresentationMode === "sidebar" &&
 		isRightSidebarOpen &&
 		rightMode === "sidebar";
+	const floatingPanelRightOffset =
+		!isMobile && rightInsetPanelWidth
+			? `calc(${rightInsetPanelWidth} + 18px)`
+			: "18px";
 	const sidebarPanelWidthCss = `${sidebarPanelWidth}px`;
 	const activeSidebarWidthOverride = isSidebarPresentation
 		? sidebarPanelWidthCss
@@ -943,40 +960,14 @@ const useNoteComposerController = ({
 		[setHasRightSidebar],
 	);
 
-	React.useEffect(() => {
-		if (isMobile || !rightInsetPanelWidth || presentationMode !== "sidebar") {
-			return;
-		}
-
-		setPresentationMode("floating");
-		setRightMode("floating");
-	}, [
-		isMobile,
-		presentationMode,
-		rightInsetPanelWidth,
-		setPresentationMode,
-		setRightMode,
-	]);
-
 	const openRightSidebar = React.useCallback(
 		(mode: Exclude<NoteChatPresentation, "inline">) => {
-			const nextMode =
-				!isMobile && rightInsetPanelWidth && mode === "sidebar"
-					? "floating"
-					: mode;
-			setPresentationMode(nextMode);
-			setRightMode(nextMode);
+			setPresentationMode(mode);
+			setRightMode(mode);
 			setRightSidebarOpen(true);
 			setPanelMode("chat");
 		},
-		[
-			isMobile,
-			rightInsetPanelWidth,
-			setPanelMode,
-			setPresentationMode,
-			setRightMode,
-			setRightSidebarOpen,
-		],
+		[setPanelMode, setPresentationMode, setRightMode, setRightSidebarOpen],
 	);
 
 	const closeRightSidebar = React.useCallback(() => {
@@ -1516,6 +1507,7 @@ const useNoteComposerController = ({
 		panelMode,
 		presentationMode: resolvedPresentationMode,
 		floatingPanelHeight,
+		floatingPanelRightOffset,
 		transcriptViewportRef: transcriptSession.transcriptViewportRef,
 		rootRef,
 		recipePopoverOpen,
@@ -2894,14 +2886,13 @@ function NoteComposerPanels({
 							height: controller.floatingPanelHeight,
 							maxHeight: controller.getFloatingPanelMaxHeight(),
 							minHeight: NOTE_CHAT_PANEL_MIN_HEIGHT,
+							right: controller.floatingPanelRightOffset,
 						} as React.CSSProperties)
 					: undefined
 			}
 			className={cn(
 				"group/note-chat-panel flex flex-col",
-				controller.presentationMode === "floating"
-					? "md:right-[18px] md:top-auto"
-					: "border-l",
+				controller.presentationMode === "floating" ? "md:top-auto" : "border-l",
 			)}
 		>
 			<div

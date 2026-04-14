@@ -1857,11 +1857,12 @@ describe("NoteComposer", () => {
 			const floatingPanel = Array.from(document.querySelectorAll("div")).find(
 				(element) =>
 					element.className.includes("group/note-chat-panel") &&
-					element.className.includes("md:right-[18px]"),
+					element.getAttribute("variant") === "floating",
 			);
 
 			expect(floatingPanel).toBeDefined();
 			expect(floatingPanel?.style.maxHeight).toBe("388px");
+			expect(floatingPanel?.style.right).toBe("18px");
 		});
 	});
 

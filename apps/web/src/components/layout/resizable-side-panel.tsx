@@ -24,6 +24,7 @@ type UseResizableSidePanelOptions = {
 	keyboardStep?: number;
 	desktopViewportGutter?: number;
 	desktopLeadingOffset?: number;
+	desktopTrailingOffset?: number;
 };
 
 type UseResizeHandleOptions = {
@@ -48,6 +49,7 @@ const getPanelWidthBounds = (
 	mobileMinWidth: number,
 	desktopViewportGutter: number,
 	desktopLeadingOffset: number,
+	desktopTrailingOffset: number,
 ): ResizablePanelWidthBounds => {
 	if (isMobile) {
 		const maxWidth = Math.max(mobileMinWidth, viewportWidth);
@@ -61,7 +63,10 @@ const getPanelWidthBounds = (
 		desktopMinWidth,
 		Math.min(
 			desktopMaxWidth,
-			viewportWidth - desktopViewportGutter - desktopLeadingOffset,
+			viewportWidth -
+				desktopViewportGutter -
+				desktopLeadingOffset -
+				desktopTrailingOffset,
 		),
 	);
 
@@ -76,7 +81,11 @@ const getWidthFromClientX = (
 	viewportWidth: number,
 	side: PanelSide,
 	leadingOffset: number,
-) => (side === "right" ? viewportWidth - clientX : clientX - leadingOffset);
+	trailingOffset: number,
+) =>
+	side === "right"
+		? viewportWidth - trailingOffset - clientX
+		: clientX - leadingOffset;
 
 function useResizeHandle({
 	cursor,
@@ -94,13 +103,23 @@ function useResizeHandle({
 
 		const previousUserSelect = document.body.style.userSelect;
 		const previousCursor = document.body.style.cursor;
+		const previousPanelResizingState =
+			document.documentElement.dataset.panelResizing;
 
 		document.body.style.userSelect = "none";
 		document.body.style.cursor = cursor;
+		document.documentElement.dataset.panelResizing = "true";
 
 		return () => {
 			document.body.style.userSelect = previousUserSelect;
 			document.body.style.cursor = previousCursor;
+			if (previousPanelResizingState === undefined) {
+				delete document.documentElement.dataset.panelResizing;
+				return;
+			}
+
+			document.documentElement.dataset.panelResizing =
+				previousPanelResizingState;
 		};
 	}, [cursor, isResizing]);
 
@@ -157,11 +176,13 @@ function useResizableSidePanel({
 	keyboardStep = DEFAULT_KEYBOARD_STEP,
 	desktopViewportGutter = DEFAULT_DESKTOP_VIEWPORT_GUTTER,
 	desktopLeadingOffset = 0,
+	desktopTrailingOffset = 0,
 }: UseResizableSidePanelOptions) {
 	const [viewportWidth, setViewportWidth] = React.useState(() =>
 		typeof window === "undefined" ? defaultDesktopWidth : window.innerWidth,
 	);
 	const effectiveDesktopLeadingOffset = isMobile ? 0 : desktopLeadingOffset;
+	const effectiveDesktopTrailingOffset = isMobile ? 0 : desktopTrailingOffset;
 	const bounds = React.useMemo(
 		() =>
 			getPanelWidthBounds(
@@ -172,10 +193,12 @@ function useResizableSidePanel({
 				mobileMinWidth,
 				desktopViewportGutter,
 				effectiveDesktopLeadingOffset,
+				effectiveDesktopTrailingOffset,
 			),
 		[
 			desktopMaxWidth,
 			effectiveDesktopLeadingOffset,
+			effectiveDesktopTrailingOffset,
 			desktopMinWidth,
 			desktopViewportGutter,
 			isMobile,
@@ -202,12 +225,19 @@ function useResizableSidePanel({
 					viewportWidth,
 					side,
 					effectiveDesktopLeadingOffset,
+					effectiveDesktopTrailingOffset,
 				),
 				bounds,
 			);
 			setPanelWidth(nextWidth);
 		},
-		[bounds, effectiveDesktopLeadingOffset, side, viewportWidth],
+		[
+			bounds,
+			effectiveDesktopLeadingOffset,
+			effectiveDesktopTrailingOffset,
+			side,
+			viewportWidth,
+		],
 	);
 
 	React.useEffect(() => {
@@ -240,6 +270,7 @@ function useResizableSidePanel({
 			mobileMinWidth,
 			desktopViewportGutter,
 			effectiveDesktopLeadingOffset,
+			effectiveDesktopTrailingOffset,
 		);
 		const defaultWidth = isMobile ? window.innerWidth : defaultDesktopWidth;
 		const nextWidth = Number.isFinite(parsedWidth) ? parsedWidth : defaultWidth;
@@ -249,6 +280,7 @@ function useResizableSidePanel({
 		defaultDesktopWidth,
 		desktopMaxWidth,
 		effectiveDesktopLeadingOffset,
+		effectiveDesktopTrailingOffset,
 		desktopMinWidth,
 		desktopViewportGutter,
 		isMobile,
