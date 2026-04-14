@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { COMPOSER_OVERLAY_FOOTER_PADDING } from "../src/components/layout/composer-dock";
 import { ActiveWorkspaceProvider } from "../src/hooks/use-active-workspace";
 
 const useChatMock = vi.fn();
@@ -74,12 +75,35 @@ vi.mock("@workspace/ui/components/dropdown-menu", () => {
 	}: React.PropsWithChildren<
 		React.HTMLAttributes<HTMLDivElement> & { asChild?: boolean }
 	>) => <div {...props}>{children}</div>;
+	const Item = ({
+		asChild: _asChild,
+		onClick,
+		onSelect,
+		children,
+		...props
+	}: React.PropsWithChildren<
+		React.ButtonHTMLAttributes<HTMLButtonElement> & {
+			asChild?: boolean;
+			onSelect?: (event: Event) => void;
+		}
+	>) => (
+		<button
+			type="button"
+			{...props}
+			onClick={(event) => {
+				onClick?.(event);
+				onSelect?.(event.nativeEvent);
+			}}
+		>
+			{children}
+		</button>
+	);
 
 	return {
 		DropdownMenu: Div,
 		DropdownMenuContent: Div,
 		DropdownMenuGroup: Div,
-		DropdownMenuItem: Div,
+		DropdownMenuItem: Item,
 		DropdownMenuLabel: Div,
 		DropdownMenuTrigger: Div,
 	};
@@ -1329,7 +1353,10 @@ describe("NoteComposer", () => {
 			expect(screen.getAllByPlaceholderText("Continue chat")).toHaveLength(1);
 		});
 
-		fireEvent.click(screen.getByText("Floating"));
+		fireEvent(
+			screen.getByText("Floating"),
+			new Event("select", { bubbles: true }),
+		);
 
 		await waitFor(() => {
 			expect(screen.getAllByPlaceholderText("Continue chat")).toHaveLength(1);
@@ -1514,6 +1541,7 @@ describe("NoteComposer", () => {
 		if (!inlineFooter || !chatPanelContent) {
 			throw new Error("Inline footer layout not found");
 		}
+		expect(inlineFooter.className).toContain("bottom-0");
 
 		vi.spyOn(inlineFooter, "getBoundingClientRect").mockImplementation(
 			() =>
@@ -1669,6 +1697,338 @@ describe("NoteComposer", () => {
 
 		expect(restoredInlinePanelCard).not.toBeNull();
 		expect(restoredInlinePanelCard?.style.height).toBe("464px");
+	});
+
+	it("keeps the inline chat dock aligned with the floating baseline", async () => {
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+		await screen.findByPlaceholderText("Continue chat");
+
+		const resizeHandle = document.querySelector(
+			".cursor-row-resize",
+		) as HTMLDivElement | null;
+		const inlinePanel = resizeHandle?.parentElement?.parentElement
+			?.parentElement?.parentElement as HTMLDivElement | null;
+
+		expect(inlinePanel).not.toBeNull();
+		expect(inlinePanel?.style.bottom).toBe(
+			`-${COMPOSER_OVERLAY_FOOTER_PADDING}px`,
+		);
+	});
+
+	it("uses the same max-height clamp for floating chat as inline chat", async () => {
+		let queryCall = 0;
+
+		Object.defineProperty(window, "innerHeight", {
+			configurable: true,
+			value: 500,
+			writable: true,
+		});
+
+		useSidebarMock.mockReturnValue({
+			isMobile: false,
+			rightInsetPanelWidth: null,
+			rightMode: "floating",
+			rightOpen: true,
+			rightOpenMobile: false,
+			setHasRightSidebar: vi.fn(),
+			setRightMode: vi.fn(),
+			setRightOpen: vi.fn(),
+			setRightOpenMobile: vi.fn(),
+			setRightSidebarWidthMobileOverride: vi.fn(),
+			setRightSidebarWidthOverride: vi.fn(),
+		});
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+		await screen.findByPlaceholderText("Continue chat");
+
+		fireEvent.click(screen.getByRole("button", { name: "Floating" }));
+
+		await waitFor(() => {
+			const floatingPanel = Array.from(document.querySelectorAll("div")).find(
+				(element) =>
+					element.className.includes("group/note-chat-panel") &&
+					element.className.includes("md:right-[18px]"),
+			);
+
+			expect(floatingPanel).toBeDefined();
+			expect(floatingPanel?.style.maxHeight).toBe("388px");
+		});
+	});
+
+	it("reuses the same footer chrome for inline chat and transcript popovers", async () => {
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+		await screen.findByPlaceholderText("Continue chat");
+
+		const inlineChatFooter = document.querySelector(
+			'[data-slot="note-composer-inline-footer"]',
+		) as HTMLDivElement | null;
+		const inlineChatSurface = inlineChatFooter?.querySelector(
+			'[data-slot="input-group"]',
+		) as HTMLDivElement | null;
+
+		expect(inlineChatFooter).not.toBeNull();
+		expect(inlineChatSurface).not.toBeNull();
+		expect(inlineChatFooter?.className).toContain("bottom-0");
+		expect(inlineChatFooter?.className).toContain("px-[6px]");
+		expect(inlineChatFooter?.className).toContain("pb-2");
+
+		const inlineChatSurfaceClassName = inlineChatSurface?.className ?? "";
+
+		cleanup();
+
+		useNoteTranscriptSessionMock.mockReturnValue({
+			autoStartKey: null,
+			captureScopeKey: "note:note-1",
+			currentNoteScopeKey: "note:note-1",
+			displayTranscriptEntries: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					isLive: false,
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
+			exportTranscript: "hello",
+			fullTranscript: "hello",
+			handleGenerateNotes: vi.fn(),
+			hasGeneratedLatestTranscript: false,
+			hasPendingGenerateTranscript: true,
+			isTranscriptSessionReady: true,
+			isGeneratingNotes: false,
+			isCurrentNoteSpeechListening: false,
+			isRefiningTranscript: false,
+			isSpeechListening: false,
+			liveTranscriptEntries: [],
+			onLiveTranscriptChange: vi.fn(),
+			onRecoveryStatusChange: vi.fn(),
+			onSystemAudioRecordingReady: vi.fn(),
+			onSystemAudioStatusChange: vi.fn(),
+			onTranscriptListeningChange: vi.fn(),
+			onTranscriptUtterance: vi.fn(),
+			orderedTranscriptUtterances: [
+				{
+					endedAt: 2,
+					id: "utt-1",
+					speaker: "you",
+					startedAt: 1,
+					text: "hello",
+				},
+			],
+			recoveryStatus: {
+				attempt: 0,
+				maxAttempts: 0,
+				message: null,
+				state: "idle",
+			},
+			systemAudioStatus: {
+				sourceMode: "display-media",
+				state: "ready",
+			},
+			transcriptStartedAt: 1,
+			transcriptRefinementError: null,
+			transcriptViewportRef: {
+				current: null,
+			},
+		});
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		fireEvent.click(
+			screen.getAllByRole("button", {
+				name: "Expand speech controls",
+			})[0],
+		);
+		await screen.findByText("Live transcript");
+
+		const transcriptFooter = document.querySelector(
+			'[data-slot="note-composer-inline-footer"]',
+		) as HTMLDivElement | null;
+		const transcriptSurface = transcriptFooter?.querySelector(
+			'[data-slot="input-group"]',
+		) as HTMLDivElement | null;
+
+		expect(transcriptFooter).not.toBeNull();
+		expect(transcriptSurface).not.toBeNull();
+		expect(transcriptFooter?.className).toContain("bottom-0");
+		expect(transcriptFooter?.className).toContain("px-[6px]");
+		expect(transcriptFooter?.className).toContain("pb-2");
+		expect(transcriptSurface?.className).toBe(inlineChatSurfaceClassName);
 	});
 
 	it("hides generate notes while inline chat is open", async () => {

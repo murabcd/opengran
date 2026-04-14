@@ -186,7 +186,7 @@ export function ChatComposer({
 			}),
 		[contextPages, mentions],
 	);
-	const showTopAddon = !hasMessages || mentions.length > 0;
+	const showTopAddon = true;
 	useChatComposerPromptFocus({
 		promptRef,
 		editingMessageId,
@@ -245,19 +245,6 @@ export function ChatComposer({
 					draft={draft}
 					isLoading={isLoading}
 					onSubmit={onSubmit}
-					mentionPicker={
-						<MentionPicker
-							open={mentionPopoverOpen}
-							onOpenChange={onMentionPopoverOpenChange}
-							documentSearchTerm={documentSearchTerm}
-							onDocumentSearchTermChange={onDocumentSearchTermChange}
-							mentionableDocuments={mentionableDocuments}
-							isNotesLoading={isNotesLoading}
-							emptyStateMessage={emptyStateMessage}
-							shouldSearchDocuments={shouldSearchDocuments}
-							onAddMention={onAddMention}
-						/>
-					}
 					modelPicker={
 						<ModelPicker
 							open={modelPopoverOpen}
@@ -389,7 +376,7 @@ function MentionPicker({
 				>
 					<PopoverTrigger asChild>
 						<InputGroupButton
-							variant="outline"
+							variant="ghost"
 							size="icon-sm"
 							className="rounded-full transition-transform"
 						>
@@ -503,7 +490,7 @@ function ChatComposerTopAddon({
 			align="block-start"
 			className={`px-4 pb-0 ${hasMessages ? "pt-2.5" : "pt-4"}`}
 		>
-			{!hasMessages ? mentionPicker : null}
+			{mentionPicker}
 			{mentionedPages.length > 0 ? (
 				<ChatComposerMentionChips
 					mentionedPages={mentionedPages}
@@ -545,7 +532,6 @@ function ChatComposerFooter({
 	draft,
 	isLoading,
 	onSubmit,
-	mentionPicker,
 	modelPicker,
 	scopePicker,
 }: {
@@ -553,7 +539,6 @@ function ChatComposerFooter({
 	draft: string;
 	isLoading: boolean;
 	onSubmit: () => void | Promise<void>;
-	mentionPicker: React.ReactNode;
 	modelPicker: React.ReactNode;
 	scopePicker: React.ReactNode;
 }) {
@@ -562,7 +547,6 @@ function ChatComposerFooter({
 			align="block-end"
 			className={`gap-1 px-4 ${hasMessages ? "pb-2.5" : "pb-4"}`}
 		>
-			{hasMessages ? mentionPicker : null}
 			{modelPicker}
 			{scopePicker}
 			<InputGroupButton

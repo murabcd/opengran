@@ -8,6 +8,8 @@ import {
 } from "@testing-library/react";
 import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { COMPOSER_DOCK_SURFACE_BOTTOM_OFFSET } from "../src/components/layout/composer-dock";
+import { NOTE_PAGE_VIEWPORT_MIN_HEIGHT_CLASS } from "../src/components/note/note-layout";
 
 const useMutationMock = vi.fn();
 const useQueryMock = vi.fn();
@@ -281,6 +283,70 @@ describe("NotePage", () => {
 		);
 
 		expect(latestEditorOptions?.autofocus).toBeUndefined();
+	});
+
+	it("keeps the closed note composer dock aligned with the chat baseline", async () => {
+		const { NotePage } = await import("../src/components/note/note-page");
+
+		render(
+			<NotePage
+				noteId={"note-1" as never}
+				note={
+					{
+						_id: "note-1",
+						title: "",
+						content: JSON.stringify({
+							type: "doc",
+							content: [{ type: "paragraph" }],
+						}),
+						searchableText: "",
+						templateSlug: null,
+						calendarEventKey: undefined,
+					} as never
+				}
+			/>,
+		);
+
+		const composer = screen.getByTestId("note-composer");
+		const dockContainer = composer.parentElement?.parentElement;
+
+		expect(dockContainer).not.toBeNull();
+		expect(dockContainer?.className).toContain(
+			`pb-[${COMPOSER_DOCK_SURFACE_BOTTOM_OFFSET}px]`,
+		);
+	});
+
+	it("uses the desktop viewport min-height contract for short notes", async () => {
+		const { NotePage } = await import("../src/components/note/note-page");
+
+		render(
+			<NotePage
+				noteId={"note-1" as never}
+				note={
+					{
+						_id: "note-1",
+						title: "Ok",
+						content: JSON.stringify({
+							type: "doc",
+							content: [{ type: "paragraph" }],
+						}),
+						searchableText: "",
+						templateSlug: null,
+						calendarEventKey: undefined,
+					} as never
+				}
+			/>,
+		);
+
+		const viewportColumns = Array.from(document.querySelectorAll("div")).filter(
+			(element) => element.className.includes("max-w-xl"),
+		);
+
+		expect(
+			viewportColumns.some((element) =>
+				element.className.includes(NOTE_PAGE_VIEWPORT_MIN_HEIGHT_CLASS),
+			),
+		).toBe(true);
 	});
 
 	it("clears the previous note title while the next note is still loading", async () => {

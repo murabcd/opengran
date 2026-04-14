@@ -72,6 +72,11 @@ import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
 import {
+	COMPOSER_DOCK_BOTTOM_OFFSET,
+	COMPOSER_OVERLAY_FOOTER_PADDING,
+	COMPOSER_OVERLAY_FOOTER_CONTAINER_CLASS as NOTE_COMPOSER_OVERLAY_FOOTER_CONTAINER_CLASS,
+} from "@/components/layout/composer-dock";
+import {
 	ResizableSidePanelHandle,
 	ResizableTopPanelHandle,
 	useResizableSidePanel,
@@ -116,7 +121,19 @@ const NOTE_CHAT_FLOATING_HEIGHT_STORAGE_KEY_PREFIX =
 const NOTE_CHAT_FLOATING_DEFAULT_HEIGHT = 512;
 const NOTE_CHAT_PANEL_MIN_HEIGHT = 320;
 const NOTE_CHAT_PANEL_MAX_HEIGHT = 680;
+const NOTE_CHAT_OVERLAY_VIEWPORT_INSET = 112;
+const NOTE_CHAT_PANEL_DOCK_OFFSET =
+	COMPOSER_DOCK_BOTTOM_OFFSET - COMPOSER_OVERLAY_FOOTER_PADDING;
+const NOTE_CHAT_INLINE_PANEL_DOCK_OFFSET = COMPOSER_OVERLAY_FOOTER_PADDING;
 const INLINE_POPOVER_FOOTER_CONTAINER_CLASS = "px-6 pt-2 pb-4";
+const NOTE_COMPOSER_FOOTER_SURFACE_CLASS =
+	"min-h-[96px] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30";
+const NOTE_COMPOSER_FOOTER_TOP_ROW_CLASS = "gap-1 px-4 pb-0 pt-2.5";
+const NOTE_COMPOSER_FOOTER_BODY_CLASS =
+	"min-h-[40px] max-h-52 overflow-y-auto pt-2 pb-0 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0";
+const NOTE_COMPOSER_FOOTER_BODY_SPACER_CLASS =
+	"min-h-[40px] w-full shrink-0 px-4 pt-2 pb-0";
+const NOTE_COMPOSER_FOOTER_BOTTOM_ROW_CLASS = "gap-1 px-4 pb-2.5";
 const INLINE_POPOVER_FOOTER_DEFAULT_HEIGHT = 120;
 const INLINE_POPOVER_DEFAULT_HEIGHT = 384;
 const INLINE_POPOVER_HEIGHT_STORAGE_KEY_PREFIX =
@@ -596,7 +613,10 @@ const useNoteComposerController = ({
 
 		return Math.max(
 			NOTE_CHAT_PANEL_MIN_HEIGHT,
-			Math.min(NOTE_CHAT_PANEL_MAX_HEIGHT, window.innerHeight - 112),
+			Math.min(
+				NOTE_CHAT_PANEL_MAX_HEIGHT,
+				window.innerHeight - NOTE_CHAT_OVERLAY_VIEWPORT_INSET,
+			),
 		);
 	}, []);
 	const getFloatingPanelMaxHeight = React.useCallback(() => {
@@ -606,7 +626,10 @@ const useNoteComposerController = ({
 
 		return Math.max(
 			NOTE_CHAT_PANEL_MIN_HEIGHT,
-			Math.min(NOTE_CHAT_PANEL_MAX_HEIGHT, window.innerHeight - 32),
+			Math.min(
+				NOTE_CHAT_PANEL_MAX_HEIGHT,
+				window.innerHeight - NOTE_CHAT_OVERLAY_VIEWPORT_INSET,
+			),
 		);
 	}, []);
 
@@ -2207,12 +2230,16 @@ function ChatInlinePopoverFooter({
 	);
 
 	return (
-		<InputGroup className="min-h-[96px] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30">
-			{selectedRecipe ? (
-				<InputGroupAddon
-					align="block-start"
-					className={cn("gap-1 px-4 pb-0 pt-2.5", isSidebarCompact && "px-3.5")}
-				>
+		<InputGroup className={NOTE_COMPOSER_FOOTER_SURFACE_CLASS}>
+			<InputGroupAddon
+				align="block-start"
+				className={cn(
+					NOTE_COMPOSER_FOOTER_TOP_ROW_CLASS,
+					isSidebarCompact && "px-3.5",
+				)}
+			>
+				{recipePicker}
+				{selectedRecipe ? (
 					<InputGroupButton
 						size="sm"
 						variant="secondary"
@@ -2226,8 +2253,8 @@ function ChatInlinePopoverFooter({
 						{selectedRecipe.name}
 						<X />
 					</InputGroupButton>
-				</InputGroupAddon>
-			) : null}
+				) : null}
+			</InputGroupAddon>
 			<InputGroupTextarea
 				data-slot="input-group-control"
 				ref={textareaRef}
@@ -2240,7 +2267,7 @@ function ChatInlinePopoverFooter({
 				onKeyDown={handleKeyDown}
 				placeholder={composerPlaceholder}
 				className={cn(
-					"min-h-[40px] max-h-52 overflow-y-auto pt-2 pb-0 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0",
+					NOTE_COMPOSER_FOOTER_BODY_CLASS,
 					isSidebarCompact ? "px-3.5" : "px-4",
 				)}
 				rows={1}
@@ -2248,12 +2275,11 @@ function ChatInlinePopoverFooter({
 			<InputGroupAddon
 				align="block-end"
 				className={cn(
-					"gap-1 pb-2.5",
+					NOTE_COMPOSER_FOOTER_BOTTOM_ROW_CLASS,
 					isSidebarCompact ? "pl-3.5 pr-2.5" : "px-4",
 				)}
 			>
 				{speechControls}
-				{recipePicker}
 				<InputGroupButton
 					type="submit"
 					variant="default"
@@ -2285,7 +2311,7 @@ function TranscriptInlinePopoverFooter({
 	return (
 		<InlinePopoverFooterContainer
 			ref={containerRef}
-			className="absolute inset-x-0 bottom-[6px] z-10 px-[6px] pb-0"
+			className={NOTE_COMPOSER_OVERLAY_FOOTER_CONTAINER_CLASS}
 		>
 			<div className="relative">
 				{isSpeechListening || topAccessory ? (
@@ -2301,12 +2327,29 @@ function TranscriptInlinePopoverFooter({
 					</div>
 				) : null}
 
-				<InputGroup className="min-h-[96px] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30">
+				<InputGroup className={NOTE_COMPOSER_FOOTER_SURFACE_CLASS}>
+					<InputGroupAddon
+						align="block-start"
+						className={NOTE_COMPOSER_FOOTER_TOP_ROW_CLASS}
+					>
+						<InputGroupButton
+							aria-hidden="true"
+							tabIndex={-1}
+							variant="ghost"
+							size="sm"
+							className="pointer-events-none rounded-full border-0 bg-transparent px-2.5 text-xs text-transparent opacity-0 shadow-none"
+						>
+							<ListMinus className="size-3.5" />
+						</InputGroupButton>
+					</InputGroupAddon>
 					<div
 						aria-hidden="true"
-						className="h-[46px] w-full shrink-0 px-4 pt-2 pb-0"
+						className={NOTE_COMPOSER_FOOTER_BODY_SPACER_CLASS}
 					/>
-					<InputGroupAddon align="block-end" className="gap-1 px-4 pb-2.5">
+					<InputGroupAddon
+						align="block-end"
+						className={NOTE_COMPOSER_FOOTER_BOTTOM_ROW_CLASS}
+					>
 						{speechControls}
 						<TranscriptLanguageSelector
 							className="ml-auto"
@@ -2597,9 +2640,9 @@ function NoteComposerChatPanelContent({
 		controller.presentationMode === "floating" && !shouldRenderInlineComposer;
 	const isOverlayComposer = shouldRenderInlineComposer || isFloatingComposer;
 	const floatingFooterContainerClassName =
-		"absolute inset-x-0 bottom-[6px] z-10 px-[6px] pb-0";
+		NOTE_COMPOSER_OVERLAY_FOOTER_CONTAINER_CLASS;
 	const inlineFooterContainerClassName =
-		"absolute inset-x-0 bottom-[6px] z-10 px-[6px] pb-0";
+		NOTE_COMPOSER_OVERLAY_FOOTER_CONTAINER_CLASS;
 	const { footerHeight: overlayFooterHeight, footerRef: overlayFooterRef } =
 		useInlineFooterHeight();
 	const chatFooter = (
@@ -2810,7 +2853,8 @@ function NoteComposerPanels({
 		return (
 			<div
 				ref={controller.inlinePanelRef}
-				className="absolute inset-x-0 -bottom-[6px] z-20"
+				className="absolute inset-x-0 z-20"
+				style={{ bottom: -NOTE_CHAT_INLINE_PANEL_DOCK_OFFSET }}
 			>
 				<div className="relative flex items-end gap-3">
 					<Card
@@ -2851,6 +2895,7 @@ function NoteComposerPanels({
 				controller.isFloatingPresentation && !controller.isMobile
 					? ({
 							"--sidebar-width": `calc(${NOTE_CHAT_FLOATING_WIDTH} - 20px)`,
+							bottom: NOTE_CHAT_PANEL_DOCK_OFFSET,
 							height: controller.floatingPanelHeight,
 							maxHeight: controller.getFloatingPanelMaxHeight(),
 							minHeight: NOTE_CHAT_PANEL_MIN_HEIGHT,
@@ -2860,7 +2905,7 @@ function NoteComposerPanels({
 			className={cn(
 				"group/note-chat-panel flex flex-col",
 				controller.presentationMode === "floating"
-					? "md:right-[18px] md:top-auto md:bottom-[5px]"
+					? "md:right-[18px] md:top-auto"
 					: "border-l",
 			)}
 		>

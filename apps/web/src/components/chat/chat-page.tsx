@@ -18,6 +18,7 @@ import { ArrowDown, FileText } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { ChatMessages } from "@/components/chat/messages";
+import { COMPOSER_DOCK_WRAPPER_CLASS } from "@/components/layout/composer-dock";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
@@ -685,7 +686,7 @@ export function ChatPage({
 								</div>
 
 								<div className="sticky bottom-0 z-10 mt-auto h-0">
-									<div className="pointer-events-none absolute inset-x-0 bottom-0 -mx-4 bg-background pt-2 pb-6 md:-mx-6">
+									<div className={COMPOSER_DOCK_WRAPPER_CLASS}>
 										<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
 											{composer}
 										</div>

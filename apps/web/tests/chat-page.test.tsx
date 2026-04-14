@@ -2,6 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { COMPOSER_DOCK_SURFACE_BOTTOM_OFFSET } from "../src/components/layout/composer-dock";
 import { ActiveWorkspaceProvider } from "../src/hooks/use-active-workspace";
 
 const convexTokenMock = vi.fn();
@@ -827,5 +828,54 @@ describe("ChatPage", () => {
 		);
 
 		expect(scrollToBottomMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps the Ask AI composer dock aligned with the note chat baseline", async () => {
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		useChatMock.mockReturnValue({
+			messages: [
+				{
+					id: "user-1",
+					role: "user",
+					parts: [{ type: "text", text: "Original question" }],
+				},
+			],
+			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			error: undefined,
+			status: "ready",
+			stop: stopMock,
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={"chat-1"}
+					onOpenChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		const dockContainer = Array.from(document.querySelectorAll("div")).find(
+			(element) =>
+				element.className.includes(
+					"pointer-events-none absolute inset-x-0 bottom-0",
+				),
+		);
+
+		expect(dockContainer).not.toBeUndefined();
+		expect(dockContainer?.className).toContain(
+			`pb-[${COMPOSER_DOCK_SURFACE_BOTTOM_OFFSET}px]`,
+		);
 	});
 });

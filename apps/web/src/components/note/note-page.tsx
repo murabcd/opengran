@@ -12,6 +12,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
+import { COMPOSER_DOCK_WRAPPER_CLASS } from "@/components/layout/composer-dock";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import {
 	createNoteEditorExtensions,
@@ -47,6 +48,7 @@ import {
 	type PendingNoteCommentSelection,
 } from "./note-comments-sheet";
 import { NoteComposer } from "./note-composer";
+import { NOTE_PAGE_VIEWPORT_MIN_HEIGHT_CLASS } from "./note-layout";
 import { NoteSelectionMenu } from "./note-selection-menu";
 import { NoteTableOfContents } from "./note-table-of-contents";
 import { optimisticPatchNote } from "./optimistic-patch-note";
@@ -1169,9 +1171,19 @@ function NotePageContent({
 	return (
 		<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
 			<div className="relative flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
-				<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-5xl flex-1 md:min-h-[calc(100svh-5rem)]">
+				<div
+					className={cn(
+						NOTE_PAGE_VIEWPORT_MIN_HEIGHT_CLASS,
+						"mx-auto flex w-full max-w-5xl flex-1",
+					)}
+				>
 					<div className="min-w-0 flex-1">
-						<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
+						<div
+							className={cn(
+								NOTE_PAGE_VIEWPORT_MIN_HEIGHT_CLASS,
+								"mx-auto flex w-full max-w-xl flex-1 flex-col",
+							)}
+						>
 							<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
 								<div className="flex flex-col gap-6">
 									<div>
@@ -1232,7 +1244,7 @@ function NotePageContent({
 							</div>
 
 							<div className="sticky bottom-0 z-10 mt-auto h-0">
-								<div className="pointer-events-none absolute inset-x-0 bottom-0 -mx-4 bg-background pb-6 md:-mx-6">
+								<div className={COMPOSER_DOCK_WRAPPER_CLASS}>
 									<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
 										<NoteComposer
 											autoStartTranscription={autoStartTranscription}
