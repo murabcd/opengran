@@ -60,6 +60,11 @@ import {
 import * as React from "react";
 import { toast } from "sonner";
 import {
+	INBOX_PANEL_PINNED_STORAGE_KEY,
+	INBOX_PANEL_STORAGE_KEY_DESKTOP,
+	INBOX_PANEL_STORAGE_KEY_MOBILE,
+} from "@/components/inbox/inbox-panel-state";
+import {
 	DESKTOP_DOCKED_PANEL_DEFAULT_WIDTH,
 	DESKTOP_DOCKED_PANEL_MAX_WIDTH,
 	DESKTOP_DOCKED_PANEL_MIN_WIDTH,
@@ -81,10 +86,6 @@ import { getAvatarSrc } from "@/lib/avatar";
 import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-
-const INBOX_PANEL_STORAGE_KEY_DESKTOP = "opengran.inbox-panel-width.desktop";
-const INBOX_PANEL_STORAGE_KEY_MOBILE = "opengran.inbox-panel-width.mobile";
-const INBOX_PANEL_PINNED_STORAGE_KEY = "opengran.inbox-panel-pinned.desktop";
 
 type InboxView = "all" | "unread" | "archived";
 

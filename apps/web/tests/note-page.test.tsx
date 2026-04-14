@@ -13,6 +13,7 @@ import { NOTE_PAGE_VIEWPORT_MIN_HEIGHT_CLASS } from "../src/components/note/note
 
 const useMutationMock = vi.fn();
 const useQueryMock = vi.fn();
+const noteCommentsSheetMock = vi.fn();
 
 const chainRunMock = vi.fn();
 const editorChain = {
@@ -113,9 +114,10 @@ vi.mock("../src/components/note/note-composer", () => ({
 }));
 
 vi.mock("../src/components/note/note-comments-sheet", () => ({
-	NoteCommentsSheet: (_props: unknown) => (
-		<div data-testid="note-comments-sheet" />
-	),
+	NoteCommentsSheet: (props: unknown) => {
+		noteCommentsSheetMock(props);
+		return <div data-testid="note-comments-sheet" />;
+	},
 }));
 
 vi.mock("../src/components/note/note-selection-menu", () => ({
@@ -184,6 +186,8 @@ describe("NotePage", () => {
 				withOptimisticUpdate: () => setNoteTemplateMutationMock,
 			});
 		});
+		noteCommentsSheetMock.mockClear();
+		window.localStorage.clear();
 	});
 
 	afterEach(() => {
@@ -486,5 +490,61 @@ describe("NotePage", () => {
 				searchableText: "",
 			}),
 		);
+	});
+
+	it("keeps pinned comments note-scoped when switching notes", async () => {
+		window.localStorage.setItem(
+			"opengran.note-comments-panel-pinned.desktop.note:note-1",
+			"true",
+		);
+
+		const { NotePage } = await import("../src/components/note/note-page");
+		const firstNote = {
+			_id: "note-1",
+			title: "",
+			content: JSON.stringify({
+				type: "doc",
+				content: [{ type: "paragraph" }],
+			}),
+			searchableText: "",
+			templateSlug: null,
+			calendarEventKey: undefined,
+		} as never;
+		const secondNote = {
+			...firstNote,
+			_id: "note-2",
+		} as never;
+
+		const { rerender } = render(
+			<NotePage noteId={"note-1" as never} note={firstNote} />,
+		);
+
+		await waitFor(() => {
+			const latestCall =
+				noteCommentsSheetMock.mock.calls[
+					noteCommentsSheetMock.mock.calls.length - 1
+				];
+			expect(latestCall?.[0]).toMatchObject({ open: true });
+		});
+
+		rerender(<NotePage noteId={"note-2" as never} note={secondNote} />);
+
+		await waitFor(() => {
+			const latestCall =
+				noteCommentsSheetMock.mock.calls[
+					noteCommentsSheetMock.mock.calls.length - 1
+				];
+			expect(latestCall?.[0]).toMatchObject({ open: false });
+		});
+
+		rerender(<NotePage noteId={"note-1" as never} note={firstNote} />);
+
+		await waitFor(() => {
+			const latestCall =
+				noteCommentsSheetMock.mock.calls[
+					noteCommentsSheetMock.mock.calls.length - 1
+				];
+			expect(latestCall?.[0]).toMatchObject({ open: true });
+		});
 	});
 });

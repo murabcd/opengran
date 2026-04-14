@@ -74,6 +74,7 @@ import {
 import * as React from "react";
 import { toast } from "sonner";
 import { ChatPage } from "@/components/chat/chat-page";
+import { readDesktopInboxPanelPinnedState } from "@/components/inbox/inbox-panel-state";
 import { AppShellInset } from "@/components/layout/app-shell-inset";
 import {
 	NoteActionsMenu,
@@ -2020,6 +2021,7 @@ const useAppShellState = ({
 	const [currentNoteCommentsOpener, setCurrentNoteCommentsOpener] =
 		React.useState<(() => void) | null>(null);
 	const creatingNoteRef = React.useRef(false);
+	const inboxOpenRef = React.useRef(inboxOpen);
 	const lastNonSettingsLocationRef = React.useRef(
 		getInitialNonSettingsLocation(),
 	);
@@ -2373,7 +2375,9 @@ const useAppShellState = ({
 				: url;
 			const nextLocationState = getAppLocationState(contentUrl);
 			const nextChatId = nextLocationState.chatId;
-			const nextInboxOpen = nextLocationState.view === "inbox";
+			const nextInboxOpen =
+				nextLocationState.view === "inbox" ||
+				(inboxOpenRef.current && readDesktopInboxPanelPinnedState());
 			const nextView = nextInboxOpen ? "home" : nextLocationState.view;
 			const nextNoteIdString = nextLocationState.noteIdString;
 			const nextShouldAutoStartNoteCapture =
@@ -2473,14 +2477,23 @@ const useAppShellState = ({
 			});
 	}, []);
 
+	const shouldKeepPinnedInboxOpen = React.useCallback(
+		() => inboxOpen && readDesktopInboxPanelPinnedState(),
+		[inboxOpen],
+	);
+
+	React.useEffect(() => {
+		inboxOpenRef.current = inboxOpen;
+	}, [inboxOpen]);
+
 	const openFreshChat = React.useCallback(() => {
-		setInboxOpen(false);
+		setInboxOpen(shouldKeepPinnedInboxOpen());
 		setCurrentView("chat");
 		setSettingsOpen(false);
 		setCurrentChatId(null);
 		setChatComposerId(crypto.randomUUID());
 		window.history.pushState(null, "", "/chat");
-	}, []);
+	}, [shouldKeepPinnedInboxOpen]);
 
 	const handleViewChange = React.useCallback(
 		(view: AppView) => {
@@ -2495,7 +2508,7 @@ const useAppShellState = ({
 				return;
 			}
 
-			setInboxOpen(false);
+			setInboxOpen(shouldKeepPinnedInboxOpen());
 			setCurrentView(view);
 			setSettingsOpen(false);
 			setCurrentNoteEditorActions(null);
@@ -2514,7 +2527,7 @@ const useAppShellState = ({
 						: "/home",
 			);
 		},
-		[openFreshChat, resolvedCurrentNoteId],
+		[openFreshChat, resolvedCurrentNoteId, shouldKeepPinnedInboxOpen],
 	);
 
 	const handleInboxOpenChange = React.useCallback((open: boolean) => {
@@ -2533,7 +2546,7 @@ const useAppShellState = ({
 				stopCaptureWhenMeetingEnds?: boolean;
 			},
 		) => {
-			setInboxOpen(false);
+			setInboxOpen(shouldKeepPinnedInboxOpen());
 			setCurrentView("note");
 			setSettingsOpen(false);
 			setCurrentNoteId(noteId);
@@ -2560,7 +2573,7 @@ const useAppShellState = ({
 				})}`,
 			);
 		},
-		[],
+		[shouldKeepPinnedInboxOpen],
 	);
 
 	const handleCreateNote = React.useCallback(
@@ -2866,18 +2879,21 @@ const useAppShellState = ({
 		},
 		[handleViewChange, resolvedCurrentNoteId],
 	);
-	const handleOpenChat = React.useCallback((chatId: string) => {
-		setInboxOpen(false);
-		setCurrentView("chat");
-		setSettingsOpen(false);
-		setCurrentChatId(chatId);
-		setChatComposerId(chatId);
-		window.history.pushState(
-			null,
-			"",
-			`/chat?chatId=${encodeURIComponent(chatId)}`,
-		);
-	}, []);
+	const handleOpenChat = React.useCallback(
+		(chatId: string) => {
+			setInboxOpen(shouldKeepPinnedInboxOpen());
+			setCurrentView("chat");
+			setSettingsOpen(false);
+			setCurrentChatId(chatId);
+			setChatComposerId(chatId);
+			window.history.pushState(
+				null,
+				"",
+				`/chat?chatId=${encodeURIComponent(chatId)}`,
+			);
+		},
+		[shouldKeepPinnedInboxOpen],
+	);
 
 	const handleNewChat = React.useCallback(() => {
 		openFreshChat();
@@ -3825,6 +3841,7 @@ const AppShellContent = React.memo(function AppShellContent({
 				viewportRef={noteViewScrollRef}
 			>
 				<NotePage
+					key={currentNoteId ?? "new"}
 					autoStartTranscription={shouldAutoStartNoteCapture}
 					currentUser={user}
 					isDesktopMac={isDesktopMac}

@@ -1197,7 +1197,7 @@ type NotePageEditorPaneProps = {
 	title: string;
 	setTitle: (title: string) => void;
 	focusEditor: () => void;
-	editor: ReturnType<typeof useEditor>;
+	editor: ReturnType<typeof useNotePageController>["editor"];
 	templateApplyState: ReturnType<
 		typeof useNotePageController
 	>["templateApplyState"];
@@ -1363,6 +1363,7 @@ function NotePageContent({
 	currentUser,
 	isDesktopMac,
 	handleCommentsOpenChange,
+	setCommentsPinned,
 	onActiveThreadIdChange,
 	pendingCommentSelection,
 	onPendingSelectionChange,
@@ -1384,6 +1385,7 @@ function NotePageContent({
 	currentUser: NotePageCurrentUser;
 	isDesktopMac: boolean;
 	handleCommentsOpenChange: (nextOpen: boolean) => void;
+	setCommentsPinned: (isPinned: boolean) => void;
 	onActiveThreadIdChange: (threadId: Id<"noteCommentThreads"> | null) => void;
 	pendingCommentSelection: PendingNoteCommentSelection | null;
 	onPendingSelectionChange: (
@@ -1423,6 +1425,7 @@ function NotePageContent({
 				open={commentsOpen}
 				desktopSafeTop={isDesktopMac}
 				onOpenChange={handleCommentsOpenChange}
+				onPinnedChange={setCommentsPinned}
 				activeThreadId={activeCommentThreadId}
 				onActiveThreadIdChange={onActiveThreadIdChange}
 				pendingSelection={pendingCommentSelection}
@@ -1464,6 +1467,9 @@ export function NotePage({
 	stopTranscriptionWhenMeetingEnds?: boolean;
 }) {
 	const isMobile = useIsMobile();
+	const [commentsPinned, setCommentsPinned] = React.useState(() =>
+		readDesktopCommentsPanelPinnedState(noteId),
+	);
 	const [commentPanelState, setCommentPanelState] = React.useState<{
 		commentsOpen: boolean;
 		activeCommentThreadId: Id<"noteCommentThreads"> | null;
@@ -1477,8 +1483,7 @@ export function NotePage({
 		commentPanelState;
 	const handleOpenComments = React.useCallback(() => {
 		setCommentPanelState((current) => {
-			const shouldTogglePinnedDesktopComments =
-				!isMobile && readDesktopCommentsPanelPinnedState();
+			const shouldTogglePinnedDesktopComments = !isMobile && commentsPinned;
 
 			if (shouldTogglePinnedDesktopComments) {
 				return current.commentsOpen
@@ -1498,7 +1503,7 @@ export function NotePage({
 				commentsOpen: true,
 			};
 		});
-	}, [isMobile]);
+	}, [commentsPinned, isMobile]);
 	const handleCommentsOpenChange = React.useCallback((nextOpen: boolean) => {
 		setCommentPanelState((current) =>
 			nextOpen
@@ -1648,13 +1653,14 @@ export function NotePage({
 	);
 
 	React.useEffect(() => {
-		void noteId;
+		const nextCommentsPinned = readDesktopCommentsPanelPinnedState(noteId);
+		setCommentsPinned(nextCommentsPinned);
 		setCommentPanelState({
-			commentsOpen: false,
+			commentsOpen: !isMobile && nextCommentsPinned,
 			activeCommentThreadId: null,
 			pendingCommentSelection: null,
 		});
-	}, [noteId]);
+	}, [isMobile, noteId]);
 
 	const syncCommentThreadSelectionFromLocation = React.useCallback(() => {
 		if (!noteId) {
@@ -1739,6 +1745,7 @@ export function NotePage({
 			currentUser={currentUser}
 			isDesktopMac={isDesktopMac}
 			handleCommentsOpenChange={handleCommentsOpenChange}
+			setCommentsPinned={setCommentsPinned}
 			onActiveThreadIdChange={handleActiveThreadIdChange}
 			pendingCommentSelection={pendingCommentSelection}
 			onPendingSelectionChange={handlePendingSelectionChange}

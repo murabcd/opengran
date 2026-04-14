@@ -174,6 +174,8 @@ export function DesktopDockedSidePanel({
 	isPinned,
 	panelWidth,
 	panelOffset,
+	dismissLeadingOffset,
+	dismissTrailingOffset,
 	desktopSafeTop = false,
 	onOpenChange,
 	panelName,
@@ -188,6 +190,8 @@ export function DesktopDockedSidePanel({
 	isPinned: boolean;
 	panelWidth: number;
 	panelOffset?: string;
+	dismissLeadingOffset?: string;
+	dismissTrailingOffset?: string;
 	desktopSafeTop?: boolean;
 	onOpenChange: (open: boolean) => void;
 	panelName: string;
@@ -228,14 +232,17 @@ export function DesktopDockedSidePanel({
 				<button
 					type="button"
 					aria-label={`Close ${panelName}`}
-					className={cn(
-						"fixed inset-y-0 z-20 hidden bg-transparent md:block",
-						isLeft ? "right-0" : "left-0",
-					)}
+					className="fixed inset-y-0 z-20 hidden bg-transparent md:block"
 					style={
 						isLeft
-							? { left: `calc(${panelOffset ?? "0px"} + ${panelWidth}px)` }
-							: { right: `calc(${panelOffset ?? "0px"} + ${panelWidth}px)` }
+							? {
+									left: `calc(${panelOffset ?? "0px"} + ${panelWidth}px)`,
+									right: dismissTrailingOffset ?? "0px",
+								}
+							: {
+									left: dismissLeadingOffset ?? "0px",
+									right: `calc(${panelOffset ?? "0px"} + ${panelWidth}px)`,
+								}
 					}
 					onClick={() => onOpenChange(false)}
 				/>

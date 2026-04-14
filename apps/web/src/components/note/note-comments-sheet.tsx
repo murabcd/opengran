@@ -91,7 +91,7 @@ import {
 	useResizableSidePanel,
 } from "@/components/layout/resizable-side-panel";
 import { useDesktopPanelPin } from "@/components/layout/use-desktop-panel-pin";
-import { COMMENTS_PANEL_PINNED_STORAGE_KEY } from "@/components/note/note-comments-panel-state";
+import { getDesktopCommentsPanelPinnedStorageKey } from "@/components/note/note-comments-panel-state";
 import { writeTextToClipboard } from "@/components/note/share-note";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { getAvatarSrc } from "@/lib/avatar";
@@ -1182,6 +1182,19 @@ function CommentsSheetPanel({
 	onTogglePinned: () => void;
 	onOpenChange: (open: boolean) => void;
 } & CommentsSheetBodyProps) {
+	const handleClose = React.useCallback(
+		(event: React.MouseEvent<HTMLButtonElement>) => {
+			event.currentTarget.blur();
+
+			if (!isMobile && isPinned) {
+				onTogglePinned();
+			}
+
+			onOpenChange(false);
+		},
+		[isMobile, isPinned, onOpenChange, onTogglePinned],
+	);
+
 	return (
 		<div className="flex h-full flex-col bg-background text-foreground">
 			<div
@@ -1261,7 +1274,7 @@ function CommentsSheetPanel({
 						type="button"
 						variant="ghost"
 						size="icon-sm"
-						onClick={() => onOpenChange(false)}
+						onClick={handleClose}
 					>
 						<Minus className="size-4" />
 						<span className="sr-only">Close comments</span>
@@ -1281,6 +1294,7 @@ type NoteCommentsSheetProps = {
 	open: boolean;
 	desktopSafeTop?: boolean;
 	onOpenChange: (open: boolean) => void;
+	onPinnedChange?: (isPinned: boolean) => void;
 	activeThreadId: Id<"noteCommentThreads"> | null;
 	onActiveThreadIdChange: (threadId: Id<"noteCommentThreads"> | null) => void;
 	pendingSelection: PendingNoteCommentSelection | null;
@@ -2111,7 +2125,11 @@ function useNoteCommentsSheetController({
 }
 
 export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
-	const { open, onOpenChange } = props;
+	const { open, onOpenChange, onPinnedChange } = props;
+	const pinnedStorageKey = React.useMemo(
+		() => getDesktopCommentsPanelPinnedStorageKey(props.noteId),
+		[props.noteId],
+	);
 	const { state } = useSidebarShell();
 	const {
 		hasRightSidebar,
@@ -2121,7 +2139,8 @@ export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
 		rightSidebarWidthOverride,
 	} = useSidebarRight();
 	const { isPinned, togglePinned } = useDesktopPanelPin({
-		storageKey: COMMENTS_PANEL_PINNED_STORAGE_KEY,
+		storageKey: pinnedStorageKey,
+		onPinnedChange,
 	});
 	const rightSidebarOffset =
 		hasRightSidebar && rightOpen && rightMode === "sidebar"
@@ -2199,6 +2218,7 @@ export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
 			isPinned={isPinned}
 			panelWidth={panelWidth}
 			panelOffset={effectiveRightSidebarOffset}
+			dismissLeadingOffset={`${leftSidebarReservedWidth}px`}
 			desktopSafeTop={props.desktopSafeTop}
 			onOpenChange={onOpenChange}
 			panelName="comments"

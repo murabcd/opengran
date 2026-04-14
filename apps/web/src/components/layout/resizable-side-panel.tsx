@@ -1,5 +1,6 @@
 "use client";
 
+import { DESKTOP_DOCKED_PANEL_MIN_CONTENT_WIDTH } from "@workspace/ui/lib/panel-dimensions";
 import { cn } from "@workspace/ui/lib/utils";
 import * as React from "react";
 
@@ -22,7 +23,7 @@ type UseResizableSidePanelOptions = {
 	desktopMaxWidth: number;
 	mobileMinWidth: number;
 	keyboardStep?: number;
-	desktopViewportGutter?: number;
+	desktopMinContentWidth?: number;
 	desktopLeadingOffset?: number;
 	desktopTrailingOffset?: number;
 };
@@ -36,7 +37,8 @@ type UseResizeHandleOptions = {
 };
 
 const DEFAULT_KEYBOARD_STEP = 24;
-const DEFAULT_DESKTOP_VIEWPORT_GUTTER = 80;
+const DEFAULT_DESKTOP_MIN_CONTENT_WIDTH =
+	DESKTOP_DOCKED_PANEL_MIN_CONTENT_WIDTH;
 
 const clampPanelWidth = (width: number, bounds: ResizablePanelWidthBounds) =>
 	Math.min(bounds.max, Math.max(bounds.min, width));
@@ -47,7 +49,7 @@ const getPanelWidthBounds = (
 	desktopMinWidth: number,
 	desktopMaxWidth: number,
 	mobileMinWidth: number,
-	desktopViewportGutter: number,
+	desktopMinContentWidth: number,
 	desktopLeadingOffset: number,
 	desktopTrailingOffset: number,
 ): ResizablePanelWidthBounds => {
@@ -64,7 +66,7 @@ const getPanelWidthBounds = (
 		Math.min(
 			desktopMaxWidth,
 			viewportWidth -
-				desktopViewportGutter -
+				desktopMinContentWidth -
 				desktopLeadingOffset -
 				desktopTrailingOffset,
 		),
@@ -174,7 +176,7 @@ function useResizableSidePanel({
 	desktopMaxWidth,
 	mobileMinWidth,
 	keyboardStep = DEFAULT_KEYBOARD_STEP,
-	desktopViewportGutter = DEFAULT_DESKTOP_VIEWPORT_GUTTER,
+	desktopMinContentWidth = DEFAULT_DESKTOP_MIN_CONTENT_WIDTH,
 	desktopLeadingOffset = 0,
 	desktopTrailingOffset = 0,
 }: UseResizableSidePanelOptions) {
@@ -191,7 +193,7 @@ function useResizableSidePanel({
 				desktopMinWidth,
 				desktopMaxWidth,
 				mobileMinWidth,
-				desktopViewportGutter,
+				desktopMinContentWidth,
 				effectiveDesktopLeadingOffset,
 				effectiveDesktopTrailingOffset,
 			),
@@ -200,7 +202,7 @@ function useResizableSidePanel({
 			effectiveDesktopLeadingOffset,
 			effectiveDesktopTrailingOffset,
 			desktopMinWidth,
-			desktopViewportGutter,
+			desktopMinContentWidth,
 			isMobile,
 			mobileMinWidth,
 			viewportWidth,
@@ -345,7 +347,7 @@ function useResizableSidePanel({
 			desktopMinWidth,
 			desktopMaxWidth,
 			mobileMinWidth,
-			desktopViewportGutter,
+			desktopMinContentWidth,
 			effectiveDesktopLeadingOffset,
 			effectiveDesktopTrailingOffset,
 		);
@@ -359,7 +361,7 @@ function useResizableSidePanel({
 		effectiveDesktopLeadingOffset,
 		effectiveDesktopTrailingOffset,
 		desktopMinWidth,
-		desktopViewportGutter,
+		desktopMinContentWidth,
 		isMobile,
 		mobileMinWidth,
 		storageKey,
