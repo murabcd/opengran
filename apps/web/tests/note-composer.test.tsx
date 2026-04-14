@@ -909,6 +909,85 @@ describe("NoteComposer", () => {
 		).toBeNull();
 	});
 
+	it("opens inline chat when clicking the composer surface outside the textarea", async () => {
+		let queryCall = 0;
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		expect(
+			screen.queryByRole("combobox", { name: "Select note chat" }),
+		).toBeNull();
+
+		const composerShell = screen
+			.getByRole("textbox")
+			.closest('[data-slot="input-group"]');
+
+		expect(composerShell).not.toBeNull();
+		if (!composerShell) {
+			throw new Error("Composer shell not found");
+		}
+
+		fireEvent.pointerDown(composerShell);
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("combobox", { name: "Select note chat" }),
+			).toBeDefined();
+		});
+	});
+
 	it("loads a user message into the composer for editing and resubmits with the same id", async () => {
 		let queryCall = 0;
 		const sendMessageMock = vi.fn();
