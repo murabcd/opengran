@@ -32,6 +32,26 @@ describe("InputGroup", () => {
 		expect(document.activeElement).toBe(textarea);
 	});
 
+	it("focuses the textarea on pointer-up fallback for non-interactive group chrome", () => {
+		render(
+			<InputGroup>
+				<InputGroupAddon align="block-end">
+					<span>Footer chrome</span>
+				</InputGroupAddon>
+				<InputGroupTextarea aria-label="Prompt" />
+			</InputGroup>,
+		);
+
+		const textarea = screen.getByRole("textbox", { name: "Prompt" });
+		const addon = screen.getByText("Footer chrome");
+
+		expect(document.activeElement).not.toBe(textarea);
+
+		fireEvent.pointerUp(addon);
+
+		expect(document.activeElement).toBe(textarea);
+	});
+
 	it("does not steal focus from interactive controls inside the group", () => {
 		render(
 			<InputGroup>
