@@ -7,6 +7,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import { markPanelLayoutTransition } from "@workspace/ui/lib/panel-layout-activity";
 import { cn } from "@workspace/ui/lib/utils";
 import { Pin } from "lucide-react";
 import * as React from "react";
@@ -19,6 +20,8 @@ type DockedPanelWidthsUpdate = {
 	leftOverlayPanelWidth?: string | null;
 	rightInsetPanelWidth?: string | null;
 };
+
+const DOCKED_PANEL_TRANSITION_DURATION_MS = 220;
 
 function getDockedPanelInsetWidth({
 	isMobile,
@@ -195,6 +198,29 @@ export function DesktopDockedSidePanel({
 	children: React.ReactNode;
 }) {
 	const isLeft = side === "left";
+	const previousLayoutSignatureRef = React.useRef<string | null>(null);
+
+	React.useEffect(() => {
+		const layoutSignature = [
+			open ? "open" : "closed",
+			isPinned ? "pinned" : "overlay",
+			panelWidth,
+			panelOffset ?? "",
+		].join(":");
+
+		if (previousLayoutSignatureRef.current === null) {
+			previousLayoutSignatureRef.current = layoutSignature;
+			return;
+		}
+
+		if (previousLayoutSignatureRef.current === layoutSignature || isResizing) {
+			previousLayoutSignatureRef.current = layoutSignature;
+			return;
+		}
+
+		previousLayoutSignatureRef.current = layoutSignature;
+		markPanelLayoutTransition(DOCKED_PANEL_TRANSITION_DURATION_MS);
+	}, [isPinned, isResizing, open, panelOffset, panelWidth]);
 
 	return (
 		<>

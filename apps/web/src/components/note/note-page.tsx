@@ -6,6 +6,7 @@ import type {
 import { Tiptap, useEditor } from "@tiptap/react";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { useIsMobile } from "@workspace/ui/hooks/use-mobile";
+import { isPanelLayoutActive } from "@workspace/ui/lib/panel-layout-activity";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation } from "convex/react";
 import * as React from "react";
@@ -182,6 +183,26 @@ const showActionError = (message: string, error: unknown) => {
 	toast.error(message);
 };
 
+const areTableOfContentsEqual = (
+	currentAnchors: TableOfContentData,
+	nextAnchors: TableOfContentData,
+) => {
+	if (currentAnchors.length !== nextAnchors.length) {
+		return false;
+	}
+
+	return currentAnchors.every((anchor, index) => {
+		const nextAnchor = nextAnchors[index];
+		return (
+			nextAnchor !== undefined &&
+			anchor.id === nextAnchor.id &&
+			anchor.textContent === nextAnchor.textContent &&
+			anchor.originalLevel === nextAnchor.originalLevel &&
+			anchor.isActive === nextAnchor.isActive
+		);
+	});
+};
+
 export const OPEN_NOTE_COMMENTS_EVENT = "opengran:open-note-comments";
 
 export type NoteEditorActions = {
@@ -228,6 +249,10 @@ const useNotePageController = ({
 	const [searchableText, setSearchableText] = React.useState("");
 	const [tableOfContents, setTableOfContents] =
 		React.useState<TableOfContentData>([]);
+	const pendingTableOfContentsRef = React.useRef<TableOfContentData | null>(
+		null,
+	);
+	const tableOfContentsAnimationFrameRef = React.useRef<number | null>(null);
 	const [templateApplyState, setTemplateApplyState] = React.useState<{
 		isRunning: boolean;
 		templateName: string | null;
@@ -369,10 +394,49 @@ const useNotePageController = ({
 		() => scrollParentRef?.current ?? window,
 		[scrollParentRef],
 	);
+	const flushPendingTableOfContents = React.useCallback(() => {
+		tableOfContentsAnimationFrameRef.current = null;
+
+		if (isPanelLayoutActive()) {
+			tableOfContentsAnimationFrameRef.current = window.requestAnimationFrame(
+				flushPendingTableOfContents,
+			);
+			return;
+		}
+
+		const nextAnchors = pendingTableOfContentsRef.current;
+		pendingTableOfContentsRef.current = null;
+
+		if (!nextAnchors) {
+			return;
+		}
+
+		setTableOfContents((currentAnchors) =>
+			areTableOfContentsEqual(currentAnchors, nextAnchors)
+				? currentAnchors
+				: nextAnchors,
+		);
+	}, []);
+	const handleTableOfContentsUpdate = React.useCallback(
+		(nextAnchors: TableOfContentData) => {
+			pendingTableOfContentsRef.current = nextAnchors.map((anchor) => ({
+				...anchor,
+			}));
+
+			if (tableOfContentsAnimationFrameRef.current !== null) {
+				return;
+			}
+
+			tableOfContentsAnimationFrameRef.current = window.requestAnimationFrame(
+				flushPendingTableOfContents,
+			);
+		},
+		[flushPendingTableOfContents],
+	);
 
 	const editor = useEditor({
 		extensions: createNoteEditorExtensions({
-			onTableOfContentsUpdate: setTableOfContents,
+			onTableOfContentsUpdate: handleTableOfContentsUpdate,
 			getTableOfContentsScrollParent,
 			onCommentThreadClick,
 		}),
@@ -429,6 +493,7 @@ const useNotePageController = ({
 			latestSaveRequestIdRef.current = 0;
 			queuedSaveRef.current = null;
 			setTableOfContents([]);
+			pendingTableOfContentsRef.current = null;
 
 			if (editor) {
 				applyDraftState({
@@ -499,6 +564,14 @@ const useNotePageController = ({
 	React.useEffect(() => {
 		syncHydratedNoteState();
 	}, [syncHydratedNoteState]);
+
+	React.useEffect(() => {
+		return () => {
+			if (tableOfContentsAnimationFrameRef.current !== null) {
+				window.cancelAnimationFrame(tableOfContentsAnimationFrameRef.current);
+			}
+		};
+	}, []);
 
 	React.useEffect(() => {
 		if (!noteId || !hasHydratedRef.current) {
@@ -971,14 +1044,11 @@ const useNotePageController = ({
 		const publishEditorActions = () => {
 			const { title, searchableText, canShowTemplateSelect } =
 				latestEditorStateRef.current;
-			const serializedText = getPlainTextContent({
-				editor,
-				title,
-				searchableText,
-			});
 			const nextActions = {
 				noteId,
-				canCopyMarkdown: Boolean(serializedText),
+				canCopyMarkdown: Boolean(
+					title.trim().length > 0 || searchableText.trim().length > 0,
+				),
 				canUndo: editor.can().undo(),
 				canRedo: editor.can().redo(),
 				canShowTemplateSelect,
@@ -1011,11 +1081,11 @@ const useNotePageController = ({
 
 		publishEditorActionsRef.current = publishEditorActions;
 		publishEditorActions();
-		editor.on("transaction", publishEditorActions);
+		editor.on("update", publishEditorActions);
 
 		return () => {
 			publishEditorActionsRef.current = null;
-			editor.off("transaction", publishEditorActions);
+			editor.off("update", publishEditorActions);
 		};
 	}, [
 		applyTemplate,
@@ -1647,10 +1717,10 @@ export function NotePage({
 		};
 
 		syncActiveThreadMarkers();
-		editor.on("transaction", syncActiveThreadMarkers);
+		editor.on("update", syncActiveThreadMarkers);
 
 		return () => {
-			editor.off("transaction", syncActiveThreadMarkers);
+			editor.off("update", syncActiveThreadMarkers);
 		};
 	}, [activeCommentThreadId, controller.editor]);
 

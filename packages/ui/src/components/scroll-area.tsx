@@ -14,6 +14,27 @@ function ScrollArea({
 	viewportRef?: React.Ref<HTMLDivElement>;
 	scrollbarOrientation?: "vertical" | "horizontal" | "both" | "none";
 }) {
+	if (scrollbarOrientation === "none") {
+		return (
+			<div
+				data-slot="scroll-area"
+				className={cn("relative overflow-hidden", className)}
+				{...(props as React.HTMLAttributes<HTMLDivElement>)}
+			>
+				<div
+					data-slot="scroll-area-viewport"
+					ref={viewportRef}
+					className={cn(
+						"size-full overflow-auto rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1",
+						viewportClassName,
+					)}
+				>
+					{children}
+				</div>
+			</div>
+		);
+	}
+
 	return (
 		<ScrollAreaPrimitive.Root
 			data-slot="scroll-area"

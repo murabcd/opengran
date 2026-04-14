@@ -1462,9 +1462,9 @@ function useNoteCommentsSheetController({
 			setVisibleThreadIds(collectVisibleThreadIds(editor));
 		};
 
-		editor.on("transaction", syncVisibleThreads);
+		editor.on("update", syncVisibleThreads);
 		return () => {
-			editor.off("transaction", syncVisibleThreads);
+			editor.off("update", syncVisibleThreads);
 		};
 	}, [editor]);
 

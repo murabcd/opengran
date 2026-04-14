@@ -25,6 +25,7 @@ import {
 	DESKTOP_DOCKED_PANEL_DEFAULT_WIDTH,
 	MOBILE_DOCKED_PANEL_DEFAULT_WIDTH_CSS,
 } from "@workspace/ui/lib/panel-dimensions";
+import { markPanelLayoutTransition } from "@workspace/ui/lib/panel-layout-activity";
 import { cn } from "@workspace/ui/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
 import { PanelLeftIcon } from "lucide-react";
@@ -43,6 +44,7 @@ const SIDEBAR_RIGHT_WIDTH = `${DESKTOP_DOCKED_PANEL_DEFAULT_WIDTH}px`;
 const SIDEBAR_RIGHT_WIDTH_MOBILE = MOBILE_DOCKED_PANEL_DEFAULT_WIDTH_CSS;
 const SIDEBAR_WIDTH_ICON = APP_SIDEBAR_COLLAPSED_WIDTH_CSS;
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
+const SIDEBAR_LAYOUT_TRANSITION_DURATION_MS = 320;
 
 const persistSidebarState = (openState: boolean) => {
 	void window.cookieStore?.set({
@@ -744,6 +746,39 @@ function SidebarInset({
 				? `calc(${rightInsetPanelWidth} + ${reservedRightSidebarWidth})`
 				: rightInsetPanelWidth
 			: reservedRightSidebarWidth;
+	const previousLayoutSignatureRef = React.useRef<string | null>(null);
+
+	React.useEffect(() => {
+		const layoutSignature = [
+			isMobile ? "mobile" : "desktop",
+			leftInsetPanelWidth ?? "",
+			rightInsetPanelWidth ?? "",
+			reservedRightSidebarWidth ?? "",
+			rightOpen ? "open" : "closed",
+			rightMode,
+			hasRightSidebar ? "present" : "absent",
+		].join(":");
+
+		if (previousLayoutSignatureRef.current === null) {
+			previousLayoutSignatureRef.current = layoutSignature;
+			return;
+		}
+
+		if (previousLayoutSignatureRef.current === layoutSignature) {
+			return;
+		}
+
+		previousLayoutSignatureRef.current = layoutSignature;
+		markPanelLayoutTransition(SIDEBAR_LAYOUT_TRANSITION_DURATION_MS);
+	}, [
+		hasRightSidebar,
+		isMobile,
+		leftInsetPanelWidth,
+		reservedRightSidebarWidth,
+		rightInsetPanelWidth,
+		rightMode,
+		rightOpen,
+	]);
 
 	return (
 		<main
