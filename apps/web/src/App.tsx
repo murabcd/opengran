@@ -41,7 +41,8 @@ import { Separator } from "@workspace/ui/components/separator";
 import {
 	SidebarProvider,
 	SidebarTrigger,
-	useSidebar,
+	useDockedPanelWidths,
+	useSidebarShell,
 } from "@workspace/ui/components/sidebar";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import {
@@ -3024,6 +3025,27 @@ function AppShell({
 		workspaces,
 		initialDesktopMac,
 	});
+	const activeWorkspace = React.useMemo(
+		() =>
+			controller.workspaces.find(
+				(workspace) => workspace._id === controller.activeWorkspaceId,
+			) ?? null,
+		[controller.activeWorkspaceId, controller.workspaces],
+	);
+	const handleOpenConnectionsSettings = React.useCallback(
+		() => controller.handleSettingsOpenChange(true, "Connections"),
+		[controller.handleSettingsOpenChange],
+	);
+	const handleNoteCommentsOpenChange = React.useCallback(
+		(opener: (() => void) | null) => {
+			controller.setCurrentNoteCommentsOpener(() => opener);
+		},
+		[controller.setCurrentNoteCommentsOpener],
+	);
+	const handleGoHome = React.useCallback(
+		() => controller.handleViewChange("home"),
+		[controller.handleViewChange],
+	);
 
 	return (
 		<ActiveWorkspaceProvider workspaceId={controller.activeWorkspaceId}>
@@ -3100,25 +3122,17 @@ function AppShell({
 						initialChatMessages={controller.initialChatMessages}
 						chats={controller.chats}
 						currentChatId={controller.currentChatId}
-						activeWorkspace={
-							controller.workspaces.find(
-								(workspace) => workspace._id === controller.activeWorkspaceId,
-							) ?? null
-						}
+						activeWorkspace={activeWorkspace}
 						onChatPersisted={controller.handleChatPersisted}
 						onOpenChat={controller.handleOpenChat}
 						onChatRemoved={controller.handleChatRemoved}
-						onOpenConnectionsSettings={() =>
-							controller.handleSettingsOpenChange(true, "Connections")
-						}
+						onOpenConnectionsSettings={handleOpenConnectionsSettings}
 						onCreateNoteFromChatResponse={
 							controller.handleCreateNoteFromChatResponse
 						}
 						onNoteTitleChange={controller.setCurrentNoteTitle}
 						onNoteEditorActionsChange={controller.setCurrentNoteEditorActions}
-						onNoteCommentsOpenChange={(opener) => {
-							controller.setCurrentNoteCommentsOpener(() => opener);
-						}}
+						onNoteCommentsOpenChange={handleNoteCommentsOpenChange}
 						onAutoStartNoteCaptureHandled={
 							controller.handleAutoStartNoteCaptureHandled
 						}
@@ -3126,7 +3140,7 @@ function AppShell({
 						shouldStopNoteCaptureWhenMeetingEnds={
 							controller.shouldStopNoteCaptureWhenMeetingEnds
 						}
-						onGoHome={() => controller.handleViewChange("home")}
+						onGoHome={handleGoHome}
 					/>
 				</AppShellInset>
 			</SidebarProvider>
@@ -3170,11 +3184,8 @@ function AppShellHeader({
 	onNewChat,
 }: AppShellHeaderProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
-	const {
-		leftInsetPanelWidth,
-		leftOverlayPanelWidth,
-		state: sidebarState,
-	} = useSidebar();
+	const { state: sidebarState } = useSidebarShell();
+	const { leftInsetPanelWidth, leftOverlayPanelWidth } = useDockedPanelWidths();
 	const breadcrumbRenameInitialTitleRef = React.useRef(currentNoteTitle);
 	const breadcrumbRenameSavedTitleRef = React.useRef(currentNoteTitle);
 	const [titleEditOpen, setTitleEditOpen] = React.useState(false);
@@ -3655,7 +3666,7 @@ function NoteHeaderActionsMenu({
 	);
 }
 
-function AppShellContent({
+const AppShellContent = React.memo(function AppShellContent({
 	isDesktopMac,
 	currentView,
 	currentDate,
@@ -3849,7 +3860,7 @@ function AppShellContent({
 			onCreateNoteFromResponse={onCreateNoteFromChatResponse}
 		/>
 	);
-}
+});
 
 function NotFoundView({ onGoHome }: { onGoHome: () => void }) {
 	return (

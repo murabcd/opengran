@@ -5,7 +5,7 @@ import {
 	SidebarContent,
 	SidebarFooter,
 	SidebarHeader,
-	useSidebar,
+	useSidebarShell,
 } from "@workspace/ui/components/sidebar";
 import { useQuery } from "convex/react";
 import { FileText } from "lucide-react";
@@ -252,7 +252,7 @@ export function AppSidebar({
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
 	onCreateNote: () => void;
 }) {
-	const { isMobile, setOpenMobile, state } = useSidebar();
+	const { isMobile, setOpenMobile, state } = useSidebarShell();
 	const [uiState, dispatchUi] = React.useReducer(
 		sidebarUiReducer,
 		undefined,
@@ -367,6 +367,19 @@ export function AppSidebar({
 			})),
 		[currentNoteId, currentNoteTitle, notes, projectNameById],
 	);
+	const handleDialogOpenChange = React.useCallback(
+		(key: "searchOpen" | "recipesOpen" | "templatesOpen", value: boolean) => {
+			dispatchUi({
+				type: "setOpen",
+				key,
+				value,
+			});
+		},
+		[],
+	);
+	const handleMarkInboxItemsRead = React.useCallback((itemIds: string[]) => {
+		dispatchUi({ type: "markInboxItemsRead", itemIds });
+	}, []);
 
 	return (
 		<>
@@ -433,40 +446,35 @@ export function AppSidebar({
 			</Sidebar>
 			<AppSidebarDialogs
 				activeWorkspaceId={activeWorkspaceId}
-				desktopSafeTop={desktopSafeTop}
-				inboxItems={inboxItems}
-				inboxOpen={inboxOpen}
-				isMobile={isMobile}
 				onChatSelect={handleChatSelect}
-				onInboxOpenChange={handleInboxOpenChange}
 				onNoteSelect={handleNoteSelect}
-				onOpenChange={(key, value) =>
-					dispatchUi({
-						type: "setOpen",
-						key,
-						value,
-					})
-				}
-				onMarkInboxItemsRead={(itemIds) =>
-					dispatchUi({ type: "markInboxItemsRead", itemIds })
-				}
+				onOpenChange={handleDialogOpenChange}
 				onSettingsOpenChange={onSettingsOpenChange}
 				searchItems={searchItems}
 				searchProjects={searchProjects}
 				settingsOpen={settingsOpen}
 				settingsPage={settingsPage}
-				sidebarState={state}
 				templatesOpen={uiState.templatesOpen}
 				recipesOpen={uiState.recipesOpen}
 				searchOpen={uiState.searchOpen}
 				user={user}
 				workspaces={workspaces}
 			/>
+			<AppSidebarInboxSheet
+				desktopSafeTop={desktopSafeTop}
+				inboxItems={inboxItems}
+				inboxOpen={inboxOpen}
+				isMobile={isMobile}
+				onInboxOpenChange={handleInboxOpenChange}
+				onMarkInboxItemsRead={handleMarkInboxItemsRead}
+				sidebarState={state}
+				user={user}
+			/>
 		</>
 	);
 }
 
-function AppSidebarHeaderSection({
+const AppSidebarHeaderSection = React.memo(function AppSidebarHeaderSection({
 	activeWorkspaceId,
 	currentView,
 	desktopSafeTop,
@@ -526,9 +534,9 @@ function AppSidebarHeaderSection({
 			</div>
 		</SidebarHeader>
 	);
-}
+});
 
-function AppSidebarContentSection({
+const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 	activeWorkspaceId,
 	currentNoteId,
 	currentNoteTitle,
@@ -595,25 +603,18 @@ function AppSidebarContentSection({
 			/>
 		</SidebarContent>
 	);
-}
+});
 
-function AppSidebarDialogs({
+const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 	activeWorkspaceId,
-	desktopSafeTop,
-	inboxItems,
-	inboxOpen,
-	isMobile,
 	onChatSelect,
-	onInboxOpenChange,
 	onNoteSelect,
 	onOpenChange,
-	onMarkInboxItemsRead,
 	onSettingsOpenChange,
 	searchItems,
 	searchProjects,
 	settingsOpen,
 	settingsPage,
-	sidebarState,
 	templatesOpen,
 	recipesOpen,
 	searchOpen,
@@ -621,24 +622,17 @@ function AppSidebarDialogs({
 	workspaces,
 }: {
 	activeWorkspaceId: Id<"workspaces"> | null;
-	desktopSafeTop: boolean;
-	inboxItems: Array<{ _id: unknown }> | undefined;
-	inboxOpen: boolean;
-	isMobile: boolean;
 	onChatSelect: (chatId: string) => void;
-	onInboxOpenChange: (open: boolean) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onOpenChange: (
 		key: "searchOpen" | "recipesOpen" | "templatesOpen",
 		value: boolean,
 	) => void;
-	onMarkInboxItemsRead: (itemIds: string[]) => void;
 	onSettingsOpenChange: (open: boolean, page?: SettingsPage) => void;
 	searchItems: SearchCommandItem[];
 	searchProjects: SearchCommandProject[];
 	settingsOpen: boolean;
 	settingsPage: SettingsPage;
-	sidebarState: "expanded" | "collapsed";
 	templatesOpen: boolean;
 	recipesOpen: boolean;
 	searchOpen: boolean;
@@ -649,62 +643,115 @@ function AppSidebarDialogs({
 	};
 	workspaces: Array<WorkspaceRecord>;
 }) {
+	const handleSearchOpenChange = React.useCallback(
+		(open: boolean) => onOpenChange("searchOpen", open),
+		[onOpenChange],
+	);
+	const handleSearchSelectItem = React.useCallback(
+		(itemId: string) => {
+			const selectedItem = searchItems.find((item) => item.id === itemId);
+			if (!selectedItem) {
+				return;
+			}
+
+			if (selectedItem.kind === "chat") {
+				onChatSelect(itemId);
+				return;
+			}
+
+			onNoteSelect(itemId as Id<"notes">);
+		},
+		[onChatSelect, onNoteSelect, searchItems],
+	);
+	const selectedWorkspace = React.useMemo(
+		() =>
+			workspaces.find((workspace) => workspace._id === activeWorkspaceId) ??
+			null,
+		[activeWorkspaceId, workspaces],
+	);
+	const handleSettingsPageChange = React.useCallback(
+		(page: SettingsPage) => onSettingsOpenChange(true, page),
+		[onSettingsOpenChange],
+	);
+	const handleRecipesOpenChange = React.useCallback(
+		(open: boolean) => onOpenChange("recipesOpen", open),
+		[onOpenChange],
+	);
+	const handleTemplatesOpenChange = React.useCallback(
+		(open: boolean) => onOpenChange("templatesOpen", open),
+		[onOpenChange],
+	);
+
 	return (
 		<>
 			<SearchCommand
 				open={searchOpen}
-				onOpenChange={(open) => onOpenChange("searchOpen", open)}
+				onOpenChange={handleSearchOpenChange}
 				items={searchItems}
 				projects={searchProjects}
-				onSelectItem={(itemId) => {
-					const selectedItem = searchItems.find((item) => item.id === itemId);
-					if (!selectedItem) {
-						return;
-					}
-
-					if (selectedItem.kind === "chat") {
-						onChatSelect(itemId);
-						return;
-					}
-
-					onNoteSelect(itemId as Id<"notes">);
-				}}
+				onSelectItem={handleSearchSelectItem}
 			/>
 			<SettingsDialog
 				open={settingsOpen}
 				onOpenChange={onSettingsOpenChange}
 				user={user}
-				workspace={
-					workspaces.find((workspace) => workspace._id === activeWorkspaceId) ??
-					null
-				}
+				workspace={selectedWorkspace}
 				initialPage={settingsPage}
-				onPageChange={(page) => onSettingsOpenChange(true, page)}
+				onPageChange={handleSettingsPageChange}
 			/>
 			<RecipesDialog
 				open={recipesOpen}
-				onOpenChange={(open) => onOpenChange("recipesOpen", open)}
+				onOpenChange={handleRecipesOpenChange}
 			/>
 			<TemplatesDialog
 				open={templatesOpen}
-				onOpenChange={(open) => onOpenChange("templatesOpen", open)}
-			/>
-			<InboxSheet
-				open={inboxOpen}
-				onOpenChange={onInboxOpenChange}
-				sidebarState={sidebarState}
-				isMobile={isMobile}
-				desktopSafeTop={desktopSafeTop}
-				currentUser={user}
-				onMarkItemsRead={onMarkInboxItemsRead}
-				onMarkAllRead={() => {
-					if (!inboxItems) {
-						return;
-					}
-
-					onMarkInboxItemsRead(inboxItems.map((item) => String(item._id)));
-				}}
+				onOpenChange={handleTemplatesOpenChange}
 			/>
 		</>
 	);
-}
+});
+
+const AppSidebarInboxSheet = React.memo(function AppSidebarInboxSheet({
+	desktopSafeTop,
+	inboxItems,
+	inboxOpen,
+	isMobile,
+	onInboxOpenChange,
+	onMarkInboxItemsRead,
+	sidebarState,
+	user,
+}: {
+	desktopSafeTop: boolean;
+	inboxItems: Array<{ _id: unknown }> | undefined;
+	inboxOpen: boolean;
+	isMobile: boolean;
+	onInboxOpenChange: (open: boolean) => void;
+	onMarkInboxItemsRead: (itemIds: string[]) => void;
+	sidebarState: "expanded" | "collapsed";
+	user: {
+		name: string;
+		email: string;
+		avatar: string;
+	};
+}) {
+	const handleMarkAllRead = React.useCallback(() => {
+		if (!inboxItems) {
+			return;
+		}
+
+		onMarkInboxItemsRead(inboxItems.map((item) => String(item._id)));
+	}, [inboxItems, onMarkInboxItemsRead]);
+
+	return (
+		<InboxSheet
+			open={inboxOpen}
+			onOpenChange={onInboxOpenChange}
+			sidebarState={sidebarState}
+			isMobile={isMobile}
+			desktopSafeTop={desktopSafeTop}
+			currentUser={user}
+			onMarkItemsRead={onMarkInboxItemsRead}
+			onMarkAllRead={handleMarkAllRead}
+		/>
+	);
+});

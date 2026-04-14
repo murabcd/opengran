@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@workspace/ui/components/button";
-import { useSidebar } from "@workspace/ui/components/sidebar";
+import { useDockedPanelWidths } from "@workspace/ui/components/sidebar";
 import {
 	Tooltip,
 	TooltipContent,
@@ -64,7 +64,7 @@ export function useSyncDockedPanelWidths({
 	leftOverlayPanelWidth,
 	rightInsetPanelWidth,
 }: DockedPanelWidthsUpdate) {
-	const { syncDockedPanelWidths } = useSidebar();
+	const { syncDockedPanelWidths } = useDockedPanelWidths();
 
 	React.useEffect(() => {
 		const widths = {

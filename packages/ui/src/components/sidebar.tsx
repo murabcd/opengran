@@ -103,7 +103,7 @@ const storeSidebarWidth = (key: string, width: string) => {
 
 export type RightSidebarMode = "sidebar" | "floating";
 
-type SidebarContextProps = {
+type SidebarShellContextProps = {
 	state: "expanded" | "collapsed";
 	open: boolean;
 	setOpen: (open: boolean) => void;
@@ -111,6 +111,9 @@ type SidebarContextProps = {
 	setOpenMobile: (open: boolean) => void;
 	isMobile: boolean;
 	toggleSidebar: () => void;
+};
+
+type SidebarRightContextProps = {
 	rightOpen: boolean;
 	setRightOpen: (open: boolean) => void;
 	rightOpenMobile: boolean;
@@ -126,6 +129,11 @@ type SidebarContextProps = {
 	setRightSidebarWidthOverride: (width: string | null) => void;
 	rightSidebarWidthMobileOverride: string | null;
 	setRightSidebarWidthMobileOverride: (width: string | null) => void;
+	hasRightSidebar: boolean;
+	setHasRightSidebar: (hasRightSidebar: boolean) => void;
+};
+
+type SidebarDockedPanelsContextProps = {
 	leftInsetPanelWidth: string | null;
 	setLeftInsetPanelWidth: (width: string | null) => void;
 	leftOverlayPanelWidth: string | null;
@@ -133,8 +141,6 @@ type SidebarContextProps = {
 	rightInsetPanelWidth: string | null;
 	setRightInsetPanelWidth: (width: string | null) => void;
 	syncDockedPanelWidths: (widths: DockedPanelWidthsUpdate) => void;
-	hasRightSidebar: boolean;
-	setHasRightSidebar: (hasRightSidebar: boolean) => void;
 };
 
 type DockedPanelWidthsState = {
@@ -181,12 +187,37 @@ function dockedPanelWidthsReducer(
 	return hasChanges ? nextState : state;
 }
 
-const SidebarContext = React.createContext<SidebarContextProps | null>(null);
+const SidebarShellContext =
+	React.createContext<SidebarShellContextProps | null>(null);
+const SidebarRightContext =
+	React.createContext<SidebarRightContextProps | null>(null);
+const SidebarDockedPanelsContext =
+	React.createContext<SidebarDockedPanelsContextProps | null>(null);
 
-function useSidebar() {
-	const context = React.useContext(SidebarContext);
+function useSidebarShell() {
+	const context = React.useContext(SidebarShellContext);
 	if (!context) {
-		throw new Error("useSidebar must be used within a SidebarProvider.");
+		throw new Error("useSidebarShell must be used within a SidebarProvider.");
+	}
+
+	return context;
+}
+
+function useSidebarRight() {
+	const context = React.useContext(SidebarRightContext);
+	if (!context) {
+		throw new Error("useSidebarRight must be used within a SidebarProvider.");
+	}
+
+	return context;
+}
+
+function useDockedPanelWidths() {
+	const context = React.useContext(SidebarDockedPanelsContext);
+	if (!context) {
+		throw new Error(
+			"useDockedPanelWidths must be used within a SidebarProvider.",
+		);
 	}
 
 	return context;
@@ -365,7 +396,7 @@ function SidebarProvider({
 
 	const state = open ? "expanded" : "collapsed";
 
-	const contextValue = React.useMemo<SidebarContextProps>(
+	const shellContextValue = React.useMemo<SidebarShellContextProps>(
 		() => ({
 			state,
 			open,
@@ -374,6 +405,11 @@ function SidebarProvider({
 			openMobile,
 			setOpenMobile,
 			toggleSidebar,
+		}),
+		[state, open, setOpen, isMobile, openMobile, toggleSidebar],
+	);
+	const rightContextValue = React.useMemo<SidebarRightContextProps>(
+		() => ({
 			rightOpen,
 			setRightOpen: setRightOpenWithCookie,
 			rightOpenMobile,
@@ -389,23 +425,10 @@ function SidebarProvider({
 			setRightSidebarWidthOverride,
 			rightSidebarWidthMobileOverride,
 			setRightSidebarWidthMobileOverride,
-			leftInsetPanelWidth,
-			setLeftInsetPanelWidth,
-			leftOverlayPanelWidth,
-			setLeftOverlayPanelWidth,
-			rightInsetPanelWidth,
-			setRightInsetPanelWidth,
-			syncDockedPanelWidths,
 			hasRightSidebar,
 			setHasRightSidebar,
 		}),
 		[
-			state,
-			open,
-			setOpen,
-			isMobile,
-			openMobile,
-			toggleSidebar,
 			rightOpen,
 			setRightOpenWithCookie,
 			rightOpenMobile,
@@ -418,39 +441,57 @@ function SidebarProvider({
 			setRightSidebarWidthMobile,
 			rightSidebarWidthOverride,
 			rightSidebarWidthMobileOverride,
-			leftInsetPanelWidth,
-			setLeftInsetPanelWidth,
-			leftOverlayPanelWidth,
-			setLeftOverlayPanelWidth,
-			rightInsetPanelWidth,
-			setRightInsetPanelWidth,
-			syncDockedPanelWidths,
 			hasRightSidebar,
 		],
 	);
+	const dockedPanelsContextValue =
+		React.useMemo<SidebarDockedPanelsContextProps>(
+			() => ({
+				leftInsetPanelWidth,
+				setLeftInsetPanelWidth,
+				leftOverlayPanelWidth,
+				setLeftOverlayPanelWidth,
+				rightInsetPanelWidth,
+				setRightInsetPanelWidth,
+				syncDockedPanelWidths,
+			}),
+			[
+				leftInsetPanelWidth,
+				setLeftInsetPanelWidth,
+				leftOverlayPanelWidth,
+				setLeftOverlayPanelWidth,
+				rightInsetPanelWidth,
+				setRightInsetPanelWidth,
+				syncDockedPanelWidths,
+			],
+		);
 
 	return (
-		<SidebarContext.Provider value={contextValue}>
-			<TooltipProvider delayDuration={0}>
-				<div
-					data-slot="sidebar-wrapper"
-					style={
-						{
-							"--sidebar-width": SIDEBAR_WIDTH,
-							"--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
-							...style,
-						} as React.CSSProperties
-					}
-					className={cn(
-						"group/sidebar-wrapper flex min-h-svh w-full has-data-[variant=inset]:bg-sidebar",
-						className,
-					)}
-					{...props}
-				>
-					{children}
-				</div>
-			</TooltipProvider>
-		</SidebarContext.Provider>
+		<SidebarShellContext.Provider value={shellContextValue}>
+			<SidebarRightContext.Provider value={rightContextValue}>
+				<SidebarDockedPanelsContext.Provider value={dockedPanelsContextValue}>
+					<TooltipProvider delayDuration={0}>
+						<div
+							data-slot="sidebar-wrapper"
+							style={
+								{
+									"--sidebar-width": SIDEBAR_WIDTH,
+									"--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
+									...style,
+								} as React.CSSProperties
+							}
+							className={cn(
+								"group/sidebar-wrapper flex min-h-svh w-full has-data-[variant=inset]:bg-sidebar",
+								className,
+							)}
+							{...props}
+						>
+							{children}
+						</div>
+					</TooltipProvider>
+				</SidebarDockedPanelsContext.Provider>
+			</SidebarRightContext.Provider>
+		</SidebarShellContext.Provider>
 	);
 }
 
@@ -468,11 +509,8 @@ function Sidebar({
 	variant?: "sidebar" | "floating" | "inset";
 	collapsible?: "offcanvas" | "icon" | "none";
 }) {
+	const { isMobile, state, openMobile, setOpenMobile } = useSidebarShell();
 	const {
-		isMobile,
-		state,
-		openMobile,
-		setOpenMobile,
 		rightOpen,
 		rightOpenMobile,
 		rightSidebarWidth,
@@ -480,7 +518,7 @@ function Sidebar({
 		rightSidebarWidthOverride,
 		rightSidebarWidthMobileOverride,
 		setRightOpenMobile,
-	} = useSidebar();
+	} = useSidebarRight();
 	const isRightSide = side === "right";
 	const currentOpen = isRightSide ? rightOpen : state === "expanded";
 	const currentOpenMobile = isRightSide ? rightOpenMobile : openMobile;
@@ -616,7 +654,7 @@ function SidebarTrigger({
 	onClick,
 	...props
 }: React.ComponentProps<typeof Button>) {
-	const { toggleSidebar } = useSidebar();
+	const { toggleSidebar } = useSidebarShell();
 
 	return (
 		<Button
@@ -638,7 +676,8 @@ function SidebarTrigger({
 }
 
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
-	const { toggleSidebar, toggleRightSidebar } = useSidebar();
+	const { toggleSidebar } = useSidebarShell();
+	const { toggleRightSidebar } = useSidebarRight();
 	const buttonRef = React.useRef<HTMLButtonElement>(null);
 
 	const handleClick = () => {
@@ -682,16 +721,15 @@ function SidebarInset({
 	style,
 	...props
 }: React.ComponentProps<"main"> & { reserveRightSidebar?: boolean }) {
+	const { isMobile } = useSidebarShell();
 	const {
-		leftInsetPanelWidth,
 		rightOpen,
 		rightMode,
-		isMobile,
 		hasRightSidebar,
 		rightSidebarWidth,
 		rightSidebarWidthOverride,
-		rightInsetPanelWidth,
-	} = useSidebar();
+	} = useSidebarRight();
+	const { leftInsetPanelWidth, rightInsetPanelWidth } = useDockedPanelWidths();
 	const reservedRightSidebarWidth =
 		reserveRightSidebar &&
 		hasRightSidebar &&
@@ -711,7 +749,7 @@ function SidebarInset({
 		<main
 			data-slot="sidebar-inset"
 			className={cn(
-				"relative flex w-full flex-1 flex-col bg-background transition-[padding] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-lg md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
+				"relative flex w-full flex-1 flex-col bg-background md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-lg md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
 				className,
 			)}
 			style={{
@@ -918,7 +956,7 @@ function SidebarMenuButton({
 	tooltip?: string | React.ComponentProps<typeof TooltipContent>;
 } & VariantProps<typeof sidebarMenuButtonVariants>) {
 	const Comp = asChild ? Slot.Root : "button";
-	const { isMobile, state } = useSidebar();
+	const { isMobile, state } = useSidebarShell();
 
 	const button = (
 		<Comp
@@ -1117,5 +1155,7 @@ export {
 	SidebarRail,
 	SidebarSeparator,
 	SidebarTrigger,
-	useSidebar,
+	useDockedPanelWidths,
+	useSidebarRight,
+	useSidebarShell,
 };

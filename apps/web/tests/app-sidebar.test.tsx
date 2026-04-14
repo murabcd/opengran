@@ -3,7 +3,7 @@ import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const useQueryMock = vi.fn();
-const useSidebarMock = vi.fn();
+const useSidebarShellMock = vi.fn();
 const useTranscriptionSessionMock = vi.fn();
 
 vi.mock("convex/react", () => ({
@@ -35,7 +35,7 @@ vi.mock("@workspace/ui/components/sidebar", () => ({
 	}: React.PropsWithChildren<React.HTMLAttributes<HTMLDivElement>>) => (
 		<div {...props}>{children}</div>
 	),
-	useSidebar: useSidebarMock,
+	useSidebarShell: useSidebarShellMock,
 }));
 
 vi.mock("../src/components/inbox/inbox-sheet", () => ({
@@ -172,7 +172,7 @@ describe("AppSidebar mobile interactions", () => {
 		const onCreateNote = vi.fn();
 		const onWorkspaceSelect = vi.fn();
 
-		useSidebarMock.mockReturnValue({
+		useSidebarShellMock.mockReturnValue({
 			isMobile: true,
 			setOpenMobile,
 			state: "expanded",

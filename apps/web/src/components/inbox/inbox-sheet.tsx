@@ -537,7 +537,7 @@ function InboxPaneHeader({
 	);
 }
 
-function InboxPanel({
+const InboxPanel = React.memo(function InboxPanel({
 	view,
 	currentUser,
 	markAllReadRequestId,
@@ -679,7 +679,7 @@ function InboxPanel({
 
 	if (!activeWorkspaceId) {
 		return (
-			<ScrollArea className="min-h-0 flex-1">
+			<ScrollArea className="min-h-0 flex-1" scrollbarOrientation="none">
 				<Empty className="min-h-[24rem] border-none">
 					<EmptyHeader>
 						<EmptyMedia variant="icon">
@@ -701,7 +701,7 @@ function InboxPanel({
 
 	if (items.length === 0) {
 		return (
-			<ScrollArea className="min-h-0 flex-1">
+			<ScrollArea className="min-h-0 flex-1" scrollbarOrientation="none">
 				<Empty className="min-h-[24rem] border-none">
 					<EmptyHeader>
 						<EmptyMedia variant="icon">
@@ -723,7 +723,7 @@ function InboxPanel({
 
 	if (visibleItems.length === 0) {
 		return (
-			<ScrollArea className="min-h-0 flex-1">
+			<ScrollArea className="min-h-0 flex-1" scrollbarOrientation="none">
 				<Empty className="min-h-[24rem] border-none">
 					<EmptyHeader>
 						<EmptyMedia variant="icon">
@@ -740,7 +740,7 @@ function InboxPanel({
 	}
 
 	return (
-		<ScrollArea className="min-h-0 flex-1">
+		<ScrollArea className="min-h-0 flex-1" scrollbarOrientation="none">
 			<div>
 				{visibleItems.map((item) => {
 					const isRead =
@@ -836,7 +836,7 @@ function InboxPanel({
 			</div>
 		</ScrollArea>
 	);
-}
+});
 
 function getInboxEmptyDescription(view: InboxView) {
 	switch (view) {

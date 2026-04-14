@@ -16,7 +16,7 @@ import {
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
-	useSidebar,
+	useSidebarShell,
 } from "@workspace/ui/components/sidebar";
 import { useTheme } from "@workspace/ui/components/theme-provider";
 import {
@@ -53,7 +53,7 @@ export function NavUser({
 	onSignOut: () => void;
 	signingOut: boolean;
 }) {
-	const { isMobile } = useSidebar();
+	const { isMobile } = useSidebarShell();
 	const { theme, setTheme } = useTheme();
 	const [preparingDesktopDownload, setPreparingDesktopDownload] =
 		React.useState(false);

@@ -36,7 +36,12 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@workspace/ui/components/select";
-import { Sidebar, useSidebar } from "@workspace/ui/components/sidebar";
+import {
+	Sidebar,
+	useDockedPanelWidths,
+	useSidebarRight,
+	useSidebarShell,
+} from "@workspace/ui/components/sidebar";
 import {
 	Tooltip,
 	TooltipContent,
@@ -304,20 +309,19 @@ const useNoteComposerController = ({
 	onEnhanceTranscript,
 	stopTranscriptionWhenMeetingEnds,
 }: NoteComposerProps) => {
+	const { isMobile, state } = useSidebarShell();
 	const {
-		isMobile,
-		state,
 		rightMode,
 		rightOpen,
 		rightOpenMobile,
-		rightInsetPanelWidth,
 		setHasRightSidebar,
 		setRightMode,
 		setRightOpen,
 		setRightOpenMobile,
 		setRightSidebarWidthMobileOverride,
 		setRightSidebarWidthOverride,
-	} = useSidebar();
+	} = useSidebarRight();
+	const { rightInsetPanelWidth } = useDockedPanelWidths();
 	const [message, setMessage] = React.useState("");
 	const [, setIsExpanded] = React.useState(false);
 	const [panelModeState, setPanelModeState] = React.useState<

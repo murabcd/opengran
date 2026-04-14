@@ -14,7 +14,9 @@ const useChatMock = vi.fn();
 const useMutationMock = vi.fn();
 const useQueryMock = vi.fn();
 const useNoteTranscriptSessionMock = vi.fn();
-const useSidebarMock = vi.fn();
+const useSidebarShellMock = vi.fn();
+const useSidebarRightMock = vi.fn();
+const useDockedPanelWidthsMock = vi.fn();
 const convexTokenMock = vi.fn();
 const regenerateMock = vi.fn();
 const scrollToBottomMock = vi.fn();
@@ -116,7 +118,9 @@ vi.mock("@workspace/ui/components/sidebar", () => ({
 	}: React.PropsWithChildren<React.HTMLAttributes<HTMLDivElement>>) => (
 		<div {...props}>{children}</div>
 	),
-	useSidebar: useSidebarMock,
+	useDockedPanelWidths: useDockedPanelWidthsMock,
+	useSidebarRight: useSidebarRightMock,
+	useSidebarShell: useSidebarShellMock,
 }));
 
 vi.mock("@workspace/ui/components/textarea", () => ({
@@ -195,9 +199,11 @@ describe("NoteComposer", () => {
 	beforeEach(() => {
 		window.localStorage.clear();
 
-		useSidebarMock.mockReturnValue({
+		useSidebarShellMock.mockReturnValue({
 			isMobile: false,
-			rightInsetPanelWidth: null,
+			state: "expanded",
+		});
+		useSidebarRightMock.mockReturnValue({
 			rightMode: "sidebar",
 			rightOpen: false,
 			rightOpenMobile: false,
@@ -207,6 +213,9 @@ describe("NoteComposer", () => {
 			setRightOpenMobile: vi.fn(),
 			setRightSidebarWidthMobileOverride: vi.fn(),
 			setRightSidebarWidthOverride: vi.fn(),
+		});
+		useDockedPanelWidthsMock.mockReturnValue({
+			rightInsetPanelWidth: null,
 		});
 
 		useQueryMock.mockReturnValue(undefined);
@@ -1859,9 +1868,11 @@ describe("NoteComposer", () => {
 			writable: true,
 		});
 
-		useSidebarMock.mockReturnValue({
+		useSidebarShellMock.mockReturnValue({
 			isMobile: false,
-			rightInsetPanelWidth: null,
+			state: "expanded",
+		});
+		useSidebarRightMock.mockReturnValue({
 			rightMode: "floating",
 			rightOpen: true,
 			rightOpenMobile: false,
@@ -1871,6 +1882,9 @@ describe("NoteComposer", () => {
 			setRightOpenMobile: vi.fn(),
 			setRightSidebarWidthMobileOverride: vi.fn(),
 			setRightSidebarWidthOverride: vi.fn(),
+		});
+		useDockedPanelWidthsMock.mockReturnValue({
+			rightInsetPanelWidth: null,
 		});
 
 		useQueryMock.mockImplementation(() => {

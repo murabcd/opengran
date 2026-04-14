@@ -1122,6 +1122,163 @@ const useNotePageController = ({
 	};
 };
 
+type NotePageEditorPaneProps = {
+	titleTextareaRef: React.RefObject<HTMLTextAreaElement | null>;
+	title: string;
+	setTitle: (title: string) => void;
+	focusEditor: () => void;
+	editor: ReturnType<typeof useEditor>;
+	templateApplyState: ReturnType<
+		typeof useNotePageController
+	>["templateApplyState"];
+	getNoteContext: ReturnType<typeof useNotePageController>["getNoteContext"];
+	appendChatResponseToNote: ReturnType<
+		typeof useNotePageController
+	>["appendChatResponseToNote"];
+	handleEnhanceTranscript: ReturnType<
+		typeof useNotePageController
+	>["handleEnhanceTranscript"];
+	tableOfContents: ReturnType<typeof useNotePageController>["tableOfContents"];
+	autoStartTranscription: boolean;
+	composerNoteContext: {
+		noteId: Id<"notes"> | null;
+		templateSlug: string | null;
+	};
+	onAutoStartTranscriptionHandled?: () => void;
+	stopTranscriptionWhenMeetingEnds: boolean;
+	shouldHideEmptyBodyPlaceholder: boolean;
+	onOpenCommentComposer: () => void;
+	isDesktopMac: boolean;
+	handleTableOfContentsSelect: (anchor: TableOfContentDataItem) => void;
+};
+
+const NotePageEditorPane = React.memo(function NotePageEditorPane({
+	titleTextareaRef,
+	title,
+	setTitle,
+	focusEditor,
+	editor,
+	templateApplyState,
+	getNoteContext,
+	appendChatResponseToNote,
+	handleEnhanceTranscript,
+	tableOfContents,
+	autoStartTranscription,
+	composerNoteContext,
+	onAutoStartTranscriptionHandled,
+	stopTranscriptionWhenMeetingEnds,
+	shouldHideEmptyBodyPlaceholder,
+	onOpenCommentComposer,
+	isDesktopMac,
+	handleTableOfContentsSelect,
+}: NotePageEditorPaneProps) {
+	return (
+		<div className="relative flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
+			<div
+				className={cn(
+					NOTE_PAGE_VIEWPORT_MIN_HEIGHT_CLASS,
+					"mx-auto flex w-full max-w-5xl flex-1",
+				)}
+			>
+				<div className="min-w-0 flex-1">
+					<div
+						className={cn(
+							NOTE_PAGE_VIEWPORT_MIN_HEIGHT_CLASS,
+							"mx-auto flex w-full max-w-xl flex-1 flex-col",
+						)}
+					>
+						<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
+							<div className="flex flex-col gap-6">
+								<div>
+									<Textarea
+										ref={titleTextareaRef}
+										value={title}
+										onChange={(event) => setTitle(event.target.value)}
+										onKeyDown={(event) => {
+											if (event.key !== "Enter" || event.shiftKey) {
+												return;
+											}
+
+											event.preventDefault();
+											focusEditor();
+										}}
+										placeholder="New note"
+										aria-label="Note title"
+										rows={1}
+										className="note-title min-h-0 flex-1 resize-none overflow-hidden rounded-none border-0 !bg-transparent px-0 py-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
+									/>
+								</div>
+
+								{editor ? (
+									<Tiptap editor={editor}>
+										<Tiptap.Content
+											className={cn(
+												"min-h-[320px] text-base text-foreground",
+												"[&_.ProseMirror]:min-h-[320px]",
+												shouldHideEmptyBodyPlaceholder &&
+													"note-editor--hide-placeholder",
+												templateApplyState.isRunning && "hidden",
+											)}
+										/>
+
+										<NoteSelectionMenu onComment={onOpenCommentComposer} />
+									</Tiptap>
+								) : null}
+								{templateApplyState.isRunning ? (
+									templateApplyState.streamedMarkdown.trim().length > 0 ? (
+										<Streamdown
+											className="note-streamdown min-h-[320px] text-base text-foreground"
+											controls={false}
+											caret="block"
+											isAnimating
+										>
+											{templateApplyState.streamedMarkdown}
+										</Streamdown>
+									) : (
+										<div className="min-h-[320px] text-base text-muted-foreground">
+											<ShimmerText>Thinking</ShimmerText>
+										</div>
+									)
+								) : null}
+							</div>
+						</div>
+
+						<div className="sticky bottom-0 z-10 mt-auto h-0">
+							<div className={COMPOSER_DOCK_WRAPPER_CLASS}>
+								<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
+									<NoteComposer
+										autoStartTranscription={autoStartTranscription}
+										desktopSafeTop={isDesktopMac}
+										getNoteContext={getNoteContext}
+										noteContext={composerNoteContext}
+										onAutoStartTranscriptionHandled={
+											onAutoStartTranscriptionHandled
+										}
+										onAddMessageToNote={appendChatResponseToNote}
+										onEnhanceTranscript={handleEnhanceTranscript}
+										stopTranscriptionWhenMeetingEnds={
+											stopTranscriptionWhenMeetingEnds
+										}
+									/>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div className="pointer-events-none absolute top-0 right-0 hidden h-full lg:block">
+				<div className="pointer-events-auto sticky top-1/2 -translate-y-1/2">
+					<NoteTableOfContents
+						anchors={tableOfContents}
+						onSelect={handleTableOfContentsSelect}
+					/>
+				</div>
+			</div>
+		</div>
+	);
+});
+
 function NotePageContent({
 	controller,
 	autoStartTranscription,
@@ -1136,8 +1293,9 @@ function NotePageContent({
 	currentUser,
 	isDesktopMac,
 	handleCommentsOpenChange,
-	setCommentPanelState,
+	onActiveThreadIdChange,
 	pendingCommentSelection,
+	onPendingSelectionChange,
 	handleTableOfContentsSelect,
 }: {
 	controller: ReturnType<typeof useNotePageController>;
@@ -1156,126 +1314,37 @@ function NotePageContent({
 	currentUser: NotePageCurrentUser;
 	isDesktopMac: boolean;
 	handleCommentsOpenChange: (nextOpen: boolean) => void;
-	setCommentPanelState: React.Dispatch<
-		React.SetStateAction<{
-			commentsOpen: boolean;
-			activeCommentThreadId: Id<"noteCommentThreads"> | null;
-			pendingCommentSelection: PendingNoteCommentSelection | null;
-		}>
-	>;
+	onActiveThreadIdChange: (threadId: Id<"noteCommentThreads"> | null) => void;
 	pendingCommentSelection: PendingNoteCommentSelection | null;
+	onPendingSelectionChange: (
+		selection: PendingNoteCommentSelection | null,
+	) => void;
 	handleTableOfContentsSelect: (anchor: TableOfContentDataItem) => void;
 }) {
 	void scrollParentRef;
 
 	return (
 		<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
-			<div className="relative flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
-				<div
-					className={cn(
-						NOTE_PAGE_VIEWPORT_MIN_HEIGHT_CLASS,
-						"mx-auto flex w-full max-w-5xl flex-1",
-					)}
-				>
-					<div className="min-w-0 flex-1">
-						<div
-							className={cn(
-								NOTE_PAGE_VIEWPORT_MIN_HEIGHT_CLASS,
-								"mx-auto flex w-full max-w-xl flex-1 flex-col",
-							)}
-						>
-							<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
-								<div className="flex flex-col gap-6">
-									<div>
-										<Textarea
-											ref={controller.titleTextareaRef}
-											value={controller.title}
-											onChange={(event) =>
-												controller.setTitle(event.target.value)
-											}
-											onKeyDown={(event) => {
-												if (event.key !== "Enter" || event.shiftKey) {
-													return;
-												}
-
-												event.preventDefault();
-												controller.focusEditor();
-											}}
-											placeholder="New note"
-											aria-label="Note title"
-											rows={1}
-											className="note-title min-h-0 flex-1 resize-none overflow-hidden rounded-none border-0 !bg-transparent px-0 py-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
-										/>
-									</div>
-
-									{controller.editor ? (
-										<Tiptap editor={controller.editor}>
-											<Tiptap.Content
-												className={cn(
-													"min-h-[320px] text-base text-foreground",
-													"[&_.ProseMirror]:min-h-[320px]",
-													shouldHideEmptyBodyPlaceholder &&
-														"note-editor--hide-placeholder",
-													controller.templateApplyState.isRunning && "hidden",
-												)}
-											/>
-
-											<NoteSelectionMenu onComment={onOpenCommentComposer} />
-										</Tiptap>
-									) : null}
-									{controller.templateApplyState.isRunning ? (
-										controller.templateApplyState.streamedMarkdown.trim()
-											.length > 0 ? (
-											<Streamdown
-												className="note-streamdown min-h-[320px] text-base text-foreground"
-												controls={false}
-												caret="block"
-												isAnimating
-											>
-												{controller.templateApplyState.streamedMarkdown}
-											</Streamdown>
-										) : (
-											<div className="min-h-[320px] text-base text-muted-foreground">
-												<ShimmerText>Thinking</ShimmerText>
-											</div>
-										)
-									) : null}
-								</div>
-							</div>
-
-							<div className="sticky bottom-0 z-10 mt-auto h-0">
-								<div className={COMPOSER_DOCK_WRAPPER_CLASS}>
-									<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
-										<NoteComposer
-											autoStartTranscription={autoStartTranscription}
-											desktopSafeTop={isDesktopMac}
-											getNoteContext={controller.getNoteContext}
-											noteContext={composerNoteContext}
-											onAutoStartTranscriptionHandled={
-												onAutoStartTranscriptionHandled
-											}
-											onAddMessageToNote={controller.appendChatResponseToNote}
-											onEnhanceTranscript={controller.handleEnhanceTranscript}
-											stopTranscriptionWhenMeetingEnds={
-												stopTranscriptionWhenMeetingEnds
-											}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
-
-				<div className="pointer-events-none absolute top-0 right-0 hidden h-full lg:block">
-					<div className="pointer-events-auto sticky top-1/2 -translate-y-1/2">
-						<NoteTableOfContents
-							anchors={controller.tableOfContents}
-							onSelect={handleTableOfContentsSelect}
-						/>
-					</div>
-				</div>
-			</div>
+			<NotePageEditorPane
+				titleTextareaRef={controller.titleTextareaRef}
+				title={controller.title}
+				setTitle={controller.setTitle}
+				focusEditor={controller.focusEditor}
+				editor={controller.editor}
+				templateApplyState={controller.templateApplyState}
+				getNoteContext={controller.getNoteContext}
+				appendChatResponseToNote={controller.appendChatResponseToNote}
+				handleEnhanceTranscript={controller.handleEnhanceTranscript}
+				tableOfContents={controller.tableOfContents}
+				autoStartTranscription={autoStartTranscription}
+				composerNoteContext={composerNoteContext}
+				onAutoStartTranscriptionHandled={onAutoStartTranscriptionHandled}
+				stopTranscriptionWhenMeetingEnds={stopTranscriptionWhenMeetingEnds}
+				shouldHideEmptyBodyPlaceholder={shouldHideEmptyBodyPlaceholder}
+				onOpenCommentComposer={onOpenCommentComposer}
+				isDesktopMac={isDesktopMac}
+				handleTableOfContentsSelect={handleTableOfContentsSelect}
+			/>
 
 			<NoteCommentsSheet
 				noteId={controller.noteId}
@@ -1285,19 +1354,9 @@ function NotePageContent({
 				desktopSafeTop={isDesktopMac}
 				onOpenChange={handleCommentsOpenChange}
 				activeThreadId={activeCommentThreadId}
-				onActiveThreadIdChange={(threadId) =>
-					setCommentPanelState((current) => ({
-						...current,
-						activeCommentThreadId: threadId,
-					}))
-				}
+				onActiveThreadIdChange={onActiveThreadIdChange}
 				pendingSelection={pendingCommentSelection}
-				onPendingSelectionChange={(selection) =>
-					setCommentPanelState((current) => ({
-						...current,
-						pendingCommentSelection: selection,
-					}))
-				}
+				onPendingSelectionChange={onPendingSelectionChange}
 			/>
 		</div>
 	);
@@ -1499,6 +1558,24 @@ export function NotePage({
 			},
 		});
 	}, [controller.editor]);
+	const handleActiveThreadIdChange = React.useCallback(
+		(threadId: Id<"noteCommentThreads"> | null) => {
+			setCommentPanelState((current) => ({
+				...current,
+				activeCommentThreadId: threadId,
+			}));
+		},
+		[],
+	);
+	const handlePendingSelectionChange = React.useCallback(
+		(selection: PendingNoteCommentSelection | null) => {
+			setCommentPanelState((current) => ({
+				...current,
+				pendingCommentSelection: selection,
+			}));
+		},
+		[],
+	);
 
 	React.useEffect(() => {
 		void noteId;
@@ -1592,8 +1669,9 @@ export function NotePage({
 			currentUser={currentUser}
 			isDesktopMac={isDesktopMac}
 			handleCommentsOpenChange={handleCommentsOpenChange}
-			setCommentPanelState={setCommentPanelState}
+			onActiveThreadIdChange={handleActiveThreadIdChange}
 			pendingCommentSelection={pendingCommentSelection}
+			onPendingSelectionChange={handlePendingSelectionChange}
 			handleTableOfContentsSelect={handleTableOfContentsSelect}
 		/>
 	);

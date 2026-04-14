@@ -26,7 +26,7 @@ import {
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
-	useSidebar,
+	useSidebarShell,
 } from "@workspace/ui/components/sidebar";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import {
@@ -66,7 +66,7 @@ export function NavTrash({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
-	const { isMobile } = useSidebar();
+	const { isMobile } = useSidebarShell();
 
 	return (
 		<SidebarMenu>

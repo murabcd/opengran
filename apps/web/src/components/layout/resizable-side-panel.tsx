@@ -216,9 +216,66 @@ function useResizableSidePanel({
 			bounds,
 		),
 	);
+	const panelWidthRef = React.useRef(panelWidth);
+	const pendingPanelWidthRef = React.useRef<number | null>(null);
+	const resizeAnimationFrameRef = React.useRef<number | null>(null);
 	const storageKey = isMobile ? mobileStorageKey : desktopStorageKey;
+	const persistPanelWidth = React.useCallback(
+		(width: number) => {
+			if (typeof window === "undefined") {
+				return;
+			}
+
+			window.localStorage.setItem(storageKey, String(Math.round(width)));
+		},
+		[storageKey],
+	);
+	const commitPanelWidth = React.useCallback((nextWidth: number) => {
+		if (resizeAnimationFrameRef.current !== null) {
+			window.cancelAnimationFrame(resizeAnimationFrameRef.current);
+			resizeAnimationFrameRef.current = null;
+		}
+
+		pendingPanelWidthRef.current = null;
+		panelWidthRef.current = nextWidth;
+		setPanelWidth((currentWidth) =>
+			currentWidth === nextWidth ? currentWidth : nextWidth,
+		);
+	}, []);
+	const schedulePanelWidth = React.useCallback((nextWidth: number) => {
+		pendingPanelWidthRef.current = nextWidth;
+
+		if (resizeAnimationFrameRef.current !== null) {
+			return;
+		}
+
+		resizeAnimationFrameRef.current = window.requestAnimationFrame(() => {
+			resizeAnimationFrameRef.current = null;
+			const pendingWidth = pendingPanelWidthRef.current;
+			pendingPanelWidthRef.current = null;
+
+			if (pendingWidth === null) {
+				return;
+			}
+
+			panelWidthRef.current = pendingWidth;
+			setPanelWidth((currentWidth) =>
+				currentWidth === pendingWidth ? currentWidth : pendingWidth,
+			);
+		});
+	}, []);
+	const flushScheduledPanelWidth = React.useCallback(() => {
+		const pendingWidth = pendingPanelWidthRef.current;
+		if (pendingWidth !== null) {
+			commitPanelWidth(pendingWidth);
+			persistPanelWidth(pendingWidth);
+			return;
+		}
+
+		persistPanelWidth(panelWidthRef.current);
+	}, [commitPanelWidth, persistPanelWidth]);
 	const updateWidthFromClientX = React.useCallback(
-		(clientX: number) => {
+		(clientX: number, strategy: "commit" | "schedule" = "schedule") => {
 			const nextWidth = clampPanelWidth(
 				getWidthFromClientX(
 					clientX,
@@ -229,16 +286,36 @@ function useResizableSidePanel({
 				),
 				bounds,
 			);
-			setPanelWidth(nextWidth);
+
+			if (strategy === "commit") {
+				commitPanelWidth(nextWidth);
+				return;
+			}
+
+			schedulePanelWidth(nextWidth);
 		},
 		[
 			bounds,
+			commitPanelWidth,
 			effectiveDesktopLeadingOffset,
 			effectiveDesktopTrailingOffset,
+			schedulePanelWidth,
 			side,
 			viewportWidth,
 		],
 	);
+
+	React.useEffect(() => {
+		panelWidthRef.current = panelWidth;
+	}, [panelWidth]);
+
+	React.useEffect(() => {
+		return () => {
+			if (resizeAnimationFrameRef.current !== null) {
+				window.cancelAnimationFrame(resizeAnimationFrameRef.current);
+			}
+		};
+	}, []);
 
 	React.useEffect(() => {
 		if (typeof window === "undefined") {
@@ -292,14 +369,6 @@ function useResizableSidePanel({
 		setPanelWidth((currentWidth) => clampPanelWidth(currentWidth, bounds));
 	}, [bounds]);
 
-	React.useEffect(() => {
-		if (typeof window === "undefined") {
-			return;
-		}
-
-		window.localStorage.setItem(storageKey, String(Math.round(panelWidth)));
-	}, [panelWidth, storageKey]);
-
 	const resizeHandleKeyDown = React.useCallback(
 		(event: React.KeyboardEvent<HTMLButtonElement>) => {
 			let nextWidth: number | null = null;
@@ -324,22 +393,40 @@ function useResizableSidePanel({
 			}
 
 			event.preventDefault();
-			setPanelWidth(clampPanelWidth(nextWidth, bounds));
+			const clampedWidth = clampPanelWidth(nextWidth, bounds);
+			commitPanelWidth(clampedWidth);
+			persistPanelWidth(clampedWidth);
 		},
-		[bounds, keyboardStep, panelWidth, side],
+		[
+			bounds,
+			commitPanelWidth,
+			keyboardStep,
+			panelWidth,
+			persistPanelWidth,
+			side,
+		],
 	);
 
 	const { handleResizeKeyDown, handleResizeStart, isResizing } =
 		useResizeHandle({
 			cursor: "col-resize",
 			onResizeStart: (event) => {
-				updateWidthFromClientX(event.clientX);
+				updateWidthFromClientX(event.clientX, "commit");
 			},
 			onResizeMove: (event) => {
 				updateWidthFromClientX(event.clientX);
 			},
+			onResizeEnd: flushScheduledPanelWidth,
 			onKeyDown: resizeHandleKeyDown,
 		});
+
+	React.useEffect(() => {
+		if (isResizing) {
+			return;
+		}
+
+		persistPanelWidth(panelWidth);
+	}, [isResizing, panelWidth, persistPanelWidth]);
 
 	return {
 		handleResizeKeyDown,

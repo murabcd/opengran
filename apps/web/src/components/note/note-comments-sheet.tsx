@@ -40,7 +40,10 @@ import {
 	SheetDescription,
 	SheetTitle,
 } from "@workspace/ui/components/sheet";
-import { useSidebar } from "@workspace/ui/components/sidebar";
+import {
+	useSidebarRight,
+	useSidebarShell,
+} from "@workspace/ui/components/sidebar";
 import {
 	Tooltip,
 	TooltipContent,
@@ -987,66 +990,7 @@ function ExpandedDiscussionThread({
 	);
 }
 
-function CommentsSheetPanel({
-	isMobile,
-	open,
-	desktopSafeTop,
-	isPinned,
-	filtersOpen,
-	setFiltersOpen,
-	view,
-	setView,
-	onTogglePinned,
-	onOpenChange,
-	pendingSelection,
-	draftBody,
-	setDraftBody,
-	handleCreateThread,
-	isCreating,
-	visibleThreads,
-	activeThreadId,
-	expandedThreadId,
-	replyingThreadId,
-	replyParentCommentId,
-	editingCommentId,
-	expandedThread,
-	optimisticReadThreadIds,
-	currentUser,
-	threadActionsOpenId,
-	setThreadActionsOpenId,
-	handleMarkThreadRead,
-	handleMarkThreadUnread,
-	handleStartEditThread,
-	handleCopyThreadLink,
-	handleToggleMuteThread,
-	handleDeleteThread,
-	handleOpenThread,
-	activeCommentTree,
-	commentActionsOpenId,
-	setCommentActionsOpenId,
-	editBody,
-	replyBody,
-	isReplySubmitting,
-	editComposerRef,
-	replyComposerRef,
-	setEditBody,
-	setReplyBody,
-	handleSaveEdit,
-	handleReply,
-	handleStartReplyToComment,
-	handleStartEditComment,
-	handleDeleteComment,
-}: {
-	isMobile: boolean;
-	open: boolean;
-	desktopSafeTop: boolean;
-	isPinned: boolean;
-	filtersOpen: boolean;
-	setFiltersOpen: (open: boolean) => void;
-	view: ThreadView;
-	setView: (view: ThreadView) => void;
-	onTogglePinned: () => void;
-	onOpenChange: (open: boolean) => void;
+type CommentsSheetBodyProps = {
 	pendingSelection: PendingNoteCommentSelection | null;
 	draftBody: string;
 	setDraftBody: (value: string) => void;
@@ -1085,9 +1029,159 @@ function CommentsSheetPanel({
 	handleStartReplyToComment: (comment: ThreadComment) => void;
 	handleStartEditComment: (comment: ThreadComment) => void;
 	handleDeleteComment: (comment: ThreadComment) => void;
-}) {
+};
+
+const CommentsSheetBody = React.memo(function CommentsSheetBody({
+	pendingSelection,
+	draftBody,
+	setDraftBody,
+	handleCreateThread,
+	isCreating,
+	visibleThreads,
+	activeThreadId,
+	expandedThreadId,
+	replyingThreadId,
+	replyParentCommentId,
+	editingCommentId,
+	expandedThread,
+	optimisticReadThreadIds,
+	currentUser,
+	threadActionsOpenId,
+	setThreadActionsOpenId,
+	handleMarkThreadRead,
+	handleMarkThreadUnread,
+	handleStartEditThread,
+	handleCopyThreadLink,
+	handleToggleMuteThread,
+	handleDeleteThread,
+	handleOpenThread,
+	activeCommentTree,
+	commentActionsOpenId,
+	setCommentActionsOpenId,
+	editBody,
+	replyBody,
+	isReplySubmitting,
+	editComposerRef,
+	replyComposerRef,
+	setEditBody,
+	setReplyBody,
+	handleSaveEdit,
+	handleReply,
+	handleStartReplyToComment,
+	handleStartEditComment,
+	handleDeleteComment,
+}: CommentsSheetBodyProps) {
 	const threadList = visibleThreads ?? [];
 
+	return (
+		<>
+			{pendingSelection ? (
+				<div className="bg-accent/10 px-4 py-4">
+					<p className="mb-4 whitespace-pre-wrap text-sm text-muted-foreground">
+						{pendingSelection.text}
+					</p>
+					<CommentComposerField
+						value={draftBody}
+						onChange={setDraftBody}
+						onSubmit={handleCreateThread}
+						isSubmitting={isCreating}
+						ariaLabel="New comment"
+						sendAriaLabel="Send comment"
+						placeholder="Add a comment..."
+					/>
+				</div>
+			) : null}
+
+			<ScrollArea
+				className="min-h-0 flex-1"
+				viewportClassName="h-full"
+				scrollbarOrientation="none"
+			>
+				{visibleThreads === undefined ? null : threadList.length === 0 ? (
+					pendingSelection ? null : (
+						<Empty className="min-h-[24rem] border-none">
+							<EmptyHeader>
+								<EmptyMedia variant="icon">
+									<MessageSquareMore className="size-4" />
+								</EmptyMedia>
+								<EmptyTitle>No discussions yet</EmptyTitle>
+								<EmptyDescription>
+									Select text in the note to start the first thread.
+								</EmptyDescription>
+							</EmptyHeader>
+						</Empty>
+					)
+				) : (
+					<div>
+						{threadList.map((thread) => (
+							<DiscussionThreadRow
+								key={thread._id}
+								thread={thread}
+								currentUser={currentUser}
+								activeThreadId={activeThreadId}
+								expandedThreadId={expandedThreadId}
+								replyingThreadId={replyingThreadId}
+								replyParentCommentId={replyParentCommentId}
+								editingCommentId={editingCommentId}
+								threadActionsOpenId={threadActionsOpenId}
+								expandedThread={expandedThread}
+								optimisticReadThreadIds={optimisticReadThreadIds}
+								isReplySubmitting={isReplySubmitting}
+								replyBody={replyBody}
+								handleMarkThreadRead={handleMarkThreadRead}
+								handleMarkThreadUnread={handleMarkThreadUnread}
+								handleStartEditThread={handleStartEditThread}
+								handleCopyThreadLink={handleCopyThreadLink}
+								handleToggleMuteThread={handleToggleMuteThread}
+								handleDeleteThread={handleDeleteThread}
+								handleOpenThread={handleOpenThread}
+								activeCommentTree={activeCommentTree}
+								commentActionsOpenId={commentActionsOpenId}
+								setCommentActionsOpenId={setCommentActionsOpenId}
+								editBody={editBody}
+								editComposerRef={editComposerRef}
+								replyComposerRef={replyComposerRef}
+								setEditBody={setEditBody}
+								setReplyBody={setReplyBody}
+								handleSaveEdit={handleSaveEdit}
+								handleReply={handleReply}
+								handleStartReplyToComment={handleStartReplyToComment}
+								handleStartEditComment={handleStartEditComment}
+								handleDeleteComment={handleDeleteComment}
+								setThreadActionsOpenId={setThreadActionsOpenId}
+							/>
+						))}
+					</div>
+				)}
+			</ScrollArea>
+		</>
+	);
+});
+
+function CommentsSheetPanel({
+	isMobile,
+	open,
+	desktopSafeTop,
+	isPinned,
+	filtersOpen,
+	setFiltersOpen,
+	view,
+	setView,
+	onTogglePinned,
+	onOpenChange,
+	...bodyProps
+}: {
+	isMobile: boolean;
+	open: boolean;
+	desktopSafeTop: boolean;
+	isPinned: boolean;
+	filtersOpen: boolean;
+	setFiltersOpen: (open: boolean) => void;
+	view: ThreadView;
+	setView: (view: ThreadView) => void;
+	onTogglePinned: () => void;
+	onOpenChange: (open: boolean) => void;
+} & CommentsSheetBodyProps) {
 	return (
 		<div className="flex h-full flex-col bg-background text-foreground">
 			<div
@@ -1175,81 +1269,7 @@ function CommentsSheetPanel({
 				</div>
 			</div>
 
-			{pendingSelection ? (
-				<div className="bg-accent/10 px-4 py-4">
-					<p className="mb-4 whitespace-pre-wrap text-sm text-muted-foreground">
-						{pendingSelection.text}
-					</p>
-					<CommentComposerField
-						value={draftBody}
-						onChange={setDraftBody}
-						onSubmit={handleCreateThread}
-						isSubmitting={isCreating}
-						ariaLabel="New comment"
-						sendAriaLabel="Send comment"
-						placeholder="Add a comment..."
-					/>
-				</div>
-			) : null}
-
-			<ScrollArea className="min-h-0 flex-1" viewportClassName="h-full">
-				{visibleThreads === undefined ? null : threadList.length === 0 ? (
-					pendingSelection ? null : (
-						<Empty className="min-h-[24rem] border-none">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<MessageSquareMore className="size-4" />
-								</EmptyMedia>
-								<EmptyTitle>No discussions yet</EmptyTitle>
-								<EmptyDescription>
-									Select text in the note to start the first thread.
-								</EmptyDescription>
-							</EmptyHeader>
-						</Empty>
-					)
-				) : (
-					<div>
-						{threadList.map((thread) => (
-							<DiscussionThreadRow
-								key={thread._id}
-								thread={thread}
-								currentUser={currentUser}
-								activeThreadId={activeThreadId}
-								expandedThreadId={expandedThreadId}
-								replyingThreadId={replyingThreadId}
-								replyParentCommentId={replyParentCommentId}
-								editingCommentId={editingCommentId}
-								threadActionsOpenId={threadActionsOpenId}
-								expandedThread={expandedThread}
-								optimisticReadThreadIds={optimisticReadThreadIds}
-								isReplySubmitting={isReplySubmitting}
-								replyBody={replyBody}
-								handleMarkThreadRead={handleMarkThreadRead}
-								handleMarkThreadUnread={handleMarkThreadUnread}
-								handleStartEditThread={handleStartEditThread}
-								handleCopyThreadLink={handleCopyThreadLink}
-								handleToggleMuteThread={handleToggleMuteThread}
-								handleDeleteThread={handleDeleteThread}
-								handleOpenThread={handleOpenThread}
-								activeCommentTree={activeCommentTree}
-								commentActionsOpenId={commentActionsOpenId}
-								setCommentActionsOpenId={setCommentActionsOpenId}
-								editBody={editBody}
-								editComposerRef={editComposerRef}
-								replyComposerRef={replyComposerRef}
-								setEditBody={setEditBody}
-								setReplyBody={setReplyBody}
-								handleSaveEdit={handleSaveEdit}
-								handleReply={handleReply}
-								handleStartReplyToComment={handleStartReplyToComment}
-								handleStartEditComment={handleStartEditComment}
-								handleDeleteComment={handleDeleteComment}
-								setThreadActionsOpenId={setThreadActionsOpenId}
-							/>
-						))}
-					</div>
-				)}
-			</ScrollArea>
+			<CommentsSheetBody {...bodyProps} />
 		</div>
 	);
 }
@@ -2092,14 +2112,14 @@ function useNoteCommentsSheetController({
 
 export function NoteCommentsSheet(props: NoteCommentsSheetProps) {
 	const { open, onOpenChange } = props;
+	const { state } = useSidebarShell();
 	const {
-		state,
 		hasRightSidebar,
 		rightMode,
 		rightOpen,
 		rightSidebarWidth,
 		rightSidebarWidthOverride,
-	} = useSidebar();
+	} = useSidebarRight();
 	const { isPinned, togglePinned } = useDesktopPanelPin({
 		storageKey: COMMENTS_PANEL_PINNED_STORAGE_KEY,
 	});
