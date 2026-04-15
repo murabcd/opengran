@@ -80,6 +80,35 @@ describe("ChatMessages", () => {
 		).toContain("rounded-lg");
 	});
 
+	it("uses the note chat width and right alignment for user messages", async () => {
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "user-layout",
+						role: "user",
+						parts: [
+							{
+								type: "text",
+								text: "Match the note chat layout",
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		const bubble = screen.getByText("Match the note chat layout").parentElement;
+		const column = bubble?.parentElement?.parentElement;
+		const row = column?.parentElement;
+
+		expect(row?.className).toContain("justify-end");
+		expect(column?.className).toContain("max-w-[85%]");
+		expect(column?.className).not.toContain("w-full");
+	});
+
 	it("renders sources from structured tool output parts", async () => {
 		const user = userEvent.setup();
 		const { ChatMessages } = await import("../src/components/chat/messages");
@@ -195,7 +224,7 @@ describe("ChatMessages", () => {
 		const messageRow = actionsRow?.previousElementSibling;
 
 		expect(trigger.className).toContain("cursor-pointer");
-		expect(actionsRow?.className).toContain("pb-3");
+		expect(actionsRow?.className).toContain("mt-2");
 		expect(messageRow?.className).toContain("pb-2");
 		expect(messageColumn?.className).not.toContain("space-y-4");
 
@@ -231,6 +260,99 @@ describe("ChatMessages", () => {
 		);
 	});
 
+	it("collapses long user messages behind a show more toggle", async () => {
+		const user = userEvent.setup();
+		const { ChatMessages } = await import("../src/components/chat/messages");
+		const longMessage = Array.from(
+			{ length: 16 },
+			(_, index) => `Line ${index + 1} of a very long response`,
+		).join("\n");
+
+		const { container } = render(
+			<ChatMessages
+				messages={[
+					{
+						id: "user-long",
+						role: "user",
+						parts: [
+							{
+								type: "text",
+								text: longMessage,
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		const toggle = screen.getByRole("button", { name: "Show more" });
+		const contentWrapper =
+			container.querySelector(".note-streamdown")?.parentElement;
+
+		expect(toggle.getAttribute("aria-expanded")).toBe("false");
+		expect(contentWrapper?.className).toContain("max-h-80");
+
+		await user.click(toggle);
+
+		expect(
+			screen
+				.getByRole("button", { name: "Show less" })
+				.getAttribute("aria-expanded"),
+		).toBe("true");
+		expect(contentWrapper?.className).toContain("max-h-[999rem]");
+	});
+
+	it("does not add a show more toggle for short user messages", async () => {
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "user-short",
+						role: "user",
+						parts: [
+							{
+								type: "text",
+								text: "Short response",
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+	});
+
+	it("does not collapse long assistant messages", async () => {
+		const { ChatMessages } = await import("../src/components/chat/messages");
+		const longMessage = Array.from(
+			{ length: 16 },
+			(_, index) => `Line ${index + 1} of a very long response`,
+		).join("\n");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "assistant-long",
+						role: "assistant",
+						parts: [
+							{
+								type: "text",
+								text: longMessage,
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+		expect(screen.getByText(/Line 16 of a very long response/)).toBeDefined();
+	});
+
 	it("keeps streaming assistant thinking aligned with assistant messages", async () => {
 		const { ChatMessages } = await import("../src/components/chat/messages");
 
@@ -248,8 +370,9 @@ describe("ChatMessages", () => {
 		);
 
 		expect(
-			screen.getByText("Thinking").closest(".flex.w-full.gap-4")?.className,
-		).not.toContain("ml-auto");
+			screen.getByText("Thinking").closest("div[class*='group/message']")
+				?.className,
+		).toContain("justify-start");
 	});
 
 	it("copies assistant responses from the message actions", async () => {

@@ -8,7 +8,6 @@ import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
 import { Copy, PenLine, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
 import {
 	Source,
@@ -16,6 +15,14 @@ import {
 	SourcesContent,
 	SourcesTrigger,
 } from "@/components/ai-elements/sources";
+import { CollapsibleMessageContent } from "@/components/chat/collapsible-message-content";
+import {
+	ASSISTANT_CHAT_CONTENT_CLASS,
+	CHAT_ACTIONS_VISIBILITY_CLASS,
+	CHAT_MESSAGE_MAX_WIDTH_CLASS,
+	getChatMessageJustifyClass,
+	USER_CHAT_BUBBLE_CLASS,
+} from "@/components/chat/message-layout";
 import { extractTextParts, getChatText } from "@/lib/chat-message";
 
 type ToolSource = {
@@ -183,6 +190,7 @@ export function ChatMessages({
 		<div className="space-y-4">
 			{messages.map((message) => {
 				const textParts = extractTextParts(message);
+				const renderedText = textParts.map((part) => part.text).join("\n\n");
 				const messageText = getChatText(message);
 				const messageSources =
 					message.role === "assistant" ? collectMessageSources(message) : [];
@@ -197,169 +205,172 @@ export function ChatMessages({
 				}
 
 				return (
-					<div key={message.id} className="group/message mx-auto w-full">
-						<div
-							className={cn(
-								"flex w-full gap-4",
-								message.role === "user" && "ml-auto w-fit max-w-2xl",
-							)}
-						>
-							<div className="flex w-full flex-col">
+					<div
+						key={message.id}
+						className={cn(
+							"group/message flex w-full",
+							getChatMessageJustifyClass(message.role),
+						)}
+					>
+						<div className={cn("flex flex-col", CHAT_MESSAGE_MAX_WIDTH_CLASS)}>
+							<div
+								className={cn(
+									"flex flex-row items-start gap-2 pb-4",
+									message.role === "assistant" &&
+										messageSources.length > 0 &&
+										"pb-2",
+								)}
+							>
 								<div
 									className={cn(
-										"flex w-full flex-row items-start gap-2 pb-4",
-										message.role === "assistant" &&
-											messageSources.length > 0 &&
-											"pb-2",
+										message.role === "user"
+											? USER_CHAT_BUBBLE_CLASS
+											: ASSISTANT_CHAT_CONTENT_CLASS,
+										isStreamingAssistantMessage &&
+											isEmpty &&
+											"text-muted-foreground",
 									)}
 								>
-									<div
-										className={cn(
-											"flex flex-col gap-4 text-sm leading-6",
-											message.role === "user" &&
-												"rounded-lg bg-secondary px-3 py-2 text-secondary-foreground",
-											isStreamingAssistantMessage &&
-												isEmpty &&
-												"text-muted-foreground",
-										)}
-									>
-										{isStreamingAssistantMessage && isEmpty ? (
-											<div className="text-sm text-muted-foreground">
-												<ShimmerText>Thinking</ShimmerText>
-											</div>
-										) : (
-											<Streamdown
-												className="note-streamdown"
-												isAnimating={isStreamingAssistantMessage}
-												caret="block"
-												controls={false}
-											>
-												{textParts.map((part) => part.text).join("\n\n")}
-											</Streamdown>
-										)}
-									</div>
+									{isStreamingAssistantMessage && isEmpty ? (
+										<div className="text-sm text-muted-foreground">
+											<ShimmerText>Thinking</ShimmerText>
+										</div>
+									) : (
+										<CollapsibleMessageContent
+											role={message.role}
+											text={renderedText}
+											isAnimating={isStreamingAssistantMessage}
+											streamdownClassName="note-streamdown"
+										/>
+									)}
 								</div>
-								{message.role === "assistant" && !isEmpty ? (
-									<div className="-mt-3 flex items-center gap-1 pb-3 opacity-100 transition-opacity duration-150 md:pointer-events-none md:opacity-0 md:group-hover/message:pointer-events-auto md:group-hover/message:opacity-100 md:group-focus-within/message:pointer-events-auto md:group-focus-within/message:opacity-100">
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<Button
-													type="button"
-													variant="ghost"
-													size="icon-sm"
-													className="size-7 text-muted-foreground hover:text-foreground"
-													aria-label="Regenerate"
-													disabled={!onRegenerateMessage}
-													onClick={() => onRegenerateMessage?.(message.id)}
-												>
-													<RotateCcw className="size-3.5" />
-												</Button>
-											</TooltipTrigger>
-											<TooltipContent>Regenerate</TooltipContent>
-										</Tooltip>
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<Button
-													type="button"
-													variant="ghost"
-													size="icon-sm"
-													className="size-7 text-muted-foreground hover:text-foreground"
-													aria-label="Copy"
-													onClick={() => {
-														void navigator.clipboard
-															.writeText(messageText)
-															.then(() => toast.success("Copied"))
-															.catch(() => toast.error("Failed to copy"));
-													}}
-												>
-													<Copy className="size-3.5" />
-												</Button>
-											</TooltipTrigger>
-											<TooltipContent>Copy</TooltipContent>
-										</Tooltip>
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<Button
-													type="button"
-													variant="ghost"
-													size="icon-sm"
-													className="size-7 text-muted-foreground hover:text-foreground"
-													aria-label="Create note"
-													disabled={!onPlusAction}
-													onClick={() => {
-														if (!onPlusAction) {
-															return;
-														}
-														void Promise.resolve(onPlusAction(messageText))
-															.then((result) => {
-																if (result === "created") {
-																	toast.success("Note created");
-																}
-															})
-															.catch(() =>
-																toast.error("Failed to create note"),
-															);
-													}}
-												>
-													<Plus className="size-3.5" />
-												</Button>
-											</TooltipTrigger>
-											<TooltipContent>Create note</TooltipContent>
-										</Tooltip>
-									</div>
-								) : null}
-								{message.role === "user" && !isEmpty ? (
-									<div className="-mt-3 flex justify-end gap-1 pb-3 opacity-100 transition-opacity duration-150 md:pointer-events-none md:opacity-0 md:group-hover/message:pointer-events-auto md:group-hover/message:opacity-100 md:group-focus-within/message:pointer-events-auto md:group-focus-within/message:opacity-100">
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<Button
-													type="button"
-													variant="ghost"
-													size="icon-sm"
-													className="size-7 text-muted-foreground hover:text-foreground"
-													aria-label="Edit"
-													onClick={() =>
-														onEditMessage?.(message.id, messageText)
-													}
-												>
-													<PenLine className="size-3.5" />
-												</Button>
-											</TooltipTrigger>
-											<TooltipContent>Edit</TooltipContent>
-										</Tooltip>
-										<Tooltip>
-											<TooltipTrigger asChild>
-												<Button
-													type="button"
-													variant="ghost"
-													size="icon-sm"
-													className="size-7 text-muted-foreground hover:text-foreground"
-													aria-label="Delete"
-													disabled={!onDeleteMessage}
-													onClick={() => onDeleteMessage?.(message.id)}
-												>
-													<Trash2 className="size-3.5" />
-												</Button>
-											</TooltipTrigger>
-											<TooltipContent>Delete</TooltipContent>
-										</Tooltip>
-									</div>
-								) : null}
-								{message.role === "assistant" && messageSources.length > 0 ? (
-									<Sources defaultOpen={false}>
-										<SourcesTrigger count={messageSources.length} />
-										<SourcesContent>
-											{messageSources.map((source) => (
-												<Source
-													key={`${message.id}:${source.href}`}
-													href={source.href}
-													title={source.title}
-												/>
-											))}
-										</SourcesContent>
-									</Sources>
-								) : null}
 							</div>
+							{message.role === "assistant" && !isEmpty ? (
+								<div
+									className={cn(
+										"mt-2 flex items-center gap-1",
+										CHAT_ACTIONS_VISIBILITY_CLASS,
+									)}
+								>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-7 text-muted-foreground hover:text-foreground"
+												aria-label="Regenerate"
+												disabled={!onRegenerateMessage}
+												onClick={() => onRegenerateMessage?.(message.id)}
+											>
+												<RotateCcw className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Regenerate</TooltipContent>
+									</Tooltip>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-7 text-muted-foreground hover:text-foreground"
+												aria-label="Copy"
+												onClick={() => {
+													void navigator.clipboard
+														.writeText(messageText)
+														.then(() => toast.success("Copied"))
+														.catch(() => toast.error("Failed to copy"));
+												}}
+											>
+												<Copy className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Copy</TooltipContent>
+									</Tooltip>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-7 text-muted-foreground hover:text-foreground"
+												aria-label="Create note"
+												disabled={!onPlusAction}
+												onClick={() => {
+													if (!onPlusAction) {
+														return;
+													}
+													void Promise.resolve(onPlusAction(messageText))
+														.then((result) => {
+															if (result === "created") {
+																toast.success("Note created");
+															}
+														})
+														.catch(() => toast.error("Failed to create note"));
+												}}
+											>
+												<Plus className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Create note</TooltipContent>
+									</Tooltip>
+								</div>
+							) : null}
+							{message.role === "user" && !isEmpty ? (
+								<div
+									className={cn(
+										"mt-2 flex justify-end gap-1",
+										CHAT_ACTIONS_VISIBILITY_CLASS,
+									)}
+								>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-7 text-muted-foreground hover:text-foreground"
+												aria-label="Edit"
+												onClick={() => onEditMessage?.(message.id, messageText)}
+											>
+												<PenLine className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Edit</TooltipContent>
+									</Tooltip>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-7 text-muted-foreground hover:text-foreground"
+												aria-label="Delete"
+												disabled={!onDeleteMessage}
+												onClick={() => onDeleteMessage?.(message.id)}
+											>
+												<Trash2 className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Delete</TooltipContent>
+									</Tooltip>
+								</div>
+							) : null}
+							{message.role === "assistant" && messageSources.length > 0 ? (
+								<Sources defaultOpen={false}>
+									<SourcesTrigger count={messageSources.length} />
+									<SourcesContent>
+										{messageSources.map((source) => (
+											<Source
+												key={`${message.id}:${source.href}`}
+												href={source.href}
+												title={source.title}
+											/>
+										))}
+									</SourcesContent>
+								</Sources>
+							) : null}
 						</div>
 					</div>
 				);

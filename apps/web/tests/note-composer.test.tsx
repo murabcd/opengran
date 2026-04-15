@@ -1378,6 +1378,189 @@ describe("NoteComposer", () => {
 		).toContain("md:opacity-0");
 	});
 
+	it("collapses long user note chat messages behind a show more toggle", async () => {
+		let queryCall = 0;
+		const longMessage = Array.from(
+			{ length: 16 },
+			(_, index) => `Line ${index + 1} of a very long note chat prompt`,
+		).join("\n");
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+		useChatMock.mockReturnValue({
+			error: undefined,
+			messages: [
+				{
+					id: "user-message-long",
+					role: "user",
+					parts: [{ type: "text", text: longMessage }],
+				},
+			],
+			sendMessage: vi.fn(),
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			status: "ready",
+			stop: vi.fn(),
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<NoteComposer
+					noteContext={{
+						noteId: "note-1",
+						text: "",
+						title: "New note",
+					}}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+
+		const toggle = await screen.findByRole("button", { name: "Show more" });
+		const contentWrapper = toggle.parentElement
+			?.previousElementSibling as HTMLDivElement | null;
+
+		expect(toggle.getAttribute("aria-expanded")).toBe("false");
+		expect(contentWrapper?.className).toContain("max-h-80");
+
+		fireEvent.click(toggle);
+
+		expect(
+			screen
+				.getByRole("button", { name: "Show less" })
+				.getAttribute("aria-expanded"),
+		).toBe("true");
+		expect(contentWrapper?.className).toContain("max-h-[999rem]");
+	});
+
+	it("does not collapse long assistant note chat messages", async () => {
+		let queryCall = 0;
+		const longMessage = Array.from(
+			{ length: 16 },
+			(_, index) => `Line ${index + 1} of a very long note chat response`,
+		).join("\n");
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+		useChatMock.mockReturnValue({
+			error: undefined,
+			messages: [
+				{
+					id: "assistant-message-long",
+					role: "assistant",
+					parts: [{ type: "text", text: longMessage }],
+				},
+			],
+			sendMessage: vi.fn(),
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			status: "ready",
+			stop: vi.fn(),
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<NoteComposer
+					noteContext={{
+						noteId: "note-1",
+						text: "",
+						title: "New note",
+					}}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+
+		expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+		expect(
+			screen.getByText(/Line 16 of a very long note chat response/),
+		).toBeDefined();
+	});
+
 	it("shows only the selected chat presentation after switching modes", async () => {
 		let queryCall = 0;
 

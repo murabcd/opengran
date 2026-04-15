@@ -78,8 +78,15 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
+import { CollapsibleMessageContent } from "@/components/chat/collapsible-message-content";
+import {
+	ASSISTANT_CHAT_CONTENT_CLASS,
+	CHAT_ACTIONS_VISIBILITY_CLASS,
+	CHAT_MESSAGE_MAX_WIDTH_CLASS,
+	getChatMessageJustifyClass,
+	USER_CHAT_BUBBLE_CLASS,
+} from "@/components/chat/message-layout";
 import {
 	COMPOSER_DOCK_BOTTOM_OFFSET,
 	COMPOSER_OVERLAY_FOOTER_PADDING,
@@ -1716,16 +1723,15 @@ function NoteChatMessages({
 						key={chatMessage.id}
 						className={cn(
 							"group/message flex w-full",
-							chatMessage.role === "user" ? "justify-end" : "justify-start",
+							getChatMessageJustifyClass(chatMessage.role),
 						)}
 					>
-						<div className="max-w-[85%]">
+						<div className={CHAT_MESSAGE_MAX_WIDTH_CLASS}>
 							<div
 								className={cn(
-									"rounded-lg px-3 py-2 text-sm",
 									chatMessage.role === "user"
-										? "bg-secondary text-secondary-foreground"
-										: "px-0 py-0 text-foreground",
+										? USER_CHAT_BUBBLE_CLASS
+										: ASSISTANT_CHAT_CONTENT_CLASS,
 									isStreamingAssistantMessage &&
 										!text &&
 										"text-muted-foreground",
@@ -1736,21 +1742,24 @@ function NoteChatMessages({
 										<ShimmerText>Thinking</ShimmerText>
 									</div>
 								) : (
-									<Streamdown
-										className={cn(
+									<CollapsibleMessageContent
+										role={chatMessage.role}
+										text={text}
+										isAnimating={isStreamingAssistantMessage}
+										streamdownClassName={cn(
 											chatMessage.role === "assistant" && "note-streamdown",
 										)}
-										controls={false}
-										caret="block"
-										isAnimating={isStreamingAssistantMessage}
 										mode={isStreamingAssistantMessage ? "streaming" : "static"}
-									>
-										{text}
-									</Streamdown>
+									/>
 								)}
 							</div>
 							{chatMessage.role === "assistant" && text ? (
-								<div className="mt-2 flex items-center gap-1 opacity-100 transition-opacity duration-150 md:pointer-events-none md:opacity-0 md:group-hover/message:pointer-events-auto md:group-hover/message:opacity-100 md:group-focus-within/message:pointer-events-auto md:group-focus-within/message:opacity-100">
+								<div
+									className={cn(
+										"mt-2 flex items-center gap-1",
+										CHAT_ACTIONS_VISIBILITY_CLASS,
+									)}
+								>
 									<Tooltip>
 										<TooltipTrigger asChild>
 											<Button
@@ -1814,7 +1823,12 @@ function NoteChatMessages({
 									</Tooltip>
 								</div>
 							) : chatMessage.role === "user" && text ? (
-								<div className="mt-2 flex justify-end gap-1 opacity-100 transition-opacity duration-150 md:pointer-events-none md:opacity-0 md:group-hover/message:pointer-events-auto md:group-hover/message:opacity-100 md:group-focus-within/message:pointer-events-auto md:group-focus-within/message:opacity-100">
+								<div
+									className={cn(
+										"mt-2 flex justify-end gap-1",
+										CHAT_ACTIONS_VISIBILITY_CLASS,
+									)}
+								>
 									<Tooltip>
 										<TooltipTrigger asChild>
 											<Button
