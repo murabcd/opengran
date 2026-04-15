@@ -580,8 +580,6 @@ function ResizeHandleGrip({
 export {
 	ResizableSidePanelHandle,
 	ResizableTopPanelHandle,
-	ResizeHandleButton,
-	ResizeHandleGrip,
 	useResizableSidePanel,
 	useResizeHandle,
 };

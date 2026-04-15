@@ -46,6 +46,45 @@ type AppSidebarView =
 	| "note"
 	| "notFound";
 
+type AppSidebarUser = {
+	name: string;
+	email: string;
+	avatar: string;
+};
+
+type AppSidebarNavItem = (typeof SIDEBAR_NAVIGATION)[number] & {
+	isActive: boolean;
+	badge?: number;
+};
+
+type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
+	workspaces: Array<WorkspaceRecord>;
+	activeWorkspaceId: Id<"workspaces"> | null;
+	currentView: AppSidebarView;
+	inboxOpen: boolean;
+	user: AppSidebarUser;
+	chats: Array<Doc<"chats">> | undefined;
+	notes: Array<Doc<"notes">> | undefined;
+	sharedNotes: Array<Doc<"notes">> | undefined;
+	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
+	onWorkspaceCreate: (input: { name: string }) => Promise<WorkspaceRecord>;
+	onViewChange: (view: "home" | "chat" | "inbox" | "shared" | "note") => void;
+	onInboxOpenChange: (open: boolean) => void;
+	settingsOpen: boolean;
+	settingsPage?: SettingsPage;
+	onSettingsOpenChange: (open: boolean, page?: SettingsPage) => void;
+	onSignOut: () => void;
+	signingOut?: boolean;
+	desktopSafeTop?: boolean;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle?: string;
+	onChatSelect: (chatId: string) => void;
+	onNoteSelect: (noteId: Id<"notes">) => void;
+	onNoteTitleChange?: (title: string) => void;
+	onNoteTrashed?: (noteId: Id<"notes">) => void;
+	onCreateNote: () => void;
+};
+
 type SidebarUiState = {
 	searchOpen: boolean;
 	trashOpen: boolean;
@@ -257,65 +296,43 @@ function useSidebarDialogPreloader() {
 	};
 }
 
-export function AppSidebar({
-	workspaces,
+function useAppSidebarModel({
 	activeWorkspaceId,
-	currentView,
-	inboxOpen,
-	user,
-	chats,
-	notes,
-	sharedNotes,
-	onWorkspaceSelect,
-	onWorkspaceCreate,
-	onViewChange,
-	onInboxOpenChange,
-	settingsOpen,
-	settingsPage = "Profile",
-	onSettingsOpenChange,
-	onSignOut,
-	signingOut = false,
-	desktopSafeTop = false,
 	currentNoteId,
 	currentNoteTitle,
+	currentView,
+	inboxOpen,
+	isMobile,
+	notes,
 	onChatSelect,
-	onNoteSelect,
-	onNoteTitleChange,
-	onNoteTrashed,
 	onCreateNote,
-	...props
-}: React.ComponentProps<typeof Sidebar> & {
-	workspaces: Array<WorkspaceRecord>;
+	onInboxOpenChange,
+	onNoteSelect,
+	onSettingsOpenChange,
+	onViewChange,
+	onWorkspaceSelect,
+	projects,
+	settingsOpen,
+	setOpenMobile,
+}: {
 	activeWorkspaceId: Id<"workspaces"> | null;
-	currentView: AppSidebarView;
-	inboxOpen: boolean;
-	user: {
-		name: string;
-		email: string;
-		avatar: string;
-	};
-	chats: Array<Doc<"chats">> | undefined;
-	notes: Array<Doc<"notes">> | undefined;
-	sharedNotes: Array<Doc<"notes">> | undefined;
-	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
-	onWorkspaceCreate: (input: { name: string }) => Promise<WorkspaceRecord>;
-	onViewChange: (view: "home" | "chat" | "inbox" | "shared" | "note") => void;
-	onInboxOpenChange: (open: boolean) => void;
-	settingsOpen: boolean;
-	settingsPage?: SettingsPage;
-	onSettingsOpenChange: (open: boolean, page?: SettingsPage) => void;
-	onSignOut: () => void;
-	signingOut?: boolean;
-	desktopSafeTop?: boolean;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
+	currentView: AppSidebarView;
+	inboxOpen: boolean;
+	isMobile: boolean;
+	notes: Array<Doc<"notes">> | undefined;
 	onChatSelect: (chatId: string) => void;
-	onNoteSelect: (noteId: Id<"notes">) => void;
-	onNoteTitleChange?: (title: string) => void;
-	onNoteTrashed?: (noteId: Id<"notes">) => void;
 	onCreateNote: () => void;
+	onInboxOpenChange: (open: boolean) => void;
+	onNoteSelect: (noteId: Id<"notes">) => void;
+	onSettingsOpenChange: (open: boolean, page?: SettingsPage) => void;
+	onViewChange: (view: "home" | "chat" | "inbox" | "shared" | "note") => void;
+	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
+	projects: Array<Doc<"projects">> | undefined;
+	settingsOpen: boolean;
+	setOpenMobile: (open: boolean) => void;
 }) {
-	const { isMobile, setOpenMobile, state } = useSidebarShell();
 	const [uiState, dispatchUi] = React.useReducer(
 		sidebarUiReducer,
 		undefined,
@@ -338,15 +355,7 @@ export function AppSidebar({
 	const handleSettingsIntent = React.useCallback(() => {
 		void ensureSidebarDialogReady("settings");
 	}, [ensureSidebarDialogReady]);
-	const {
-		handleChatSelect,
-		handleCreateNote,
-		handleInboxOpenChange,
-		handleNoteSelect,
-		handleSearchOpen,
-		handleViewChange,
-		handleWorkspaceSelect,
-	} = useMobileSidebarNavigation({
+	const mobileNavigation = useMobileSidebarNavigation({
 		dispatchUi,
 		isMobile,
 		onChatSelect,
@@ -369,10 +378,6 @@ export function AppSidebar({
 		inboxItems?.filter(
 			(item) => !uiState.optimisticReadInboxItemIds.has(String(item._id)),
 		).length ?? 0;
-	const projects = useQuery(
-		api.projects.list,
-		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
-	);
 	const recordingNoteId = React.useMemo(() => {
 		if (!transcriptionSession.isListening) {
 			return null;
@@ -433,7 +438,7 @@ export function AppSidebar({
 		void ensureSidebarDialogReady("settings");
 	}, [ensureSidebarDialogReady, settingsOpen]);
 
-	const navItems = React.useMemo(
+	const navItems = React.useMemo<AppSidebarNavItem[]>(
 		() =>
 			SIDEBAR_NAVIGATION.map((item) => ({
 				...item,
@@ -493,6 +498,108 @@ export function AppSidebar({
 	const handleMarkInboxItemsRead = React.useCallback((itemIds: string[]) => {
 		dispatchUi({ type: "markInboxItemsRead", itemIds });
 	}, []);
+	const handleTrashOpenChange = React.useCallback((open: boolean) => {
+		dispatchUi({
+			type: "setOpen",
+			key: "trashOpen",
+			value: open,
+		});
+	}, []);
+	const handleRecipesOpen = React.useCallback(() => {
+		handleRecipesIntent();
+		dispatchUi({
+			type: "setOpen",
+			key: "recipesOpen",
+			value: true,
+		});
+	}, [handleRecipesIntent]);
+	const handleTemplatesOpen = React.useCallback(() => {
+		handleTemplatesIntent();
+		dispatchUi({
+			type: "setOpen",
+			key: "templatesOpen",
+			value: true,
+		});
+	}, [handleTemplatesIntent]);
+	const handleSettingsOpen = React.useCallback(() => {
+		handleSettingsIntent();
+		onSettingsOpenChange(true, "Profile");
+	}, [handleSettingsIntent, onSettingsOpenChange]);
+
+	return {
+		...mobileNavigation,
+		handleDialogOpenChange,
+		handleMarkInboxItemsRead,
+		handleRecipesIntent,
+		handleRecipesOpen,
+		handleSearchIntent,
+		handleSettingsIntent,
+		handleSettingsOpen,
+		handleTemplatesIntent,
+		handleTemplatesOpen,
+		handleTrashOpenChange,
+		inboxItems,
+		isSidebarDialogReady,
+		navItems,
+		recordingNoteId,
+		searchItems,
+		searchProjects,
+		uiState,
+	};
+}
+
+export function AppSidebar({
+	workspaces,
+	activeWorkspaceId,
+	currentView,
+	inboxOpen,
+	user,
+	chats,
+	notes,
+	sharedNotes,
+	onWorkspaceSelect,
+	onWorkspaceCreate,
+	onViewChange,
+	onInboxOpenChange,
+	settingsOpen,
+	settingsPage = "Profile",
+	onSettingsOpenChange,
+	onSignOut,
+	signingOut = false,
+	desktopSafeTop = false,
+	currentNoteId,
+	currentNoteTitle,
+	onChatSelect,
+	onNoteSelect,
+	onNoteTitleChange,
+	onNoteTrashed,
+	onCreateNote,
+	...props
+}: AppSidebarProps) {
+	const { isMobile, setOpenMobile, state } = useSidebarShell();
+	const projects = useQuery(
+		api.projects.list,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
+	const model = useAppSidebarModel({
+		activeWorkspaceId,
+		currentNoteId,
+		currentNoteTitle,
+		currentView,
+		inboxOpen,
+		isMobile,
+		notes,
+		onChatSelect,
+		onCreateNote,
+		onInboxOpenChange,
+		onNoteSelect,
+		onSettingsOpenChange,
+		onViewChange,
+		onWorkspaceSelect,
+		projects,
+		settingsOpen,
+		setOpenMobile,
+	});
 
 	return (
 		<>
@@ -502,13 +609,13 @@ export function AppSidebar({
 					currentView={currentView}
 					desktopSafeTop={desktopSafeTop}
 					inboxOpen={inboxOpen}
-					navItems={navItems}
-					onInboxOpenChange={handleInboxOpenChange}
-					onSearchIntent={handleSearchIntent}
-					onSearchOpen={handleSearchOpen}
-					onViewChange={handleViewChange}
+					navItems={model.navItems}
+					onInboxOpenChange={model.handleInboxOpenChange}
+					onSearchIntent={model.handleSearchIntent}
+					onSearchOpen={model.handleSearchOpen}
+					onViewChange={model.handleViewChange}
 					onWorkspaceCreate={onWorkspaceCreate}
-					onWorkspaceSelect={handleWorkspaceSelect}
+					onWorkspaceSelect={model.handleWorkspaceSelect}
 					workspaces={workspaces}
 				/>
 				<AppSidebarContentSection
@@ -517,85 +624,101 @@ export function AppSidebar({
 					currentNoteTitle={currentNoteTitle}
 					currentView={currentView}
 					notes={notes}
-					onCreateNote={handleCreateNote}
-					onNoteSelect={handleNoteSelect}
+					onCreateNote={model.handleCreateNote}
+					onNoteSelect={model.handleNoteSelect}
 					onNoteTitleChange={onNoteTitleChange}
 					onNoteTrashed={onNoteTrashed}
 					projects={projects}
-					recordingNoteId={recordingNoteId}
+					recordingNoteId={model.recordingNoteId}
 					sharedNotes={sharedNotes}
 				/>
-				<SidebarFooter>
-					<NavTrash
-						open={uiState.trashOpen}
-						onOpenChange={(open) =>
-							dispatchUi({
-								type: "setOpen",
-								key: "trashOpen",
-								value: open,
-							})
-						}
-					/>
-					<NavUser
-						user={user}
-						onRecipesOpen={() => {
-							handleRecipesIntent();
-							dispatchUi({
-								type: "setOpen",
-								key: "recipesOpen",
-								value: true,
-							});
-						}}
-						onRecipesIntent={handleRecipesIntent}
-						onTemplatesOpen={() => {
-							handleTemplatesIntent();
-							dispatchUi({
-								type: "setOpen",
-								key: "templatesOpen",
-								value: true,
-							});
-						}}
-						onTemplatesIntent={handleTemplatesIntent}
-						onSettingsOpen={() => {
-							handleSettingsIntent();
-							onSettingsOpenChange(true, "Profile");
-						}}
-						onSettingsIntent={handleSettingsIntent}
-						onSignOut={onSignOut}
-						signingOut={signingOut}
-					/>
-				</SidebarFooter>
+				<AppSidebarFooterSection
+					onRecipesIntent={model.handleRecipesIntent}
+					onRecipesOpen={model.handleRecipesOpen}
+					onSettingsIntent={model.handleSettingsIntent}
+					onSettingsOpen={model.handleSettingsOpen}
+					onSignOut={onSignOut}
+					onTemplatesIntent={model.handleTemplatesIntent}
+					onTemplatesOpen={model.handleTemplatesOpen}
+					onTrashOpenChange={model.handleTrashOpenChange}
+					signingOut={signingOut}
+					trashOpen={model.uiState.trashOpen}
+					user={user}
+				/>
 			</Sidebar>
 			<AppSidebarDialogs
 				activeWorkspaceId={activeWorkspaceId}
-				onChatSelect={handleChatSelect}
-				onNoteSelect={handleNoteSelect}
-				onOpenChange={handleDialogOpenChange}
+				onChatSelect={model.handleChatSelect}
+				onNoteSelect={model.handleNoteSelect}
+				onOpenChange={model.handleDialogOpenChange}
 				onSettingsOpenChange={onSettingsOpenChange}
-				searchItems={searchItems}
-				searchProjects={searchProjects}
+				searchItems={model.searchItems}
+				searchProjects={model.searchProjects}
 				settingsOpen={settingsOpen}
 				settingsPage={settingsPage}
-				isDialogReady={isSidebarDialogReady}
-				templatesOpen={uiState.templatesOpen}
-				recipesOpen={uiState.recipesOpen}
-				searchOpen={uiState.searchOpen}
+				isDialogReady={model.isSidebarDialogReady}
+				templatesOpen={model.uiState.templatesOpen}
+				recipesOpen={model.uiState.recipesOpen}
+				searchOpen={model.uiState.searchOpen}
 				user={user}
 				workspaces={workspaces}
 			/>
 			<AppSidebarInboxSheet
 				desktopSafeTop={desktopSafeTop}
-				inboxItems={inboxItems}
+				inboxItems={model.inboxItems}
 				inboxOpen={inboxOpen}
 				isMobile={isMobile}
-				onInboxOpenChange={handleInboxOpenChange}
-				onMarkInboxItemsRead={handleMarkInboxItemsRead}
+				onInboxOpenChange={model.handleInboxOpenChange}
+				onMarkInboxItemsRead={model.handleMarkInboxItemsRead}
 				sidebarState={state}
 				user={user}
 			/>
 		</>
 	);
 }
+
+const AppSidebarFooterSection = React.memo(function AppSidebarFooterSection({
+	onRecipesIntent,
+	onRecipesOpen,
+	onSettingsIntent,
+	onSettingsOpen,
+	onSignOut,
+	onTemplatesIntent,
+	onTemplatesOpen,
+	onTrashOpenChange,
+	signingOut,
+	trashOpen,
+	user,
+}: {
+	onRecipesIntent: () => void;
+	onRecipesOpen: () => void;
+	onSettingsIntent: () => void;
+	onSettingsOpen: () => void;
+	onSignOut: () => void;
+	onTemplatesIntent: () => void;
+	onTemplatesOpen: () => void;
+	onTrashOpenChange: (open: boolean) => void;
+	signingOut: boolean;
+	trashOpen: boolean;
+	user: AppSidebarUser;
+}) {
+	return (
+		<SidebarFooter>
+			<NavTrash open={trashOpen} onOpenChange={onTrashOpenChange} />
+			<NavUser
+				user={user}
+				onRecipesOpen={onRecipesOpen}
+				onRecipesIntent={onRecipesIntent}
+				onTemplatesOpen={onTemplatesOpen}
+				onTemplatesIntent={onTemplatesIntent}
+				onSettingsOpen={onSettingsOpen}
+				onSettingsIntent={onSettingsIntent}
+				onSignOut={onSignOut}
+				signingOut={signingOut}
+			/>
+		</SidebarFooter>
+	);
+});
 
 const AppSidebarHeaderSection = React.memo(function AppSidebarHeaderSection({
 	activeWorkspaceId,
@@ -615,12 +738,7 @@ const AppSidebarHeaderSection = React.memo(function AppSidebarHeaderSection({
 	currentView: AppSidebarView;
 	desktopSafeTop: boolean;
 	inboxOpen: boolean;
-	navItems: Array<
-		(typeof SIDEBAR_NAVIGATION)[number] & {
-			isActive: boolean;
-			badge?: number;
-		}
-	>;
+	navItems: AppSidebarNavItem[];
 	onInboxOpenChange: (open: boolean) => void;
 	onSearchIntent: () => void;
 	onSearchOpen: () => void;

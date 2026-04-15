@@ -4,6 +4,7 @@ import {
 	type TableOfContentData,
 	TableOfContents,
 } from "@tiptap/extension-table-of-contents";
+import Underline from "@tiptap/extension-underline";
 import { Markdown, MarkdownManager } from "@tiptap/markdown";
 import type { Node as ProseMirrorNode, Schema } from "@tiptap/pm/model";
 import { Node as PMNode, Slice } from "@tiptap/pm/model";
@@ -204,7 +205,9 @@ type NoteEditorExtensionsOptions = {
 export const createNoteEditorExtensions = (
 	options: NoteEditorExtensionsOptions = {},
 ) => [
-	StarterKit,
+	StarterKit.configure({
+		underline: false,
+	}),
 	NoteComment.configure({
 		onThreadClick: options.onCommentThreadClick,
 	}),
@@ -219,6 +222,7 @@ export const createNoteEditorExtensions = (
 			size: 2,
 		},
 	}),
+	Underline,
 	Placeholder.configure({
 		placeholder: PLACEHOLDER_TEXT,
 		emptyEditorClass: "is-editor-empty",

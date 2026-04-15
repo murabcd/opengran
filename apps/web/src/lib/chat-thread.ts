@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 
-export const getMessageIndex = (messages: UIMessage[], messageId: string) =>
+const getMessageIndex = (messages: UIMessage[], messageId: string) =>
 	messages.findIndex((message) => message.id === messageId);
 
 export const getMessagesBefore = (messages: UIMessage[], messageId: string) => {

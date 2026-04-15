@@ -62,7 +62,7 @@ const clearDockedPanelWidths = (
 		widths.rightInsetPanelWidth === undefined ? undefined : null,
 });
 
-export function useSyncDockedPanelWidths({
+function useSyncDockedPanelWidths({
 	leftInsetPanelWidth,
 	leftOverlayPanelWidth,
 	rightInsetPanelWidth,

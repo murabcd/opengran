@@ -125,7 +125,7 @@ export function getThemeFireworkColors() {
 export const createCalendarEventKey = (event: UpcomingCalendarEvent) =>
 	[event.calendarId, event.id, event.startAt].join("::");
 
-export const getCurrentDayWindow = (currentDate: Date) => {
+const getCurrentDayWindow = (currentDate: Date) => {
 	const timeMin = new Date(currentDate);
 	timeMin.setHours(0, 0, 0, 0);
 
@@ -272,7 +272,7 @@ export const buildCalendarEventSearchableText = ({
 		.filter((value): value is string => Boolean(value))
 		.join("\n");
 
-export const getPendingCalendarEventFromUrl = (
+const getPendingCalendarEventFromUrl = (
 	url: URL,
 ): UpcomingCalendarEvent | null => {
 	const id = url.searchParams.get("calendarEventId")?.trim();
