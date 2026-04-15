@@ -50,6 +50,7 @@ import {
 } from "./note-comments-sheet";
 import { NoteComposer } from "./note-composer";
 import { NOTE_PAGE_VIEWPORT_MIN_HEIGHT_CLASS } from "./note-layout";
+import { OPEN_NOTE_COMMENTS_EVENT } from "./note-page-events";
 import { NoteSelectionMenu } from "./note-selection-menu";
 import { NoteTableOfContents } from "./note-table-of-contents";
 import { optimisticPatchNote } from "./optimistic-patch-note";
@@ -209,8 +210,6 @@ const areTableOfContentsEqual = (
 		);
 	});
 };
-
-export const OPEN_NOTE_COMMENTS_EVENT = "opengran:open-note-comments";
 
 export type NoteEditorActions = {
 	canCopyMarkdown: boolean;

@@ -15,18 +15,21 @@ import { NavMain } from "@/components/nav/nav-main";
 import { NavNotes } from "@/components/nav/nav-notes";
 import { NavProjects } from "@/components/nav/nav-projects";
 import { NavTrash } from "@/components/nav/nav-trash";
-import { RecipesDialog } from "@/components/recipes/recipes-dialog";
 import type {
 	SearchCommandItem,
 	SearchCommandProject,
 } from "@/components/search/search-command";
-import { SearchCommand } from "@/components/search/search-command";
-import {
-	SettingsDialog,
-	type SettingsPage,
-} from "@/components/settings/settings-dialog";
+import type { SettingsPage } from "@/components/settings/settings-dialog";
 import { NavUser } from "@/components/sidebar/nav-user";
-import { TemplatesDialog } from "@/components/templates/templates-dialog";
+import {
+	preloadSidebarDialogSurface,
+	SIDEBAR_DIALOG_SURFACES,
+	type SidebarDialogSurface,
+	SidebarRecipesDialogSurface,
+	SidebarSearchCommandSurface,
+	SidebarSettingsDialogSurface,
+	SidebarTemplatesDialogSurface,
+} from "@/components/sidebar/sidebar-dialog-surfaces";
 import { WorkspaceSwitcher } from "@/components/workspaces/workspace-switcher";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
 import { SIDEBAR_NAVIGATION } from "@/lib/navigation";
@@ -104,6 +107,7 @@ function useMobileSidebarNavigation({
 	onCreateNote,
 	onInboxOpenChange,
 	onNoteSelect,
+	onSearchIntent,
 	onViewChange,
 	onWorkspaceSelect,
 	setOpenMobile,
@@ -114,6 +118,7 @@ function useMobileSidebarNavigation({
 	onCreateNote: () => void;
 	onInboxOpenChange: (open: boolean) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
+	onSearchIntent: () => void;
 	onViewChange: (view: "home" | "chat" | "inbox" | "shared" | "note") => void;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
 	setOpenMobile: (open: boolean) => void;
@@ -127,13 +132,14 @@ function useMobileSidebarNavigation({
 	}, [isMobile, setOpenMobile]);
 
 	const handleSearchOpen = React.useCallback(() => {
+		onSearchIntent();
 		closeMobileSidebar();
 		dispatchUi({
 			type: "setOpen",
 			key: "searchOpen",
 			value: true,
 		});
-	}, [closeMobileSidebar, dispatchUi]);
+	}, [closeMobileSidebar, dispatchUi, onSearchIntent]);
 
 	const handleInboxOpenChange = React.useCallback(
 		(open: boolean) => {
@@ -191,6 +197,63 @@ function useMobileSidebarNavigation({
 		handleSearchOpen,
 		handleViewChange,
 		handleWorkspaceSelect,
+	};
+}
+
+function useSidebarDialogPreloader() {
+	const [readySurfaces, setReadySurfaces] = React.useState<
+		Set<SidebarDialogSurface>
+	>(() => new Set());
+	const isMountedRef = React.useRef(true);
+
+	React.useEffect(() => {
+		return () => {
+			isMountedRef.current = false;
+		};
+	}, []);
+
+	const markReady = React.useCallback((surface: SidebarDialogSurface) => {
+		setReadySurfaces((currentReadySurfaces) => {
+			if (currentReadySurfaces.has(surface)) {
+				return currentReadySurfaces;
+			}
+
+			const nextReadySurfaces = new Set(currentReadySurfaces);
+			nextReadySurfaces.add(surface);
+			return nextReadySurfaces;
+		});
+	}, []);
+
+	const ensureReady = React.useCallback(
+		(surface: SidebarDialogSurface) => {
+			const preloadPromise = preloadSidebarDialogSurface(surface);
+			void preloadPromise.then(() => {
+				if (!isMountedRef.current) {
+					return;
+				}
+
+				markReady(surface);
+			});
+			return preloadPromise;
+		},
+		[markReady],
+	);
+
+	const ensureManyReady = React.useCallback(
+		(surfaces: SidebarDialogSurface[]) =>
+			Promise.all(surfaces.map((surface) => ensureReady(surface))),
+		[ensureReady],
+	);
+
+	const isReady = React.useCallback(
+		(surface: SidebarDialogSurface) => readySurfaces.has(surface),
+		[readySurfaces],
+	);
+
+	return {
+		ensureManyReady,
+		ensureReady,
+		isReady,
 	};
 }
 
@@ -259,6 +322,23 @@ export function AppSidebar({
 		createInitialSidebarUiState,
 	);
 	const {
+		ensureManyReady: ensureSidebarDialogsReady,
+		ensureReady: ensureSidebarDialogReady,
+		isReady: isSidebarDialogReady,
+	} = useSidebarDialogPreloader();
+	const handleSearchIntent = React.useCallback(() => {
+		void ensureSidebarDialogReady("search");
+	}, [ensureSidebarDialogReady]);
+	const handleTemplatesIntent = React.useCallback(() => {
+		void ensureSidebarDialogReady("templates");
+	}, [ensureSidebarDialogReady]);
+	const handleRecipesIntent = React.useCallback(() => {
+		void ensureSidebarDialogReady("recipes");
+	}, [ensureSidebarDialogReady]);
+	const handleSettingsIntent = React.useCallback(() => {
+		void ensureSidebarDialogReady("settings");
+	}, [ensureSidebarDialogReady]);
+	const {
 		handleChatSelect,
 		handleCreateNote,
 		handleInboxOpenChange,
@@ -273,6 +353,7 @@ export function AppSidebar({
 		onCreateNote,
 		onInboxOpenChange,
 		onNoteSelect,
+		onSearchIntent: handleSearchIntent,
 		onViewChange,
 		onWorkspaceSelect,
 		setOpenMobile,
@@ -319,6 +400,38 @@ export function AppSidebar({
 
 		dispatchUi({ type: "resetReadInboxItems" });
 	}, [activeWorkspaceId]);
+
+	React.useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+
+		const preloadSidebarDialogs = () => {
+			void ensureSidebarDialogsReady(SIDEBAR_DIALOG_SURFACES);
+		};
+		const requestIdleCallback =
+			typeof window.requestIdleCallback === "function"
+				? window.requestIdleCallback.bind(window)
+				: null;
+
+		if (requestIdleCallback) {
+			const idleCallbackId = requestIdleCallback(preloadSidebarDialogs, {
+				timeout: 1500,
+			});
+			return () => window.cancelIdleCallback?.(idleCallbackId);
+		}
+
+		const timeoutId = globalThis.setTimeout(preloadSidebarDialogs, 250);
+		return () => globalThis.clearTimeout(timeoutId);
+	}, [ensureSidebarDialogsReady]);
+
+	React.useEffect(() => {
+		if (!settingsOpen) {
+			return;
+		}
+
+		void ensureSidebarDialogReady("settings");
+	}, [ensureSidebarDialogReady, settingsOpen]);
 
 	const navItems = React.useMemo(
 		() =>
@@ -391,6 +504,7 @@ export function AppSidebar({
 					inboxOpen={inboxOpen}
 					navItems={navItems}
 					onInboxOpenChange={handleInboxOpenChange}
+					onSearchIntent={handleSearchIntent}
 					onSearchOpen={handleSearchOpen}
 					onViewChange={handleViewChange}
 					onWorkspaceCreate={onWorkspaceCreate}
@@ -424,21 +538,29 @@ export function AppSidebar({
 					/>
 					<NavUser
 						user={user}
-						onRecipesOpen={() =>
+						onRecipesOpen={() => {
+							handleRecipesIntent();
 							dispatchUi({
 								type: "setOpen",
 								key: "recipesOpen",
 								value: true,
-							})
-						}
-						onTemplatesOpen={() =>
+							});
+						}}
+						onRecipesIntent={handleRecipesIntent}
+						onTemplatesOpen={() => {
+							handleTemplatesIntent();
 							dispatchUi({
 								type: "setOpen",
 								key: "templatesOpen",
 								value: true,
-							})
-						}
-						onSettingsOpen={() => onSettingsOpenChange(true, "Profile")}
+							});
+						}}
+						onTemplatesIntent={handleTemplatesIntent}
+						onSettingsOpen={() => {
+							handleSettingsIntent();
+							onSettingsOpenChange(true, "Profile");
+						}}
+						onSettingsIntent={handleSettingsIntent}
 						onSignOut={onSignOut}
 						signingOut={signingOut}
 					/>
@@ -454,6 +576,7 @@ export function AppSidebar({
 				searchProjects={searchProjects}
 				settingsOpen={settingsOpen}
 				settingsPage={settingsPage}
+				isDialogReady={isSidebarDialogReady}
 				templatesOpen={uiState.templatesOpen}
 				recipesOpen={uiState.recipesOpen}
 				searchOpen={uiState.searchOpen}
@@ -481,6 +604,7 @@ const AppSidebarHeaderSection = React.memo(function AppSidebarHeaderSection({
 	inboxOpen,
 	navItems,
 	onInboxOpenChange,
+	onSearchIntent,
 	onSearchOpen,
 	onViewChange,
 	onWorkspaceCreate,
@@ -498,6 +622,7 @@ const AppSidebarHeaderSection = React.memo(function AppSidebarHeaderSection({
 		}
 	>;
 	onInboxOpenChange: (open: boolean) => void;
+	onSearchIntent: () => void;
 	onSearchOpen: () => void;
 	onViewChange: (view: "home" | "chat" | "inbox" | "shared" | "note") => void;
 	onWorkspaceCreate: (input: { name: string }) => Promise<WorkspaceRecord>;
@@ -527,6 +652,7 @@ const AppSidebarHeaderSection = React.memo(function AppSidebarHeaderSection({
 				<NavMain
 					className="px-0"
 					items={navItems}
+					onSearchIntent={onSearchIntent}
 					onViewChange={onViewChange}
 					onSearchOpen={onSearchOpen}
 					onInboxToggle={() => onInboxOpenChange(!inboxOpen)}
@@ -615,6 +741,7 @@ const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 	searchProjects,
 	settingsOpen,
 	settingsPage,
+	isDialogReady,
 	templatesOpen,
 	recipesOpen,
 	searchOpen,
@@ -633,6 +760,7 @@ const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 	searchProjects: SearchCommandProject[];
 	settingsOpen: boolean;
 	settingsPage: SettingsPage;
+	isDialogReady: (surface: SidebarDialogSurface) => boolean;
 	templatesOpen: boolean;
 	recipesOpen: boolean;
 	searchOpen: boolean;
@@ -684,29 +812,45 @@ const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 
 	return (
 		<>
-			<SearchCommand
-				open={searchOpen}
-				onOpenChange={handleSearchOpenChange}
-				items={searchItems}
-				projects={searchProjects}
-				onSelectItem={handleSearchSelectItem}
-			/>
-			<SettingsDialog
-				open={settingsOpen}
-				onOpenChange={onSettingsOpenChange}
-				user={user}
-				workspace={selectedWorkspace}
-				initialPage={settingsPage}
-				onPageChange={handleSettingsPageChange}
-			/>
-			<RecipesDialog
-				open={recipesOpen}
-				onOpenChange={handleRecipesOpenChange}
-			/>
-			<TemplatesDialog
-				open={templatesOpen}
-				onOpenChange={handleTemplatesOpenChange}
-			/>
+			{searchOpen || isDialogReady("search") ? (
+				<React.Suspense fallback={null}>
+					<SidebarSearchCommandSurface
+						open={searchOpen}
+						onOpenChange={handleSearchOpenChange}
+						items={searchItems}
+						projects={searchProjects}
+						onSelectItem={handleSearchSelectItem}
+					/>
+				</React.Suspense>
+			) : null}
+			{settingsOpen || isDialogReady("settings") ? (
+				<React.Suspense fallback={null}>
+					<SidebarSettingsDialogSurface
+						open={settingsOpen}
+						onOpenChange={onSettingsOpenChange}
+						user={user}
+						workspace={selectedWorkspace}
+						initialPage={settingsPage}
+						onPageChange={handleSettingsPageChange}
+					/>
+				</React.Suspense>
+			) : null}
+			{recipesOpen || isDialogReady("recipes") ? (
+				<React.Suspense fallback={null}>
+					<SidebarRecipesDialogSurface
+						open={recipesOpen}
+						onOpenChange={handleRecipesOpenChange}
+					/>
+				</React.Suspense>
+			) : null}
+			{templatesOpen || isDialogReady("templates") ? (
+				<React.Suspense fallback={null}>
+					<SidebarTemplatesDialogSurface
+						open={templatesOpen}
+						onOpenChange={handleTemplatesOpenChange}
+					/>
+				</React.Suspense>
+			) : null}
 		</>
 	);
 });

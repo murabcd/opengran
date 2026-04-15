@@ -62,10 +62,78 @@ export default defineConfig(() => {
 	process.env.VITE_CONVEX_URL ??= process.env.CONVEX_URL;
 	process.env.VITE_CONVEX_SITE_URL ??= process.env.CONVEX_SITE_URL;
 
+	const getVendorChunkName = (id: string) => {
+		const normalizedId = id.replaceAll("\\", "/");
+
+		if (!normalizedId.includes("/node_modules/")) {
+			return undefined;
+		}
+
+		if (normalizedId.includes("/node_modules/@tiptap/")) {
+			return "tiptap-vendors";
+		}
+
+		if (normalizedId.includes("/node_modules/prosemirror-")) {
+			return "prosemirror-vendors";
+		}
+
+		if (normalizedId.includes("/node_modules/streamdown/")) {
+			return "streamdown-vendors";
+		}
+
+		if (
+			normalizedId.includes("/node_modules/marked/") ||
+			normalizedId.includes("/node_modules/linkify")
+		) {
+			return "markdown-render-vendors";
+		}
+
+		if (
+			normalizedId.includes("/node_modules/micromark") ||
+			normalizedId.includes("/node_modules/mdast") ||
+			normalizedId.includes("/node_modules/remark") ||
+			normalizedId.includes("/node_modules/rehype") ||
+			normalizedId.includes("/node_modules/unified/") ||
+			normalizedId.includes("/node_modules/unist")
+		) {
+			return "markdown-parse-vendors";
+		}
+
+		if (
+			normalizedId.includes("/node_modules/parse5/") ||
+			normalizedId.includes("/node_modules/entities/")
+		) {
+			return "html-parse-vendors";
+		}
+
+		if (
+			normalizedId.includes("/node_modules/ai/") ||
+			normalizedId.includes("/node_modules/@ai-sdk/")
+		) {
+			return "ai-vendors";
+		}
+
+		if (
+			normalizedId.includes("/node_modules/@dnd-kit/") ||
+			normalizedId.includes("/node_modules/react-day-picker/")
+		) {
+			return "sidebar-dialog-vendors";
+		}
+
+		return undefined;
+	};
+
 	return {
 		envDir: workspaceRoot,
 		envPrefix: ["VITE_"],
 		plugins: [react(), tailwindcss(), openGranChatPlugin()],
+		build: {
+			rollupOptions: {
+				output: {
+					manualChunks: getVendorChunkName,
+				},
+			},
+		},
 		resolve: {
 			alias: {
 				"@": path.resolve(srcDir),

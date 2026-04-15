@@ -1,0 +1,624 @@
+import { Button } from "@workspace/ui/components/button";
+import { Card, CardContent } from "@workspace/ui/components/card";
+import {
+	Empty,
+	EmptyContent,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle,
+} from "@workspace/ui/components/empty";
+import { Skeleton } from "@workspace/ui/components/skeleton";
+import { cn } from "@workspace/ui/lib/utils";
+import { CalendarClock, FileText, MoreHorizontal } from "lucide-react";
+import * as React from "react";
+import type { AppUser, UpcomingCalendarEvent } from "@/app/app-types";
+import {
+	formatUpcomingEventMeta,
+	getUpcomingCalendarIndicator,
+	isUpcomingEventLive,
+	isUpcomingEventToday,
+} from "@/app/location";
+import { NoteActionsMenu } from "@/components/note/note-actions-menu";
+import { getNoteDisplayTitle } from "@/lib/note-title";
+import type { Doc, Id } from "../../../../convex/_generated/dataModel";
+
+const HOME_NOTE_SKELETON_IDS = [
+	"home-note-skeleton-1",
+	"home-note-skeleton-2",
+	"home-note-skeleton-3",
+] as const;
+
+const noteCreatedTimeFormatter = new Intl.DateTimeFormat(undefined, {
+	hour: "numeric",
+	minute: "2-digit",
+});
+
+type GroupedItems<T> = {
+	today: T[];
+	yesterday: T[];
+	lastWeek: T[];
+	lastMonth: T[];
+	older: T[];
+};
+
+const isSameCalendarDay = (left: Date, right: Date) =>
+	left.getFullYear() === right.getFullYear() &&
+	left.getMonth() === right.getMonth() &&
+	left.getDate() === right.getDate();
+
+const getNoteAuthorDisplayName = (note: Doc<"notes">, currentUser: AppUser) =>
+	note.authorName?.trim() || currentUser.name;
+
+const formatNoteCreatedTime = (note: Doc<"notes">) =>
+	noteCreatedTimeFormatter.format(
+		new Date(note.createdAt || note._creationTime),
+	);
+
+const groupItemsByDate = <
+	T extends {
+		_creationTime: number;
+		createdAt?: number;
+		updatedAt?: number;
+	},
+>(
+	items: T[],
+): GroupedItems<T> => {
+	const now = new Date();
+	const yesterday = new Date(now);
+	yesterday.setDate(now.getDate() - 1);
+	const oneWeekAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+	const oneMonthAgo = now.getTime() - 30 * 24 * 60 * 60 * 1000;
+
+	return items.reduce<GroupedItems<T>>(
+		(groups, item) => {
+			const noteDate = new Date(
+				item.updatedAt || item.createdAt || item._creationTime,
+			);
+
+			if (isSameCalendarDay(noteDate, now)) {
+				groups.today.push(item);
+			} else if (isSameCalendarDay(noteDate, yesterday)) {
+				groups.yesterday.push(item);
+			} else if (noteDate.getTime() > oneWeekAgo) {
+				groups.lastWeek.push(item);
+			} else if (noteDate.getTime() > oneMonthAgo) {
+				groups.lastMonth.push(item);
+			} else {
+				groups.older.push(item);
+			}
+
+			return groups;
+		},
+		{
+			today: [],
+			yesterday: [],
+			lastWeek: [],
+			lastMonth: [],
+			older: [],
+		},
+	);
+};
+
+export function HomeView({
+	currentDate,
+	currentDayOfMonth,
+	currentMonthLabel,
+	currentWeekdayLabel,
+	upcomingCalendarEvents,
+	upcomingCalendarStatus,
+	isLoadingUpcomingCalendarEvents,
+	notes,
+	currentNoteId,
+	currentNoteTitle,
+	currentUser,
+	onOpenNote,
+	onNoteTrashed,
+	onCreateNote,
+	onOpenCalendarEventNote,
+	onOpenCalendarSettings,
+}: {
+	currentDate: Date;
+	currentDayOfMonth: number;
+	currentMonthLabel: string;
+	currentWeekdayLabel: string;
+	upcomingCalendarEvents: UpcomingCalendarEvent[];
+	upcomingCalendarStatus: "idle" | "ready" | "not_connected" | "error";
+	isLoadingUpcomingCalendarEvents: boolean;
+	notes: Array<Doc<"notes">> | undefined;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle: string;
+	currentUser: AppUser;
+	onOpenNote: (noteId: Id<"notes">) => void;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
+	onCreateNote: () => void;
+	onOpenCalendarEventNote: (
+		event: UpcomingCalendarEvent,
+		options?: {
+			autoStartCapture?: boolean;
+			stopCaptureWhenMeetingEnds?: boolean;
+		},
+	) => Promise<void> | void;
+	onOpenCalendarSettings: () => void;
+}) {
+	const visibleUpcomingEvents = upcomingCalendarEvents
+		.filter((event) => event.isMeeting)
+		.filter((event) => isUpcomingEventToday(event, currentDate))
+		.slice(0, 5);
+	const shouldShowUpcomingCalendarSkeleton =
+		isLoadingUpcomingCalendarEvents &&
+		upcomingCalendarStatus === "idle" &&
+		visibleUpcomingEvents.length === 0;
+	const hasLiveUpcomingMeeting = visibleUpcomingEvents.some((event) =>
+		isUpcomingEventLive(event, currentDate),
+	);
+	const upcomingCalendarIndicator = getUpcomingCalendarIndicator({
+		hasLiveMeeting: hasLiveUpcomingMeeting,
+		status: upcomingCalendarStatus,
+	});
+
+	const openMeetingLink = React.useCallback(async (url: string) => {
+		if (window.openGranDesktop) {
+			await window.openGranDesktop.openExternalUrl(url);
+			return;
+		}
+
+		window.open(url, "_blank", "noopener,noreferrer");
+	}, []);
+	const hasUpcomingEventStarted = React.useCallback(
+		(event: UpcomingCalendarEvent) =>
+			new Date(event.startAt).getTime() <= currentDate.getTime(),
+		[currentDate],
+	);
+
+	return (
+		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
+			<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
+				<section className="mx-auto w-full max-w-xl space-y-6">
+					<h1 className="text-lg md:text-xl">Coming up</h1>
+					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
+						<CardContent className="p-0">
+							<div className="grid min-h-[152px] md:grid-cols-[184px_minmax(0,1fr)]">
+								<div className="flex items-start border-b border-border/60 px-5 py-4 md:border-b-0 md:border-r">
+									<div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1">
+										<div className="row-span-2 text-5xl leading-none tracking-tight tabular-nums">
+											{currentDayOfMonth}
+										</div>
+										<div className="flex min-w-0 items-center gap-2 pt-1 text-base leading-none">
+											<span>{currentMonthLabel}</span>
+											<span
+												role="status"
+												aria-label={`Calendar status: ${upcomingCalendarIndicator.label}`}
+												className="inline-flex"
+											>
+												<span
+													className={cn(
+														"size-2 rounded-full",
+														upcomingCalendarIndicator.dotClassName,
+													)}
+												/>
+											</span>
+										</div>
+										<p className="text-base leading-none text-muted-foreground">
+											{currentWeekdayLabel}
+										</p>
+									</div>
+								</div>
+								<div className="flex min-h-[152px] w-full items-start justify-center p-3">
+									{shouldShowUpcomingCalendarSkeleton ? (
+										<Empty className="h-full rounded-none border-0 px-4 py-4">
+											<EmptyHeader>
+												<Skeleton className="mb-2 size-8 rounded-lg" />
+												<Skeleton className="h-5 w-40 max-w-full" />
+												<Skeleton className="h-4 w-56 max-w-full" />
+											</EmptyHeader>
+											<EmptyContent>
+												<Skeleton className="h-9 w-36 rounded-md" />
+											</EmptyContent>
+										</Empty>
+									) : visibleUpcomingEvents.length > 0 ? (
+										<div className="w-full px-1 py-1">
+											<div className="space-y-1.5">
+												{visibleUpcomingEvents.map((event) => {
+													const isLive = isUpcomingEventLive(
+														event,
+														currentDate,
+													);
+													const hasStarted = hasUpcomingEventStarted(event);
+
+													return (
+														<div
+															key={`${event.id}:${event.startAt}`}
+															className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-muted/40"
+														>
+															<div
+																className={cn(
+																	"h-8 w-1 shrink-0 rounded-full bg-status-planned",
+																	isLive && "bg-status-live",
+																)}
+															/>
+															<div className="min-w-0 flex-1">
+																<div className="flex items-center justify-between gap-4">
+																	<div className="min-w-0">
+																		<p className="truncate text-sm font-medium text-foreground">
+																			{event.title}
+																		</p>
+																		<p
+																			className={cn(
+																				"mt-0.5 text-xs text-muted-foreground",
+																				isLive && "text-status-live",
+																			)}
+																		>
+																			{formatUpcomingEventMeta(
+																				event,
+																				currentDate,
+																			)}
+																		</p>
+																	</div>
+																	<Button
+																		type="button"
+																		variant="default"
+																		size="sm"
+																		className="shrink-0"
+																		onClick={() => {
+																			void onOpenCalendarEventNote(event, {
+																				autoStartCapture: hasStarted,
+																				stopCaptureWhenMeetingEnds: true,
+																			});
+																			if (event.meetingUrl) {
+																				void openMeetingLink(event.meetingUrl);
+																			}
+																		}}
+																	>
+																		{event.meetingUrl
+																			? "Start now"
+																			: "Open note"}
+																	</Button>
+																</div>
+															</div>
+														</div>
+													);
+												})}
+											</div>
+										</div>
+									) : (
+										<Empty className="h-full rounded-none border-0 px-4 py-4">
+											<EmptyHeader>
+												<EmptyMedia variant="icon">
+													<CalendarClock className="size-4" />
+												</EmptyMedia>
+												<EmptyTitle>
+													{upcomingCalendarStatus === "not_connected"
+														? "Connect a calendar"
+														: upcomingCalendarStatus === "error"
+															? "Couldn’t load calendar"
+															: "No upcoming events today"}
+												</EmptyTitle>
+												<EmptyDescription>
+													{upcomingCalendarStatus === "not_connected"
+														? "Link your calendar in settings to see upcoming meetings."
+														: upcomingCalendarStatus === "error"
+															? "Try reconnecting your calendars or refresh the app."
+															: "Check your visible calendars for today"}
+												</EmptyDescription>
+											</EmptyHeader>
+											<EmptyContent>
+												<Button
+													variant="outline"
+													onClick={onOpenCalendarSettings}
+												>
+													Calendar settings
+												</Button>
+											</EmptyContent>
+										</Empty>
+									)}
+								</div>
+							</div>
+						</CardContent>
+					</Card>
+				</section>
+
+				<section className="flex justify-center py-8">
+					{notes === undefined ? (
+						<HomeNotesSkeleton />
+					) : notes.length > 0 ? (
+						<HomeNotesList
+							notes={notes}
+							activeNoteId={currentNoteId}
+							activeNoteTitle={currentNoteTitle}
+							currentUser={currentUser}
+							onOpenNote={onOpenNote}
+							onNoteTrashed={onNoteTrashed}
+						/>
+					) : (
+						<Empty className="max-w-xl">
+							<EmptyHeader>
+								<EmptyMedia variant="icon">
+									<FileText className="size-4" />
+								</EmptyMedia>
+								<EmptyTitle>Take your first note</EmptyTitle>
+								<EmptyDescription>
+									Your meeting notes will appear here
+								</EmptyDescription>
+							</EmptyHeader>
+							<EmptyContent>
+								<Button onClick={onCreateNote}>Quick note</Button>
+							</EmptyContent>
+						</Empty>
+					)}
+				</section>
+			</div>
+		</div>
+	);
+}
+
+export function SharedView({
+	sharedNotes,
+	currentNoteId,
+	currentNoteTitle,
+	currentUser,
+	onOpenNote,
+	onNoteTrashed,
+}: {
+	sharedNotes: Array<Doc<"notes">> | undefined;
+	currentNoteId: Id<"notes"> | null;
+	currentNoteTitle: string;
+	currentUser: AppUser;
+	onOpenNote: (noteId: Id<"notes">) => void;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
+}) {
+	return (
+		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
+			<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
+				<section className="mx-auto w-full max-w-xl space-y-6">
+					<h1 className="text-lg md:text-xl">Shared with others</h1>
+					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
+						<CardContent className="flex items-start justify-between gap-4 p-5">
+							<div>
+								<p className="text-5xl leading-none tracking-tight tabular-nums">
+									{sharedNotes?.length ?? 0}
+								</p>
+							</div>
+						</CardContent>
+					</Card>
+				</section>
+				<section className="flex justify-center py-4">
+					{sharedNotes === undefined ? (
+						<SharedNotesSkeleton />
+					) : sharedNotes.length > 0 ? (
+						<div className="w-full max-w-xl">
+							<SharedNotesList
+								notes={sharedNotes}
+								activeNoteId={currentNoteId}
+								activeNoteTitle={currentNoteTitle}
+								currentUser={currentUser}
+								onOpenNote={onOpenNote}
+								onNoteTrashed={onNoteTrashed}
+							/>
+						</div>
+					) : (
+						<Empty className="max-w-xl">
+							<EmptyHeader>
+								<EmptyMedia variant="icon">
+									<FileText className="size-4" />
+								</EmptyMedia>
+								<EmptyTitle>No shared notes yet</EmptyTitle>
+								<EmptyDescription>
+									Share a note with someone else
+								</EmptyDescription>
+							</EmptyHeader>
+						</Empty>
+					)}
+				</section>
+			</div>
+		</div>
+	);
+}
+
+function HomeNotesSkeleton() {
+	return (
+		<div className="w-full max-w-xl space-y-3">
+			<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
+				Today
+			</div>
+			<div className="space-y-2">
+				{HOME_NOTE_SKELETON_IDS.map((id) => (
+					<div key={id} className="flex items-center gap-3 rounded-lg p-1">
+						<Skeleton className="size-8 rounded-lg" />
+						<div className="min-w-0 flex-1 space-y-2">
+							<Skeleton className="h-4 w-32" />
+							<Skeleton className="h-3 w-48" />
+						</div>
+					</div>
+				))}
+			</div>
+		</div>
+	);
+}
+
+function SharedNotesSkeleton() {
+	return (
+		<div className="w-full max-w-xl space-y-3">
+			<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
+				Today
+			</div>
+			<div className="space-y-2">
+				{HOME_NOTE_SKELETON_IDS.map((id) => (
+					<div key={id} className="flex items-center gap-3 rounded-lg p-1">
+						<Skeleton className="size-8 rounded-lg" />
+						<div className="min-w-0 flex-1 space-y-2">
+							<Skeleton className="h-4 w-32" />
+							<Skeleton className="h-3 w-48" />
+						</div>
+					</div>
+				))}
+			</div>
+		</div>
+	);
+}
+
+function SharedNotesList({
+	notes,
+	activeNoteId,
+	activeNoteTitle,
+	currentUser,
+	onOpenNote,
+	onNoteTrashed,
+}: {
+	notes: Array<Doc<"notes">>;
+	activeNoteId: Id<"notes"> | null;
+	activeNoteTitle: string;
+	currentUser: AppUser;
+	onOpenNote: (noteId: Id<"notes">) => void;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
+}) {
+	return (
+		<NotesList
+			notes={notes}
+			activeNoteId={activeNoteId}
+			activeNoteTitle={activeNoteTitle}
+			currentUser={currentUser}
+			onOpenNote={onOpenNote}
+			onNoteTrashed={onNoteTrashed}
+		/>
+	);
+}
+
+function HomeNotesList({
+	notes,
+	activeNoteId,
+	activeNoteTitle,
+	currentUser,
+	onOpenNote,
+	onNoteTrashed,
+}: {
+	notes: Array<Doc<"notes">>;
+	activeNoteId: Id<"notes"> | null;
+	activeNoteTitle: string;
+	currentUser: AppUser;
+	onOpenNote: (noteId: Id<"notes">) => void;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
+}) {
+	return (
+		<NotesList
+			notes={notes}
+			activeNoteId={activeNoteId}
+			activeNoteTitle={activeNoteTitle}
+			currentUser={currentUser}
+			onOpenNote={onOpenNote}
+			onNoteTrashed={onNoteTrashed}
+		/>
+	);
+}
+
+function NotesList({
+	notes,
+	activeNoteId,
+	activeNoteTitle,
+	currentUser,
+	onOpenNote,
+	onNoteTrashed,
+}: {
+	notes: Array<Doc<"notes">>;
+	activeNoteId: Id<"notes"> | null;
+	activeNoteTitle: string;
+	currentUser: AppUser;
+	onOpenNote: (noteId: Id<"notes">) => void;
+	onNoteTrashed: (noteId: Id<"notes">) => void;
+}) {
+	const groupedNotes = groupItemsByDate(notes);
+	const sections = [
+		{ key: "today", label: "Today", notes: groupedNotes.today },
+		{ key: "yesterday", label: "Yesterday", notes: groupedNotes.yesterday },
+		{ key: "lastWeek", label: "Last 7 days", notes: groupedNotes.lastWeek },
+		{
+			key: "lastMonth",
+			label: "Last 30 days",
+			notes: groupedNotes.lastMonth,
+		},
+		{ key: "older", label: "Older", notes: groupedNotes.older },
+	] as const;
+
+	return (
+		<div className="w-full max-w-xl space-y-1">
+			{sections.map((section) => {
+				if (section.notes.length === 0) {
+					return null;
+				}
+
+				return (
+					<div key={section.key} className="space-y-2">
+						<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
+							{section.label}
+						</div>
+						<div className="space-y-2">
+							{section.notes.map((note) => {
+								const isActive = note._id === activeNoteId;
+								const title = getNoteDisplayTitle(
+									isActive && activeNoteTitle.trim()
+										? activeNoteTitle
+										: note.title,
+								);
+								const authorDisplayName = getNoteAuthorDisplayName(
+									note,
+									currentUser,
+								);
+								const createdTime = formatNoteCreatedTime(note);
+
+								return (
+									<div
+										key={note._id}
+										className={cn(
+											"group flex items-center rounded-lg p-1 transition-colors hover:bg-card/50 has-[[data-note-actions]:focus-visible]:bg-transparent has-[[data-note-actions]:hover]:bg-transparent",
+											isActive ? "bg-transparent" : "bg-transparent",
+										)}
+									>
+										<button
+											type="button"
+											onClick={() => onOpenNote(note._id)}
+											className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
+										>
+											<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+												<FileText className="size-4" />
+											</div>
+											<div className="min-w-0 flex-1">
+												<div className="truncate text-sm font-medium">
+													{title}
+												</div>
+												<div className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+													<span className="truncate">{authorDisplayName}</span>
+													<span aria-hidden="true">·</span>
+													<time
+														dateTime={new Date(note.createdAt).toISOString()}
+														className="shrink-0 tabular-nums"
+													>
+														{createdTime}
+													</time>
+												</div>
+											</div>
+										</button>
+										<NoteActionsMenu
+											noteId={note._id}
+											onMoveToTrash={onNoteTrashed}
+											align="end"
+										>
+											<button
+												type="button"
+												data-note-actions
+												className="flex aspect-square size-5 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground opacity-0 outline-hidden transition-[color,opacity] group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+												aria-label={`Open actions for ${title}`}
+												onClick={(event) => event.stopPropagation()}
+											>
+												<MoreHorizontal className="size-4" />
+											</button>
+										</NoteActionsMenu>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				);
+			})}
+		</div>
+	);
+}
