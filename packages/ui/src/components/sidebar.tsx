@@ -769,6 +769,12 @@ function SidebarInset({
 		}
 
 		previousLayoutSignatureRef.current = layoutSignature;
+		if (
+			typeof document !== "undefined" &&
+			document.documentElement.dataset.panelResizing === "true"
+		) {
+			return;
+		}
 		markPanelLayoutTransition(SIDEBAR_LAYOUT_TRANSITION_DURATION_MS);
 	}, [
 		hasRightSidebar,

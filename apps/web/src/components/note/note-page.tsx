@@ -130,8 +130,12 @@ const getRichTextContent = ({
 			: searchableText
 					.trim()
 					.split(/\n{2,}/)
-					.filter(Boolean)
-					.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`)
+					.flatMap((paragraph) => {
+						const trimmedParagraph = paragraph.trim();
+						return trimmedParagraph
+							? [`<p>${escapeHtml(trimmedParagraph)}</p>`]
+							: [];
+					})
 					.join("");
 
 	return {
@@ -141,14 +145,17 @@ const getRichTextContent = ({
 };
 
 const plainTextToDocumentNodes = (text: string): JSONContent[] =>
-	text
-		.split(/\n{2,}/)
-		.map((chunk) => chunk.trim())
-		.filter(Boolean)
-		.map((chunk) => ({
-			type: "paragraph",
-			content: [{ type: "text", text: chunk }],
-		}));
+	text.split(/\n{2,}/).flatMap((chunk) => {
+		const trimmedChunk = chunk.trim();
+		return trimmedChunk
+			? [
+					{
+						type: "paragraph",
+						content: [{ type: "text", text: trimmedChunk }],
+					} satisfies JSONContent,
+				]
+			: [];
+	});
 
 const exportTextFile = async ({
 	fileName,
@@ -1222,6 +1229,244 @@ type NotePageEditorPaneProps = {
 	handleTableOfContentsSelect: (anchor: TableOfContentDataItem) => void;
 };
 
+type NotePageCommentPanelState = {
+	commentsOpen: boolean;
+	activeCommentThreadId: Id<"noteCommentThreads"> | null;
+	pendingCommentSelection: PendingNoteCommentSelection | null;
+};
+
+function useNotePageCommentPanel({
+	isMobile,
+	noteId,
+	onCommentsOpenChange,
+}: {
+	isMobile: boolean;
+	noteId: Id<"notes"> | null;
+	onCommentsOpenChange?: (opener: (() => void) | null) => void;
+}) {
+	const [commentsPinned, setCommentsPinned] = React.useState(() =>
+		readDesktopCommentsPanelPinnedState(noteId),
+	);
+	const [commentPanelState, setCommentPanelState] =
+		React.useState<NotePageCommentPanelState>({
+			commentsOpen: false,
+			activeCommentThreadId: null,
+			pendingCommentSelection: null,
+		});
+	const { commentsOpen, activeCommentThreadId, pendingCommentSelection } =
+		commentPanelState;
+
+	const handleOpenComments = React.useCallback(() => {
+		setCommentPanelState((current) => {
+			const shouldTogglePinnedDesktopComments = !isMobile && commentsPinned;
+
+			if (shouldTogglePinnedDesktopComments) {
+				return current.commentsOpen
+					? {
+							commentsOpen: false,
+							activeCommentThreadId: null,
+							pendingCommentSelection: null,
+						}
+					: {
+							...current,
+							commentsOpen: true,
+						};
+			}
+
+			return {
+				...current,
+				commentsOpen: true,
+			};
+		});
+	}, [commentsPinned, isMobile]);
+
+	const handleCommentsOpenChange = React.useCallback((nextOpen: boolean) => {
+		setCommentPanelState((current) =>
+			nextOpen
+				? {
+						...current,
+						commentsOpen: true,
+					}
+				: {
+						commentsOpen: false,
+						activeCommentThreadId: null,
+						pendingCommentSelection: null,
+					},
+		);
+	}, []);
+
+	const handleCommentThreadClick = React.useCallback((threadId: string) => {
+		setCommentPanelState({
+			commentsOpen: true,
+			activeCommentThreadId: threadId as Id<"noteCommentThreads">,
+			pendingCommentSelection: null,
+		});
+	}, []);
+
+	const handleActiveThreadIdChange = React.useCallback(
+		(threadId: Id<"noteCommentThreads"> | null) => {
+			setCommentPanelState((current) => ({
+				...current,
+				activeCommentThreadId: threadId,
+			}));
+		},
+		[],
+	);
+
+	const handlePendingSelectionChange = React.useCallback(
+		(selection: PendingNoteCommentSelection | null) => {
+			setCommentPanelState((current) => ({
+				...current,
+				pendingCommentSelection: selection,
+			}));
+		},
+		[],
+	);
+
+	const handleOpenCommentComposer = React.useCallback(
+		(selection: PendingNoteCommentSelection) => {
+			setCommentPanelState({
+				commentsOpen: true,
+				activeCommentThreadId: null,
+				pendingCommentSelection: selection,
+			});
+		},
+		[],
+	);
+
+	React.useEffect(() => {
+		if (!noteId) {
+			return;
+		}
+
+		const handleOpenCommentsRequest = () => {
+			handleOpenComments();
+		};
+
+		window.addEventListener(
+			OPEN_NOTE_COMMENTS_EVENT,
+			handleOpenCommentsRequest,
+		);
+
+		return () => {
+			window.removeEventListener(
+				OPEN_NOTE_COMMENTS_EVENT,
+				handleOpenCommentsRequest,
+			);
+		};
+	}, [handleOpenComments, noteId]);
+
+	React.useEffect(() => {
+		if (!noteId) {
+			onCommentsOpenChange?.(null);
+			return;
+		}
+
+		onCommentsOpenChange?.(handleOpenComments);
+
+		return () => {
+			onCommentsOpenChange?.(null);
+		};
+	}, [handleOpenComments, noteId, onCommentsOpenChange]);
+
+	React.useEffect(() => {
+		const nextCommentsPinned = readDesktopCommentsPanelPinnedState(noteId);
+		setCommentsPinned(nextCommentsPinned);
+		setCommentPanelState({
+			commentsOpen: !isMobile && nextCommentsPinned,
+			activeCommentThreadId: null,
+			pendingCommentSelection: null,
+		});
+	}, [isMobile, noteId]);
+
+	const syncCommentThreadSelectionFromLocation = React.useCallback(() => {
+		if (!noteId) {
+			return;
+		}
+
+		const url = new URL(window.location.href);
+		const threadId = url.searchParams.get("commentThreadId")?.trim();
+		const targetNoteId = url.searchParams.get("noteId")?.trim();
+
+		if (!threadId || targetNoteId !== String(noteId)) {
+			return;
+		}
+
+		setCommentPanelState({
+			commentsOpen: true,
+			activeCommentThreadId: threadId as Id<"noteCommentThreads">,
+			pendingCommentSelection: null,
+		});
+	}, [noteId]);
+
+	React.useEffect(() => {
+		syncCommentThreadSelectionFromLocation();
+	}, [syncCommentThreadSelectionFromLocation]);
+
+	React.useEffect(() => {
+		window.addEventListener("popstate", syncCommentThreadSelectionFromLocation);
+
+		return () => {
+			window.removeEventListener(
+				"popstate",
+				syncCommentThreadSelectionFromLocation,
+			);
+		};
+	}, [syncCommentThreadSelectionFromLocation]);
+
+	return {
+		activeCommentThreadId,
+		commentsOpen,
+		handleActiveThreadIdChange,
+		handleCommentThreadClick,
+		handleCommentsOpenChange,
+		handleOpenCommentComposer,
+		handleOpenComments,
+		handlePendingSelectionChange,
+		pendingCommentSelection,
+		setCommentsPinned,
+	};
+}
+
+function useActiveCommentThreadMarkers({
+	activeCommentThreadId,
+	editor,
+}: {
+	activeCommentThreadId: Id<"noteCommentThreads"> | null;
+	editor: ReturnType<typeof useNotePageController>["editor"];
+}) {
+	React.useEffect(() => {
+		if (!editor) {
+			return;
+		}
+
+		const syncActiveThreadMarkers = () => {
+			if (!editor.view?.dom) {
+				return;
+			}
+
+			const container = editor.view.dom;
+			const anchors = container.querySelectorAll<HTMLElement>(
+				"[data-note-comment-thread-id]",
+			);
+
+			for (const anchor of anchors) {
+				const isActive =
+					!!activeCommentThreadId &&
+					anchor.dataset.noteCommentThreadId === String(activeCommentThreadId);
+				anchor.dataset.activeThread = isActive ? "true" : "false";
+			}
+		};
+
+		syncActiveThreadMarkers();
+		editor.on("update", syncActiveThreadMarkers);
+
+		return () => {
+			editor.off("update", syncActiveThreadMarkers);
+		};
+	}, [activeCommentThreadId, editor]);
+}
+
 const NotePageEditorPane = React.memo(function NotePageEditorPane({
 	titleTextareaRef,
 	title,
@@ -1467,97 +1712,11 @@ export function NotePage({
 	stopTranscriptionWhenMeetingEnds?: boolean;
 }) {
 	const isMobile = useIsMobile();
-	const [commentsPinned, setCommentsPinned] = React.useState(() =>
-		readDesktopCommentsPanelPinnedState(noteId),
-	);
-	const [commentPanelState, setCommentPanelState] = React.useState<{
-		commentsOpen: boolean;
-		activeCommentThreadId: Id<"noteCommentThreads"> | null;
-		pendingCommentSelection: PendingNoteCommentSelection | null;
-	}>({
-		commentsOpen: false,
-		activeCommentThreadId: null,
-		pendingCommentSelection: null,
+	const commentPanel = useNotePageCommentPanel({
+		isMobile,
+		noteId,
+		onCommentsOpenChange,
 	});
-	const { commentsOpen, activeCommentThreadId, pendingCommentSelection } =
-		commentPanelState;
-	const handleOpenComments = React.useCallback(() => {
-		setCommentPanelState((current) => {
-			const shouldTogglePinnedDesktopComments = !isMobile && commentsPinned;
-
-			if (shouldTogglePinnedDesktopComments) {
-				return current.commentsOpen
-					? {
-							commentsOpen: false,
-							activeCommentThreadId: null,
-							pendingCommentSelection: null,
-						}
-					: {
-							...current,
-							commentsOpen: true,
-						};
-			}
-
-			return {
-				...current,
-				commentsOpen: true,
-			};
-		});
-	}, [commentsPinned, isMobile]);
-	const handleCommentsOpenChange = React.useCallback((nextOpen: boolean) => {
-		setCommentPanelState((current) =>
-			nextOpen
-				? {
-						...current,
-						commentsOpen: true,
-					}
-				: {
-						commentsOpen: false,
-						activeCommentThreadId: null,
-						pendingCommentSelection: null,
-					},
-		);
-	}, []);
-	const handleCommentThreadClick = React.useCallback((threadId: string) => {
-		setCommentPanelState({
-			commentsOpen: true,
-			activeCommentThreadId: threadId as Id<"noteCommentThreads">,
-			pendingCommentSelection: null,
-		});
-	}, []);
-	React.useEffect(() => {
-		if (!noteId) {
-			return;
-		}
-
-		const handleOpenCommentsRequest = () => {
-			handleOpenComments();
-		};
-
-		window.addEventListener(
-			OPEN_NOTE_COMMENTS_EVENT,
-			handleOpenCommentsRequest,
-		);
-
-		return () => {
-			window.removeEventListener(
-				OPEN_NOTE_COMMENTS_EVENT,
-				handleOpenCommentsRequest,
-			);
-		};
-	}, [handleOpenComments, noteId]);
-	React.useEffect(() => {
-		if (!noteId) {
-			onCommentsOpenChange?.(null);
-			return;
-		}
-
-		onCommentsOpenChange?.(handleOpenComments);
-
-		return () => {
-			onCommentsOpenChange?.(null);
-		};
-	}, [handleOpenComments, noteId, onCommentsOpenChange]);
 	const controller = useNotePageController({
 		noteId,
 		note,
@@ -1565,8 +1724,8 @@ export function NotePage({
 		onTitleChange,
 		onEditorActionsChange,
 		scrollParentRef,
-		onCommentThreadClick: handleCommentThreadClick,
-		onOpenComments: handleOpenComments,
+		onCommentThreadClick: commentPanel.handleCommentThreadClick,
+		onOpenComments: commentPanel.handleOpenComments,
 	});
 	const composerNoteContext = React.useMemo(
 		() => ({
@@ -1623,112 +1782,17 @@ export function NotePage({
 			return;
 		}
 
-		setCommentPanelState({
-			commentsOpen: true,
-			activeCommentThreadId: null,
-			pendingCommentSelection: {
-				from,
-				to,
-				text,
-			},
+		commentPanel.handleOpenCommentComposer({
+			from,
+			to,
+			text,
 		});
-	}, [controller.editor]);
-	const handleActiveThreadIdChange = React.useCallback(
-		(threadId: Id<"noteCommentThreads"> | null) => {
-			setCommentPanelState((current) => ({
-				...current,
-				activeCommentThreadId: threadId,
-			}));
-		},
-		[],
-	);
-	const handlePendingSelectionChange = React.useCallback(
-		(selection: PendingNoteCommentSelection | null) => {
-			setCommentPanelState((current) => ({
-				...current,
-				pendingCommentSelection: selection,
-			}));
-		},
-		[],
-	);
+	}, [commentPanel, controller.editor]);
 
-	React.useEffect(() => {
-		const nextCommentsPinned = readDesktopCommentsPanelPinnedState(noteId);
-		setCommentsPinned(nextCommentsPinned);
-		setCommentPanelState({
-			commentsOpen: !isMobile && nextCommentsPinned,
-			activeCommentThreadId: null,
-			pendingCommentSelection: null,
-		});
-	}, [isMobile, noteId]);
-
-	const syncCommentThreadSelectionFromLocation = React.useCallback(() => {
-		if (!noteId) {
-			return;
-		}
-
-		const url = new URL(window.location.href);
-		const threadId = url.searchParams.get("commentThreadId")?.trim();
-		const targetNoteId = url.searchParams.get("noteId")?.trim();
-
-		if (!threadId || targetNoteId !== String(noteId)) {
-			return;
-		}
-
-		setCommentPanelState({
-			commentsOpen: true,
-			activeCommentThreadId: threadId as Id<"noteCommentThreads">,
-			pendingCommentSelection: null,
-		});
-	}, [noteId]);
-
-	React.useEffect(() => {
-		syncCommentThreadSelectionFromLocation();
-	}, [syncCommentThreadSelectionFromLocation]);
-
-	React.useEffect(() => {
-		window.addEventListener("popstate", syncCommentThreadSelectionFromLocation);
-
-		return () => {
-			window.removeEventListener(
-				"popstate",
-				syncCommentThreadSelectionFromLocation,
-			);
-		};
-	}, [syncCommentThreadSelectionFromLocation]);
-
-	React.useEffect(() => {
-		const editor = controller.editor;
-
-		if (!editor) {
-			return;
-		}
-
-		const syncActiveThreadMarkers = () => {
-			if (!editor.view?.dom) {
-				return;
-			}
-
-			const threadId = activeCommentThreadId;
-			const container = editor.view.dom;
-			const anchors = container.querySelectorAll<HTMLElement>(
-				"[data-note-comment-thread-id]",
-			);
-
-			for (const anchor of anchors) {
-				const isActive =
-					!!threadId && anchor.dataset.noteCommentThreadId === String(threadId);
-				anchor.dataset.activeThread = isActive ? "true" : "false";
-			}
-		};
-
-		syncActiveThreadMarkers();
-		editor.on("update", syncActiveThreadMarkers);
-
-		return () => {
-			editor.off("update", syncActiveThreadMarkers);
-		};
-	}, [activeCommentThreadId, controller.editor]);
+	useActiveCommentThreadMarkers({
+		activeCommentThreadId: commentPanel.activeCommentThreadId,
+		editor: controller.editor,
+	});
 
 	return (
 		<NotePageContent
@@ -1740,15 +1804,15 @@ export function NotePage({
 			scrollParentRef={scrollParentRef}
 			shouldHideEmptyBodyPlaceholder={shouldHideEmptyBodyPlaceholder}
 			onOpenCommentComposer={handleOpenCommentComposer}
-			commentsOpen={commentsOpen}
-			activeCommentThreadId={activeCommentThreadId}
+			commentsOpen={commentPanel.commentsOpen}
+			activeCommentThreadId={commentPanel.activeCommentThreadId}
 			currentUser={currentUser}
 			isDesktopMac={isDesktopMac}
-			handleCommentsOpenChange={handleCommentsOpenChange}
-			setCommentsPinned={setCommentsPinned}
-			onActiveThreadIdChange={handleActiveThreadIdChange}
-			pendingCommentSelection={pendingCommentSelection}
-			onPendingSelectionChange={handlePendingSelectionChange}
+			handleCommentsOpenChange={commentPanel.handleCommentsOpenChange}
+			setCommentsPinned={commentPanel.setCommentsPinned}
+			onActiveThreadIdChange={commentPanel.handleActiveThreadIdChange}
+			pendingCommentSelection={commentPanel.pendingCommentSelection}
+			onPendingSelectionChange={commentPanel.handlePendingSelectionChange}
 			handleTableOfContentsSelect={handleTableOfContentsSelect}
 		/>
 	);

@@ -192,9 +192,10 @@ function getThemeFireworkColors() {
 	}
 
 	const styles = window.getComputedStyle(document.documentElement);
-	return WELCOME_FIREWORK_COLOR_VARIABLES.map((variableName) =>
-		styles.getPropertyValue(variableName).trim(),
-	).filter(Boolean);
+	return WELCOME_FIREWORK_COLOR_VARIABLES.flatMap((variableName) => {
+		const value = styles.getPropertyValue(variableName).trim();
+		return value ? [value] : [];
+	});
 }
 const DESKTOP_PERMISSION_LABELS: Record<DesktopPermissionId, string> = {
 	microphone: "Transcribe me",

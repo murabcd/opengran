@@ -219,6 +219,7 @@ function useResizableSidePanel({
 		),
 	);
 	const panelWidthRef = React.useRef(panelWidth);
+	const resizeGrabOffsetRef = React.useRef(0);
 	const pendingPanelWidthRef = React.useRef<number | null>(null);
 	const resizeAnimationFrameRef = React.useRef<number | null>(null);
 	const storageKey = isMobile ? mobileStorageKey : desktopStorageKey;
@@ -276,16 +277,26 @@ function useResizableSidePanel({
 
 		persistPanelWidth(panelWidthRef.current);
 	}, [commitPanelWidth, persistPanelWidth]);
+	const getRawWidthFromClientX = React.useCallback(
+		(clientX: number) =>
+			getWidthFromClientX(
+				clientX,
+				viewportWidth,
+				side,
+				effectiveDesktopLeadingOffset,
+				effectiveDesktopTrailingOffset,
+			),
+		[
+			effectiveDesktopLeadingOffset,
+			effectiveDesktopTrailingOffset,
+			side,
+			viewportWidth,
+		],
+	);
 	const updateWidthFromClientX = React.useCallback(
 		(clientX: number, strategy: "commit" | "schedule" = "schedule") => {
 			const nextWidth = clampPanelWidth(
-				getWidthFromClientX(
-					clientX,
-					viewportWidth,
-					side,
-					effectiveDesktopLeadingOffset,
-					effectiveDesktopTrailingOffset,
-				),
+				getRawWidthFromClientX(clientX) + resizeGrabOffsetRef.current,
 				bounds,
 			);
 
@@ -296,15 +307,7 @@ function useResizableSidePanel({
 
 			schedulePanelWidth(nextWidth);
 		},
-		[
-			bounds,
-			commitPanelWidth,
-			effectiveDesktopLeadingOffset,
-			effectiveDesktopTrailingOffset,
-			schedulePanelWidth,
-			side,
-			viewportWidth,
-		],
+		[bounds, commitPanelWidth, getRawWidthFromClientX, schedulePanelWidth],
 	);
 
 	React.useEffect(() => {
@@ -413,12 +416,16 @@ function useResizableSidePanel({
 		useResizeHandle({
 			cursor: "col-resize",
 			onResizeStart: (event) => {
-				updateWidthFromClientX(event.clientX, "commit");
+				resizeGrabOffsetRef.current =
+					panelWidthRef.current - getRawWidthFromClientX(event.clientX);
 			},
 			onResizeMove: (event) => {
 				updateWidthFromClientX(event.clientX);
 			},
-			onResizeEnd: flushScheduledPanelWidth,
+			onResizeEnd: () => {
+				resizeGrabOffsetRef.current = 0;
+				flushScheduledPanelWidth();
+			},
 			onKeyDown: resizeHandleKeyDown,
 		});
 

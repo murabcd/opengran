@@ -848,6 +848,8 @@ const useNoteComposerController = ({
 		!isMobile && rightInsetPanelWidth
 			? `calc(${rightInsetPanelWidth} + 18px)`
 			: "18px";
+	const hasAdjacentInsetPanel =
+		isSidebarPresentation && !isMobile && Boolean(rightInsetPanelWidth);
 	const sidebarPanelWidthCss = `${sidebarPanelWidth}px`;
 	const activeSidebarWidthOverride = isSidebarPresentation
 		? sidebarPanelWidthCss
@@ -1499,6 +1501,7 @@ const useNoteComposerController = ({
 		isGeneratingNotes: transcriptSession.isGeneratingNotes,
 		isMobile,
 		isSidebarPresentation,
+		hasAdjacentInsetPanel,
 		isSpeechListening: isCurrentNoteSpeechListening,
 		isStoredTranscriptLoading: transcriptSession.isStoredTranscriptLoading,
 		isRecipeLoading: recipeData === undefined,
@@ -2923,7 +2926,10 @@ function NoteComposerPanels({
 						label="Resize note chat sidebar"
 						panelWidth={controller.sidebarPanelWidth}
 						isResizing={controller.isSidebarResizing}
-						className="opacity-0 transition-opacity duration-150 group-hover/note-chat-panel:opacity-100 group-focus-within/note-chat-panel:opacity-100"
+						className={cn(
+							"opacity-0 transition-opacity duration-150 group-hover/note-chat-panel:opacity-100 group-focus-within/note-chat-panel:opacity-100",
+							controller.hasAdjacentInsetPanel && "opacity-100",
+						)}
 						onPointerDown={controller.handleSidebarResizeStart}
 						onKeyDown={controller.handleSidebarResizeKeyDown}
 					/>
