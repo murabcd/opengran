@@ -1584,7 +1584,7 @@ function NoteSpeechControls({
 				disabled={!transcriptionLanguageReady}
 				lang={speechLanguage}
 				scopeKey={currentNoteScopeKey}
-				className="shrink-0 rounded-full border-input/50 !bg-transparent text-muted-foreground shadow-none hover:!bg-muted hover:text-foreground"
+				className="shrink-0 rounded-full border-input/50 !text-muted-foreground shadow-none hover:!text-foreground"
 			/>
 
 			<Button
@@ -2178,9 +2178,9 @@ function ChatInlinePopoverFooter({
 				<TooltipTrigger asChild>
 					<PopoverTrigger asChild>
 						<InputGroupButton
-							variant="ghost"
-							size="sm"
-							className="rounded-full border-0 bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+							variant="outline"
+							size="icon-sm"
+							className="rounded-full text-muted-foreground hover:text-foreground"
 							disabled={isRecipeLoading}
 						>
 							<ListMinus className="size-3.5" />

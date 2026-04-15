@@ -42,6 +42,7 @@ export const SpeechInput = ({
 	onSystemAudioStatusChange,
 	onUtterance,
 	scopeKey = null,
+	size,
 	...props
 }: SpeechInputProps) => {
 	const session = useTranscriptionSession();
@@ -121,11 +122,13 @@ export const SpeechInput = ({
 				))}
 
 			<Button
+				size={size}
 				className={cn(
 					"relative z-10 rounded-full transition-all duration-300",
 					isScopedListening || isScopedConnecting
 						? "!bg-destructive/15 !text-destructive hover:!bg-destructive/20 hover:!text-destructive"
-						: "!bg-background !text-foreground hover:!bg-muted hover:!text-foreground",
+						: null,
+					size === "icon-sm" && "size-8",
 					!session.isAvailable && "cursor-not-allowed",
 					className,
 				)}

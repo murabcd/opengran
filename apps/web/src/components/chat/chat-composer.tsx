@@ -376,9 +376,9 @@ function MentionPicker({
 				>
 					<PopoverTrigger asChild>
 						<InputGroupButton
-							variant="ghost"
+							variant="outline"
 							size="icon-sm"
-							className="rounded-full transition-transform"
+							className="rounded-full text-muted-foreground transition-transform hover:text-foreground"
 						>
 							<AtSign />
 							<span className="sr-only">Mention a page</span>
