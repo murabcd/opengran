@@ -41,10 +41,18 @@ import {
 	SidebarMenuSub,
 } from "@workspace/ui/components/sidebar";
 import { Skeleton } from "@workspace/ui/components/skeleton";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import type { OptimisticLocalStore } from "convex/browser";
 import { useMutation } from "convex/react";
 import {
+	ArrowUpAZ,
+	Check,
 	ChevronRight,
+	Clock3,
 	FileText,
 	FolderClosed,
 	FolderOpen,
@@ -52,6 +60,7 @@ import {
 	MoreHorizontal,
 	Pencil,
 	Plus,
+	PlusCircle,
 	Trash2,
 } from "lucide-react";
 import * as React from "react";
@@ -62,18 +71,28 @@ import { ProjectComposer } from "@/components/projects/project-composer";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
-import { SidebarCollapsibleGroup } from "./sidebar-collapsible-group";
+import {
+	SIDEBAR_COLLAPSIBLE_GROUP_ACTION_CLASS_NAME,
+	SidebarCollapsibleGroup,
+} from "./sidebar-collapsible-group";
 
 const SIDEBAR_PROJECT_SKELETON_IDS = [
 	"sidebar-project-skeleton-1",
 	"sidebar-project-skeleton-2",
 ] as const;
 const MAX_PROJECT_NAME_LENGTH = 48;
+const SIDEBAR_HEADER_ACTION_ROW_CLASS_NAME =
+	"aspect-auto w-auto gap-0.5 rounded-xl p-0 hover:bg-transparent [&_button]:flex [&_button]:size-5 [&_button]:cursor-pointer [&_button]:items-center [&_button]:justify-center [&_button]:rounded-md [&_button]:p-0 [&_button]:text-inherit [&_button]:outline-hidden [&_button]:transition-colors [&_button:hover]:bg-sidebar-accent [&_button:hover]:text-sidebar-accent-foreground [&_button[data-state=open]]:bg-sidebar-accent [&_button[data-state=open]]:text-sidebar-accent-foreground [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-sidebar-ring [&_button>svg]:size-4 [&_button>svg]:shrink-0";
+const SIDEBAR_FILTER_MENU_CONTENT_CLASS_NAME =
+	"w-56 overflow-hidden rounded-lg p-1";
 
 type ProjectWithNotes = {
 	project: Doc<"projects">;
 	notes: Array<Doc<"notes">>;
+	lastActivityAt: number;
 };
+
+type ProjectListSort = "name" | "created" | "updated";
 
 type ProjectItemState = {
 	confirmOpen: boolean;
@@ -172,13 +191,19 @@ export function NavProjects({
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
 	const [createOpen, setCreateOpen] = React.useState(false);
+	const [filtersOpen, setFiltersOpen] = React.useState(false);
 	const [name, setName] = React.useState("");
 	const [createError, setCreateError] = React.useState<string | null>(null);
+	const [sortBy, setSortBy] = React.useState<ProjectListSort>("name");
 	const [isCreatingProject, startProjectCreation] = React.useTransition();
 	const createProject = useMutation(api.projects.create);
 	const projectEntries = React.useMemo(
 		() => buildProjectEntries(projects ?? [], notes ?? []),
 		[notes, projects],
+	);
+	const visibleProjectEntries = React.useMemo(
+		() => sortProjectEntries(projectEntries, sortBy),
+		[projectEntries, sortBy],
 	);
 	const isPending = projects === undefined || notes === undefined;
 
@@ -217,28 +242,46 @@ export function NavProjects({
 			<SidebarCollapsibleGroup
 				title="Projects"
 				className="group-data-[collapsible=icon]:hidden"
-				actionClassName="opacity-0 transition-opacity pointer-events-none group-hover/header:opacity-100 group-hover/header:pointer-events-auto group-focus-within/header:opacity-100 group-focus-within/header:pointer-events-auto"
-				actionTooltip="Add project"
+				actionClassName={`${SIDEBAR_COLLAPSIBLE_GROUP_ACTION_CLASS_NAME} ${SIDEBAR_HEADER_ACTION_ROW_CLASS_NAME}`}
 				actions={
-					<button
-						type="button"
-						aria-label="Add project"
-						className="cursor-pointer"
-						onClick={() => setCreateOpen(true)}
-					>
-						<Plus />
-					</button>
+					<div className="flex items-center gap-0.5">
+						<ProjectsFilterMenu
+							open={filtersOpen}
+							sortBy={sortBy}
+							onOpenChange={setFiltersOpen}
+							onSortChange={setSortBy}
+						/>
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<button
+									type="button"
+									aria-label="Add project"
+									onClick={() => setCreateOpen(true)}
+								>
+									<Plus />
+								</button>
+							</TooltipTrigger>
+							<TooltipContent
+								side="bottom"
+								align="center"
+								sideOffset={8}
+								className="pointer-events-none select-none"
+							>
+								Add project
+							</TooltipContent>
+						</Tooltip>
+					</div>
 				}
 			>
 				{isPending ? <NavProjectsSkeleton /> : null}
-				{!isPending && projectEntries.length === 0 ? (
+				{!isPending && visibleProjectEntries.length === 0 ? (
 					<div className="px-2 text-xs text-muted-foreground/50">
 						No projects yet
 					</div>
 				) : null}
 				{isPending ? null : (
 					<SidebarMenu>
-						{projectEntries.map(({ project, notes: projectNotes }) => (
+						{visibleProjectEntries.map(({ project, notes: projectNotes }) => (
 							<ProjectSidebarItem
 								key={project._id}
 								project={project}
@@ -291,6 +334,90 @@ export function NavProjects({
 				</DialogContent>
 			</Dialog>
 		</>
+	);
+}
+
+function ProjectsFilterMenu({
+	open,
+	sortBy,
+	onOpenChange,
+	onSortChange,
+}: {
+	open: boolean;
+	sortBy: ProjectListSort;
+	onOpenChange: (open: boolean) => void;
+	onSortChange: (value: ProjectListSort) => void;
+}) {
+	return (
+		<DropdownMenu open={open} onOpenChange={onOpenChange}>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<DropdownMenuTrigger asChild>
+						<button type="button" aria-label="Sort projects">
+							<MoreHorizontal />
+						</button>
+					</DropdownMenuTrigger>
+				</TooltipTrigger>
+				<TooltipContent
+					side="bottom"
+					align="center"
+					sideOffset={8}
+					className="pointer-events-none select-none"
+				>
+					Sort projects
+				</TooltipContent>
+			</Tooltip>
+			<DropdownMenuContent
+				align="start"
+				side="right"
+				sideOffset={6}
+				className={SIDEBAR_FILTER_MENU_CONTENT_CLASS_NAME}
+			>
+				<ProjectFilterItem
+					icon={ArrowUpAZ}
+					label="Name"
+					selected={sortBy === "name"}
+					onSelect={() => onSortChange("name")}
+				/>
+				<ProjectFilterItem
+					icon={PlusCircle}
+					label="Created"
+					selected={sortBy === "created"}
+					onSelect={() => onSortChange("created")}
+				/>
+				<ProjectFilterItem
+					icon={Clock3}
+					label="Updated"
+					selected={sortBy === "updated"}
+					onSelect={() => onSortChange("updated")}
+				/>
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+}
+
+function ProjectFilterItem({
+	icon: Icon,
+	label,
+	selected,
+	onSelect,
+}: {
+	icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+	label: string;
+	selected: boolean;
+	onSelect: () => void;
+}) {
+	return (
+		<DropdownMenuItem
+			className="cursor-pointer justify-between"
+			onSelect={onSelect}
+		>
+			<div className="flex items-center gap-2">
+				<Icon />
+				<span>{label}</span>
+			</div>
+			{selected ? <Check /> : null}
+		</DropdownMenuItem>
 	);
 }
 
@@ -875,10 +1002,19 @@ function buildProjectEntries(
 		notesByProjectId.set(note.projectId, projectNotes);
 	}
 
-	return projects.map((project) => ({
-		project,
-		notes: notesByProjectId.get(project._id) ?? [],
-	}));
+	return projects.map((project) => {
+		const projectNotes = notesByProjectId.get(project._id) ?? [];
+
+		return {
+			project,
+			notes: projectNotes,
+			lastActivityAt: projectNotes.reduce(
+				(latestTimestamp, note) =>
+					Math.max(latestTimestamp, note.createdAt, note.updatedAt),
+				Math.max(project.createdAt, project.updatedAt),
+			),
+		};
+	});
 }
 
 const normalizeProjectName = (value: string) =>
@@ -898,6 +1034,60 @@ function sortProjectsByNormalizedName(projects: Array<Doc<"projects">>) {
 
 		return left._creationTime - right._creationTime;
 	});
+}
+
+function sortProjectEntries(
+	entries: Array<ProjectWithNotes>,
+	sortBy: ProjectListSort,
+) {
+	return [...entries].sort((left, right) => {
+		if (sortBy === "created") {
+			return compareProjectsByTimestamp(
+				left.project.createdAt,
+				right.project.createdAt,
+				left.project,
+				right.project,
+			);
+		}
+
+		if (sortBy === "updated") {
+			return compareProjectsByTimestamp(
+				left.lastActivityAt,
+				right.lastActivityAt,
+				left.project,
+				right.project,
+			);
+		}
+
+		return compareProjectsByName(left.project, right.project);
+	});
+}
+
+function compareProjectsByTimestamp(
+	leftTimestamp: number,
+	rightTimestamp: number,
+	leftProject: Doc<"projects">,
+	rightProject: Doc<"projects">,
+) {
+	if (rightTimestamp !== leftTimestamp) {
+		return rightTimestamp - leftTimestamp;
+	}
+
+	return compareProjectsByName(leftProject, rightProject);
+}
+
+function compareProjectsByName(
+	leftProject: Doc<"projects">,
+	rightProject: Doc<"projects">,
+) {
+	const normalizedComparison = leftProject.normalizedName.localeCompare(
+		rightProject.normalizedName,
+	);
+	if (normalizedComparison !== 0) {
+		return normalizedComparison;
+	}
+
+	return leftProject._creationTime - rightProject._creationTime;
 }
 
 function optimisticUpdateProjectList(

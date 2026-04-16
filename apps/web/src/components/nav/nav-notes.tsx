@@ -8,7 +8,10 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { FileText, MoreHorizontal, Plus } from "lucide-react";
 import * as React from "react";
-import { SidebarCollapsibleGroup } from "@/components/nav/sidebar-collapsible-group";
+import {
+	SIDEBAR_COLLAPSIBLE_GROUP_ACTION_CLASS_NAME,
+	SidebarCollapsibleGroup,
+} from "@/components/nav/sidebar-collapsible-group";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
@@ -20,9 +23,6 @@ const SIDEBAR_NOTE_SKELETON_IDS = [
 	"sidebar-note-skeleton-3",
 	"sidebar-note-skeleton-4",
 ] as const;
-const SIDEBAR_GROUP_ACTION_CLASS_NAME =
-	"opacity-0 transition-opacity pointer-events-none group-hover/header:opacity-100 group-hover/header:pointer-events-auto group-focus-within/header:opacity-100 group-focus-within/header:pointer-events-auto";
-
 export function NavNotes({
 	notes,
 	title = "Notes",
@@ -93,7 +93,9 @@ export function NavNotes({
 				title={title}
 				className="group-data-[collapsible=icon]:hidden"
 				actionClassName={
-					title === "Notes" ? SIDEBAR_GROUP_ACTION_CLASS_NAME : undefined
+					title === "Notes"
+						? SIDEBAR_COLLAPSIBLE_GROUP_ACTION_CLASS_NAME
+						: undefined
 				}
 				actionTooltip={title === "Notes" ? "Add note" : undefined}
 				actions={

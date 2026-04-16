@@ -165,6 +165,7 @@ vi.mock("sonner", () => ({
 }));
 
 vi.mock("../src/components/nav/sidebar-collapsible-group", () => ({
+	SIDEBAR_COLLAPSIBLE_GROUP_ACTION_CLASS_NAME: "header-actions",
 	SidebarCollapsibleGroup: ({ children }: React.PropsWithChildren) => (
 		<div>{children}</div>
 	),

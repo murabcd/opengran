@@ -18,6 +18,9 @@ import { cn } from "@workspace/ui/lib/utils";
 import { ChevronRight } from "lucide-react";
 import * as React from "react";
 
+export const SIDEBAR_COLLAPSIBLE_GROUP_ACTION_CLASS_NAME =
+	"opacity-0 pointer-events-none transition-opacity group-hover/header:opacity-100 group-hover/header:pointer-events-auto group-focus-within/header:opacity-100 group-focus-within/header:pointer-events-auto";
+
 export function SidebarCollapsibleGroup({
 	children,
 	className,
