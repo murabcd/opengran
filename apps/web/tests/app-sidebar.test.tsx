@@ -214,6 +214,7 @@ describe("AppSidebar mobile interactions", () => {
 				currentNoteId={"note-1" as never}
 				currentNoteTitle="First note"
 				onChatSelect={vi.fn()}
+				onNotePrefetch={vi.fn()}
 				onNoteSelect={onNoteSelect}
 				onCreateNote={onCreateNote}
 			/>,

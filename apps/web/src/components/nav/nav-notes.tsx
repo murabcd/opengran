@@ -32,6 +32,7 @@ export function NavNotes({
 	currentNoteId,
 	currentNoteTitle,
 	recordingNoteId = null,
+	onPrefetchNote,
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
@@ -45,6 +46,7 @@ export function NavNotes({
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	recordingNoteId?: Id<"notes"> | null;
+	onPrefetchNote: (noteId: Id<"notes">) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
@@ -80,6 +82,7 @@ export function NavNotes({
 						currentNoteId={currentNoteId}
 						currentNoteTitle={currentNoteTitle}
 						recordingNoteId={recordingNoteId}
+						onPrefetchNote={onPrefetchNote}
 						onNoteSelect={onNoteSelect}
 						onNoteTitleChange={onNoteTitleChange}
 						onNoteTrashed={onNoteTrashed}
@@ -121,6 +124,7 @@ export function NavNotes({
 							currentNoteId={currentNoteId}
 							currentNoteTitle={currentNoteTitle}
 							recordingNoteId={recordingNoteId}
+							onPrefetchNote={onPrefetchNote}
 							onNoteSelect={onNoteSelect}
 							onNoteTitleChange={onNoteTitleChange}
 							onNoteTrashed={onNoteTrashed}
@@ -152,6 +156,7 @@ function SidebarNotesList({
 	currentNoteId,
 	currentNoteTitle,
 	recordingNoteId,
+	onPrefetchNote,
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
@@ -160,6 +165,7 @@ function SidebarNotesList({
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	recordingNoteId: Id<"notes"> | null;
+	onPrefetchNote: (noteId: Id<"notes">) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
@@ -183,6 +189,9 @@ function SidebarNotesList({
 							renameAnchor={
 								<SidebarMenuButton
 									isActive={isActive}
+									onFocus={() => onPrefetchNote(note._id)}
+									onMouseEnter={() => onPrefetchNote(note._id)}
+									onPointerDown={() => onPrefetchNote(note._id)}
 									onClick={() => onNoteSelect(note._id)}
 								>
 									{isRecording ? (

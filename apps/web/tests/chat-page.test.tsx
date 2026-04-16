@@ -378,6 +378,7 @@ describe("ChatPage", () => {
 					isChatsLoading={false}
 					activeChatId={null}
 					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
 					onChatRemoved={vi.fn()}
 					onOpenConnectionsSettings={vi.fn()}
 					activeWorkspace={null}
@@ -405,6 +406,7 @@ describe("ChatPage", () => {
 					isChatsLoading={false}
 					activeChatId={null}
 					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
 					onChatRemoved={vi.fn()}
 					onOpenConnectionsSettings={vi.fn()}
 					activeWorkspace={null}
@@ -447,6 +449,49 @@ describe("ChatPage", () => {
 		);
 	}, 10_000);
 
+	it("shows a stop button while streaming and stops the response", async () => {
+		const user = userEvent.setup();
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		useChatMock.mockReturnValue({
+			messages: [
+				{
+					id: "msg-1",
+					role: "assistant",
+					parts: [{ type: "text", text: "Working..." }],
+				},
+			],
+			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			error: undefined,
+			status: "streaming",
+			stop: stopMock,
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={null}
+					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Stop streaming" }));
+
+		expect(stopMock).toHaveBeenCalledTimes(1);
+	});
+
 	it("opens connections settings without mutating the chat route directly", async () => {
 		const user = userEvent.setup();
 		const pushStateSpy = vi.spyOn(window.history, "pushState");
@@ -473,6 +518,7 @@ describe("ChatPage", () => {
 					isChatsLoading={false}
 					activeChatId={null}
 					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
 					onChatRemoved={vi.fn()}
 					onOpenConnectionsSettings={onOpenConnectionsSettings}
 					activeWorkspace={null}
@@ -504,6 +550,7 @@ describe("ChatPage", () => {
 					isChatsLoading={false}
 					activeChatId={null}
 					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
 					onChatRemoved={vi.fn()}
 					onOpenConnectionsSettings={vi.fn()}
 					activeWorkspace={null}
@@ -569,6 +616,7 @@ describe("ChatPage", () => {
 					isChatsLoading={false}
 					activeChatId={"chat-1"}
 					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
 					onChatRemoved={vi.fn()}
 					onOpenConnectionsSettings={vi.fn()}
 					activeWorkspace={null}
@@ -639,6 +687,7 @@ describe("ChatPage", () => {
 					isChatsLoading={false}
 					activeChatId={"chat-1"}
 					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
 					onChatRemoved={vi.fn()}
 					onOpenConnectionsSettings={vi.fn()}
 					activeWorkspace={null}
@@ -691,6 +740,7 @@ describe("ChatPage", () => {
 					isChatsLoading={false}
 					activeChatId={"chat-1"}
 					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
 					onChatRemoved={vi.fn()}
 					onOpenConnectionsSettings={vi.fn()}
 					activeWorkspace={null}
@@ -765,6 +815,7 @@ describe("ChatPage", () => {
 					isChatsLoading={false}
 					activeChatId={"chat-1"}
 					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
 					onChatRemoved={vi.fn()}
 					onOpenConnectionsSettings={vi.fn()}
 					onCreateNoteFromResponse={onCreateNoteFromResponse}
@@ -816,6 +867,7 @@ describe("ChatPage", () => {
 					isChatsLoading={false}
 					activeChatId={"chat-1"}
 					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
 					onChatRemoved={vi.fn()}
 					onOpenConnectionsSettings={vi.fn()}
 					activeWorkspace={null}
@@ -828,6 +880,45 @@ describe("ChatPage", () => {
 		);
 
 		expect(scrollToBottomMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps the selected chat surface mounted while initial messages are still warming", async () => {
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		useChatMock.mockReturnValue({
+			messages: [],
+			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			error: undefined,
+			status: "ready",
+			stop: stopMock,
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					isInitialMessagesLoading
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={"chat-1"}
+					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		expect(screen.queryByText("Loading chat...")).toBeNull();
+		expect(screen.queryByText("Ask anything")).toBeNull();
+		expect(
+			screen.getByPlaceholderText("Ask, search, or make anything..."),
+		).toBeTruthy();
 	});
 
 	it("keeps the Ask AI composer dock aligned with the note chat baseline", async () => {
@@ -859,6 +950,7 @@ describe("ChatPage", () => {
 					isChatsLoading={false}
 					activeChatId={"chat-1"}
 					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
 					onChatRemoved={vi.fn()}
 					onOpenConnectionsSettings={vi.fn()}
 					activeWorkspace={null}

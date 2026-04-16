@@ -79,6 +79,7 @@ type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	onChatSelect: (chatId: string) => void;
+	onNotePrefetch: (noteId: Id<"notes">) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
@@ -570,6 +571,7 @@ export function AppSidebar({
 	currentNoteId,
 	currentNoteTitle,
 	onChatSelect,
+	onNotePrefetch,
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
@@ -625,6 +627,7 @@ export function AppSidebar({
 					currentView={currentView}
 					notes={notes}
 					onCreateNote={model.handleCreateNote}
+					onNotePrefetch={onNotePrefetch}
 					onNoteSelect={model.handleNoteSelect}
 					onNoteTitleChange={onNoteTitleChange}
 					onNoteTrashed={onNoteTrashed}
@@ -787,6 +790,7 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 	currentView,
 	notes,
 	onCreateNote,
+	onNotePrefetch,
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
@@ -800,6 +804,7 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 	currentView: AppSidebarView;
 	notes: Array<Doc<"notes">> | undefined;
 	onCreateNote: () => void;
+	onNotePrefetch: (noteId: Id<"notes">) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
@@ -819,6 +824,7 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 					currentNoteId={currentView === "note" ? currentNoteId : null}
 					currentNoteTitle={currentNoteTitle}
 					recordingNoteId={recordingNoteId}
+					onPrefetchNote={onNotePrefetch}
 					onNoteSelect={onNoteSelect}
 					onNoteTitleChange={onNoteTitleChange}
 					onNoteTrashed={onNoteTrashed}
@@ -829,6 +835,7 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 				currentNoteId={currentView === "note" ? currentNoteId : null}
 				currentNoteTitle={currentNoteTitle}
 				recordingNoteId={recordingNoteId}
+				onPrefetchNote={onNotePrefetch}
 				onNoteSelect={onNoteSelect}
 				onNoteTitleChange={onNoteTitleChange}
 				onNoteTrashed={onNoteTrashed}
@@ -841,6 +848,7 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 				currentNoteId={currentView === "note" ? currentNoteId : null}
 				currentNoteTitle={currentNoteTitle}
 				recordingNoteId={recordingNoteId}
+				onPrefetchNote={onNotePrefetch}
 				onNoteSelect={onNoteSelect}
 				onNoteTitleChange={onNoteTitleChange}
 				onNoteTrashed={onNoteTrashed}

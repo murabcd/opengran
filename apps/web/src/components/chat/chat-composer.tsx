@@ -53,6 +53,7 @@ import {
 	Grid3x3,
 	type LucideIcon,
 	Plus,
+	Square,
 	X,
 } from "lucide-react";
 import * as React from "react";
@@ -89,6 +90,7 @@ type ChatComposerProps = {
 	onDraftKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>;
 	onCancelEdit?: () => void;
 	onSubmit: () => void | Promise<void>;
+	onStop: () => void;
 	isLoading: boolean;
 	selectedModel: (typeof chatModels)[number];
 	modelPopoverOpen: boolean;
@@ -133,6 +135,7 @@ export function ChatComposer({
 	onDraftKeyDown,
 	onCancelEdit,
 	onSubmit,
+	onStop,
 	isLoading,
 	selectedModel,
 	modelPopoverOpen,
@@ -245,6 +248,7 @@ export function ChatComposer({
 					draft={draft}
 					isLoading={isLoading}
 					onSubmit={onSubmit}
+					onStop={onStop}
 					modelPicker={
 						<ModelPicker
 							open={modelPopoverOpen}
@@ -532,6 +536,7 @@ function ChatComposerFooter({
 	draft,
 	isLoading,
 	onSubmit,
+	onStop,
 	modelPicker,
 	scopePicker,
 }: {
@@ -539,6 +544,7 @@ function ChatComposerFooter({
 	draft: string;
 	isLoading: boolean;
 	onSubmit: () => void | Promise<void>;
+	onStop: () => void;
 	modelPicker: React.ReactNode;
 	scopePicker: React.ReactNode;
 }) {
@@ -550,16 +556,25 @@ function ChatComposerFooter({
 			{modelPicker}
 			{scopePicker}
 			<InputGroupButton
-				aria-label="Send"
+				aria-label={isLoading ? "Stop streaming" : "Send"}
 				className="ml-auto rounded-full"
 				variant="default"
 				size="icon-sm"
-				disabled={!draft.trim() || isLoading}
+				disabled={!isLoading && !draft.trim()}
 				onClick={() => {
+					if (isLoading) {
+						onStop();
+						return;
+					}
+
 					void onSubmit();
 				}}
 			>
-				<ArrowUp className="size-4" />
+				{isLoading ? (
+					<Square className="size-3.5 fill-current" />
+				) : (
+					<ArrowUp className="size-4" />
+				)}
 			</InputGroupButton>
 		</InputGroupAddon>
 	);

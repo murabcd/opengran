@@ -17,6 +17,7 @@ type ChatHistoryListProps = {
 	isChatsLoading: boolean;
 	activeChatId: string | null;
 	onOpenChat: (chatId: string) => void;
+	onPrefetchChat: (chatId: string) => void;
 	onMoveToTrash: (chatId: string) => void;
 };
 
@@ -38,6 +39,7 @@ export function ChatHistoryList({
 	isChatsLoading,
 	activeChatId,
 	onOpenChat,
+	onPrefetchChat,
 	onMoveToTrash,
 }: ChatHistoryListProps) {
 	const groupedChats = groupChatsByDate(chats);
@@ -77,6 +79,7 @@ export function ChatHistoryList({
 												chat={chat}
 												activeChatId={activeChatId}
 												onOpenChat={onOpenChat}
+												onPrefetchChat={onPrefetchChat}
 												onMoveToTrash={onMoveToTrash}
 											/>
 										);
@@ -107,11 +110,13 @@ function ChatHistoryItem({
 	chat,
 	activeChatId,
 	onOpenChat,
+	onPrefetchChat,
 	onMoveToTrash,
 }: {
 	chat: Doc<"chats">;
 	activeChatId: string | null;
 	onOpenChat: (chatId: string) => void;
+	onPrefetchChat: (chatId: string) => void;
 	onMoveToTrash: (chatId: string) => void;
 }) {
 	const storedChatId = getChatId(chat);
@@ -130,6 +135,9 @@ function ChatHistoryItem({
 			<button
 				type="button"
 				onClick={() => onOpenChat(storedChatId)}
+				onFocus={() => onPrefetchChat(storedChatId)}
+				onMouseEnter={() => onPrefetchChat(storedChatId)}
+				onPointerDown={() => onPrefetchChat(storedChatId)}
 				className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left"
 			>
 				<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">

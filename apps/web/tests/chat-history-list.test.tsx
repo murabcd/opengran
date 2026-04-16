@@ -209,6 +209,7 @@ describe("ChatHistoryList", () => {
 				isChatsLoading={false}
 				activeChatId={null}
 				onOpenChat={vi.fn()}
+				onPrefetchChat={vi.fn()}
 				onMoveToTrash={onMoveToTrash}
 			/>,
 		);
@@ -247,6 +248,7 @@ describe("ChatHistoryList", () => {
 				isChatsLoading={false}
 				activeChatId={null}
 				onOpenChat={vi.fn()}
+				onPrefetchChat={vi.fn()}
 				onMoveToTrash={vi.fn()}
 			/>,
 		);
@@ -270,5 +272,41 @@ describe("ChatHistoryList", () => {
 		await waitFor(() => {
 			expect(toastSuccessMock).toHaveBeenCalledWith("Chat renamed");
 		});
+	});
+
+	it("prefetches a chat on hover and focus before opening it", async () => {
+		const { ChatHistoryList } = await import(
+			"../src/components/chat/chat-history-list"
+		);
+		const onPrefetchChat = vi.fn();
+
+		render(
+			<ChatHistoryList
+				chats={[
+					{
+						_id: "chat-1",
+						_creationTime: Date.now(),
+						authorName: "Murad",
+						createdAt: Date.now(),
+						chatId: "chat-1",
+						noteId: undefined,
+						title: "Warm chat",
+						updatedAt: Date.now(),
+					} as never,
+				]}
+				isChatsLoading={false}
+				activeChatId={null}
+				onOpenChat={vi.fn()}
+				onPrefetchChat={onPrefetchChat}
+				onMoveToTrash={vi.fn()}
+			/>,
+		);
+
+		const [openButton] = screen.getAllByRole("button", { name: /Warm chat/i });
+		fireEvent.mouseEnter(openButton);
+		fireEvent.focus(openButton);
+
+		expect(onPrefetchChat).toHaveBeenCalledWith("chat-1");
+		expect(onPrefetchChat).toHaveBeenCalledTimes(2);
 	});
 });

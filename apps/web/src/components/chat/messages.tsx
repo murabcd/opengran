@@ -239,7 +239,7 @@ export function ChatMessages({
 										<CollapsibleMessageContent
 											role={message.role}
 											text={renderedText}
-											isAnimating={isStreamingAssistantMessage}
+											isAnimating={Boolean(isStreamingAssistantMessage)}
 											streamdownClassName="note-streamdown"
 										/>
 									)}

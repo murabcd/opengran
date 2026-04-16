@@ -13,14 +13,108 @@ import { ActiveWorkspaceProvider } from "../src/hooks/use-active-workspace";
 const useChatMock = vi.fn();
 const useMutationMock = vi.fn();
 const useQueryMock = vi.fn();
+const useConvexMock = vi.fn();
+const convexQueryMock = vi.fn();
 const useNoteTranscriptSessionMock = vi.fn();
+const useTranscriptionSessionMock = vi.fn();
 const useSidebarShellMock = vi.fn();
 const useSidebarRightMock = vi.fn();
 const useDockedPanelWidthsMock = vi.fn();
 const convexTokenMock = vi.fn();
+const configureTranscriptionSessionMock = vi.fn();
 const regenerateMock = vi.fn();
 const scrollToBottomMock = vi.fn();
 const useStickyScrollToBottomMock = vi.fn();
+const functionNameSymbol = Symbol.for("functionName");
+
+const getFunctionName = (query: unknown) =>
+	typeof query === "object" && query !== null
+		? (query as Record<symbol, string | undefined>)[functionNameSymbol]
+		: undefined;
+
+const createNoteChats = (title = "New chat") => [
+	{
+		_id: "chat-doc-1",
+		_creationTime: 1,
+		chatId: "chat-1",
+		createdAt: 1,
+		title,
+		updatedAt: 1,
+	},
+];
+
+const createNoteComposerQueryMock = ({
+	noteChats = createNoteChats(),
+	currentChatSession = {
+		title: "New chat",
+	},
+	recipes = [],
+	userPreferences = {
+		transcriptionLanguage: null,
+	},
+}: {
+	noteChats?: unknown;
+	currentChatSession?: unknown;
+	recipes?: unknown;
+	userPreferences?: unknown;
+} = {}) => {
+	return (query: unknown) => {
+		const functionName = getFunctionName(query);
+
+		if (functionName === "chats:listForNote") {
+			return noteChats;
+		}
+
+		if (functionName === "chats:getSession") {
+			return currentChatSession;
+		}
+
+		if (functionName === "recipes:list") {
+			return recipes;
+		}
+
+		if (functionName === "userPreferences:get") {
+			return userPreferences;
+		}
+
+		return undefined;
+	};
+};
+
+const originalUseQueryMockImplementation =
+	useQueryMock.mockImplementation.bind(useQueryMock);
+
+useQueryMock.mockImplementation = ((implementation) =>
+	originalUseQueryMockImplementation((query: unknown, ...args: unknown[]) => {
+		if (implementation.length === 0) {
+			const legacyResults = [
+				implementation(),
+				implementation(),
+				implementation(),
+				implementation(),
+				implementation(),
+			];
+			const functionName = getFunctionName(query);
+
+			if (functionName === "chats:listForNote") {
+				return legacyResults[0];
+			}
+
+			if (functionName === "chats:getSession") {
+				return legacyResults[2];
+			}
+
+			if (functionName === "recipes:list") {
+				return legacyResults[3];
+			}
+
+			if (functionName === "userPreferences:get") {
+				return legacyResults[4];
+			}
+		}
+
+		return implementation(query, ...args);
+	})) as typeof useQueryMock.mockImplementation;
 
 vi.mock("@ai-sdk/react", () => ({
 	useChat: useChatMock,
@@ -33,6 +127,7 @@ vi.mock("ai", () => ({
 vi.mock("convex/react", () => ({
 	useMutation: useMutationMock,
 	useQuery: useQueryMock,
+	useConvex: useConvexMock,
 }));
 
 vi.mock("@workspace/ui/components/button", () => ({
@@ -178,6 +273,10 @@ vi.mock("../src/hooks/use-note-transcript-session", () => ({
 	useNoteTranscriptSession: useNoteTranscriptSessionMock,
 }));
 
+vi.mock("../src/hooks/use-transcription-session", () => ({
+	useTranscriptionSession: useTranscriptionSessionMock,
+}));
+
 vi.mock("../src/hooks/use-sticky-scroll-to-bottom", () => ({
 	useStickyScrollToBottom: () => useStickyScrollToBottomMock(),
 }));
@@ -186,6 +285,14 @@ vi.mock("../src/lib/auth-client", () => ({
 	authClient: {
 		convex: {
 			token: convexTokenMock,
+		},
+	},
+}));
+
+vi.mock("../src/lib/transcription-session-manager", () => ({
+	transcriptionSessionManager: {
+		controller: {
+			configure: configureTranscriptionSessionMock,
 		},
 	},
 }));
@@ -218,7 +325,19 @@ describe("NoteComposer", () => {
 			rightInsetPanelWidth: null,
 		});
 
-		useQueryMock.mockReturnValue(undefined);
+		useQueryMock.mockImplementation(createNoteComposerQueryMock());
+		useConvexMock.mockReturnValue({
+			query: convexQueryMock,
+		});
+		convexQueryMock.mockResolvedValue([]);
+		configureTranscriptionSessionMock.mockReset();
+		configureTranscriptionSessionMock.mockImplementation(() => {});
+		useTranscriptionSessionMock.mockReset();
+		useTranscriptionSessionMock.mockReturnValue({
+			isConnecting: false,
+			isListening: false,
+			scopeKey: null,
+		});
 		useMutationMock.mockReturnValue(vi.fn().mockResolvedValue(undefined));
 		regenerateMock.mockReset();
 		scrollToBottomMock.mockReset();
@@ -309,6 +428,45 @@ describe("NoteComposer", () => {
 		expect(
 			screen.queryByRole("button", { name: "Audio visualization" }),
 		).toBeNull();
+	});
+
+	it("shows a stop button while streaming and stops the response", async () => {
+		const stop = vi.fn();
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		useChatMock.mockReturnValue({
+			error: undefined,
+			messages: [
+				{
+					id: "msg-1",
+					role: "assistant",
+					parts: [{ type: "text", text: "Working..." }],
+				},
+			],
+			sendMessage: vi.fn(),
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			status: "streaming",
+			stop,
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<NoteComposer
+					noteContext={{
+						noteId: "note-1",
+						text: "",
+						title: "New note",
+					}}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Stop streaming" }));
+
+		expect(stop).toHaveBeenCalledTimes(1);
 	});
 
 	it("shows a floating scroll button when the note chat is away from the bottom", async () => {
@@ -563,6 +721,7 @@ describe("NoteComposer", () => {
 				chatTitle="New chat"
 				currentChatId="chat-1"
 				groupedNoteChats={{ previous: [], today: [] }}
+				handlePrefetchNoteChat={vi.fn()}
 				noteChats={[]}
 				onHideChat={vi.fn()}
 				onNewChat={vi.fn()}
@@ -581,6 +740,61 @@ describe("NoteComposer", () => {
 		).toBeDefined();
 		expect(screen.getByRole("button", { name: "Hide chat" })).toBeDefined();
 		expect(screen.getByRole("button", { name: "New chat" })).toBeDefined();
+	});
+
+	it("preconfigures live transcription for the active note scope", async () => {
+		useNoteTranscriptSessionMock.mockReturnValue({
+			autoStartKey: "note-1:capture",
+			captureScopeKey: "note:note-1",
+			currentNoteScopeKey: "note:note-1",
+			displayTranscriptEntries: [],
+			exportTranscript: "",
+			fullTranscript: "",
+			handleGenerateNotes: vi.fn(),
+			isGeneratingNotes: false,
+			isCurrentNoteSpeechListening: false,
+			isRefiningTranscript: false,
+			isSpeechListening: false,
+			liveTranscriptEntries: [],
+			onLiveTranscriptChange: vi.fn(),
+			onRecoveryStatusChange: vi.fn(),
+			onSystemAudioRecordingReady: vi.fn(),
+			onSystemAudioStatusChange: vi.fn(),
+			onUtterance: vi.fn(),
+			recoveryStatus: {
+				attempt: 0,
+				maxAttempts: 0,
+				message: null,
+				state: "idle",
+			},
+			scrollToBottom: vi.fn(),
+			systemAudioStatus: { sourceMode: "display-media", state: "ready" },
+			transcriptViewportRef: { current: null },
+			visibleTranscriptEntries: [],
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+				autoStartTranscription
+			/>,
+		);
+
+		await waitFor(() => {
+			expect(configureTranscriptionSessionMock).toHaveBeenCalledWith({
+				autoStartKey: "note-1:capture",
+				lang: undefined,
+				scopeKey: "note:note-1",
+			});
+		});
 	});
 
 	it("closes the inline transcript panel on outside press without changing listening state", async () => {
@@ -1731,58 +1945,25 @@ describe("NoteComposer", () => {
 		globalThis.ResizeObserver =
 			ResizeObserverMock as unknown as typeof ResizeObserver;
 
-		let queryCall = 0;
-
-		useQueryMock.mockImplementation(() => {
-			const index = queryCall % 5;
-			queryCall += 1;
-
-			if (index === 0) {
-				return [
-					{
-						_id: "chat-doc-1",
-						_creationTime: 1,
-						chatId: "chat-1",
-						createdAt: 1,
-						title: "New chat",
-						updatedAt: 1,
-					},
-				];
-			}
-
-			if (index === 1) {
-				return [
-					{
-						id: "assistant-1",
-						role: "assistant",
-						partsJson: JSON.stringify([
-							{
-								type: "text",
-								text: "Reply with one of these, or tell me a different project name.",
-							},
-						]),
-					},
-				];
-			}
-
-			if (index === 2) {
-				return {
+		useQueryMock.mockImplementation(
+			createNoteComposerQueryMock({
+				currentChatSession: {
 					title: "Support bot prd options",
-				};
-			}
-
-			if (index === 3) {
-				return [];
-			}
-
-			if (index === 4) {
-				return {
-					transcriptionLanguage: null,
-				};
-			}
-
-			return undefined;
-		});
+				},
+			}),
+		);
+		convexQueryMock.mockResolvedValue([
+			{
+				id: "assistant-1",
+				role: "assistant",
+				partsJson: JSON.stringify([
+					{
+						type: "text",
+						text: "Reply with one of these, or tell me a different project name.",
+					},
+				]),
+			},
+		]);
 
 		const { NoteComposer } = await import(
 			"../src/components/note/note-composer"

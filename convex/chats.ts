@@ -45,11 +45,19 @@ const chatMessageFields = {
 
 const chatMessageValidator = v.object(chatMessageFields);
 
-const storedUiMessageValidator = v.object({
+const storedUiMessageSnapshotFields = {
 	id: v.string(),
 	role: chatRoleValidator,
 	partsJson: v.string(),
 	metadataJson: v.optional(v.string()),
+};
+
+const storedUiMessageSnapshotValidator = v.object(
+	storedUiMessageSnapshotFields,
+);
+
+const storedUiMessageValidator = v.object({
+	...storedUiMessageSnapshotFields,
 	text: v.string(),
 	createdAt: v.number(),
 });
@@ -150,6 +158,44 @@ const getOwnedChatById = async (
 				.eq("chatId", chatId),
 		)
 		.unique();
+
+const getOwnedActiveChatById = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+	chatId: string,
+) => {
+	await requireOwnedWorkspace(ctx, ownerTokenIdentifier, workspaceId);
+	const chat = await getOwnedChatById(
+		ctx,
+		ownerTokenIdentifier,
+		workspaceId,
+		clampWhitespace(chatId),
+	);
+
+	if (!chat || chat.isArchived) {
+		return null;
+	}
+
+	return chat;
+};
+
+const getStoredChatMessages = async (
+	ctx: QueryCtx | MutationCtx,
+	chatId: Doc<"chats">["_id"],
+) =>
+	await ctx.db
+		.query("chatMessages")
+		.withIndex("by_chatId_and_createdAt", (q) => q.eq("chatId", chatId))
+		.order("desc")
+		.take(MAX_RETURNED_CHAT_MESSAGES);
+
+const toStoredUiMessageSnapshot = (message: Doc<"chatMessages">) => ({
+	id: message.messageId,
+	role: message.role,
+	partsJson: message.partsJson,
+	metadataJson: message.metadataJson,
+});
 
 const requireOwnedNoteId = async (
 	ctx: QueryCtx | MutationCtx,
@@ -348,19 +394,12 @@ export const getSession = query({
 	returns: v.union(chatValidator, v.null()),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
-		const chat = await getOwnedChatById(
+		return await getOwnedActiveChatById(
 			ctx,
 			ownerTokenIdentifier,
 			args.workspaceId,
-			clampWhitespace(args.chatId),
+			args.chatId,
 		);
-
-		if (!chat || chat.isArchived) {
-			return null;
-		}
-
-		return chat;
 	},
 });
 
@@ -372,8 +411,7 @@ export const getMessages = query({
 	returns: v.array(storedUiMessageValidator),
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
-		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
-		const chat = await getOwnedChatById(
+		const chat = await getOwnedActiveChatById(
 			ctx,
 			ownerTokenIdentifier,
 			args.workspaceId,
@@ -384,24 +422,38 @@ export const getMessages = query({
 			return [];
 		}
 
-		if (chat.isArchived) {
-			return [];
-		}
-
-		const messages = await ctx.db
-			.query("chatMessages")
-			.withIndex("by_chatId_and_createdAt", (q) => q.eq("chatId", chat._id))
-			.order("desc")
-			.take(MAX_RETURNED_CHAT_MESSAGES);
+		const messages = await getStoredChatMessages(ctx, chat._id);
 
 		return messages.reverse().map((message) => ({
-			id: message.messageId,
-			role: message.role,
-			partsJson: message.partsJson,
-			metadataJson: message.metadataJson,
+			...toStoredUiMessageSnapshot(message),
 			text: message.text,
 			createdAt: message.createdAt,
 		}));
+	},
+});
+
+export const getMessagesSnapshot = query({
+	args: {
+		workspaceId: v.id("workspaces"),
+		chatId: v.string(),
+	},
+	returns: v.array(storedUiMessageSnapshotValidator),
+	handler: async (ctx, args) => {
+		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		const chat = await getOwnedActiveChatById(
+			ctx,
+			ownerTokenIdentifier,
+			args.workspaceId,
+			args.chatId,
+		);
+
+		if (!chat) {
+			return [];
+		}
+
+		const messages = await getStoredChatMessages(ctx, chat._id);
+
+		return messages.reverse().map(toStoredUiMessageSnapshot);
 	},
 });
 

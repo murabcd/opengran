@@ -35,7 +35,13 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
-import { useAction, useConvexAuth, useMutation, useQuery } from "convex/react";
+import {
+	useAction,
+	useConvex,
+	useConvexAuth,
+	useMutation,
+	useQuery,
+} from "convex/react";
 import {
 	ArrowDown,
 	Copy,
@@ -85,6 +91,10 @@ import {
 	ActiveWorkspaceProvider,
 	useActiveWorkspaceId,
 } from "@/hooks/use-active-workspace";
+import {
+	prefetchChatMessagesSnapshot,
+	useChatMessagesSnapshot,
+} from "@/hooks/use-chat-messages-snapshot";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
 import {
@@ -161,6 +171,7 @@ const useAppShellState = ({
 	workspaces: Array<WorkspaceRecord>;
 	initialDesktopMac: boolean;
 }) => {
+	const convex = useConvex();
 	const { isAuthenticated: isConvexAuthenticated } = useConvexAuth();
 	const [currentView, setCurrentView] = React.useState<AppView>(() => {
 		if (typeof window === "undefined") {
@@ -396,15 +407,14 @@ const useAppShellState = ({
 			? { workspaceId: resolvedActiveWorkspaceId }
 			: "skip",
 	);
-	const selectedChatMessages = useQuery(
-		api.chats.getMessages,
-		currentView === "chat" && currentChatId && resolvedActiveWorkspaceId
-			? {
-					workspaceId: resolvedActiveWorkspaceId,
-					chatId: currentChatId,
-				}
-			: "skip",
-	);
+	const {
+		messages: selectedChatMessages,
+		isLoading: isInitialChatMessagesLoading,
+	} = useChatMessagesSnapshot({
+		chatId: currentView === "chat" ? currentChatId : null,
+		workspaceId: resolvedActiveWorkspaceId,
+		enabled: currentView === "chat",
+	});
 	const normalizedRouteNoteId = useQuery(
 		api.notes.normalizeId,
 		currentView === "note" && currentRouteNoteId && currentNoteId === null
@@ -789,6 +799,10 @@ const useAppShellState = ({
 		}
 	}, []);
 
+	const handlePrefetchNote = React.useCallback((_noteId: Id<"notes">) => {
+		void preloadNotePageSurface();
+	}, []);
+
 	const openNote = React.useCallback(
 		(
 			noteId: Id<"notes">,
@@ -798,7 +812,7 @@ const useAppShellState = ({
 				stopCaptureWhenMeetingEnds?: boolean;
 			},
 		) => {
-			void preloadNotePageSurface();
+			handlePrefetchNote(noteId);
 			setInboxOpen(shouldKeepPinnedInboxOpen());
 			setCurrentView("note");
 			setSettingsOpen(false);
@@ -826,7 +840,7 @@ const useAppShellState = ({
 				})}`,
 			);
 		},
-		[shouldKeepPinnedInboxOpen],
+		[handlePrefetchNote, shouldKeepPinnedInboxOpen],
 	);
 
 	const handleCreateNote = React.useCallback(
@@ -1133,9 +1147,26 @@ const useAppShellState = ({
 		},
 		[handleViewChange, resolvedCurrentNoteId],
 	);
+	const handlePrefetchChat = React.useCallback(
+		(chatId: string) => {
+			if (!resolvedActiveWorkspaceId) {
+				return;
+			}
+
+			void prefetchChatMessagesSnapshot({
+				chatId,
+				convex,
+				workspaceId: resolvedActiveWorkspaceId,
+			}).catch((error) => {
+				console.error("Failed to prefetch chat messages snapshot", error);
+			});
+		},
+		[convex, resolvedActiveWorkspaceId],
+	);
 	const handleOpenChat = React.useCallback(
 		(chatId: string) => {
 			void preloadChatPageSurface();
+			handlePrefetchChat(chatId);
 			setInboxOpen(shouldKeepPinnedInboxOpen());
 			setCurrentView("chat");
 			setSettingsOpen(false);
@@ -1147,7 +1178,7 @@ const useAppShellState = ({
 				`/chat?chatId=${encodeURIComponent(chatId)}`,
 			);
 		},
-		[shouldKeepPinnedInboxOpen],
+		[handlePrefetchChat, shouldKeepPinnedInboxOpen],
 	);
 
 	const handleNewChat = React.useCallback(() => {
@@ -1192,6 +1223,34 @@ const useAppShellState = ({
 		() => toStoredChatMessages(selectedChatMessages ?? []),
 		[selectedChatMessages],
 	);
+
+	React.useEffect(() => {
+		if ((notes?.length ?? 0) === 0 && (sharedNotes?.length ?? 0) === 0) {
+			return;
+		}
+
+		const preloadNotesSurface = () => {
+			void preloadNotePageSurface();
+		};
+
+		if ("requestIdleCallback" in globalThis) {
+			const idleCallbackId = globalThis.requestIdleCallback(
+				preloadNotesSurface,
+				{
+					timeout: 1_000,
+				},
+			);
+
+			return () => {
+				globalThis.cancelIdleCallback(idleCallbackId);
+			};
+		}
+
+		const timeoutId = globalThis.setTimeout(preloadNotesSurface, 150);
+		return () => {
+			globalThis.clearTimeout(timeoutId);
+		};
+	}, [notes, sharedNotes]);
 
 	return {
 		activeWorkspaceId: resolvedActiveWorkspaceId,
@@ -1251,6 +1310,8 @@ const useAppShellState = ({
 		handleOpenCalendarEventNote,
 		handleOpenCalendarSettings,
 		handleOpenChat,
+		handlePrefetchChat,
+		handlePrefetchNote,
 		handleQuickNote,
 		handleSettingsOpenChange,
 		handleSignOut,
@@ -1258,6 +1319,7 @@ const useAppShellState = ({
 		handleWorkspaceCreate,
 		inboxOpen,
 		initialChatMessages,
+		isInitialChatMessagesLoading,
 		isDesktopMac,
 		isLoadingUpcomingCalendarEvents,
 		isResolvingCurrentNoteRoute: isResolvingCurrentNote,
@@ -1823,11 +1885,13 @@ const AppShellContent = React.memo(function AppShellContent({
 	onOpenCalendarSettings,
 	chatComposerId,
 	initialChatMessages,
+	isInitialChatMessagesLoading,
 	chats,
 	currentChatId,
 	activeWorkspace,
 	onChatPersisted,
 	onOpenChat,
+	onPrefetchChat,
 	onChatRemoved,
 	onOpenConnectionsSettings,
 	onCreateNoteFromChatResponse,
@@ -1867,11 +1931,13 @@ const AppShellContent = React.memo(function AppShellContent({
 	onOpenCalendarSettings: () => void;
 	chatComposerId: string;
 	initialChatMessages: UIMessage[];
+	isInitialChatMessagesLoading: boolean;
 	chats: Array<Doc<"chats">> | undefined;
 	currentChatId: string | null;
 	activeWorkspace: WorkspaceRecord | null;
 	onChatPersisted?: (chatId: string) => void;
 	onOpenChat: (chatId: string) => void;
+	onPrefetchChat: (chatId: string) => void;
 	onChatRemoved: (chatId: string) => void;
 	onOpenConnectionsSettings: () => void;
 	onCreateNoteFromChatResponse: (
@@ -1987,11 +2053,13 @@ const AppShellContent = React.memo(function AppShellContent({
 				key={chatComposerId}
 				chatId={chatComposerId}
 				initialMessages={initialChatMessages}
+				isInitialMessagesLoading={isInitialChatMessagesLoading}
 				onChatPersisted={onChatPersisted}
 				chats={chats ?? []}
 				isChatsLoading={chats === undefined}
 				activeChatId={currentChatId}
 				onOpenChat={onOpenChat}
+				onPrefetchChat={onPrefetchChat}
 				onChatRemoved={onChatRemoved}
 				activeWorkspace={activeWorkspace}
 				onOpenConnectionsSettings={onOpenConnectionsSettings}
@@ -2083,6 +2151,7 @@ export function AuthenticatedAppShell({
 					currentNoteId={controller.currentNoteId}
 					currentNoteTitle={controller.currentNoteTitle}
 					onChatSelect={controller.handleOpenChat}
+					onNotePrefetch={controller.handlePrefetchNote}
 					onNoteSelect={controller.openNote}
 					onNoteTitleChange={controller.setCurrentNoteTitle}
 					onNoteTrashed={controller.handleNoteTrashed}
@@ -2131,11 +2200,15 @@ export function AuthenticatedAppShell({
 						onOpenCalendarSettings={controller.handleOpenCalendarSettings}
 						chatComposerId={controller.chatComposerId}
 						initialChatMessages={controller.initialChatMessages}
+						isInitialChatMessagesLoading={
+							controller.isInitialChatMessagesLoading
+						}
 						chats={controller.chats}
 						currentChatId={controller.currentChatId}
 						activeWorkspace={activeWorkspace}
 						onChatPersisted={controller.handleChatPersisted}
 						onOpenChat={controller.handleOpenChat}
+						onPrefetchChat={controller.handlePrefetchChat}
 						onChatRemoved={controller.handleChatRemoved}
 						onOpenConnectionsSettings={handleOpenConnectionsSettings}
 						onCreateNoteFromChatResponse={

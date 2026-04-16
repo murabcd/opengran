@@ -54,7 +54,7 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
-import { useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import {
 	ArrowDown,
 	ArrowUp,
@@ -72,6 +72,7 @@ import {
 	Plus,
 	RotateCcw,
 	SlidersHorizontal,
+	Square,
 	Trash2,
 	WandSparkles,
 	X,
@@ -100,11 +101,17 @@ import {
 	useResizeHandle,
 } from "@/components/layout/resizable-side-panel";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
+import {
+	prefetchChatMessagesSnapshot,
+	useChatMessagesSnapshot,
+} from "@/hooks/use-chat-messages-snapshot";
 import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
+import { useTranscriptionSession } from "@/hooks/use-transcription-session";
 import { getChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import { getChatText } from "@/lib/chat-message";
+import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import { ENHANCED_NOTE_TEMPLATE_SLUG } from "@/lib/note-templates";
@@ -120,6 +127,7 @@ import {
 	PRIMARY_TRANSCRIPTION_LANGUAGE_OPTIONS,
 	parseTranscriptionLanguageSelectValue,
 } from "@/lib/transcription-languages";
+import { transcriptionSessionManager } from "@/lib/transcription-session-manager";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { SpeechInput } from "../ai-elements/speech-input";
@@ -251,23 +259,6 @@ type NoteComposerProps = {
 	onEnhanceTranscript?: (transcript: string) => Promise<void>;
 	stopTranscriptionWhenMeetingEnds?: boolean;
 };
-
-const toStoredChatMessages = (
-	messages: Array<{
-		id: string;
-		role: "system" | "user" | "assistant";
-		partsJson: string;
-		metadataJson?: string;
-	}>,
-): UIMessage[] =>
-	messages.map((message) => ({
-		id: message.id,
-		role: message.role,
-		metadata: message.metadataJson
-			? (JSON.parse(message.metadataJson) as UIMessage["metadata"])
-			: undefined,
-		parts: JSON.parse(message.partsJson) as UIMessage["parts"],
-	}));
 
 const isSameCalendarDay = (left: Date, right: Date) =>
 	left.getFullYear() === right.getFullYear() &&
@@ -467,6 +458,7 @@ const useNoteComposerController = ({
 		],
 	);
 	const activeWorkspaceId = useActiveWorkspaceId();
+	const convex = useConvex();
 	const previousChatIdRef = React.useRef(currentChatId);
 	const previousNoteIdRef = React.useRef(noteId);
 	const noteChats = useQuery(
@@ -478,15 +470,14 @@ const useNoteComposerController = ({
 				}
 			: "skip",
 	);
-	const storedMessages = useQuery(
-		api.chats.getMessages,
-		activeWorkspaceId
-			? {
-					workspaceId: activeWorkspaceId,
-					chatId: currentChatId,
-				}
-			: "skip",
+	const hasStoredCurrentChat = React.useMemo(
+		() => (noteChats ?? []).some((chat) => chat.chatId === currentChatId),
+		[currentChatId, noteChats],
 	);
+	const { messages: storedMessages } = useChatMessagesSnapshot({
+		chatId: hasStoredCurrentChat ? currentChatId : null,
+		workspaceId: activeWorkspaceId,
+	});
 	const currentChatSession = useQuery(
 		api.chats.getSession,
 		activeWorkspaceId
@@ -513,6 +504,7 @@ const useNoteComposerController = ({
 		transcriptionLanguage,
 	);
 	const shouldLoadStoredTranscriptHistory = panelModeState === "transcript";
+	const transcriptionSessionState = useTranscriptionSession();
 
 	const handleTranscriptionLanguageChange = React.useCallback(
 		async (value: string) => {
@@ -543,6 +535,52 @@ const useNoteComposerController = ({
 	});
 	const isCurrentNoteSpeechListening =
 		transcriptSession.isCurrentNoteSpeechListening;
+	const hasActiveTranscriptionInDifferentScope =
+		transcriptionSessionState.scopeKey !== null &&
+		transcriptionSessionState.scopeKey !==
+			transcriptSession.currentNoteScopeKey &&
+		(transcriptionSessionState.isListening ||
+			transcriptionSessionState.isConnecting);
+
+	const handlePrefetchNoteChat = React.useCallback(
+		(chatId: string) => {
+			if (!activeWorkspaceId) {
+				return;
+			}
+
+			void prefetchChatMessagesSnapshot({
+				chatId,
+				convex,
+				workspaceId: activeWorkspaceId,
+			}).catch((error) => {
+				console.error("Failed to prefetch note chat snapshot", error);
+			});
+		},
+		[activeWorkspaceId, convex],
+	);
+
+	React.useEffect(() => {
+		if (!isTranscriptionLanguageReady) {
+			return;
+		}
+
+		transcriptionSessionManager.controller.configure({
+			autoStartKey: hasActiveTranscriptionInDifferentScope
+				? null
+				: transcriptSession.autoStartKey,
+			lang: transcriptionLanguage ?? undefined,
+			scopeKey: hasActiveTranscriptionInDifferentScope
+				? transcriptionSessionState.scopeKey
+				: transcriptSession.currentNoteScopeKey,
+		});
+	}, [
+		hasActiveTranscriptionInDifferentScope,
+		isTranscriptionLanguageReady,
+		transcriptSession.autoStartKey,
+		transcriptSession.currentNoteScopeKey,
+		transcriptionLanguage,
+		transcriptionSessionState.scopeKey,
+	]);
 
 	const transport = React.useMemo(
 		() =>
@@ -560,23 +598,14 @@ const useNoteComposerController = ({
 					api: "/api/chat",
 					headers,
 					credentials,
-					body: body?.convexToken
-						? {
-								...body,
-								id,
-								message: messages[messages.length - 1],
-								trigger,
-								messageId,
-								workspaceId: activeWorkspaceId,
-							}
-						: {
-								...body,
-								id,
-								messages,
-								trigger,
-								messageId,
-								workspaceId: activeWorkspaceId,
-							},
+					body: {
+						...body,
+						id,
+						message: messages[messages.length - 1],
+						trigger,
+						messageId,
+						workspaceId: activeWorkspaceId,
+					},
 				}),
 			}),
 		[activeWorkspaceId],
@@ -599,22 +628,34 @@ const useNoteComposerController = ({
 		messages: initialMessages,
 		transport,
 	});
+	const initialMessagesSeedKey = React.useMemo(
+		() => getUIMessageSeedKey(initialMessages),
+		[initialMessages],
+	);
+	const appliedInitialMessagesSeedKeyRef = React.useRef(initialMessagesSeedKey);
 
 	React.useEffect(() => {
 		if (previousChatIdRef.current !== currentChatId) {
 			previousChatIdRef.current = currentChatId;
+			appliedInitialMessagesSeedKeyRef.current = initialMessagesSeedKey;
 			setMessages(initialMessages);
 			return;
 		}
 
-		if (initialMessages.length === 0) {
-			return;
-		}
+		setMessages((currentMessages) => {
+			const currentMessagesSeedKey = getUIMessageSeedKey(currentMessages);
 
-		setMessages((currentMessages) =>
-			currentMessages.length === 0 ? initialMessages : currentMessages,
-		);
-	}, [currentChatId, initialMessages, setMessages]);
+			if (
+				currentMessages.length === 0 ||
+				currentMessagesSeedKey === appliedInitialMessagesSeedKeyRef.current
+			) {
+				appliedInitialMessagesSeedKeyRef.current = initialMessagesSeedKey;
+				return initialMessages;
+			}
+
+			return currentMessages;
+		});
+	}, [currentChatId, initialMessages, initialMessagesSeedKey, setMessages]);
 
 	const resetTextareaHeight = React.useCallback(() => {
 		if (!textareaRef.current) {
@@ -1382,6 +1423,7 @@ const useNoteComposerController = ({
 			stop();
 		}
 
+		handlePrefetchNoteChat(chatId);
 		setCurrentChatId(chatId);
 		setEditingMessageId(null);
 		if (presentationMode === "inline") {
@@ -1441,6 +1483,7 @@ const useNoteComposerController = ({
 			stop();
 		}
 
+		handlePrefetchNoteChat(latestNoteChat.chatId);
 		closeRightSidebar();
 		setPresentationMode("inline");
 		setCurrentChatId(latestNoteChat.chatId);
@@ -1449,6 +1492,7 @@ const useNoteComposerController = ({
 		setPanelMode("chat");
 	}, [
 		closeRightSidebar,
+		handlePrefetchNoteChat,
 		isChatLoading,
 		latestNoteChat,
 		setPanelMode,
@@ -1516,6 +1560,7 @@ const useNoteComposerController = ({
 		liveTranscriptEntries: transcriptSession.liveTranscriptEntries,
 		message,
 		noteChats,
+		handlePrefetchNoteChat,
 		orderedTranscriptUtterances: transcriptSession.orderedTranscriptUtterances,
 		openDraftChat,
 		panelMode,
@@ -1534,6 +1579,7 @@ const useNoteComposerController = ({
 		setPanelMode,
 		setRecipePopoverOpen,
 		setSelectedRecipeSlug,
+		stop,
 		shouldShowInlinePanel,
 		textareaRef,
 		handleTranscriptionLanguageChange,
@@ -1878,6 +1924,7 @@ export function NoteChatHeader({
 	chatTitle,
 	currentChatId,
 	groupedNoteChats,
+	handlePrefetchNoteChat,
 	noteChats,
 	onHideChat,
 	onNewChat,
@@ -1892,6 +1939,7 @@ export function NoteChatHeader({
 	chatTitle: string;
 	currentChatId: string;
 	groupedNoteChats: ReturnType<typeof groupChatsForSelector>;
+	handlePrefetchNoteChat: (chatId: string) => void;
 	noteChats: NoteChatSummary[] | undefined;
 	onHideChat: () => void;
 	onNewChat: () => void;
@@ -1968,7 +2016,15 @@ export function NoteChatHeader({
 									<SelectGroup>
 										<SelectLabel>Today</SelectLabel>
 										{groupedNoteChats.today.map((chat) => (
-											<SelectItem key={chat._id} value={chat.chatId}>
+											<SelectItem
+												key={chat._id}
+												value={chat.chatId}
+												onFocus={() => handlePrefetchNoteChat(chat.chatId)}
+												onMouseEnter={() => handlePrefetchNoteChat(chat.chatId)}
+												onPointerDown={() =>
+													handlePrefetchNoteChat(chat.chatId)
+												}
+											>
 												<span className="truncate">{chat.title}</span>
 											</SelectItem>
 										))}
@@ -1978,7 +2034,15 @@ export function NoteChatHeader({
 									<SelectGroup>
 										<SelectLabel>Previous</SelectLabel>
 										{groupedNoteChats.previous.map((chat) => (
-											<SelectItem key={chat._id} value={chat.chatId}>
+											<SelectItem
+												key={chat._id}
+												value={chat.chatId}
+												onFocus={() => handlePrefetchNoteChat(chat.chatId)}
+												onMouseEnter={() => handlePrefetchNoteChat(chat.chatId)}
+												onPointerDown={() =>
+													handlePrefetchNoteChat(chat.chatId)
+												}
+											>
 												<span className="truncate">{chat.title}</span>
 											</SelectItem>
 										))}
@@ -2155,6 +2219,7 @@ function ChatInlinePopoverFooter({
 	handleTextareaChange,
 	hasMessage,
 	isChatLoading,
+	onStop,
 	isSidebarCompact = false,
 	message,
 	onRecipePopoverOpenChange,
@@ -2175,6 +2240,7 @@ function ChatInlinePopoverFooter({
 	handleTextareaChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
 	hasMessage: boolean;
 	isChatLoading: boolean;
+	onStop: () => void;
 	isSidebarCompact?: boolean;
 	message: string;
 	onRecipePopoverOpenChange: (open: boolean) => void;
@@ -2289,14 +2355,19 @@ function ChatInlinePopoverFooter({
 			>
 				{speechControls}
 				<InputGroupButton
-					type="submit"
+					type={isChatLoading ? "button" : "submit"}
 					variant="default"
 					size="icon-sm"
 					className="ml-auto rounded-full"
-					aria-label="Send message"
-					disabled={!hasMessage || isChatLoading}
+					aria-label={isChatLoading ? "Stop streaming" : "Send message"}
+					disabled={!isChatLoading && !hasMessage}
+					onClick={isChatLoading ? onStop : undefined}
 				>
-					<ArrowUp className="size-4" />
+					{isChatLoading ? (
+						<Square className="size-3.5 fill-current" />
+					) : (
+						<ArrowUp className="size-4" />
+					)}
 				</InputGroupButton>
 			</InputGroupAddon>
 		</InputGroup>
@@ -2476,6 +2547,7 @@ function ChatComposerForm({
 				handleTextareaChange={controller.handleTextareaChange}
 				hasMessage={controller.hasMessage}
 				isChatLoading={controller.isChatLoading}
+				onStop={controller.stop}
 				isSidebarCompact={controller.isSidebarPresentation}
 				message={controller.message}
 				onRecipePopoverOpenChange={controller.setRecipePopoverOpen}
@@ -2819,6 +2891,7 @@ function NoteComposerPanels({
 			chatTitle={controller.chatTitle}
 			currentChatId={controller.currentChatId}
 			groupedNoteChats={controller.groupedNoteChats}
+			handlePrefetchNoteChat={controller.handlePrefetchNoteChat}
 			noteChats={controller.noteChats}
 			onHideChat={controller.handleHideChat}
 			onNewChat={controller.openDraftChat}

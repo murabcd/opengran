@@ -151,3 +151,37 @@ test("truncating from an edited message removes that branch of the chat", async 
 
 	expect(messages).toHaveLength(0);
 });
+
+test("message snapshots return only replay fields", async () => {
+	const { asOwner, workspaceId } = await createWorkspace();
+
+	await asOwner.mutation(api.chats.saveMessage, {
+		workspaceId,
+		chatId: "chat-snapshot",
+		preview: "Prompt",
+		message: {
+			id: "msg-snapshot-1",
+			role: "user",
+			partsJson: JSON.stringify([{ type: "text", text: "Prompt" }]),
+			metadataJson: JSON.stringify({ source: "test" }),
+			text: "Prompt",
+			createdAt: 2_500,
+		},
+	});
+
+	const snapshots = await asOwner.query(api.chats.getMessagesSnapshot, {
+		workspaceId,
+		chatId: "chat-snapshot",
+	});
+
+	expect(snapshots).toEqual([
+		{
+			id: "msg-snapshot-1",
+			role: "user",
+			partsJson: JSON.stringify([{ type: "text", text: "Prompt" }]),
+			metadataJson: JSON.stringify({ source: "test" }),
+		},
+	]);
+	expect("text" in snapshots[0]).toBe(false);
+	expect("createdAt" in snapshots[0]).toBe(false);
+});

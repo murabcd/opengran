@@ -524,7 +524,7 @@ export const handleChatRequest = async (request: Request) => {
 			message && convexClient && id && resolvedWorkspaceId
 				? [
 						...fromStoredMessages(
-							await convexClient.query(api.chats.getMessages, {
+							await convexClient.query(api.chats.getMessagesSnapshot, {
 								workspaceId: resolvedWorkspaceId,
 								chatId: id,
 							}),

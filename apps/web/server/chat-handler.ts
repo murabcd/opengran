@@ -36,7 +36,6 @@ type ChatRequestBody = {
 	trigger?: "submit-message" | "regenerate-message";
 	messageId?: string;
 	message?: UIMessage;
-	messages?: UIMessage[];
 	model?: string;
 	webSearchEnabled?: boolean;
 	appsEnabled?: boolean;
@@ -417,7 +416,6 @@ export const handleChatRequest = async (
 		trigger,
 		messageId,
 		message,
-		messages = [],
 		model,
 		workspaceId,
 		webSearchEnabled = false,
@@ -432,24 +430,23 @@ export const handleChatRequest = async (
 	const resolvedWorkspaceId =
 		(workspaceId as Id<"workspaces"> | null | undefined) ?? null;
 
-	if (!Array.isArray(messages)) {
+	if (!message) {
 		sendJson(response, 400, {
-			error: "Invalid chat payload.",
+			error: "message is required.",
 		});
 		return;
 	}
 
-	if (convexToken && !resolvedWorkspaceId) {
+	if (!convexToken || !resolvedWorkspaceId) {
 		sendJson(response, 400, {
-			error: "workspaceId is required.",
+			error: "convexToken and workspaceId are required.",
 		});
 		return;
 	}
 
-	const convexClient =
-		convexToken && id
-			? new ConvexHttpClient(getConvexUrl(), { auth: convexToken })
-			: null;
+	const convexClient = id
+		? new ConvexHttpClient(getConvexUrl(), { auth: convexToken })
+		: null;
 	const storedChat =
 		convexClient && id && resolvedWorkspaceId
 			? await convexClient
@@ -484,7 +481,7 @@ export const handleChatRequest = async (
 	const storedChatMessages =
 		convexClient && id && resolvedWorkspaceId
 			? await convexClient
-					.query(api.chats.getMessages, {
+					.query(api.chats.getMessagesSnapshot, {
 						workspaceId: resolvedWorkspaceId,
 						chatId: id,
 					})
@@ -502,17 +499,16 @@ export const handleChatRequest = async (
 			: storedChatMessages;
 	const chatMessages = await validateUIMessages({
 		messages:
-			message && convexClient && id && resolvedWorkspaceId
+			convexClient && id
 				? [...fromStoredMessages(baseStoredMessages), message]
-				: message
-					? [message]
-					: messages,
+				: [message],
 	});
-	const lastUserMessage = message
-		? message
-		: [...chatMessages]
-				.reverse()
-				.find((currentMessage) => currentMessage.role === "user");
+	const lastUserMessage =
+		message.role === "user"
+			? message
+			: [...chatMessages]
+					.reverse()
+					.find((currentMessage) => currentMessage.role === "user");
 	const shouldGenerateChatTitle = Boolean(
 		convexClient &&
 			id &&

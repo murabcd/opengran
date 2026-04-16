@@ -155,6 +155,7 @@ export function NavProjects({
 	currentNoteTitle,
 	recordingNoteId = null,
 	workspaceId,
+	onPrefetchNote,
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
@@ -165,6 +166,7 @@ export function NavProjects({
 	currentNoteTitle?: string;
 	recordingNoteId?: Id<"notes"> | null;
 	workspaceId: Id<"workspaces"> | null;
+	onPrefetchNote: (noteId: Id<"notes">) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
@@ -245,6 +247,7 @@ export function NavProjects({
 								currentNoteId={currentNoteId}
 								currentNoteTitle={currentNoteTitle}
 								recordingNoteId={recordingNoteId}
+								onPrefetchNote={onPrefetchNote}
 								onNoteSelect={onNoteSelect}
 								onNoteTitleChange={onNoteTitleChange}
 								onNoteTrashed={onNoteTrashed}
@@ -298,6 +301,7 @@ function ProjectSidebarItem({
 	currentNoteId,
 	currentNoteTitle,
 	recordingNoteId,
+	onPrefetchNote,
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
@@ -308,6 +312,7 @@ function ProjectSidebarItem({
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	recordingNoteId: Id<"notes"> | null;
+	onPrefetchNote: (noteId: Id<"notes">) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
@@ -488,6 +493,7 @@ function ProjectSidebarItem({
 						currentNoteId={currentNoteId}
 						currentNoteTitle={currentNoteTitle}
 						recordingNoteId={recordingNoteId}
+						onPrefetchNote={onPrefetchNote}
 						onNoteSelect={onNoteSelect}
 						onNoteTitleChange={onNoteTitleChange}
 						onNoteTrashed={onNoteTrashed}
@@ -691,6 +697,7 @@ function ProjectSidebarContent({
 	currentNoteId,
 	currentNoteTitle,
 	recordingNoteId,
+	onPrefetchNote,
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
@@ -700,6 +707,7 @@ function ProjectSidebarContent({
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	recordingNoteId: Id<"notes"> | null;
+	onPrefetchNote: (noteId: Id<"notes">) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
@@ -719,6 +727,7 @@ function ProjectSidebarContent({
 								currentNoteId={currentNoteId}
 								currentNoteTitle={currentNoteTitle}
 								recordingNoteId={recordingNoteId}
+								onPrefetchNote={onPrefetchNote}
 								onNoteSelect={onNoteSelect}
 								onNoteTitleChange={onNoteTitleChange}
 								onNoteTrashed={onNoteTrashed}
@@ -776,6 +785,7 @@ function ProjectNoteItem({
 	currentNoteId,
 	currentNoteTitle,
 	recordingNoteId,
+	onPrefetchNote,
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
@@ -784,6 +794,7 @@ function ProjectNoteItem({
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	recordingNoteId: Id<"notes"> | null;
+	onPrefetchNote: (noteId: Id<"notes">) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
@@ -804,6 +815,9 @@ function ProjectNoteItem({
 				renameAnchor={
 					<SidebarMenuButton
 						isActive={isActive}
+						onFocus={() => onPrefetchNote(note._id)}
+						onMouseEnter={() => onPrefetchNote(note._id)}
+						onPointerDown={() => onPrefetchNote(note._id)}
 						onClick={() => onNoteSelect(note._id)}
 					>
 						{isRecording ? <Icons.sidebarRecordingSpinner /> : <FileText />}

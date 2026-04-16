@@ -25,6 +25,7 @@ import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
 import { getChatText } from "@/lib/chat-message";
+import { getUIMessageSeedKey } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { WorkspaceRecord } from "@/lib/workspaces";
@@ -36,11 +37,13 @@ import { ChatHistoryList } from "./chat-history-list";
 type ChatPageProps = {
 	chatId: string;
 	initialMessages: UIMessage[];
+	isInitialMessagesLoading?: boolean;
 	onChatPersisted?: (chatId: string) => void;
 	chats: Array<Doc<"chats">>;
 	isChatsLoading: boolean;
 	activeChatId: string | null;
 	onOpenChat: (chatId: string) => void;
+	onPrefetchChat: (chatId: string) => void;
 	onChatRemoved: (chatId: string) => void;
 	activeWorkspace: WorkspaceRecord | null;
 	onOpenConnectionsSettings: () => void;
@@ -167,23 +170,14 @@ const useChatPageController = ({
 					api: "/api/chat",
 					headers,
 					credentials,
-					body: body?.convexToken
-						? {
-								...body,
-								id,
-								message: messages[messages.length - 1],
-								trigger,
-								messageId,
-								workspaceId: activeWorkspaceId,
-							}
-						: {
-								...body,
-								id,
-								messages,
-								trigger,
-								messageId,
-								workspaceId: activeWorkspaceId,
-							},
+					body: {
+						...body,
+						id,
+						message: messages[messages.length - 1],
+						trigger,
+						messageId,
+						workspaceId: activeWorkspaceId,
+					},
 				}),
 			}),
 		[activeWorkspaceId],
@@ -201,16 +195,27 @@ const useChatPageController = ({
 		messages: initialMessages,
 		transport,
 	});
+	const initialMessagesSeedKey = React.useMemo(
+		() => getUIMessageSeedKey(initialMessages),
+		[initialMessages],
+	);
+	const appliedInitialMessagesSeedKeyRef = React.useRef(initialMessagesSeedKey);
 
 	React.useEffect(() => {
-		if (initialMessages.length === 0) {
-			return;
-		}
+		setMessages((currentMessages) => {
+			const currentMessagesSeedKey = getUIMessageSeedKey(currentMessages);
 
-		setMessages((currentMessages) =>
-			currentMessages.length === 0 ? initialMessages : currentMessages,
-		);
-	}, [initialMessages, setMessages]);
+			if (
+				currentMessages.length === 0 ||
+				currentMessagesSeedKey === appliedInitialMessagesSeedKeyRef.current
+			) {
+				appliedInitialMessagesSeedKeyRef.current = initialMessagesSeedKey;
+				return initialMessages;
+			}
+
+			return currentMessages;
+		});
+	}, [initialMessages, initialMessagesSeedKey, setMessages]);
 
 	const isLoading =
 		status === "submitted" || status === "streaming" || isPreparingRequest;
@@ -506,6 +511,7 @@ const useChatPageController = ({
 		setSelectedModel,
 		setSourceSearchTerm,
 		setSourcesOpen,
+		stop,
 		shouldSearchDocuments,
 		sourceSearchTerm,
 		sourcesOpen,
@@ -562,6 +568,7 @@ export function ChatPage({
 	isChatsLoading,
 	activeChatId,
 	onOpenChat,
+	onPrefetchChat,
 	onChatRemoved,
 	activeWorkspace,
 	onOpenConnectionsSettings,
@@ -599,6 +606,8 @@ export function ChatPage({
 			onCreateNoteFromResponse,
 		],
 	);
+	const shouldShowActiveChatSurface =
+		controller.hasMessages || activeChatId === chatId;
 	const composer = (
 		<ChatComposer
 			hasMessages={controller.hasMessages}
@@ -620,6 +629,7 @@ export function ChatPage({
 			onDraftChange={controller.setDraft}
 			onDraftKeyDown={controller.handleDraftKeyDown}
 			onSubmit={controller.handleSubmit}
+			onStop={controller.stop}
 			isLoading={controller.isLoading}
 			selectedModel={controller.selectedModel}
 			modelPopoverOpen={controller.modelPopoverOpen}
@@ -671,7 +681,7 @@ export function ChatPage({
 			>
 				<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
 					<div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
-						{controller.hasMessages ? (
+						{shouldShowActiveChatSurface ? (
 							<div className="relative mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
 								<div className="flex-1 pt-8 pb-28 md:pb-32">
 									<ChatMessages
@@ -708,6 +718,7 @@ export function ChatPage({
 											isChatsLoading={isChatsLoading}
 											activeChatId={activeChatId}
 											onOpenChat={onOpenChat}
+											onPrefetchChat={onPrefetchChat}
 											onMoveToTrash={controller.setConfirmTrashChatId}
 										/>
 									</div>
