@@ -44,15 +44,20 @@ vi.mock("../src/components/inbox/inbox-sheet", () => ({
 
 vi.mock("../src/components/nav/nav-main", () => ({
 	NavMain: ({
+		onCreateNote,
 		onInboxToggle,
 		onSearchOpen,
 		onViewChange,
 	}: {
+		onCreateNote: () => void;
 		onInboxToggle: () => void;
 		onSearchOpen: () => void;
 		onViewChange: (view: "home" | "chat" | "shared" | "note") => void;
 	}) => (
 		<div>
+			<button type="button" onClick={onCreateNote}>
+				New note
+			</button>
 			<button type="button" onClick={onInboxToggle}>
 				Open inbox
 			</button>
@@ -221,16 +226,17 @@ describe("AppSidebar mobile interactions", () => {
 		);
 
 		fireEvent.click(screen.getByRole("button", { name: "Open inbox" }));
+		fireEvent.click(screen.getByRole("button", { name: "New note" }));
 		fireEvent.click(screen.getByRole("button", { name: "Open search" }));
 		fireEvent.click(screen.getByRole("button", { name: "First note" }));
 		fireEvent.click(screen.getByRole("button", { name: "Create note" }));
 		fireEvent.click(screen.getByRole("button", { name: "Switch workspace" }));
 
-		expect(setOpenMobile).toHaveBeenCalledTimes(5);
+		expect(setOpenMobile).toHaveBeenCalledTimes(6);
 		expect(setOpenMobile).toHaveBeenNthCalledWith(1, false);
 		expect(onInboxOpenChange).toHaveBeenCalledWith(true);
 		expect(onNoteSelect).toHaveBeenCalledWith("note-1");
-		expect(onCreateNote).toHaveBeenCalledTimes(1);
+		expect(onCreateNote).toHaveBeenCalledTimes(2);
 		expect(onWorkspaceSelect).toHaveBeenCalledWith("workspace-1");
 	});
 });

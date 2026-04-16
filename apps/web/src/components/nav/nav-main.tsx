@@ -7,6 +7,7 @@ import {
 	SidebarMenuItem,
 } from "@workspace/ui/components/sidebar";
 import type { LucideIcon } from "lucide-react";
+import { SquarePen } from "lucide-react";
 import * as React from "react";
 import { SidebarCollapsibleGroup } from "@/components/nav/sidebar-collapsible-group";
 
@@ -22,6 +23,7 @@ type NavItem = {
 export function NavMain({
 	className,
 	items,
+	onCreateNote,
 	onViewChange,
 	onSearchOpen,
 	onSearchIntent,
@@ -29,6 +31,7 @@ export function NavMain({
 }: {
 	className?: string;
 	items: NavItem[];
+	onCreateNote: () => void;
 	onViewChange: (view: "home" | "chat" | "shared" | "note") => void;
 	onSearchOpen: () => void;
 	onSearchIntent?: () => void;
@@ -52,6 +55,18 @@ export function NavMain({
 	return (
 		<SidebarGroup className={className}>
 			<SidebarMenu>
+				<SidebarMenuItem>
+					<SidebarMenuButton asChild tooltip="New note">
+						<button
+							type="button"
+							onClick={onCreateNote}
+							className="flex w-full items-center gap-2"
+						>
+							<SquarePen />
+							<span>New note</span>
+						</button>
+					</SidebarMenuButton>
+				</SidebarMenuItem>
 				{searchItem ? (
 					<SidebarMenuItem key={searchItem.title}>
 						<SidebarMenuButton

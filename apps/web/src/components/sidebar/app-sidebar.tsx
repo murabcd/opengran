@@ -612,6 +612,7 @@ export function AppSidebar({
 					desktopSafeTop={desktopSafeTop}
 					inboxOpen={inboxOpen}
 					navItems={model.navItems}
+					onCreateNote={model.handleCreateNote}
 					onInboxOpenChange={model.handleInboxOpenChange}
 					onSearchIntent={model.handleSearchIntent}
 					onSearchOpen={model.handleSearchOpen}
@@ -729,6 +730,7 @@ const AppSidebarHeaderSection = React.memo(function AppSidebarHeaderSection({
 	desktopSafeTop,
 	inboxOpen,
 	navItems,
+	onCreateNote,
 	onInboxOpenChange,
 	onSearchIntent,
 	onSearchOpen,
@@ -742,6 +744,7 @@ const AppSidebarHeaderSection = React.memo(function AppSidebarHeaderSection({
 	desktopSafeTop: boolean;
 	inboxOpen: boolean;
 	navItems: AppSidebarNavItem[];
+	onCreateNote: () => void;
 	onInboxOpenChange: (open: boolean) => void;
 	onSearchIntent: () => void;
 	onSearchOpen: () => void;
@@ -773,6 +776,7 @@ const AppSidebarHeaderSection = React.memo(function AppSidebarHeaderSection({
 				<NavMain
 					className="px-0"
 					items={navItems}
+					onCreateNote={onCreateNote}
 					onSearchIntent={onSearchIntent}
 					onViewChange={onViewChange}
 					onSearchOpen={onSearchOpen}
