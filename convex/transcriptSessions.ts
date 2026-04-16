@@ -220,41 +220,27 @@ const patchTranscriptSessionState = async (
 	await ctx.db.patch(state._id, patch);
 };
 
-const listNoteSessions = async (
+const getLatestNoteSession = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
 	noteId: Id<"notes">,
 ) => {
-	const sessions: Doc<"transcriptSessions">[] = [];
-
-	for await (const session of ctx.db
+	const session = await ctx.db
 		.query("transcriptSessions")
 		.withIndex("by_ownerTokenIdentifier_and_noteId_and_startedAt", (q) =>
 			q.eq("ownerTokenIdentifier", ownerTokenIdentifier).eq("noteId", noteId),
-		)) {
-		sessions.push(session);
+		)
+		.order("desc")
+		.first();
+
+	if (!session) {
+		return null;
 	}
 
-	const mergedSessions = await Promise.all(
-		sessions.map(async (session) =>
-			hydrateTranscriptSession(
-				session,
-				await requireTranscriptSessionState(ctx, session._id),
-			),
-		),
+	return hydrateTranscriptSession(
+		session,
+		await requireTranscriptSessionState(ctx, session._id),
 	);
-
-	return mergedSessions.sort((left, right) => {
-		if (left.startedAt !== right.startedAt) {
-			return left.startedAt - right.startedAt;
-		}
-
-		if (left.updatedAt !== right.updatedAt) {
-			return left.updatedAt - right.updatedAt;
-		}
-
-		return left._creationTime - right._creationTime;
-	});
 };
 
 const listNoteUtterances = async (
@@ -350,52 +336,6 @@ const deleteSessionCascade = async (
 	await ctx.db.delete(sessionId);
 };
 
-const getLatestNoteSessionSummary = async (
-	ctx: QueryCtx | MutationCtx,
-	ownerTokenIdentifier: string,
-	noteId: Id<"notes">,
-) => {
-	const sessions = await listNoteSessions(ctx, ownerTokenIdentifier, noteId);
-	const latestSession = sessions.at(-1) ?? null;
-
-	if (!latestSession) {
-		return null;
-	}
-
-	const generatedNoteAt = sessions.reduce<number | undefined>(
-		(latestGeneratedAt, currentSession) => {
-			if (currentSession.generatedNoteAt == null) {
-				return latestGeneratedAt;
-			}
-
-			return latestGeneratedAt == null
-				? currentSession.generatedNoteAt
-				: Math.max(latestGeneratedAt, currentSession.generatedNoteAt);
-		},
-		undefined,
-	);
-	const lastRefinedAt = sessions.reduce<number | undefined>(
-		(latestRefinedAt, currentSession) => {
-			if (currentSession.lastRefinedAt == null) {
-				return latestRefinedAt;
-			}
-
-			return latestRefinedAt == null
-				? currentSession.lastRefinedAt
-				: Math.max(latestRefinedAt, currentSession.lastRefinedAt);
-		},
-		undefined,
-	);
-
-	return {
-		...latestSession,
-		endedAt: sessions.at(-1)?.endedAt ?? latestSession.endedAt,
-		generatedNoteAt,
-		lastRefinedAt,
-		startedAt: sessions[0]?.startedAt ?? latestSession.startedAt,
-	};
-};
-
 export const getLatestSummaryForNote = query({
 	args: {
 		noteId: v.id("notes"),
@@ -405,15 +345,11 @@ export const getLatestSummaryForNote = query({
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
 		await requireOwnedNote(ctx, ownerTokenIdentifier, args.noteId);
 
-		return await getLatestNoteSessionSummary(
-			ctx,
-			ownerTokenIdentifier,
-			args.noteId,
-		);
+		return await getLatestNoteSession(ctx, ownerTokenIdentifier, args.noteId);
 	},
 });
 
-export const getLatestForNote = query({
+export const getStoredTranscriptForNote = query({
 	args: {
 		noteId: v.id("notes"),
 	},
@@ -421,11 +357,7 @@ export const getLatestForNote = query({
 	handler: async (ctx, args) => {
 		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
 		await requireOwnedNote(ctx, ownerTokenIdentifier, args.noteId);
-		const session = await getLatestNoteSessionSummary(
-			ctx,
-			ownerTokenIdentifier,
-			args.noteId,
-		);
+		const session = await getLatestNoteSession(ctx, ownerTokenIdentifier, args.noteId);
 
 		if (!session) {
 			return null;

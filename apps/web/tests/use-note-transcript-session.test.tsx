@@ -918,6 +918,36 @@ describe("useNoteTranscriptSession", () => {
 		expect(completeSessionMock).not.toHaveBeenCalled();
 	});
 
+	it("reuses the capture transcript repository when the opened note matches the capture scope", async () => {
+		const repositoryMock = createTranscriptSessionRepositoryMock();
+		useTranscriptSessionRepositoryMock.mockImplementation(() => repositoryMock);
+
+		const { useNoteTranscriptSession } = await import(
+			"../src/hooks/use-note-transcript-session"
+		);
+
+		renderHook(() =>
+			useNoteTranscriptSession({
+				noteId: "note-1" as never,
+			}),
+		);
+
+		expect(useTranscriptSessionRepositoryMock).toHaveBeenNthCalledWith(
+			1,
+			"note-1",
+			expect.objectContaining({
+				shouldAutoLoadLatestTranscriptSession: false,
+			}),
+		);
+		expect(useTranscriptSessionRepositoryMock).toHaveBeenNthCalledWith(
+			2,
+			null,
+			expect.objectContaining({
+				shouldAutoLoadLatestTranscriptSession: false,
+			}),
+		);
+	});
+
 	it("shows the opened note's stored transcript while another note owns the active capture", async () => {
 		useTranscriptSessionRepositoryMock.mockImplementation((repoNoteId) => ({
 			appendUtterance: vi.fn(),

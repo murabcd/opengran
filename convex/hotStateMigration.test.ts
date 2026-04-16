@@ -282,7 +282,7 @@ test("transcript sessions read hot state only from transcriptSessionStates", asy
 	});
 
 	const latestSession = await asOwner.query(
-		api.transcriptSessions.getLatestForNote,
+		api.transcriptSessions.getStoredTranscriptForNote,
 		{
 			noteId,
 		},
@@ -306,6 +306,88 @@ test("transcript sessions read hot state only from transcriptSessionStates", asy
 		sessionId,
 		refinementStatus: "running",
 	});
+});
+
+test("transcript session summaries only reflect the latest session for a note", async () => {
+	const t = convexTest(schema, modules);
+	const asOwner = t.withIdentity(ownerIdentity);
+
+	const { latestSessionId, noteId } = await t.run(async (ctx) => {
+		const now = 2_000;
+		const workspaceId = await ctx.db.insert("workspaces", {
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			name: "Workspace",
+			normalizedName: "workspace",
+			role: "startup-generalist",
+			createdAt: now,
+			updatedAt: now,
+		});
+		const noteId = await ctx.db.insert("notes", {
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			workspaceId,
+			title: "Transcript note",
+			content: "",
+			searchableText: "",
+			visibility: "private",
+			isArchived: false,
+			createdAt: now,
+			updatedAt: now,
+		});
+		const firstSessionId = await ctx.db.insert("transcriptSessions", {
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			noteId,
+			startedAt: now,
+			finalTranscript: "Older transcript",
+			createdAt: now,
+		});
+		await ctx.db.insert("transcriptSessionStates", {
+			sessionId: firstSessionId,
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			noteId,
+			status: "completed",
+			refinementStatus: "completed",
+			refinementError: undefined,
+			endedAt: now + 10,
+			generatedNoteAt: now + 20,
+			createdAt: now,
+			updatedAt: now + 20,
+			lastRefinedAt: now + 15,
+		});
+		const latestSessionId = await ctx.db.insert("transcriptSessions", {
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			noteId,
+			startedAt: now + 100,
+			finalTranscript: "Latest transcript",
+			createdAt: now + 100,
+		});
+		await ctx.db.insert("transcriptSessionStates", {
+			sessionId: latestSessionId,
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			noteId,
+			status: "capturing",
+			refinementStatus: "idle",
+			refinementError: undefined,
+			endedAt: undefined,
+			generatedNoteAt: undefined,
+			createdAt: now + 100,
+			updatedAt: now + 110,
+			lastRefinedAt: undefined,
+		});
+
+		return { latestSessionId, noteId };
+	});
+
+	const latestSummary = await asOwner.query(
+		api.transcriptSessions.getLatestSummaryForNote,
+		{
+			noteId,
+		},
+	);
+
+	expect(latestSummary?._id).toBe(latestSessionId);
+	expect(latestSummary?.finalTranscript).toBe("Latest transcript");
+	expect(latestSummary?.generatedNoteAt).toBeUndefined();
+	expect(latestSummary?.startedAt).toBe(2_100);
 });
 
 test("jira webhook activity is stored off the credential-bearing connection row", async () => {

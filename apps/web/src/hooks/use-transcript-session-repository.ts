@@ -42,10 +42,8 @@ const toTranscriptUtteranceInput = (
 export const useTranscriptSessionRepository = (
 	noteId: Id<"notes"> | null,
 	{
-		shouldPrefetchLatestTranscriptSession = false,
 		shouldAutoLoadLatestTranscriptSession = true,
 	}: {
-		shouldPrefetchLatestTranscriptSession?: boolean;
 		shouldAutoLoadLatestTranscriptSession?: boolean;
 	} = {},
 ) => {
@@ -123,7 +121,7 @@ export const useTranscriptSessionRepository = (
 
 		try {
 			const result = await convex.query(
-				api.transcriptSessions.getLatestForNote,
+				api.transcriptSessions.getStoredTranscriptForNote,
 				{
 					noteId,
 				},
@@ -198,58 +196,6 @@ export const useTranscriptSessionRepository = (
 		noteId,
 		refreshLatestTranscriptSession,
 		shouldAutoLoadLatestTranscriptSession,
-	]);
-
-	React.useEffect(() => {
-		if (
-			shouldAutoLoadLatestTranscriptSession ||
-			!shouldPrefetchLatestTranscriptSession ||
-			!noteId ||
-			latestTranscriptSessionSummaryQuery === undefined ||
-			latestTranscriptSessionSummary === null ||
-			latestTranscriptSession !== undefined ||
-			isFetchingLatestTranscriptSession
-		) {
-			return;
-		}
-
-		let isCancelled = false;
-
-		const schedulePrefetch = () => {
-			if (isCancelled) {
-				return;
-			}
-
-			void refreshLatestTranscriptSession().catch((error) => {
-				console.error("Failed to prefetch transcript session", error);
-			});
-		};
-
-		if ("requestIdleCallback" in globalThis) {
-			const idleCallbackId = globalThis.requestIdleCallback(schedulePrefetch, {
-				timeout: 1_000,
-			});
-
-			return () => {
-				isCancelled = true;
-				globalThis.cancelIdleCallback(idleCallbackId);
-			};
-		}
-
-		const timeoutId = globalThis.setTimeout(schedulePrefetch, 150);
-		return () => {
-			isCancelled = true;
-			globalThis.clearTimeout(timeoutId);
-		};
-	}, [
-		isFetchingLatestTranscriptSession,
-		latestTranscriptSession,
-		latestTranscriptSessionSummary,
-		latestTranscriptSessionSummaryQuery,
-		noteId,
-		refreshLatestTranscriptSession,
-		shouldAutoLoadLatestTranscriptSession,
-		shouldPrefetchLatestTranscriptSession,
 	]);
 
 	React.useEffect(() => {
