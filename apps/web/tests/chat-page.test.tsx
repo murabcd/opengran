@@ -305,7 +305,9 @@ vi.mock("@workspace/ui/components/tooltip", () => ({
 }));
 
 describe("ChatPage", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
+		const { clearCachedConvexToken } = await import("../src/lib/convex-token");
+		clearCachedConvexToken();
 		convexTokenMock.mockReset();
 		sendMessageMock.mockReset();
 		stopMock.mockReset();

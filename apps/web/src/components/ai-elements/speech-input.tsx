@@ -116,7 +116,7 @@ export const SpeechInput = ({
 						key={delay}
 						style={{
 							animationDelay: delay,
-							animationDuration: "2s",
+							animationDuration: "0.9s",
 						}}
 					/>
 				))}

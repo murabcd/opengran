@@ -22,11 +22,11 @@ import { COMPOSER_DOCK_WRAPPER_CLASS } from "@/components/layout/composer-dock";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
-import { authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
 import { getChatText } from "@/lib/chat-message";
 import { getUIMessageSeedKey } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
+import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { WorkspaceRecord } from "@/lib/workspaces";
 import { api } from "../../../../../convex/_generated/api";
@@ -195,6 +195,14 @@ const useChatPageController = ({
 		messages: initialMessages,
 		transport,
 	});
+
+	React.useEffect(() => {
+		if (!activeWorkspaceId) {
+			return;
+		}
+
+		void prefetchConvexToken();
+	}, [activeWorkspaceId]);
 	const initialMessagesSeedKey = React.useMemo(
 		() => getUIMessageSeedKey(initialMessages),
 		[initialMessages],
@@ -281,9 +289,7 @@ const useChatPageController = ({
 		setIsPreparingRequest(true);
 
 		try {
-			const { data } = await authClient.convex.token({
-				fetchOptions: { throw: false },
-			});
+			const convexToken = await getCachedConvexToken();
 			onChatPersisted?.(chatId);
 			const nextOutgoingMessage = editingMessageId
 				? {
@@ -300,7 +306,7 @@ const useChatPageController = ({
 					mentions,
 					selectedSourceIds,
 					workspaceId: activeWorkspaceId,
-					convexToken: data?.token ?? null,
+					convexToken,
 				},
 			});
 			setEditingMessageId(null);
@@ -397,9 +403,7 @@ const useChatPageController = ({
 	}, []);
 
 	const buildRequestBody = React.useCallback(async () => {
-		const { data } = await authClient.convex.token({
-			fetchOptions: { throw: false },
-		});
+		const convexToken = await getCachedConvexToken();
 
 		return {
 			model: selectedModel.model,
@@ -408,7 +412,7 @@ const useChatPageController = ({
 			mentions,
 			selectedSourceIds,
 			workspaceId: activeWorkspaceId,
-			convexToken: data?.token ?? null,
+			convexToken,
 		};
 	}, [
 		activeWorkspaceId,

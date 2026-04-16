@@ -109,10 +109,10 @@ import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
 import { getChatModel } from "@/lib/ai/models";
-import { authClient } from "@/lib/auth-client";
 import { getChatText } from "@/lib/chat-message";
 import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
+import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
 import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import { ENHANCED_NOTE_TEMPLATE_SLUG } from "@/lib/note-templates";
 import {
@@ -628,6 +628,14 @@ const useNoteComposerController = ({
 		messages: initialMessages,
 		transport,
 	});
+
+	React.useEffect(() => {
+		if (!activeWorkspaceId) {
+			return;
+		}
+
+		void prefetchConvexToken();
+	}, [activeWorkspaceId]);
 	const initialMessagesSeedKey = React.useMemo(
 		() => getUIMessageSeedKey(initialMessages),
 		[initialMessages],
@@ -1212,12 +1220,10 @@ const useNoteComposerController = ({
 
 		try {
 			const currentNoteContext = readNoteContext();
-			const { data } = await authClient.convex.token({
-				fetchOptions: { throw: false },
-			});
+			const convexToken = await getCachedConvexToken();
 			const requestBody = {
 				model: NOTE_CHAT_MODEL.model,
-				convexToken: data?.token ?? null,
+				convexToken,
 				noteContext: {
 					noteId: currentNoteContext.noteId,
 					title: currentNoteContext.title,
@@ -1320,13 +1326,11 @@ const useNoteComposerController = ({
 
 	const buildRequestBody = React.useCallback(async () => {
 		const currentNoteContext = readNoteContext();
-		const { data } = await authClient.convex.token({
-			fetchOptions: { throw: false },
-		});
+		const convexToken = await getCachedConvexToken();
 
 		return {
 			model: NOTE_CHAT_MODEL.model,
-			convexToken: data?.token ?? null,
+			convexToken,
 			noteContext: {
 				noteId: currentNoteContext.noteId,
 				title: currentNoteContext.title,

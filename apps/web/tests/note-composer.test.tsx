@@ -298,12 +298,9 @@ vi.mock("../src/lib/transcription-session-manager", () => ({
 }));
 
 describe("NoteComposer", () => {
-	afterEach(() => {
-		window.localStorage.clear();
-		cleanup();
-	});
-
-	beforeEach(() => {
+	beforeEach(async () => {
+		const { clearCachedConvexToken } = await import("../src/lib/convex-token");
+		clearCachedConvexToken();
 		window.localStorage.clear();
 
 		useSidebarShellMock.mockReturnValue({
@@ -399,6 +396,11 @@ describe("NoteComposer", () => {
 				current: null,
 			},
 		});
+	});
+
+	afterEach(() => {
+		window.localStorage.clear();
+		cleanup();
 	});
 
 	it("shows only the send button in the composer actions when empty", async () => {

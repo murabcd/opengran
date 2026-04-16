@@ -97,6 +97,7 @@ import {
 } from "@/hooks/use-chat-messages-snapshot";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
+import { clearCachedConvexToken } from "@/lib/convex-token";
 import {
 	DESKTOP_INBOX_PANEL_WIDTH,
 	DESKTOP_MAIN_HEADER_CLASS,
@@ -1125,6 +1126,7 @@ const useAppShellState = ({
 	const handleSignOut = React.useCallback(() => {
 		startSignOut(async () => {
 			try {
+				clearCachedConvexToken();
 				await authClient.signOut();
 			} catch (error) {
 				console.error("Failed to sign out", error);
