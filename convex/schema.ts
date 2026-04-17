@@ -159,6 +159,7 @@ export default defineSchema({
 			"ownerTokenIdentifier",
 			"createdAt",
 		])
+		.index("by_updatedAt", ["updatedAt"])
 		.index("by_ownerTokenIdentifier_and_normalizedName", [
 			"ownerTokenIdentifier",
 			"normalizedName",
@@ -263,13 +264,13 @@ export default defineSchema({
 		isMutedReplies: v.optional(v.boolean()),
 		readAt: v.optional(v.number()),
 		resolvedAt: v.optional(v.number()),
-	resolvedByName: v.optional(v.string()),
-	commentCount: v.number(),
-	latestCommentPreview: v.string(),
-	latestCommentIsReply: v.optional(v.boolean()),
-	createdAt: v.number(),
-	updatedAt: v.number(),
-	lastCommentAt: v.number(),
+		resolvedByName: v.optional(v.string()),
+		commentCount: v.number(),
+		latestCommentPreview: v.string(),
+		latestCommentIsReply: v.optional(v.boolean()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+		lastCommentAt: v.number(),
 	})
 		.index("by_owner_ws_note_updatedAt", [
 			"ownerTokenIdentifier",
