@@ -8,7 +8,7 @@ import {
 	useSidebarShell,
 } from "@workspace/ui/components/sidebar";
 import { useQuery } from "convex/react";
-import { FileText } from "lucide-react";
+import { FileText, MessageCircle } from "lucide-react";
 import * as React from "react";
 import { InboxSheet } from "@/components/inbox/inbox-sheet";
 import { NavMain } from "@/components/nav/nav-main";
@@ -32,6 +32,7 @@ import {
 } from "@/components/sidebar/sidebar-dialog-surfaces";
 import { WorkspaceSwitcher } from "@/components/workspaces/workspace-switcher";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
+import { getChatId } from "@/lib/chat";
 import { SIDEBAR_NAVIGATION } from "@/lib/navigation";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { WorkspaceRecord } from "@/lib/workspaces";
@@ -299,6 +300,7 @@ function useSidebarDialogPreloader() {
 
 function useAppSidebarModel({
 	activeWorkspaceId,
+	chats,
 	currentNoteId,
 	currentNoteTitle,
 	currentView,
@@ -317,6 +319,7 @@ function useAppSidebarModel({
 	setOpenMobile,
 }: {
 	activeWorkspaceId: Id<"workspaces"> | null;
+	chats: Array<Doc<"chats">> | undefined;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	currentView: AppSidebarView;
@@ -466,25 +469,43 @@ function useAppSidebarModel({
 		() => new Map(searchProjects.map((project) => [project.id, project.name])),
 		[searchProjects],
 	);
+	const searchableNotes = notes ?? [];
+	const searchableChats = chats ?? [];
 	const searchItems = React.useMemo<SearchCommandItem[]>(
 		() =>
-			(notes ?? []).map((note) => ({
-				id: note._id,
-				title: getNoteDisplayTitle(
-					note._id === currentNoteId && currentNoteTitle?.trim()
-						? currentNoteTitle
-						: note.title,
-				),
-				kind: "note" as const,
-				icon: FileText,
-				preview: note.searchableText.trim() || undefined,
-				projectId: note.projectId ?? undefined,
-				projectName: note.projectId
-					? projectNameById.get(note.projectId)
-					: undefined,
-				updatedAt: note.updatedAt,
-			})),
-		[currentNoteId, currentNoteTitle, notes, projectNameById],
+			[
+				...searchableNotes.map((note) => ({
+					id: note._id,
+					title: getNoteDisplayTitle(
+						note._id === currentNoteId && currentNoteTitle?.trim()
+							? currentNoteTitle
+							: note.title,
+					),
+					kind: "note" as const,
+					icon: FileText,
+					preview: note.searchableText.trim() || undefined,
+					projectId: note.projectId ?? undefined,
+					projectName: note.projectId
+						? projectNameById.get(note.projectId)
+						: undefined,
+					updatedAt: note.updatedAt,
+				})),
+				...searchableChats.map((chat) => ({
+					id: getChatId(chat),
+					title: chat.title || "New chat",
+					kind: "chat" as const,
+					icon: MessageCircle,
+					preview: chat.preview.trim() || undefined,
+					updatedAt: chat.updatedAt,
+				})),
+			].sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0)),
+		[
+			currentNoteId,
+			currentNoteTitle,
+			projectNameById,
+			searchableChats,
+			searchableNotes,
+		],
 	);
 	const handleDialogOpenChange = React.useCallback(
 		(key: "searchOpen" | "recipesOpen" | "templatesOpen", value: boolean) => {
@@ -585,6 +606,7 @@ export function AppSidebar({
 	);
 	const model = useAppSidebarModel({
 		activeWorkspaceId,
+		chats,
 		currentNoteId,
 		currentNoteTitle,
 		currentView,

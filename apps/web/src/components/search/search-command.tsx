@@ -35,6 +35,7 @@ import {
 	GalleryHorizontalEnd,
 	ListFilter,
 	type LucideIcon,
+	MessageCircle,
 } from "lucide-react";
 import * as React from "react";
 import {
@@ -58,6 +59,8 @@ export interface SearchCommandProject {
 	name: string;
 }
 
+type SearchSourceFilter = "all" | "notes" | "chats" | string;
+
 interface SearchCommandProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -67,23 +70,23 @@ interface SearchCommandProps {
 }
 
 type SearchFiltersState = {
-	projectFilter: "all" | "notes" | string;
+	sourceFilter: SearchSourceFilter;
 	filtersVisible: boolean;
 	dateFilter: "all" | "today" | "last7" | "last30" | "custom";
 	dateRange: DateRange | undefined;
-	projectPopoverOpen: boolean;
+	sourcePopoverOpen: boolean;
 	datePopoverOpen: boolean;
-	projectSearchValue: string;
+	sourceSearchValue: string;
 };
 
 const INITIAL_SEARCH_FILTERS_STATE: SearchFiltersState = {
-	projectFilter: "all",
+	sourceFilter: "all",
 	filtersVisible: false,
 	dateFilter: "all",
 	dateRange: undefined,
-	projectPopoverOpen: false,
+	sourcePopoverOpen: false,
 	datePopoverOpen: false,
-	projectSearchValue: "",
+	sourceSearchValue: "",
 };
 
 const reduceSearchFiltersState = (
@@ -103,13 +106,13 @@ function useSearchCommandFilters({
 		INITIAL_SEARCH_FILTERS_STATE,
 	);
 	const {
-		projectFilter,
+		sourceFilter,
 		filtersVisible,
 		dateFilter,
 		dateRange,
-		projectPopoverOpen,
+		sourcePopoverOpen,
 		datePopoverOpen,
-		projectSearchValue,
+		sourceSearchValue,
 	} = state;
 
 	React.useEffect(() => {
@@ -119,88 +122,86 @@ function useSearchCommandFilters({
 	}, [open]);
 
 	React.useEffect(() => {
-		if (!projectPopoverOpen) {
-			setState({ projectSearchValue: "" });
+		if (!sourcePopoverOpen) {
+			setState({ sourceSearchValue: "" });
 		}
-	}, [projectPopoverOpen]);
+	}, [sourcePopoverOpen]);
 
 	React.useEffect(() => {
 		if (
-			projectFilter !== "all" &&
-			projectFilter !== "notes" &&
-			!projects.some((project) => project.id === projectFilter)
+			sourceFilter !== "all" &&
+			sourceFilter !== "notes" &&
+			sourceFilter !== "chats" &&
+			!projects.some((project) => project.id === sourceFilter)
 		) {
-			setState({ projectFilter: "all" });
+			setState({ sourceFilter: "all" });
 		}
-	}, [projectFilter, projects]);
+	}, [projects, sourceFilter]);
 
 	const hideFilters = React.useCallback(() => {
 		setState({
 			filtersVisible: false,
-			projectFilter: "all",
+			sourceFilter: "all",
 			dateFilter: "all",
 			dateRange: undefined,
-			projectPopoverOpen: false,
+			sourcePopoverOpen: false,
 			datePopoverOpen: false,
-			projectSearchValue: "",
+			sourceSearchValue: "",
 		});
 	}, []);
 
 	return {
-		projectFilter,
+		sourceFilter,
 		filtersVisible,
 		dateFilter,
 		dateRange,
-		projectPopoverOpen,
+		sourcePopoverOpen,
 		datePopoverOpen,
-		projectSearchValue,
+		sourceSearchValue,
 		setState,
 		hideFilters,
 	};
 }
 
 function SearchCommandFilters({
-	projects,
-	projectFilter,
+	sourceFilter,
 	filtersVisible,
 	dateFilter,
 	dateRange,
-	projectPopoverOpen,
+	sourcePopoverOpen,
 	datePopoverOpen,
-	projectSearchValue,
-	activeProject,
-	filteredProjects,
-	projectFilterLabel,
-	projectFilterIcon,
+	sourceSearchValue,
+	matchingProjects,
+	sourceFilterLabel,
+	sourceFilterIcon,
 	dateFilterLabel,
 	onOpenChange,
 	setState,
 	hideFilters,
 }: {
-	projects: SearchCommandProject[];
-	projectFilter: "all" | "notes" | string;
+	sourceFilter: SearchSourceFilter;
 	filtersVisible: boolean;
 	dateFilter: "all" | "today" | "last7" | "last30" | "custom";
 	dateRange: DateRange | undefined;
-	projectPopoverOpen: boolean;
+	sourcePopoverOpen: boolean;
 	datePopoverOpen: boolean;
-	projectSearchValue: string;
-	activeProject: SearchCommandProject | null;
-	filteredProjects: SearchCommandProject[];
-	projectFilterLabel: string;
-	projectFilterIcon: LucideIcon;
+	sourceSearchValue: string;
+	matchingProjects: SearchCommandProject[];
+	sourceFilterLabel: string;
+	sourceFilterIcon: LucideIcon;
 	dateFilterLabel: string;
 	onOpenChange: (open: boolean) => void;
 	setState: React.ActionDispatch<[patch: Partial<SearchFiltersState>]>;
 	hideFilters: () => void;
 }) {
-	void activeProject;
-
 	return (
 		<>
 			<div className="flex items-start gap-1 px-1 pt-1">
 				<div className="relative min-w-0 flex-1">
-					<CommandInput placeholder="Search notes..." className="pr-14" />
+					<CommandInput
+						placeholder="Search notes and chats..."
+						className="pr-14"
+					/>
 					<button
 						type="button"
 						onClick={() => onOpenChange(false)}
@@ -241,95 +242,104 @@ function SearchCommandFilters({
 			</div>
 			{filtersVisible ? (
 				<div className="flex items-center gap-1.5 px-2 pb-2">
-					{projects.length > 0 ? (
-						<Popover
-							open={projectPopoverOpen}
-							onOpenChange={(nextOpen) =>
-								setState({ projectPopoverOpen: nextOpen })
-							}
-						>
-							<PopoverTrigger asChild>
-								<Button
-									type="button"
-									variant="ghost"
-									size="sm"
-									className={cn(
-										"h-7 rounded-full border border-transparent bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground aria-expanded:border-border/60 aria-expanded:bg-muted aria-expanded:text-foreground",
-										projectFilter !== "all" && "bg-muted text-foreground",
-									)}
-								>
-									{React.createElement(projectFilterIcon, {
-										className: "size-3.5",
-									})}
-									<span className="truncate">{projectFilterLabel}</span>
-									<ChevronDown className="size-3.5 opacity-70" />
-								</Button>
-							</PopoverTrigger>
-							<PopoverContent
-								align="start"
-								sideOffset={6}
-								className="w-64 gap-0 p-1.5"
+					<Popover
+						open={sourcePopoverOpen}
+						onOpenChange={(nextOpen) =>
+							setState({ sourcePopoverOpen: nextOpen })
+						}
+					>
+						<PopoverTrigger asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								className={cn(
+									"h-7 rounded-full border border-transparent bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground aria-expanded:border-border/60 aria-expanded:bg-muted aria-expanded:text-foreground",
+									sourceFilter !== "all" && "bg-muted text-foreground",
+								)}
 							>
-								<Command shouldFilter={false} className="bg-transparent p-0">
-									<div className="pb-1.5">
-										<CommandInput
-											value={projectSearchValue}
-											onValueChange={(value) =>
-												setState({ projectSearchValue: value })
-											}
-											placeholder="Search sources"
+								{React.createElement(sourceFilterIcon, {
+									className: "size-3.5",
+								})}
+								<span className="truncate">{sourceFilterLabel}</span>
+								<ChevronDown className="size-3.5 opacity-70" />
+							</Button>
+						</PopoverTrigger>
+						<PopoverContent
+							align="start"
+							sideOffset={6}
+							className="w-64 gap-0 p-1.5"
+						>
+							<Command shouldFilter={false} className="bg-transparent p-0">
+								<div className="pb-1.5">
+									<CommandInput
+										value={sourceSearchValue}
+										onValueChange={(value) =>
+											setState({ sourceSearchValue: value })
+										}
+										placeholder="Search sources"
+									/>
+								</div>
+								<CommandList className="max-h-64">
+									<div className="flex flex-col gap-1 px-1 py-1">
+										<SearchSourceFilterOption
+											icon={GalleryHorizontalEnd}
+											label="All"
+											selected={sourceFilter === "all"}
+											onSelect={() => {
+												setState({
+													sourceFilter: "all",
+													sourcePopoverOpen: false,
+												});
+											}}
 										/>
+										<SearchSourceFilterOption
+											icon={FileText}
+											label="Notes"
+											selected={sourceFilter === "notes"}
+											onSelect={() => {
+												setState({
+													sourceFilter: "notes",
+													sourcePopoverOpen: false,
+												});
+											}}
+										/>
+										<SearchSourceFilterOption
+											icon={MessageCircle}
+											label="Chats"
+											selected={sourceFilter === "chats"}
+											onSelect={() => {
+												setState({
+													sourceFilter: "chats",
+													sourcePopoverOpen: false,
+												});
+											}}
+										/>
+										{matchingProjects.length > 0 ? (
+											matchingProjects.map((project) => (
+												<SearchSourceFilterOption
+													key={project.id}
+													icon={FolderClosed}
+													label={project.name}
+													selected={sourceFilter === project.id}
+													onSelect={() => {
+														setState({
+															sourceFilter: project.id,
+															sourcePopoverOpen: false,
+														});
+													}}
+												/>
+											))
+										) : (
+											<div className="px-2 py-3 text-sm text-muted-foreground">
+												No projects found.
+											</div>
+										)}
 									</div>
-									<CommandList className="max-h-64">
-										<div className="flex flex-col gap-1 px-1 py-1">
-											<SearchProjectFilterOption
-												icon={GalleryHorizontalEnd}
-												label="All"
-												selected={projectFilter === "all"}
-												onSelect={() => {
-													setState({
-														projectFilter: "all",
-														projectPopoverOpen: false,
-													});
-												}}
-											/>
-											<SearchProjectFilterOption
-												icon={FileText}
-												label="Notes"
-												selected={projectFilter === "notes"}
-												onSelect={() => {
-													setState({
-														projectFilter: "notes",
-														projectPopoverOpen: false,
-													});
-												}}
-											/>
-											{filteredProjects.length > 0 ? (
-												filteredProjects.map((project) => (
-													<SearchProjectFilterOption
-														key={project.id}
-														icon={FolderClosed}
-														label={project.name}
-														selected={projectFilter === project.id}
-														onSelect={() => {
-															setState({
-																projectFilter: project.id,
-																projectPopoverOpen: false,
-															});
-														}}
-													/>
-												))
-											) : (
-												<div className="px-2 py-3 text-sm text-muted-foreground">
-													No projects found.
-												</div>
-											)}
-										</div>
-									</CommandList>
-								</Command>
-							</PopoverContent>
-						</Popover>
-					) : null}
+								</CommandList>
+							</Command>
+						</PopoverContent>
+					</Popover>
 					<Popover
 						open={datePopoverOpen}
 						onOpenChange={(nextOpen) => setState({ datePopoverOpen: nextOpen })}
@@ -441,13 +451,13 @@ export function SearchCommand({
 	onSelectItem,
 }: SearchCommandProps) {
 	const {
-		projectFilter,
+		sourceFilter,
 		filtersVisible,
 		dateFilter,
 		dateRange,
-		projectPopoverOpen,
+		sourcePopoverOpen,
 		datePopoverOpen,
-		projectSearchValue,
+		sourceSearchValue,
 		setState,
 		hideFilters,
 	} = useSearchCommandFilters({ open, projects });
@@ -460,43 +470,31 @@ export function SearchCommand({
 		[dateFilter, dateRange, items],
 	);
 
-	const noteItems = React.useMemo(
+	const visibleItems = React.useMemo(
 		() =>
-			dateFilteredItems.filter((item) => {
-				if (item.kind !== "note") {
-					return false;
-				}
-
-				if (projectFilter === "all") {
-					return true;
-				}
-
-				if (projectFilter === "notes") {
-					return !item.projectId;
-				}
-
-				return item.projectId === projectFilter;
-			}),
-		[dateFilteredItems, projectFilter],
+			dateFilteredItems.filter((item) =>
+				matchesSourceFilter(item, sourceFilter),
+			),
+		[dateFilteredItems, sourceFilter],
 	);
-	const groupedNotes = React.useMemo(
-		() => groupItemsByRelativeDate(noteItems, (item) => item.updatedAt),
-		[noteItems],
+	const groupedItems = React.useMemo(
+		() => groupItemsByRelativeDate(visibleItems, (item) => item.updatedAt),
+		[visibleItems],
 	);
-	const noteSections = React.useMemo(
+	const itemSections = React.useMemo(
 		() =>
 			RELATIVE_DATE_GROUP_SECTIONS.map((section) => ({
 				...section,
-				items: groupedNotes[section.key],
+				items: groupedItems[section.key],
 			})),
-		[groupedNotes],
+		[groupedItems],
 	);
-	const activeProject = React.useMemo(
-		() => projects.find((project) => project.id === projectFilter) ?? null,
-		[projectFilter, projects],
+	const selectedProject = React.useMemo(
+		() => projects.find((project) => project.id === sourceFilter) ?? null,
+		[sourceFilter, projects],
 	);
-	const filteredProjects = React.useMemo(() => {
-		const normalizedSearch = projectSearchValue.trim().toLowerCase();
+	const matchingProjects = React.useMemo(() => {
+		const normalizedSearch = sourceSearchValue.trim().toLowerCase();
 
 		if (!normalizedSearch) {
 			return projects;
@@ -505,50 +503,47 @@ export function SearchCommand({
 		return projects.filter((project) =>
 			project.name.toLowerCase().includes(normalizedSearch),
 		);
-	}, [projectSearchValue, projects]);
-	const projectFilterLabel =
-		projectFilter === "all"
-			? "All"
-			: projectFilter === "notes"
-				? "Notes"
-				: (activeProject?.name ?? "Project");
-	const projectFilterIcon =
-		projectFilter === "all"
-			? GalleryHorizontalEnd
-			: projectFilter === "notes"
-				? FileText
-				: FolderClosed;
+	}, [projects, sourceSearchValue]);
+	const sourceFilterLabel = getSourceFilterLabel(
+		sourceFilter,
+		selectedProject?.name,
+	);
+	const sourceFilterIcon = getSourceFilterIcon(sourceFilter);
 	const dateFilterLabel = getDateFilterLabel(dateFilter, dateRange);
+	const isFilterPopoverOpen = sourcePopoverOpen || datePopoverOpen;
 	return (
 		<CommandDialog
 			open={open}
 			onOpenChange={onOpenChange}
 			title="Search"
-			description="Search notes..."
+			description="Search notes and chats..."
 			className="top-1/2 max-w-[calc(100%-2rem)] -translate-y-1/2 rounded-lg sm:max-w-lg"
 		>
 			<Command className="**:[[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 **:[[cmdk-group-heading]]:px-1.5 **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 **:[[cmdk-input-wrapper]_svg]:size-5 **:[[cmdk-input]]:h-12">
 				<SearchCommandFilters
-					projects={projects}
-					projectFilter={projectFilter}
+					sourceFilter={sourceFilter}
 					filtersVisible={filtersVisible}
 					dateFilter={dateFilter}
 					dateRange={dateRange}
-					projectPopoverOpen={projectPopoverOpen}
+					sourcePopoverOpen={sourcePopoverOpen}
 					datePopoverOpen={datePopoverOpen}
-					projectSearchValue={projectSearchValue}
-					activeProject={activeProject}
-					filteredProjects={filteredProjects}
-					projectFilterLabel={projectFilterLabel}
-					projectFilterIcon={projectFilterIcon}
+					sourceSearchValue={sourceSearchValue}
+					matchingProjects={matchingProjects}
+					sourceFilterLabel={sourceFilterLabel}
+					sourceFilterIcon={sourceFilterIcon}
 					dateFilterLabel={dateFilterLabel}
 					onOpenChange={onOpenChange}
 					setState={setState}
 					hideFilters={hideFilters}
 				/>
-				<CommandList className="h-[22rem] max-h-[calc(100vh-14rem)] min-h-[14rem]">
+				<CommandList
+					className={cn(
+						"h-[22rem] max-h-[calc(100vh-14rem)] min-h-[14rem]",
+						isFilterPopoverOpen && "pointer-events-none",
+					)}
+				>
 					<CommandEmpty>No results found.</CommandEmpty>
-					{noteSections.map((section) =>
+					{itemSections.map((section) =>
 						section.items.length > 0 ? (
 							<CommandGroup key={section.key} heading={section.label}>
 								{section.items.map((item) => (
@@ -591,7 +586,7 @@ function SearchCommandRow({
 	);
 }
 
-function SearchProjectFilterOption({
+function SearchSourceFilterOption({
 	icon: Icon,
 	label,
 	selected,
@@ -618,6 +613,76 @@ function SearchProjectFilterOption({
 			<div className="min-w-0 flex-1 truncate">{label}</div>
 		</CommandItem>
 	);
+}
+
+function isProjectSourceFilter(sourceFilter: SearchSourceFilter) {
+	return (
+		sourceFilter !== "all" &&
+		sourceFilter !== "notes" &&
+		sourceFilter !== "chats"
+	);
+}
+
+function getSourceFilterLabel(
+	sourceFilter: SearchSourceFilter,
+	projectName?: string,
+) {
+	if (sourceFilter === "all") {
+		return "All";
+	}
+
+	if (sourceFilter === "notes") {
+		return "Notes";
+	}
+
+	if (sourceFilter === "chats") {
+		return "Chats";
+	}
+
+	return projectName ?? "All";
+}
+
+function getSourceFilterIcon(sourceFilter: SearchSourceFilter) {
+	if (sourceFilter === "all") {
+		return GalleryHorizontalEnd;
+	}
+
+	if (sourceFilter === "notes") {
+		return FileText;
+	}
+
+	if (sourceFilter === "chats") {
+		return MessageCircle;
+	}
+
+	return FolderClosed;
+}
+
+function matchesSourceFilter(
+	item: SearchCommandItem,
+	sourceFilter: SearchSourceFilter,
+) {
+	if (sourceFilter === "all") {
+		return true;
+	}
+
+	if (sourceFilter === "chats") {
+		return item.kind === "chat";
+	}
+
+	if (item.kind === "chat") {
+		return false;
+	}
+
+	if (sourceFilter === "notes") {
+		return !item.projectId;
+	}
+
+	if (!isProjectSourceFilter(sourceFilter)) {
+		return false;
+	}
+
+	return item.projectId === sourceFilter;
 }
 
 function SearchDatePresetOption({
