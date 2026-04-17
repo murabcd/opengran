@@ -353,7 +353,11 @@ function ProjectsFilterMenu({
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<DropdownMenuTrigger asChild>
-						<button type="button" aria-label="Sort projects">
+						<button
+							type="button"
+							aria-label="Sort projects"
+							className="text-sidebar-foreground/55 hover:text-sidebar-accent-foreground focus-visible:text-sidebar-accent-foreground data-[state=open]:text-sidebar-accent-foreground"
+						>
 							<MoreHorizontal />
 						</button>
 					</DropdownMenuTrigger>

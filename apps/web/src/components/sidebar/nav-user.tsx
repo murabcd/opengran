@@ -11,7 +11,6 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { Kbd } from "@workspace/ui/components/kbd";
 import {
 	SidebarMenu,
 	SidebarMenuButton,
@@ -31,6 +30,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import { ShortcutHint } from "@/components/sidebar/shortcut-hint";
 import { getAvatarSrc } from "@/lib/avatar";
 import { resolveLatestDesktopDownloadUrl } from "@/lib/desktop-release";
 
@@ -173,16 +173,17 @@ export function NavUser({
 							</DropdownMenuItem>
 						) : null}
 						<DropdownMenuItem
-							className="h-8 gap-2 px-2"
+							className="group/settings-item h-8 gap-2 px-2"
 							onFocus={onSettingsIntent}
 							onPointerMove={onSettingsIntent}
 							onClick={onSettingsOpen}
 						>
 							<Settings />
 							Settings
-							<Kbd className="ml-auto font-mono text-[10px]">
-								<span className="text-xs">⌘</span>,
-							</Kbd>
+							<ShortcutHint
+								keyLabel=","
+								className="opacity-0 transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover/settings-item:opacity-100 group-focus/settings-item:opacity-100 group-data-[highlighted]/settings-item:opacity-100"
+							/>
 						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 						<DropdownMenuItem

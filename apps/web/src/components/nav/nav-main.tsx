@@ -1,4 +1,3 @@
-import { Kbd } from "@workspace/ui/components/kbd";
 import {
 	SidebarGroup,
 	SidebarMenu,
@@ -10,6 +9,7 @@ import type { LucideIcon } from "lucide-react";
 import { SquarePen } from "lucide-react";
 import * as React from "react";
 import { SidebarCollapsibleGroup } from "@/components/nav/sidebar-collapsible-group";
+import { ShortcutHint } from "@/components/sidebar/shortcut-hint";
 
 type NavItem = {
 	title: string;
@@ -39,15 +39,32 @@ export function NavMain({
 }) {
 	React.useEffect(() => {
 		const down = (event: KeyboardEvent) => {
-			if (event.key === "k" && (event.metaKey || event.ctrlKey)) {
+			if (
+				event.defaultPrevented ||
+				!(event.metaKey || event.ctrlKey) ||
+				event.altKey ||
+				event.shiftKey
+			) {
+				return;
+			}
+
+			if (event.key.toLowerCase() === "k") {
 				event.preventDefault();
 				onSearchOpen();
+				return;
 			}
+
+			if (event.key.toLowerCase() !== "n") {
+				return;
+			}
+
+			event.preventDefault();
+			onCreateNote();
 		};
 
 		document.addEventListener("keydown", down);
 		return () => document.removeEventListener("keydown", down);
-	}, [onSearchOpen]);
+	}, [onCreateNote, onSearchOpen]);
 
 	const searchItem = items.find((item) => item.action === "search");
 	const viewItems = items.filter((item) => item.action !== "search");
@@ -64,6 +81,7 @@ export function NavMain({
 						>
 							<SquarePen />
 							<span>New note</span>
+							<SidebarMenuShortcutHint keyLabel="N" />
 						</button>
 					</SidebarMenuButton>
 				</SidebarMenuItem>
@@ -99,9 +117,7 @@ export function NavMain({
 								{searchItem.icon && <searchItem.icon />}
 								<span>{searchItem.title}</span>
 								{searchItem.action === "search" ? (
-									<Kbd className="ml-auto font-mono text-[10px]">
-										<span className="text-xs">⌘</span>K
-									</Kbd>
+									<SidebarMenuShortcutHint keyLabel="K" />
 								) : null}
 							</button>
 						</SidebarMenuButton>
@@ -155,4 +171,13 @@ export function NavMain({
 
 function formatBadgeCount(value: number) {
 	return value > 99 ? "99+" : String(value);
+}
+
+function SidebarMenuShortcutHint({ keyLabel }: { keyLabel: string }) {
+	return (
+		<ShortcutHint
+			keyLabel={keyLabel}
+			className="opacity-0 transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover/menu-item:opacity-100 group-focus-within/menu-item:opacity-100"
+		/>
+	);
 }
