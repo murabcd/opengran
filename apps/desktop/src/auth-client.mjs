@@ -160,6 +160,13 @@ const parseResponse = async (response) => {
 const toAbsoluteUrl = (path) =>
 	new URL(`${authBasePath}${path}`, getAuthBaseUrl()).toString();
 
+const createAuthRequestError = (message, status, statusText) => {
+	const error = new Error(message);
+	error.status = status;
+	error.statusText = statusText;
+	return error;
+};
+
 const authFetch = async (path, options = {}) => {
 	const requestHeaders = new Headers(options.headers ?? {});
 	const authBaseUrl = getAuthBaseUrl();
@@ -203,7 +210,7 @@ const authFetch = async (path, options = {}) => {
 				? data.message
 				: response.statusText || "Request failed.";
 
-		throw new Error(message);
+		throw createAuthRequestError(message, response.status, response.statusText);
 	}
 
 	return data;

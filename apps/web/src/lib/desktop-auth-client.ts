@@ -3,6 +3,7 @@ import * as React from "react";
 type DesktopSessionData = {
 	user: Record<string, unknown> & {
 		email?: string | null;
+		image?: string | null;
 		name?: string | null;
 	};
 	session: Record<string, unknown> & {
@@ -75,6 +76,16 @@ type DesktopFetchOptions = {
 	throw?: boolean;
 };
 
+type UpdateUserArgs = {
+	name?: string;
+};
+
+type DesktopAuthErrorShape = {
+	message: string;
+	status: number;
+	statusText: string;
+};
+
 const normalizeHeaders = (
 	headers?: HeadersInit,
 ): Record<string, string> | undefined => {
@@ -104,6 +115,25 @@ const notifyListeners = () => {
 	for (const listener of listeners) {
 		listener();
 	}
+};
+
+const toDesktopAuthErrorShape = (
+	error: unknown,
+	fallbackMessage: string,
+): DesktopAuthErrorShape => {
+	const nextError = error instanceof Error ? error : new Error(fallbackMessage);
+
+	return {
+		message: nextError.message,
+		status:
+			"status" in nextError && typeof nextError.status === "number"
+				? nextError.status
+				: 500,
+		statusText:
+			"statusText" in nextError && typeof nextError.statusText === "string"
+				? nextError.statusText
+				: nextError.message,
+	};
 };
 
 const setSessionState = (nextState: SessionState) => {
@@ -166,6 +196,10 @@ const refreshDesktopSession = async ({
 		.catch((error: unknown) => {
 			const nextError =
 				error instanceof Error ? error : new Error("Failed to fetch session.");
+			const errorShape = toDesktopAuthErrorShape(
+				error,
+				"Failed to fetch session.",
+			);
 
 			setSessionState({
 				data: null,
@@ -175,11 +209,7 @@ const refreshDesktopSession = async ({
 
 			return {
 				data: null,
-				error: {
-					message: nextError.message,
-					status: 500,
-					statusText: nextError.message,
-				},
+				error: errorShape,
 			};
 		})
 		.finally(() => {
@@ -223,6 +253,27 @@ export const desktopAuthClient = {
 		await refreshDesktopSession({
 			headers: fetchOptions?.headers,
 		}),
+	updateUser: async (body: UpdateUserArgs) => {
+		try {
+			const data = await desktopAuthFetch({
+				path: "/update-user",
+				method: "POST",
+				body,
+				throw: true,
+			});
+			await refreshDesktopSession();
+
+			return {
+				data,
+				error: null,
+			};
+		} catch (error) {
+			return {
+				data: null,
+				error: toDesktopAuthErrorShape(error, "Failed to update user."),
+			};
+		}
+	},
 	signOut: async () => {
 		await desktopAuthFetch({
 			path: "/sign-out",

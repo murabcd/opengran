@@ -52,6 +52,7 @@ export default defineSchema({
 		transcriptionLanguage: v.union(v.string(), v.null()),
 		jobTitle: v.union(v.string(), v.null()),
 		companyName: v.union(v.string(), v.null()),
+		avatarStorageId: v.optional(v.id("_storage")),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	}).index("by_ownerTokenIdentifier", ["ownerTokenIdentifier"]),

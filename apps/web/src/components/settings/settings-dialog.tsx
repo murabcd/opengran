@@ -155,6 +155,7 @@ const GOOGLE_CALENDAR_SCOPES = [
 ] as const;
 
 const SETTINGS_LABEL_CLASSNAME = "text-xs text-muted-foreground";
+const MAX_PROFILE_AVATAR_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 const withoutTrailingPeriod = (message: string) =>
 	message.trimEnd().replace(/\.+$/u, "");
@@ -170,6 +171,22 @@ type WorkspaceFormState = {
 	name: string;
 	iconStorageId: Id<"_storage"> | null;
 	iconPreviewUrl: string | null;
+};
+
+type UserPreferencesState = {
+	transcriptionLanguage: string | null;
+	jobTitle: string | null;
+	companyName: string | null;
+	avatarStorageId: Id<"_storage"> | null;
+	avatarUrl: string | null;
+};
+
+type ProfileFormState = {
+	name: string;
+	jobTitle: string;
+	companyName: string;
+	avatarStorageId: Id<"_storage"> | null;
+	avatarPreviewUrl: string | null;
 };
 
 type DataControlsState = {
@@ -669,6 +686,32 @@ export function SettingsDialog({
 	);
 }
 
+const mergeUserPreferencesForOptimisticUpdate = (
+	currentPreferences: UserPreferencesState | null | undefined,
+	args: Partial<UserPreferencesState>,
+): UserPreferencesState => ({
+	transcriptionLanguage:
+		args.transcriptionLanguage !== undefined
+			? args.transcriptionLanguage
+			: (currentPreferences?.transcriptionLanguage ?? null),
+	jobTitle:
+		args.jobTitle !== undefined
+			? args.jobTitle
+			: (currentPreferences?.jobTitle ?? null),
+	companyName:
+		args.companyName !== undefined
+			? args.companyName
+			: (currentPreferences?.companyName ?? null),
+	avatarStorageId:
+		args.avatarStorageId !== undefined
+			? args.avatarStorageId
+			: (currentPreferences?.avatarStorageId ?? null),
+	avatarUrl:
+		args.avatarUrl !== undefined
+			? args.avatarUrl
+			: (currentPreferences?.avatarUrl ?? null),
+});
+
 function AppearanceSettings() {
 	const { theme, setTheme } = useTheme();
 	const userPreferences = useQuery(api.userPreferences.get, {});
@@ -679,20 +722,7 @@ function AppearanceSettings() {
 		localStore.setQuery(
 			api.userPreferences.get,
 			{},
-			{
-				transcriptionLanguage:
-					args.transcriptionLanguage !== undefined
-						? args.transcriptionLanguage
-						: (currentPreferences?.transcriptionLanguage ?? null),
-				jobTitle:
-					args.jobTitle !== undefined
-						? args.jobTitle
-						: (currentPreferences?.jobTitle ?? null),
-				companyName:
-					args.companyName !== undefined
-						? args.companyName
-						: (currentPreferences?.companyName ?? null),
-			},
+			mergeUserPreferencesForOptimisticUpdate(currentPreferences, args),
 		);
 	});
 	const [isSavingLanguagePreference, setIsSavingLanguagePreference] =
@@ -2751,6 +2781,9 @@ function ManageAccountForm({
 	onSave: () => void;
 }) {
 	const userPreferences = useQuery(api.userPreferences.get, {});
+	const generateAvatarUploadUrl = useMutation(
+		api.userPreferences.generateAvatarUploadUrl,
+	);
 	const updateUserPreferences = useMutation(
 		api.userPreferences.update,
 	).withOptimisticUpdate((localStore, args) => {
@@ -2758,41 +2791,113 @@ function ManageAccountForm({
 		localStore.setQuery(
 			api.userPreferences.get,
 			{},
-			{
-				transcriptionLanguage:
-					args.transcriptionLanguage !== undefined
-						? args.transcriptionLanguage
-						: (currentPreferences?.transcriptionLanguage ?? null),
-				jobTitle:
-					args.jobTitle !== undefined
-						? args.jobTitle
-						: (currentPreferences?.jobTitle ?? null),
-				companyName:
-					args.companyName !== undefined
-						? args.companyName
-						: (currentPreferences?.companyName ?? null),
-			},
+			mergeUserPreferencesForOptimisticUpdate(currentPreferences, args),
 		);
 	});
-	const [formState, setFormState] = useState(() => ({
+	const [formState, setFormState] = useState<ProfileFormState>(() => ({
+		name: user.name,
 		jobTitle: "",
 		companyName: "",
+		avatarStorageId: null,
+		avatarPreviewUrl: null,
 	}));
+	const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 	const [isSavingPreferences, setIsSavingPreferences] = useState(false);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
 		setFormState({
+			name: user.name,
 			jobTitle: userPreferences?.jobTitle ?? "",
 			companyName: userPreferences?.companyName ?? "",
+			avatarStorageId: userPreferences?.avatarStorageId ?? null,
+			avatarPreviewUrl: null,
 		});
-	}, [userPreferences?.companyName, userPreferences?.jobTitle]);
+	}, [
+		user,
+		userPreferences?.avatarStorageId,
+		userPreferences?.companyName,
+		userPreferences?.jobTitle,
+	]);
 
-	const initials = getInitials(user.name, user.email);
+	useEffect(() => {
+		if (!formState.avatarPreviewUrl?.startsWith("blob:")) {
+			return;
+		}
+
+		return () => {
+			URL.revokeObjectURL(formState.avatarPreviewUrl);
+		};
+	}, [formState.avatarPreviewUrl]);
+
+	const trimmedName = formState.name.trim();
+	const trimmedJobTitle = formState.jobTitle.trim();
+	const trimmedCompanyName = formState.companyName.trim();
+	const currentJobTitle = userPreferences?.jobTitle ?? "";
+	const currentCompanyName = userPreferences?.companyName ?? "";
+	const currentAvatarStorageId = userPreferences?.avatarStorageId ?? null;
+	const hasAuthChanges = trimmedName !== user.name.trim();
+	const hasPreferenceChanges =
+		trimmedJobTitle !== currentJobTitle.trim() ||
+		trimmedCompanyName !== currentCompanyName.trim() ||
+		formState.avatarStorageId !== currentAvatarStorageId;
+	const hasChanges = hasAuthChanges || hasPreferenceChanges;
+
+	const initials = getInitials(formState.name, user.email);
 	const avatarSrc = getAvatarSrc({
-		avatar: user.avatar,
-		name: user.name,
+		avatar: formState.avatarPreviewUrl ?? user.avatar,
+		name: formState.name,
 		email: user.email,
 	});
+
+	const handleAvatarUpload = async (file: File) => {
+		if (!file.type.startsWith("image/")) {
+			toast.error("Please choose an image file");
+			return;
+		}
+
+		if (file.size > MAX_PROFILE_AVATAR_FILE_SIZE_BYTES) {
+			toast.error("Profile avatar must be 5MB or smaller");
+			return;
+		}
+
+		setIsUploadingAvatar(true);
+
+		try {
+			const uploadUrl = await generateAvatarUploadUrl();
+			const response = await fetch(uploadUrl, {
+				method: "POST",
+				headers: {
+					"Content-Type": file.type || "application/octet-stream",
+				},
+				body: file,
+			});
+
+			if (!response.ok) {
+				throw new Error("Failed to upload profile avatar.");
+			}
+
+			const result = (await response.json()) as { storageId?: Id<"_storage"> };
+			if (!result.storageId) {
+				throw new Error("Profile avatar upload did not return a storage id.");
+			}
+
+			setFormState((current) => ({
+				...current,
+				avatarStorageId: result.storageId,
+				avatarPreviewUrl: URL.createObjectURL(file),
+			}));
+		} catch (error) {
+			console.error("Failed to upload profile avatar", error);
+			toast.error(
+				error instanceof Error
+					? withoutTrailingPeriod(error.message)
+					: "Failed to upload profile avatar",
+			);
+		} finally {
+			setIsUploadingAvatar(false);
+		}
+	};
 
 	return (
 		<div className="py-4">
@@ -2803,16 +2908,40 @@ function ManageAccountForm({
 						<Avatar className="size-20 rounded-lg">
 							<AvatarImage
 								src={avatarSrc}
-								alt="Profile avatar"
+								alt="Profile avatar preview"
 								className="object-cover"
 							/>
 							<AvatarFallback className="rounded-lg bg-muted/40">
-								{user.avatar ? initials : <ImageUp className="size-8" />}
+								{avatarSrc ? initials : <ImageUp className="size-8" />}
 							</AvatarFallback>
 						</Avatar>
 						<div className="flex flex-col gap-2">
+							<Button
+								variant="outline"
+								size="sm"
+								className="w-min"
+								onClick={() => fileInputRef.current?.click()}
+								disabled={isSavingPreferences || isUploadingAvatar}
+							>
+								{isUploadingAvatar ? "Processing..." : "Upload"}
+							</Button>
+							<input
+								ref={fileInputRef}
+								type="file"
+								accept="image/png,image/jpeg,image/gif,image/webp"
+								className="hidden"
+								onChange={(event) => {
+									const file = event.target.files?.[0];
+									if (!file) {
+										return;
+									}
+
+									void handleAvatarUpload(file);
+									event.target.value = "";
+								}}
+							/>
 							<FieldDescription>
-								Managed by your signed-in account.
+								Recommend size 1:1, up to 5MB.
 							</FieldDescription>
 						</div>
 					</div>
@@ -2821,7 +2950,19 @@ function ManageAccountForm({
 					<Label htmlFor="settings-name" className={SETTINGS_LABEL_CLASSNAME}>
 						Full name
 					</Label>
-					<Input id="settings-name" value={user.name} disabled />
+					<Input
+						id="settings-name"
+						value={formState.name}
+						onChange={(event) => {
+							const nextName = event.target.value;
+							setFormState((current) => ({
+								...current,
+								name: nextName,
+							}));
+						}}
+						placeholder="Enter your name"
+						disabled={isSavingPreferences || isUploadingAvatar}
+					/>
 				</Field>
 				<Field>
 					<Label htmlFor="settings-email" className={SETTINGS_LABEL_CLASSNAME}>
@@ -2847,6 +2988,7 @@ function ManageAccountForm({
 							}));
 						}}
 						placeholder="Enter your job title"
+						disabled={isSavingPreferences || isUploadingAvatar}
 					/>
 				</Field>
 				<Field>
@@ -2867,34 +3009,78 @@ function ManageAccountForm({
 							}));
 						}}
 						placeholder="Enter your company name"
+						disabled={isSavingPreferences || isUploadingAvatar}
 					/>
 				</Field>
 			</FieldGroup>
 			<div className="flex justify-end gap-2 pt-6">
-				<Button variant="ghost" onClick={onCancel}>
+				<Button
+					variant="ghost"
+					onClick={onCancel}
+					disabled={isSavingPreferences || isUploadingAvatar}
+				>
 					Cancel
 				</Button>
 				<Button
 					onClick={async () => {
+						if (
+							!trimmedName ||
+							isSavingPreferences ||
+							isUploadingAvatar ||
+							!hasChanges
+						) {
+							return;
+						}
+
 						setIsSavingPreferences(true);
 
 						try {
-							await updateUserPreferences({
-								jobTitle: formState.jobTitle.trim() || null,
-								companyName: formState.companyName.trim() || null,
-							});
+							if (hasAuthChanges) {
+								const { error } = await authClient.updateUser({
+									name: trimmedName,
+								});
 
+								if (error) {
+									throw new Error(error.message);
+								}
+							}
+
+							if (hasPreferenceChanges) {
+								await updateUserPreferences({
+									jobTitle: trimmedJobTitle || null,
+									companyName: trimmedCompanyName || null,
+									avatarStorageId: formState.avatarStorageId,
+								});
+							}
+
+							toast.success("Profile updated");
 							onSave();
 						} catch (error) {
-							console.error("Failed to update profile preferences", error);
-							toast.error("Failed to update profile");
+							console.error("Failed to update profile", error);
+							toast.error(
+								error instanceof Error
+									? withoutTrailingPeriod(error.message)
+									: "Failed to update profile",
+							);
 						} finally {
 							setIsSavingPreferences(false);
 						}
 					}}
-					disabled={isSavingPreferences}
+					disabled={
+						!trimmedName ||
+						!hasChanges ||
+						isSavingPreferences ||
+						isUploadingAvatar
+					}
 				>
-					{isSavingPreferences ? "Saving..." : "Save"}
+					{isSavingPreferences ? (
+						<>
+							<LoaderCircle className="animate-spin" />
+							Saving
+						</>
+					) : (
+						"Save"
+					)}
 				</Button>
 			</div>
 		</div>

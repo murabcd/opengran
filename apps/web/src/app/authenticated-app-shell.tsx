@@ -157,10 +157,13 @@ const useCurrentDate = () => {
 	return currentDate;
 };
 
-const toAppUser = (session: AuthSession): AppUser => ({
+const toAppUser = (
+	session: AuthSession,
+	avatarOverride?: string | null,
+): AppUser => ({
 	name: session.user.name?.trim() || session.user.email,
 	email: session.user.email,
-	avatar: session.user.image ?? "",
+	avatar: avatarOverride ?? session.user.image ?? "",
 });
 
 const useAppShellState = ({
@@ -279,12 +282,19 @@ const useAppShellState = ({
 		React.useState<NoteEditorActions | null>(null);
 	const [currentNoteCommentsOpener, setCurrentNoteCommentsOpener] =
 		React.useState<(() => void) | null>(null);
+	const userPreferences = useQuery(
+		api.userPreferences.get,
+		session?.user && isConvexAuthenticated ? {} : "skip",
+	);
 	const creatingNoteRef = React.useRef(false);
 	const inboxOpenRef = React.useRef(inboxOpen);
 	const lastNonSettingsLocationRef = React.useRef(
 		getInitialNonSettingsLocation(),
 	);
-	const user = React.useMemo(() => toAppUser(session), [session]);
+	const user = React.useMemo(
+		() => toAppUser(session, userPreferences?.avatarUrl),
+		[session, userPreferences?.avatarUrl],
+	);
 	const currentDate = useCurrentDate();
 	const currentDayOfMonth = currentDate.getDate();
 	const currentMonthLabel = currentMonthFormatter.format(currentDate);
