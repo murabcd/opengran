@@ -9,6 +9,10 @@ import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import { MessageCircle, MoreHorizontal } from "lucide-react";
 import { getChatId } from "@/lib/chat";
+import {
+	groupItemsByRelativeDate,
+	RELATIVE_DATE_GROUP_SECTIONS,
+} from "@/lib/group-by-relative-date";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
 import { ChatActionsMenu } from "./chat-actions-menu";
 
@@ -19,14 +23,6 @@ type ChatHistoryListProps = {
 	onOpenChat: (chatId: string) => void;
 	onPrefetchChat: (chatId: string) => void;
 	onMoveToTrash: (chatId: string) => void;
-};
-
-type GroupedChats = {
-	today: Array<Doc<"chats">>;
-	yesterday: Array<Doc<"chats">>;
-	lastWeek: Array<Doc<"chats">>;
-	lastMonth: Array<Doc<"chats">>;
-	older: Array<Doc<"chats">>;
 };
 
 const chatCreatedTimeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -42,18 +38,14 @@ export function ChatHistoryList({
 	onPrefetchChat,
 	onMoveToTrash,
 }: ChatHistoryListProps) {
-	const groupedChats = groupChatsByDate(chats);
-	const chatSections = [
-		{ key: "today", label: "Today", chats: groupedChats.today },
-		{ key: "yesterday", label: "Yesterday", chats: groupedChats.yesterday },
-		{ key: "lastWeek", label: "Last 7 days", chats: groupedChats.lastWeek },
-		{
-			key: "lastMonth",
-			label: "Last 30 days",
-			chats: groupedChats.lastMonth,
-		},
-		{ key: "older", label: "Older", chats: groupedChats.older },
-	] as const;
+	const groupedChats = groupItemsByRelativeDate(
+		chats,
+		(chat) => chat.updatedAt || chat.createdAt || chat._creationTime,
+	);
+	const chatSections = RELATIVE_DATE_GROUP_SECTIONS.map((section) => ({
+		...section,
+		chats: groupedChats[section.key],
+	}));
 
 	return (
 		<div className="mx-auto mt-6 w-full max-w-xl">
@@ -175,48 +167,6 @@ function ChatHistoryItem({
 		</div>
 	);
 }
-
-const isSameCalendarDay = (left: Date, right: Date) =>
-	left.getFullYear() === right.getFullYear() &&
-	left.getMonth() === right.getMonth() &&
-	left.getDate() === right.getDate();
-
-const groupChatsByDate = (chats: Array<Doc<"chats">>): GroupedChats => {
-	const now = new Date();
-	const yesterday = new Date(now);
-	yesterday.setDate(now.getDate() - 1);
-	const oneWeekAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
-	const oneMonthAgo = now.getTime() - 30 * 24 * 60 * 60 * 1000;
-
-	return chats.reduce<GroupedChats>(
-		(groups, chat) => {
-			const chatDate = new Date(
-				chat.updatedAt || chat.createdAt || chat._creationTime,
-			);
-
-			if (isSameCalendarDay(chatDate, now)) {
-				groups.today.push(chat);
-			} else if (isSameCalendarDay(chatDate, yesterday)) {
-				groups.yesterday.push(chat);
-			} else if (chatDate.getTime() > oneWeekAgo) {
-				groups.lastWeek.push(chat);
-			} else if (chatDate.getTime() > oneMonthAgo) {
-				groups.lastMonth.push(chat);
-			} else {
-				groups.older.push(chat);
-			}
-
-			return groups;
-		},
-		{
-			today: [],
-			yesterday: [],
-			lastWeek: [],
-			lastMonth: [],
-			older: [],
-		},
-	);
-};
 
 function ChatHistorySkeleton() {
 	return (

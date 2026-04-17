@@ -47,6 +47,10 @@ import * as React from "react";
 import { toast } from "sonner";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { getChatId } from "@/lib/chat";
+import {
+	groupItemsByRelativeDate,
+	RELATIVE_DATE_GROUP_SECTIONS,
+} from "@/lib/group-by-relative-date";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import { removeNoteChats, restoreNoteChats } from "@/lib/optimistic-note-chats";
 import { api } from "../../../../../convex/_generated/api";
@@ -58,6 +62,15 @@ const TRASH_NOTE_SKELETON_IDS = [
 	"trash-note-skeleton-3",
 	"trash-note-skeleton-4",
 ] as const;
+
+type TrashListItem = {
+	key: string;
+	title: string;
+	icon: LucideIcon;
+	updatedAt: number;
+	onRestore: () => void;
+	onDelete: () => void;
+};
 
 export function NavTrash({
 	open,
@@ -387,7 +400,7 @@ function TrashSearchInput({
 					value={search}
 					onChange={onSearchChange}
 					className="h-8 bg-secondary pr-2 pl-8 focus-visible:border-input focus-visible:ring-0"
-					placeholder="Search notes..."
+					placeholder="Search trash..."
 				/>
 			</div>
 		</div>
@@ -409,51 +422,59 @@ function TrashResults({
 	onRestoreChat: (chatId: string) => void;
 	onDeleteChat: (chatId: string) => void;
 }) {
-	return (
-		<div className="space-y-1">
-			{notes.length > 0 ? (
-				<TrashSection title="Notes">
-					{notes.map((note) => (
-						<TrashItemRow
-							key={note._id}
-							title={getNoteDisplayTitle(note.title)}
-							icon={FileText}
-							onRestore={() => onRestoreNote(note._id)}
-							onDelete={() => onDeleteNote(note._id)}
-						/>
-					))}
-				</TrashSection>
-			) : null}
-			{chats.length > 0 ? (
-				<TrashSection title="Chats">
-					{chats.map((chat) => (
-						<TrashItemRow
-							key={chat._id}
-							title={chat.title || "New chat"}
-							icon={MessageCircle}
-							onRestore={() => onRestoreChat(getChatId(chat))}
-							onDelete={() => onDeleteChat(getChatId(chat))}
-						/>
-					))}
-				</TrashSection>
-			) : null}
-		</div>
+	const items = React.useMemo(
+		() =>
+			[
+				...notes.map<TrashListItem>((note) => ({
+					key: `note-${note._id}`,
+					title: getNoteDisplayTitle(note.title),
+					icon: FileText,
+					updatedAt: note.updatedAt || note.createdAt || note._creationTime,
+					onRestore: () => onRestoreNote(note._id),
+					onDelete: () => onDeleteNote(note._id),
+				})),
+				...chats.map<TrashListItem>((chat) => ({
+					key: `chat-${chat._id}`,
+					title: chat.title || "New chat",
+					icon: MessageCircle,
+					updatedAt: chat.updatedAt || chat.createdAt || chat._creationTime,
+					onRestore: () => onRestoreChat(getChatId(chat)),
+					onDelete: () => onDeleteChat(getChatId(chat)),
+				})),
+			].sort((left, right) => right.updatedAt - left.updatedAt),
+		[chats, notes, onDeleteChat, onDeleteNote, onRestoreChat, onRestoreNote],
 	);
-}
+	const groupedItems = React.useMemo(
+		() => groupItemsByRelativeDate(items, (item) => item.updatedAt),
+		[items],
+	);
 
-function TrashSection({
-	title,
-	children,
-}: {
-	title: string;
-	children: React.ReactNode;
-}) {
 	return (
 		<div className="space-y-1">
-			<div className="px-1.5 pt-1 text-xs font-medium text-muted-foreground">
-				{title}
-			</div>
-			{children}
+			{RELATIVE_DATE_GROUP_SECTIONS.map((section) => {
+				const sectionItems = groupedItems[section.key];
+
+				if (sectionItems.length === 0) {
+					return null;
+				}
+
+				return (
+					<div key={section.key} className="space-y-1">
+						<div className="px-1.5 pt-1 text-xs font-medium text-muted-foreground">
+							{section.label}
+						</div>
+						{sectionItems.map((item) => (
+							<TrashItemRow
+								key={item.key}
+								title={item.title}
+								icon={item.icon}
+								onRestore={item.onRestore}
+								onDelete={item.onDelete}
+							/>
+						))}
+					</div>
+				);
+			})}
 		</div>
 	);
 }

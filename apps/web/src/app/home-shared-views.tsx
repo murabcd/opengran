@@ -20,6 +20,10 @@ import {
 	isUpcomingEventToday,
 } from "@/app/location";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
+import {
+	groupItemsByRelativeDate,
+	RELATIVE_DATE_GROUP_SECTIONS,
+} from "@/lib/group-by-relative-date";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 
@@ -34,19 +38,6 @@ const noteCreatedTimeFormatter = new Intl.DateTimeFormat(undefined, {
 	minute: "2-digit",
 });
 
-type GroupedItems<T> = {
-	today: T[];
-	yesterday: T[];
-	lastWeek: T[];
-	lastMonth: T[];
-	older: T[];
-};
-
-const isSameCalendarDay = (left: Date, right: Date) =>
-	left.getFullYear() === right.getFullYear() &&
-	left.getMonth() === right.getMonth() &&
-	left.getDate() === right.getDate();
-
 const getNoteAuthorDisplayName = (note: Doc<"notes">, currentUser: AppUser) =>
 	note.authorName?.trim() || currentUser.name;
 
@@ -54,51 +45,6 @@ const formatNoteCreatedTime = (note: Doc<"notes">) =>
 	noteCreatedTimeFormatter.format(
 		new Date(note.createdAt || note._creationTime),
 	);
-
-const groupItemsByDate = <
-	T extends {
-		_creationTime: number;
-		createdAt?: number;
-		updatedAt?: number;
-	},
->(
-	items: T[],
-): GroupedItems<T> => {
-	const now = new Date();
-	const yesterday = new Date(now);
-	yesterday.setDate(now.getDate() - 1);
-	const oneWeekAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
-	const oneMonthAgo = now.getTime() - 30 * 24 * 60 * 60 * 1000;
-
-	return items.reduce<GroupedItems<T>>(
-		(groups, item) => {
-			const noteDate = new Date(
-				item.updatedAt || item.createdAt || item._creationTime,
-			);
-
-			if (isSameCalendarDay(noteDate, now)) {
-				groups.today.push(item);
-			} else if (isSameCalendarDay(noteDate, yesterday)) {
-				groups.yesterday.push(item);
-			} else if (noteDate.getTime() > oneWeekAgo) {
-				groups.lastWeek.push(item);
-			} else if (noteDate.getTime() > oneMonthAgo) {
-				groups.lastMonth.push(item);
-			} else {
-				groups.older.push(item);
-			}
-
-			return groups;
-		},
-		{
-			today: [],
-			yesterday: [],
-			lastWeek: [],
-			lastMonth: [],
-			older: [],
-		},
-	);
-};
 
 export function HomeView({
 	currentDate,
@@ -526,18 +472,14 @@ function NotesList({
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
-	const groupedNotes = groupItemsByDate(notes);
-	const sections = [
-		{ key: "today", label: "Today", notes: groupedNotes.today },
-		{ key: "yesterday", label: "Yesterday", notes: groupedNotes.yesterday },
-		{ key: "lastWeek", label: "Last 7 days", notes: groupedNotes.lastWeek },
-		{
-			key: "lastMonth",
-			label: "Last 30 days",
-			notes: groupedNotes.lastMonth,
-		},
-		{ key: "older", label: "Older", notes: groupedNotes.older },
-	] as const;
+	const groupedNotes = groupItemsByRelativeDate(
+		notes,
+		(note) => note.updatedAt || note.createdAt || note._creationTime,
+	);
+	const sections = RELATIVE_DATE_GROUP_SECTIONS.map((section) => ({
+		...section,
+		notes: groupedNotes[section.key],
+	}));
 
 	return (
 		<div className="w-full max-w-xl space-y-1">

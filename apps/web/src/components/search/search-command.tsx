@@ -37,6 +37,10 @@ import {
 	type LucideIcon,
 } from "lucide-react";
 import * as React from "react";
+import {
+	groupItemsByRelativeDate,
+	RELATIVE_DATE_GROUP_SECTIONS,
+} from "@/lib/group-by-relative-date";
 
 export interface SearchCommandItem {
 	id: string;
@@ -476,22 +480,15 @@ export function SearchCommand({
 		[dateFilteredItems, projectFilter],
 	);
 	const groupedNotes = React.useMemo(
-		() => groupSearchItemsByDate(noteItems),
+		() => groupItemsByRelativeDate(noteItems, (item) => item.updatedAt),
 		[noteItems],
 	);
 	const noteSections = React.useMemo(
 		() =>
-			[
-				{ key: "today", label: "Today", items: groupedNotes.today },
-				{ key: "yesterday", label: "Yesterday", items: groupedNotes.yesterday },
-				{ key: "lastWeek", label: "Last 7 days", items: groupedNotes.lastWeek },
-				{
-					key: "lastMonth",
-					label: "Last 30 days",
-					items: groupedNotes.lastMonth,
-				},
-				{ key: "older", label: "Older", items: groupedNotes.older },
-			] as const,
+			RELATIVE_DATE_GROUP_SECTIONS.map((section) => ({
+				...section,
+				items: groupedNotes[section.key],
+			})),
 		[groupedNotes],
 	);
 	const activeProject = React.useMemo(
@@ -668,64 +665,6 @@ function SearchDateCalendarDayButton(
 					"data-[selected-single=true]:bg-destructive/15 data-[selected-single=true]:text-destructive dark:data-[selected-single=true]:bg-destructive/25 data-[range-start=true]:rounded-(--cell-radius) data-[range-start=true]:bg-destructive/15 data-[range-start=true]:text-destructive dark:data-[range-start=true]:bg-destructive/25 data-[range-middle=true]:bg-destructive/15 data-[range-middle=true]:text-destructive dark:data-[range-middle=true]:bg-destructive/25 data-[range-end=true]:rounded-(--cell-radius) data-[range-end=true]:bg-destructive/15 data-[range-end=true]:text-destructive dark:data-[range-end=true]:bg-destructive/25",
 			)}
 		/>
-	);
-}
-
-type GroupedSearchItems = {
-	today: SearchCommandItem[];
-	yesterday: SearchCommandItem[];
-	lastWeek: SearchCommandItem[];
-	lastMonth: SearchCommandItem[];
-	older: SearchCommandItem[];
-};
-
-function groupSearchItemsByDate(
-	items: SearchCommandItem[],
-): GroupedSearchItems {
-	const now = new Date();
-	const yesterday = new Date(now);
-	yesterday.setDate(now.getDate() - 1);
-	const oneWeekAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
-	const oneMonthAgo = now.getTime() - 30 * 24 * 60 * 60 * 1000;
-
-	return items.reduce<GroupedSearchItems>(
-		(groups, item) => {
-			if (!item.updatedAt) {
-				groups.older.push(item);
-				return groups;
-			}
-
-			const itemDate = new Date(item.updatedAt);
-
-			if (isSameCalendarDay(itemDate, now)) {
-				groups.today.push(item);
-			} else if (isSameCalendarDay(itemDate, yesterday)) {
-				groups.yesterday.push(item);
-			} else if (itemDate.getTime() > oneWeekAgo) {
-				groups.lastWeek.push(item);
-			} else if (itemDate.getTime() > oneMonthAgo) {
-				groups.lastMonth.push(item);
-			} else {
-				groups.older.push(item);
-			}
-
-			return groups;
-		},
-		{
-			today: [],
-			yesterday: [],
-			lastWeek: [],
-			lastMonth: [],
-			older: [],
-		},
-	);
-}
-
-function isSameCalendarDay(left: Date, right: Date) {
-	return (
-		left.getFullYear() === right.getFullYear() &&
-		left.getMonth() === right.getMonth() &&
-		left.getDate() === right.getDate()
 	);
 }
 
