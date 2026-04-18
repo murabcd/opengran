@@ -37,11 +37,8 @@ import { resolveLatestDesktopDownloadUrl } from "@/lib/desktop-release";
 export function NavUser({
 	user,
 	onRecipesOpen,
-	onRecipesIntent,
 	onTemplatesOpen,
-	onTemplatesIntent,
 	onSettingsOpen,
-	onSettingsIntent,
 	onSignOut,
 	signingOut,
 }: {
@@ -51,11 +48,8 @@ export function NavUser({
 		avatar: string;
 	};
 	onRecipesOpen: () => void;
-	onRecipesIntent?: () => void;
 	onTemplatesOpen: () => void;
-	onTemplatesIntent?: () => void;
 	onSettingsOpen: () => void;
-	onSettingsIntent?: () => void;
 	onSignOut: () => void;
 	signingOut: boolean;
 }) {
@@ -144,8 +138,6 @@ export function NavUser({
 						</DropdownMenuGroup>
 						<DropdownMenuItem
 							className="h-8 gap-2 px-2"
-							onFocus={onTemplatesIntent}
-							onPointerMove={onTemplatesIntent}
 							onClick={onTemplatesOpen}
 						>
 							<LayoutTemplate />
@@ -153,8 +145,6 @@ export function NavUser({
 						</DropdownMenuItem>
 						<DropdownMenuItem
 							className="h-8 gap-2 px-2"
-							onFocus={onRecipesIntent}
-							onPointerMove={onRecipesIntent}
 							onClick={onRecipesOpen}
 						>
 							<ListMinus />
@@ -174,8 +164,6 @@ export function NavUser({
 						) : null}
 						<DropdownMenuItem
 							className="group/settings-item h-8 gap-2 px-2"
-							onFocus={onSettingsIntent}
-							onPointerMove={onSettingsIntent}
 							onClick={onSettingsOpen}
 						>
 							<Settings />

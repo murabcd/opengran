@@ -128,11 +128,7 @@ export default defineSchema({
 	recipes: defineTable({
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),
-		slug: v.union(
-			v.literal("write-prd"),
-			v.literal("sales-questions"),
-			v.literal("write-weekly-recap"),
-		),
+		slug: v.string(),
 		name: v.string(),
 		prompt: v.string(),
 		createdAt: v.number(),

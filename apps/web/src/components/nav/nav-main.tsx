@@ -26,7 +26,6 @@ export function NavMain({
 	onCreateNote,
 	onViewChange,
 	onSearchOpen,
-	onSearchIntent,
 	onInboxToggle,
 }: {
 	className?: string;
@@ -34,7 +33,6 @@ export function NavMain({
 	onCreateNote: () => void;
 	onViewChange: (view: "home" | "chat" | "shared" | "note") => void;
 	onSearchOpen: () => void;
-	onSearchIntent?: () => void;
 	onInboxToggle: () => void;
 }) {
 	React.useEffect(() => {
@@ -94,8 +92,6 @@ export function NavMain({
 						>
 							<button
 								type="button"
-								onMouseEnter={onSearchIntent}
-								onFocus={onSearchIntent}
 								onClick={() => {
 									if (searchItem.action === "search") {
 										onSearchOpen();

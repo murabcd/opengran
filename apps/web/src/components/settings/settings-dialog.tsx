@@ -379,6 +379,20 @@ const getWorkspaceFormState = (
 	iconPreviewUrl: null,
 });
 
+const getProfileFormState = ({
+	user,
+	userPreferences,
+}: {
+	user: SettingsUser;
+	userPreferences: UserPreferencesState | null | undefined;
+}): ProfileFormState => ({
+	name: user.name,
+	jobTitle: userPreferences?.jobTitle ?? "",
+	companyName: userPreferences?.companyName ?? "",
+	avatarStorageId: userPreferences?.avatarStorageId ?? null,
+	avatarPreviewUrl: null,
+});
+
 const initialDataControlsState: DataControlsState = {
 	showDeleteAccountDialog: false,
 	isDeletingAccount: false,
@@ -701,7 +715,6 @@ export function SettingsDialog({
 							{activePage === "Profile" ? (
 								<ManageAccountForm
 									user={user}
-									onCancel={() => onOpenChange(false)}
 									onSave={() => onOpenChange(false)}
 								/>
 							) : activePage === "Appearance" ? (
@@ -713,7 +726,6 @@ export function SettingsDialog({
 							) : activePage === "Workspace" ? (
 								<WorkspaceSettings
 									workspace={workspace}
-									onCancel={() => onOpenChange(false)}
 									onSave={() => onOpenChange(false)}
 								/>
 							) : activePage === "Calendar" ? (
@@ -2529,11 +2541,9 @@ function PostHogDialog({
 
 function WorkspaceSettings({
 	workspace,
-	onCancel,
 	onSave,
 }: {
 	workspace: WorkspaceRecord | null;
-	onCancel: () => void;
 	onSave: () => void;
 }) {
 	const generateIconUploadUrl = useMutation(
@@ -2588,6 +2598,13 @@ function WorkspaceSettings({
 		avatar: iconPreviewUrl ?? workspace.iconUrl,
 		name: trimmedName || workspace.name,
 	});
+	const handleCancel = () => {
+		if (!hasChanges || isSaving || isUploadingIcon) {
+			return;
+		}
+
+		setFormState(getWorkspaceFormState(workspace));
+	};
 
 	const handleUpload = async (file: File) => {
 		setIsUploadingIcon(true);
@@ -2728,7 +2745,11 @@ function WorkspaceSettings({
 				</Field>
 			</FieldGroup>
 			<div className="flex justify-end gap-2 pt-6">
-				<Button variant="ghost" onClick={onCancel} disabled={isSaving}>
+				<Button
+					variant="ghost"
+					onClick={handleCancel}
+					disabled={!hasChanges || isSaving || isUploadingIcon}
+				>
 					Cancel
 				</Button>
 				<Button
@@ -3037,11 +3058,9 @@ function DataControlAction({
 
 function ManageAccountForm({
 	user,
-	onCancel,
 	onSave,
 }: {
 	user: SettingsUser;
-	onCancel: () => void;
 	onSave: () => void;
 }) {
 	const userPreferences = useQuery(api.userPreferences.get, {});
@@ -3058,31 +3077,24 @@ function ManageAccountForm({
 			mergeUserPreferencesForOptimisticUpdate(currentPreferences, args),
 		);
 	});
-	const [formState, setFormState] = useState<ProfileFormState>(() => ({
-		name: user.name,
-		jobTitle: "",
-		companyName: "",
-		avatarStorageId: null,
-		avatarPreviewUrl: null,
-	}));
+	const [formState, setFormState] = useState<ProfileFormState>(() =>
+		getProfileFormState({
+			user,
+			userPreferences: null,
+		}),
+	);
 	const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 	const [isSavingPreferences, setIsSavingPreferences] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
-		setFormState({
-			name: user.name,
-			jobTitle: userPreferences?.jobTitle ?? "",
-			companyName: userPreferences?.companyName ?? "",
-			avatarStorageId: userPreferences?.avatarStorageId ?? null,
-			avatarPreviewUrl: null,
-		});
-	}, [
-		user,
-		userPreferences?.avatarStorageId,
-		userPreferences?.companyName,
-		userPreferences?.jobTitle,
-	]);
+		setFormState(
+			getProfileFormState({
+				user,
+				userPreferences,
+			}),
+		);
+	}, [user, userPreferences]);
 
 	useEffect(() => {
 		const avatarPreviewUrl = formState.avatarPreviewUrl;
@@ -3115,6 +3127,18 @@ function ManageAccountForm({
 		name: formState.name,
 		email: user.email,
 	});
+	const handleCancel = () => {
+		if (!hasChanges || isSavingPreferences || isUploadingAvatar) {
+			return;
+		}
+
+		setFormState(
+			getProfileFormState({
+				user,
+				userPreferences,
+			}),
+		);
+	};
 
 	const handleAvatarUpload = async (file: File) => {
 		if (!file.type.startsWith("image/")) {
@@ -3283,8 +3307,8 @@ function ManageAccountForm({
 			<div className="flex justify-end gap-2 pt-6">
 				<Button
 					variant="ghost"
-					onClick={onCancel}
-					disabled={isSavingPreferences || isUploadingAvatar}
+					onClick={handleCancel}
+					disabled={!hasChanges || isSavingPreferences || isUploadingAvatar}
 				>
 					Cancel
 				</Button>

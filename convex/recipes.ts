@@ -4,18 +4,12 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
 
-const recipeSlugValidator = v.union(
-	v.literal("write-prd"),
-	v.literal("sales-questions"),
-	v.literal("write-weekly-recap"),
-);
-
 const recipeFields = {
 	_id: v.id("recipes"),
 	_creationTime: v.number(),
 	ownerTokenIdentifier: v.string(),
 	workspaceId: v.id("workspaces"),
-	slug: recipeSlugValidator,
+	slug: v.string(),
 	name: v.string(),
 	prompt: v.string(),
 	createdAt: v.number(),
@@ -23,7 +17,7 @@ const recipeFields = {
 };
 
 const recipePayloadValidator = v.object({
-	slug: recipeSlugValidator,
+	slug: v.string(),
 	name: v.string(),
 	prompt: v.string(),
 });
@@ -172,7 +166,7 @@ const defaultRecipes = [
 		prompt: WRITE_WEEKLY_RECAP_DEFAULT_PROMPT,
 	},
 ] as const satisfies ReadonlyArray<{
-	slug: "write-prd" | "sales-questions" | "write-weekly-recap";
+	slug: string;
 	name: string;
 	prompt: string;
 }>;
@@ -211,7 +205,7 @@ const normalizeRecipePayload = (
 	recipe:
 		| (typeof defaultRecipes)[number]
 		| {
-				slug: (typeof defaultRecipes)[number]["slug"];
+				slug: string;
 				name: string;
 				prompt: string;
 		  },
@@ -223,19 +217,26 @@ const normalizeRecipePayload = (
 
 const mergeRecipesWithDefaults = (
 	recipes: Array<{
-		slug: (typeof defaultRecipes)[number]["slug"];
+		slug: string;
 		name: string;
 		prompt: string;
 	}>,
 ) => {
+	const normalizedRecipes = recipes.map(normalizeRecipePayload);
 	const recipesBySlug = new Map(
-		recipes.map((recipe) => [recipe.slug, normalizeRecipePayload(recipe)]),
+		normalizedRecipes.map((recipe) => [recipe.slug, recipe]),
+	);
+	const defaultSlugs = new Set<string>(
+		defaultRecipes.map((recipe) => recipe.slug),
 	);
 
-	return defaultRecipes.map(
-		(recipe) =>
-			recipesBySlug.get(recipe.slug) ?? normalizeRecipePayload(recipe),
-	);
+	return [
+		...defaultRecipes.map(
+			(recipe) =>
+				recipesBySlug.get(recipe.slug) ?? normalizeRecipePayload(recipe),
+		),
+		...normalizedRecipes.filter((recipe) => !defaultSlugs.has(recipe.slug)),
+	];
 };
 
 const deleteRecipeBatch = async (
@@ -330,6 +331,13 @@ export const saveAll = mutation({
 
 		const seenSlugs = new Set<string>();
 		for (const recipe of nextRecipes) {
+			if (!recipe.slug) {
+				throw new ConvexError({
+					code: "INVALID_RECIPE",
+					message: "Recipe slug is required.",
+				});
+			}
+
 			if (!recipe.name) {
 				throw new ConvexError({
 					code: "INVALID_RECIPE",

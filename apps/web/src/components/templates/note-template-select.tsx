@@ -15,6 +15,9 @@ import {
 } from "@/lib/note-templates";
 import { api } from "../../../../../convex/_generated/api";
 
+const getTemplateIcon = (slug: string) =>
+	NOTE_TEMPLATE_ICONS[slug as keyof typeof NOTE_TEMPLATE_ICONS] ?? null;
+
 export function NoteTemplateSelect({
 	disabled = false,
 	selectedSlug = null,
@@ -87,10 +90,7 @@ export function NoteTemplateSelect({
 							return null;
 						}
 
-						const Icon =
-							NOTE_TEMPLATE_ICONS[
-								triggerIcon as keyof typeof NOTE_TEMPLATE_ICONS
-							];
+						const Icon = getTemplateIcon(triggerIcon);
 
 						return Icon ? (
 							<Icon className="size-4 text-muted-foreground" />
@@ -101,12 +101,7 @@ export function NoteTemplateSelect({
 			</SelectTrigger>
 			<SelectContent align="end">
 				{templates.map((template) => {
-					const Icon =
-						template.slug in NOTE_TEMPLATE_ICONS
-							? NOTE_TEMPLATE_ICONS[
-									template.slug as keyof typeof NOTE_TEMPLATE_ICONS
-								]
-							: null;
+					const Icon = getTemplateIcon(template.slug);
 
 					return (
 						<SelectItem key={template.slug} value={template.slug}>

@@ -7,11 +7,13 @@ import {
 	DialogTitle,
 } from "@workspace/ui/components/dialog";
 import { Field, FieldGroup } from "@workspace/ui/components/field";
+import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { SidebarProvider } from "@workspace/ui/components/sidebar";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { useMutation, useQuery } from "convex/react";
+import { Plus } from "lucide-react";
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -20,7 +22,11 @@ import {
 } from "@/components/ui/manage-dialog-navigation";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import {
-	RECIPE_ICONS,
+	createUniqueDraftName,
+	createUniqueDraftSlug,
+} from "@/lib/draft-naming";
+import {
+	getRecipeIcon,
 	type RecipePrompt,
 	type RecipeSlug,
 } from "@/lib/recipes";
@@ -45,18 +51,31 @@ type RecipePayload = Array<{
 	prompt: string;
 }>;
 
+const MAX_RECIPE_DRAFTS = 10;
+const NEW_RECIPE_NAME = "New recipe";
+
 const toRecipeDrafts = (recipes: RecipePayload): RecipeDraft[] =>
-	recipes.flatMap((recipe) =>
-		recipe.slug in RECIPE_ICONS
-			? [
-					{
-						slug: recipe.slug as RecipeSlug,
-						name: recipe.name,
-						prompt: recipe.prompt,
-					},
-				]
-			: [],
-	);
+	recipes.map((recipe) => ({
+		slug: recipe.slug,
+		name: recipe.name,
+		prompt: recipe.prompt,
+	}));
+
+const areRecipeDraftsEqual = (
+	left: RecipeDraft[],
+	right: RecipeDraft[],
+): boolean =>
+	left.length === right.length &&
+	left.every((recipe, index) => {
+		const otherRecipe = right[index];
+
+		return (
+			otherRecipe &&
+			recipe.slug === otherRecipe.slug &&
+			recipe.name === otherRecipe.name &&
+			recipe.prompt === otherRecipe.prompt
+		);
+	});
 
 const getNextActiveRecipe = ({
 	currentActiveRecipe,
@@ -205,12 +224,20 @@ const useRecipeDraftEditor = ({
 	updateRecipes: (updater: (recipes: RecipeDraft[]) => RecipeDraft[]) => void;
 }) => {
 	const [isSaving, setIsSaving] = useState(false);
+	const savedRecipes = useMemo(
+		() => (recipeData ? toRecipeDrafts(recipeData) : []),
+		[recipeData],
+	);
 	const selectedRecipe = useMemo(
 		() =>
 			recipes.find((recipe) => recipe.slug === activeRecipe) ??
 			recipes[0] ??
 			null,
 		[activeRecipe, recipes],
+	);
+	const hasChanges = useMemo(
+		() => !areRecipeDraftsEqual(recipes, savedRecipes),
+		[recipes, savedRecipes],
 	);
 
 	const updateSelectedRecipe = (
@@ -234,14 +261,47 @@ const useRecipeDraftEditor = ({
 		}));
 	};
 
-	const handleCancel = () => {
-		if (recipeData) {
-			const nextRecipes = toRecipeDrafts(recipeData);
-			selectRecipe(nextRecipes[0]?.slug ?? null);
-			updateRecipes(() => nextRecipes);
+	const updateName = (value: string) => {
+		updateSelectedRecipe((recipe) => ({
+			...recipe,
+			name: value,
+		}));
+	};
+
+	const canCreateRecipe = recipes.length < MAX_RECIPE_DRAFTS;
+
+	const createRecipe = () => {
+		if (!canCreateRecipe) {
+			return;
 		}
 
-		onOpenChange(false);
+		const name = createUniqueDraftName(
+			NEW_RECIPE_NAME,
+			recipes.map((recipe) => recipe.name),
+		);
+		const slug = createUniqueDraftSlug({
+			baseName: name,
+			existingSlugs: recipes.map((recipe) => recipe.slug),
+			fallbackPrefix: "recipe",
+		});
+
+		updateRecipes((currentRecipes) => [
+			...currentRecipes,
+			{
+				slug,
+				name,
+				prompt: "",
+			},
+		]);
+		selectRecipe(slug);
+	};
+
+	const handleCancel = () => {
+		if (!hasChanges) {
+			return;
+		}
+
+		updateRecipes(() => savedRecipes);
 	};
 
 	const handleSave = async () => {
@@ -274,23 +334,31 @@ const useRecipeDraftEditor = ({
 	};
 
 	return {
+		canCreateRecipe,
+		createRecipe,
 		handleCancel,
 		handleSave,
+		hasChanges,
 		isSaving,
 		selectedRecipe,
+		updateName,
 		updatePrompt,
 	};
 };
 
 function RecipesEditor({
+	hasChanges,
 	isSaving,
 	onCancel,
+	onNameChange,
 	onPromptChange,
 	onSave,
 	selectedRecipe,
 }: {
+	hasChanges: boolean;
 	isSaving: boolean;
 	onCancel: () => void;
+	onNameChange: (value: string) => void;
 	onPromptChange: (value: string) => void;
 	onSave: () => void;
 	selectedRecipe: RecipeDraft | null;
@@ -300,6 +368,20 @@ function RecipesEditor({
 			{selectedRecipe ? (
 				<div className="py-4">
 					<FieldGroup className="gap-6">
+						<Field>
+							<Label
+								htmlFor="recipe-name"
+								className="text-xs text-muted-foreground"
+							>
+								Name
+							</Label>
+							<Input
+								id="recipe-name"
+								value={selectedRecipe.name}
+								onChange={(event) => onNameChange(event.target.value)}
+								className="border-border/70 bg-background/30"
+							/>
+						</Field>
 						<Field>
 							<Label
 								htmlFor="recipe-prompt"
@@ -316,18 +398,20 @@ function RecipesEditor({
 						</Field>
 					</FieldGroup>
 					<div className="flex justify-end gap-2 pt-6">
-						<Button variant="ghost" onClick={onCancel} disabled={isSaving}>
+						<Button
+							variant="ghost"
+							onClick={onCancel}
+							disabled={!hasChanges || isSaving}
+						>
 							Cancel
 						</Button>
-						<Button onClick={onSave} disabled={isSaving}>
+						<Button onClick={onSave} disabled={!hasChanges || isSaving}>
 							{isSaving ? "Saving..." : "Save"}
 						</Button>
 					</div>
 				</div>
 			) : (
-				<div className="py-4 text-sm text-muted-foreground">
-					Loading recipes...
-				</div>
+				<div className="py-4" />
 			)}
 		</ScrollArea>
 	);
@@ -359,7 +443,7 @@ export function RecipesDialog({ open, onOpenChange }: RecipesDialogProps) {
 		() =>
 			recipes.map((recipe) => ({
 				id: recipe.slug,
-				icon: RECIPE_ICONS[recipe.slug],
+				icon: getRecipeIcon(recipe.slug),
 				label: recipe.name,
 			})),
 		[recipes],
@@ -377,9 +461,15 @@ export function RecipesDialog({ open, onOpenChange }: RecipesDialogProps) {
 				<DialogDescription className="sr-only">
 					Browse and manage your recipe prompts.
 				</DialogDescription>
-				<SidebarProvider className="items-start">
+				<SidebarProvider className="h-[480px] min-h-0 items-start">
 					<ManageDialogSidebarNav
 						activeItemId={activeRecipe}
+						footerAction={{
+							label: "New recipe",
+							icon: Plus,
+							onClick: editor.createRecipe,
+							disabled: !editor.canCreateRecipe,
+						}}
 						items={navigationItems}
 						onSelect={(slug) => selectRecipe(slug as RecipeSlug)}
 					/>
@@ -387,12 +477,20 @@ export function RecipesDialog({ open, onOpenChange }: RecipesDialogProps) {
 						<ManageDialogHeader
 							activeItemId={activeRecipe}
 							items={navigationItems}
+							mobileAction={{
+								label: "New recipe",
+								icon: Plus,
+								onClick: editor.createRecipe,
+								disabled: !editor.canCreateRecipe,
+							}}
 							onSelect={(slug) => selectRecipe(slug as RecipeSlug)}
 							title="Recipes"
 						/>
 						<RecipesEditor
+							hasChanges={editor.hasChanges}
 							isSaving={editor.isSaving}
 							onCancel={editor.handleCancel}
+							onNameChange={editor.updateName}
 							onPromptChange={editor.updatePrompt}
 							onSave={editor.handleSave}
 							selectedRecipe={editor.selectedRecipe}

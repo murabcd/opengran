@@ -11,7 +11,10 @@ export const RECIPE_ICONS = {
 	"write-weekly-recap": CalendarDays,
 } as const satisfies Record<string, LucideIcon>;
 
-export type RecipeSlug = keyof typeof RECIPE_ICONS;
+export const getRecipeIcon = (slug: string): LucideIcon =>
+	RECIPE_ICONS[slug as keyof typeof RECIPE_ICONS] ?? FileText;
+
+export type RecipeSlug = string;
 
 export type RecipePrompt = {
 	slug: RecipeSlug;

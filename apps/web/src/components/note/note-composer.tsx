@@ -117,7 +117,7 @@ import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
 import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import { ENHANCED_NOTE_TEMPLATE_SLUG } from "@/lib/note-templates";
 import {
-	RECIPE_ICONS,
+	getRecipeIcon,
 	type RecipePrompt,
 	type RecipeSlug,
 } from "@/lib/recipes";
@@ -969,17 +969,11 @@ const useNoteComposerController = ({
 	const composerPlaceholder = latestNoteChat ? "Continue chat" : "Ask anything";
 	const recipes = React.useMemo(
 		() =>
-			(recipeData ?? []).flatMap((recipe) =>
-				recipe.slug in RECIPE_ICONS
-					? [
-							{
-								slug: recipe.slug as RecipeSlug,
-								name: recipe.name,
-								prompt: recipe.prompt,
-							},
-						]
-					: [],
-			),
+			(recipeData ?? []).map((recipe) => ({
+				slug: recipe.slug as RecipeSlug,
+				name: recipe.name,
+				prompt: recipe.prompt,
+			})),
 		[recipeData],
 	);
 	const selectedRecipe =
@@ -2297,7 +2291,7 @@ function ChatInlinePopoverFooter({
 						{recipes.length > 0 ? (
 							<CommandGroup heading="Recipes">
 								{recipes.map((recipe) => {
-									const Icon = RECIPE_ICONS[recipe.slug];
+									const Icon = getRecipeIcon(recipe.slug);
 
 									return (
 										<CommandItem
@@ -2336,7 +2330,7 @@ function ChatInlinePopoverFooter({
 						onClick={onRecipeRemove}
 					>
 						{(() => {
-							const Icon = RECIPE_ICONS[selectedRecipe.slug];
+							const Icon = getRecipeIcon(selectedRecipe.slug);
 							return <Icon />;
 						})()}
 						{selectedRecipe.name}

@@ -33,6 +33,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
 	CalendarDays,
+	FileText,
 	Goal,
 	GripVertical,
 	Plus,
@@ -46,6 +47,10 @@ import {
 	ManageDialogSidebarNav,
 } from "@/components/ui/manage-dialog-navigation";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
+import {
+	createUniqueDraftName,
+	createUniqueDraftSlug,
+} from "@/lib/draft-naming";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
@@ -55,7 +60,12 @@ const templateIcons = {
 	"weekly-team-meeting": CalendarDays,
 } as const;
 
-type TemplateSlug = keyof typeof templateIcons;
+const getTemplateIcon = (slug: string) =>
+	templateIcons[slug as keyof typeof templateIcons] ?? FileText;
+
+type TemplateSlug = string;
+const MAX_TEMPLATE_DRAFTS = 20;
+const NEW_TEMPLATE_NAME = "New template";
 
 type TemplateDraft = {
 	slug: TemplateSlug;
@@ -90,22 +100,43 @@ const toTemplateDrafts = (
 		}>;
 	}>,
 ): TemplateDraft[] =>
-	templates.flatMap((template) =>
-		template.slug in templateIcons
-			? [
-					{
-						slug: template.slug as TemplateSlug,
-						name: template.name,
-						meetingContext: template.meetingContext,
-						sections: template.sections.map((section) => ({
-							id: section.id,
-							title: section.title,
-							prompt: section.prompt,
-						})),
-					},
-				]
-			: [],
-	);
+	templates.map((template) => ({
+		slug: template.slug,
+		name: template.name,
+		meetingContext: template.meetingContext,
+		sections: template.sections.map((section) => ({
+			id: section.id,
+			title: section.title,
+			prompt: section.prompt,
+		})),
+	}));
+
+const areTemplateDraftsEqual = (
+	left: TemplateDraft[],
+	right: TemplateDraft[],
+): boolean =>
+	left.length === right.length &&
+	left.every((template, index) => {
+		const otherTemplate = right[index];
+
+		return (
+			otherTemplate &&
+			template.slug === otherTemplate.slug &&
+			template.name === otherTemplate.name &&
+			template.meetingContext === otherTemplate.meetingContext &&
+			template.sections.length === otherTemplate.sections.length &&
+			template.sections.every((section, sectionIndex) => {
+				const otherSection = otherTemplate.sections[sectionIndex];
+
+				return (
+					otherSection &&
+					section.id === otherSection.id &&
+					section.title === otherSection.title &&
+					section.prompt === otherSection.prompt
+				);
+			})
+		);
+	});
 
 const getNextActiveTemplate = ({
 	currentActiveTemplate,
@@ -279,12 +310,20 @@ const useTemplateDraftEditor = ({
 	) => void;
 }) => {
 	const [isSaving, setIsSaving] = useState(false);
+	const savedTemplates = useMemo(
+		() => (templateData ? toTemplateDrafts(templateData) : []),
+		[templateData],
+	);
 	const selectedTemplate = useMemo(
 		() =>
 			templates.find((template) => template.slug === activeTemplate) ??
 			templates[0] ??
 			null,
 		[activeTemplate, templates],
+	);
+	const hasChanges = useMemo(
+		() => !areTemplateDraftsEqual(templates, savedTemplates),
+		[templates, savedTemplates],
 	);
 
 	const updateSelectedTemplate = (
@@ -305,6 +344,13 @@ const useTemplateDraftEditor = ({
 		updateSelectedTemplate((template) => ({
 			...template,
 			meetingContext: value,
+		}));
+	};
+
+	const updateName = (value: string) => {
+		updateSelectedTemplate((template) => ({
+			...template,
+			name: value,
 		}));
 	};
 
@@ -347,6 +393,41 @@ const useTemplateDraftEditor = ({
 		}));
 	};
 
+	const canCreateTemplate = templates.length < MAX_TEMPLATE_DRAFTS;
+
+	const createTemplate = () => {
+		if (!canCreateTemplate) {
+			return;
+		}
+
+		const name = createUniqueDraftName(
+			NEW_TEMPLATE_NAME,
+			templates.map((template) => template.name),
+		);
+		const slug = createUniqueDraftSlug({
+			baseName: name,
+			existingSlugs: templates.map((template) => template.slug),
+			fallbackPrefix: "template",
+		});
+
+		updateTemplates((currentTemplates) => [
+			...currentTemplates,
+			{
+				slug,
+				name,
+				meetingContext: "",
+				sections: [
+					{
+						id: crypto.randomUUID(),
+						title: "Summary",
+						prompt: "",
+					},
+				],
+			},
+		]);
+		selectTemplate(slug);
+	};
+
 	const handleSectionDragEnd = (event: DragEndEvent) => {
 		const { active, over } = event;
 
@@ -374,13 +455,11 @@ const useTemplateDraftEditor = ({
 	};
 
 	const handleCancel = () => {
-		if (templateData) {
-			const nextTemplates = toTemplateDrafts(templateData);
-			selectTemplate(nextTemplates[0]?.slug ?? null);
-			updateTemplates(() => nextTemplates);
+		if (!hasChanges) {
+			return;
 		}
 
-		onOpenChange(false);
+		updateTemplates(() => savedTemplates);
 	};
 
 	const handleSave = async () => {
@@ -419,12 +498,16 @@ const useTemplateDraftEditor = ({
 
 	return {
 		addSection,
+		canCreateTemplate,
+		createTemplate,
 		handleCancel,
 		handleSave,
 		handleSectionDragEnd,
+		hasChanges,
 		isSaving,
 		removeSection,
 		selectedTemplate,
+		updateName,
 		updateMeetingContext,
 		updateSectionPrompt,
 		updateSectionTitle,
@@ -432,9 +515,11 @@ const useTemplateDraftEditor = ({
 };
 
 function TemplatesEditor({
+	hasChanges,
 	isSaving,
 	onAddSection,
 	onCancel,
+	onNameChange,
 	onMeetingContextChange,
 	onPromptChange,
 	onRemoveSection,
@@ -445,9 +530,11 @@ function TemplatesEditor({
 	sensors,
 	templatesCount,
 }: {
+	hasChanges: boolean;
 	isSaving: boolean;
 	onAddSection: () => void;
 	onCancel: () => void;
+	onNameChange: (value: string) => void;
 	onMeetingContextChange: (value: string) => void;
 	onPromptChange: (sectionId: string, value: string) => void;
 	onRemoveSection: (sectionId: string) => void;
@@ -463,6 +550,20 @@ function TemplatesEditor({
 			{selectedTemplate ? (
 				<div className="py-4">
 					<FieldGroup className="gap-6">
+						<Field>
+							<Label
+								htmlFor="template-name"
+								className="text-xs text-muted-foreground"
+							>
+								Name
+							</Label>
+							<Input
+								id="template-name"
+								value={selectedTemplate.name}
+								onChange={(event) => onNameChange(event.target.value)}
+								className="border-border/70 bg-background/30"
+							/>
+						</Field>
 						<Field>
 							<Label
 								htmlFor="template-meeting-context"
@@ -513,21 +614,23 @@ function TemplatesEditor({
 						</Field>
 					</FieldGroup>
 					<div className="flex justify-end gap-2 pt-6">
-						<Button variant="ghost" onClick={onCancel} disabled={isSaving}>
+						<Button
+							variant="ghost"
+							onClick={onCancel}
+							disabled={!hasChanges || isSaving}
+						>
 							Cancel
 						</Button>
 						<Button
 							onClick={onSave}
-							disabled={isSaving || templatesCount === 0}
+							disabled={!hasChanges || isSaving || templatesCount === 0}
 						>
 							{isSaving ? "Saving..." : "Save"}
 						</Button>
 					</div>
 				</div>
 			) : (
-				<div className="py-4 text-sm text-muted-foreground">
-					Loading templates...
-				</div>
+				<div className="py-4" />
 			)}
 		</ScrollArea>
 	);
@@ -569,7 +672,7 @@ export function TemplatesDialog({ open, onOpenChange }: TemplatesDialogProps) {
 		() =>
 			templates.map((template) => ({
 				id: template.slug,
-				icon: templateIcons[template.slug],
+				icon: getTemplateIcon(template.slug),
 				label: template.name,
 			})),
 		[templates],
@@ -587,9 +690,15 @@ export function TemplatesDialog({ open, onOpenChange }: TemplatesDialogProps) {
 				<DialogDescription className="sr-only">
 					Browse and manage your note templates.
 				</DialogDescription>
-				<SidebarProvider className="items-start">
+				<SidebarProvider className="h-[480px] min-h-0 items-start">
 					<ManageDialogSidebarNav
 						activeItemId={activeTemplate}
+						footerAction={{
+							label: "New template",
+							icon: Plus,
+							onClick: editor.createTemplate,
+							disabled: !editor.canCreateTemplate,
+						}}
 						items={navigationItems}
 						onSelect={(slug) => selectTemplate(slug as TemplateSlug)}
 					/>
@@ -597,13 +706,21 @@ export function TemplatesDialog({ open, onOpenChange }: TemplatesDialogProps) {
 						<ManageDialogHeader
 							activeItemId={activeTemplate}
 							items={navigationItems}
+							mobileAction={{
+								label: "New template",
+								icon: Plus,
+								onClick: editor.createTemplate,
+								disabled: !editor.canCreateTemplate,
+							}}
 							onSelect={(slug) => selectTemplate(slug as TemplateSlug)}
 							title="Templates"
 						/>
 						<TemplatesEditor
+							hasChanges={editor.hasChanges}
 							isSaving={editor.isSaving}
 							onAddSection={editor.addSection}
 							onCancel={editor.handleCancel}
+							onNameChange={editor.updateName}
 							onMeetingContextChange={editor.updateMeetingContext}
 							onPromptChange={editor.updateSectionPrompt}
 							onRemoveSection={editor.removeSection}
