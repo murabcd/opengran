@@ -167,8 +167,8 @@ const INLINE_POPOVER_HEIGHT_LEGACY_STORAGE_KEY =
 	"opengran.noteComposer.inlinePopoverHeight";
 const NOTE_CHAT_SIDEBAR_WIDTH_STORAGE_KEY_PREFIX =
 	"opengran.noteComposer.sidebarWidth";
-const LONG_TRANSCRIPT_RENDER_THRESHOLD = 96;
-const LONG_TRANSCRIPT_INITIAL_WINDOW_SIZE = 48;
+const TRANSCRIPT_PROGRESSIVE_RENDER_THRESHOLD = 32;
+const TRANSCRIPT_INITIAL_WINDOW_SIZE = 32;
 
 const getNoteStorageScopeKey = (noteId: Id<"notes"> | null) =>
 	noteId ? `note:${noteId}` : "note:draft";
@@ -331,6 +331,7 @@ const useNoteComposerController = ({
 		createDraftChatId(),
 	);
 	const [isPreparingRequest, setIsPreparingRequest] = React.useState(false);
+	const [, startTranscriptPanelTransition] = React.useTransition();
 	const noteId = (noteContext.noteId as Id<"notes"> | null) ?? null;
 	const noteStorageScopeKey = getNoteStorageScopeKey(noteId);
 	const inlinePopoverHeightStorageKey = isMobile
@@ -1035,6 +1036,14 @@ const useNoteComposerController = ({
 	const closeRightSidebar = React.useCallback(() => {
 		setRightSidebarOpen(false);
 	}, [setRightSidebarOpen]);
+	const toggleTranscriptPanel = React.useCallback(() => {
+		closeRightSidebar();
+		startTranscriptPanelTransition(() => {
+			setPanelMode((currentValue) =>
+				currentValue === "transcript" ? null : "transcript",
+			);
+		});
+	}, [closeRightSidebar, setPanelMode]);
 
 	const resetComposerForNoteChange = React.useCallback(() => {
 		setCurrentChatId(createDraftChatId());
@@ -1586,6 +1595,7 @@ const useNoteComposerController = ({
 		stop,
 		shouldShowInlinePanel,
 		textareaRef,
+		toggleTranscriptPanel,
 		handleTranscriptionLanguageChange,
 		isSavingTranscriptionLanguage,
 		canOpenTranscriptSoundSettings:
@@ -2491,12 +2501,7 @@ function NoteComposerSpeechControls({
 			autoStartKey={controller.autoStartKey}
 			currentNoteScopeKey={controller.currentNoteScopeKey}
 			isTranscriptOpen={controller.isTranscriptOpen}
-			onToggleTranscript={() => {
-				controller.closeRightSidebar();
-				controller.setPanelMode((currentValue) =>
-					currentValue === "transcript" ? null : "transcript",
-				);
-			}}
+			onToggleTranscript={controller.toggleTranscriptPanel}
 			transcriptionLanguageReady={controller.transcriptionLanguageReady}
 			transcriptionLanguage={controller.transcriptionLanguage}
 		/>
@@ -3067,10 +3072,15 @@ function NoteTranscriptPanel({
 	const [
 		fullyRenderedTranscriptEntryCount,
 		setFullyRenderedTranscriptEntryCount,
-	] = React.useState(transcriptEntryCount);
+	] = React.useState(() =>
+		transcriptEntryCount > TRANSCRIPT_PROGRESSIVE_RENDER_THRESHOLD
+			? Math.min(transcriptEntryCount, TRANSCRIPT_INITIAL_WINDOW_SIZE)
+			: transcriptEntryCount,
+	);
 
 	React.useEffect(() => {
-		if (transcriptEntryCount <= LONG_TRANSCRIPT_RENDER_THRESHOLD) {
+		if (transcriptEntryCount <= TRANSCRIPT_PROGRESSIVE_RENDER_THRESHOLD) {
+			setFullyRenderedTranscriptEntryCount(transcriptEntryCount);
 			return;
 		}
 
@@ -3099,12 +3109,12 @@ function NoteTranscriptPanel({
 		};
 	}, [transcriptEntryCount]);
 	const renderFullTranscriptEntries =
-		transcriptEntryCount <= LONG_TRANSCRIPT_RENDER_THRESHOLD ||
+		transcriptEntryCount <= TRANSCRIPT_PROGRESSIVE_RENDER_THRESHOLD ||
 		fullyRenderedTranscriptEntryCount === transcriptEntryCount;
 	const renderedTranscriptEntries = renderFullTranscriptEntries
 		? deferredDisplayTranscriptEntries
 		: deferredDisplayTranscriptEntries.slice(
-				-LONG_TRANSCRIPT_INITIAL_WINDOW_SIZE,
+				-fullyRenderedTranscriptEntryCount,
 			);
 	const isProgressivelyRenderingTranscript =
 		!renderFullTranscriptEntries &&

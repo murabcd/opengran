@@ -1,4 +1,5 @@
 import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
@@ -1061,6 +1062,93 @@ describe("NoteComposer", () => {
 		});
 
 		expect(screen.getByText("hello")).toBeDefined();
+	});
+
+	it("progressively renders earlier transcript entries after opening the transcript panel", async () => {
+		vi.useFakeTimers();
+
+		const transcriptEntries = Array.from({ length: 40 }, (_, index) => ({
+			endedAt: index + 2,
+			id: `utt-${index + 1}`,
+			isLive: false,
+			speaker: "you" as const,
+			startedAt: index + 1,
+			text: `line ${index + 1}`,
+		}));
+
+		useNoteTranscriptSessionMock.mockReturnValue({
+			autoStartKey: null,
+			captureScopeKey: "note:note-1",
+			currentNoteScopeKey: "note:note-1",
+			displayTranscriptEntries: transcriptEntries,
+			exportTranscript: transcriptEntries.map((entry) => entry.text).join("\n"),
+			fullTranscript: transcriptEntries.map((entry) => entry.text).join("\n"),
+			handleGenerateNotes: vi.fn(),
+			isGeneratingNotes: false,
+			isCurrentNoteSpeechListening: false,
+			isRefiningTranscript: false,
+			isSpeechListening: false,
+			liveTranscriptEntries: [],
+			onLiveTranscriptChange: vi.fn(),
+			onRecoveryStatusChange: vi.fn(),
+			onSystemAudioRecordingReady: vi.fn(),
+			onSystemAudioStatusChange: vi.fn(),
+			onTranscriptListeningChange: vi.fn(),
+			onTranscriptUtterance: vi.fn(),
+			orderedTranscriptUtterances: transcriptEntries,
+			recoveryStatus: {
+				attempt: 0,
+				maxAttempts: 0,
+				message: null,
+				state: "idle",
+			},
+			systemAudioStatus: {
+				sourceMode: "display-media",
+				state: "ready",
+			},
+			transcriptStartedAt: 1,
+			transcriptRefinementError: null,
+			transcriptViewportRef: {
+				current: null,
+			},
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<NoteComposer
+				noteContext={{
+					noteId: "note-1",
+					text: "",
+					title: "New note",
+				}}
+			/>,
+		);
+
+		try {
+			act(() => {
+				fireEvent.click(
+					screen.getAllByRole("button", {
+						name: "Expand speech controls",
+					})[0],
+				);
+			});
+
+			expect(screen.getByText("Live transcript")).toBeDefined();
+			expect(screen.queryByText("line 1")).toBeNull();
+			expect(screen.getByText("line 40")).toBeDefined();
+			expect(screen.getByText("Loading earlier transcript...")).toBeDefined();
+
+			act(() => {
+				vi.advanceTimersByTime(40);
+			});
+
+			expect(screen.getByText("line 1")).toBeDefined();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("shows inline chat without speech controls", async () => {
