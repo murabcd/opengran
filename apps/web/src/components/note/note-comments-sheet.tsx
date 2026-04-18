@@ -34,6 +34,7 @@ import {
 	InputGroupInput,
 	InputGroupTextarea,
 } from "@workspace/ui/components/input-group";
+import { Kbd } from "@workspace/ui/components/kbd";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import {
 	Sheet,
@@ -480,9 +481,9 @@ function CommentComposerDismissButton({
 			>
 				<span>{label}</span>
 				{showShortcut ? (
-					<span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] leading-none text-muted-foreground">
+					<Kbd className="rounded-full border border-border/60 bg-background/60 px-2">
 						Esc
-					</span>
+					</Kbd>
 				) : null}
 			</Button>
 		</div>

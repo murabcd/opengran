@@ -161,7 +161,7 @@ export function WorkspaceSwitcher({
 										</Avatar>
 										{workspace.name}
 										{index < 9 ? (
-											<Kbd className="ml-auto font-mono text-[10px]">
+											<Kbd className="ml-auto font-mono">
 												<span className="text-xs">⌘</span>
 												{index + 1}
 											</Kbd>

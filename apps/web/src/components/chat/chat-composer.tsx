@@ -31,6 +31,7 @@ import {
 	InputGroupButton,
 	InputGroupTextarea,
 } from "@workspace/ui/components/input-group";
+import { Kbd } from "@workspace/ui/components/kbd";
 import {
 	Popover,
 	PopoverContent,
@@ -459,9 +460,9 @@ function ChatComposerTopAccessory({
 					aria-label="Cancel edit"
 				>
 					<span>Cancel edit</span>
-					<span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] leading-none text-muted-foreground">
+					<Kbd className="rounded-full border border-border/60 bg-background/60 px-2">
 						Esc
-					</span>
+					</Kbd>
 				</button>
 			</div>
 		);

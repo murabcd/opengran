@@ -224,7 +224,7 @@ function SearchCommandFilters({
 						className="absolute top-5 right-4 z-10 flex -translate-y-1/2 items-center"
 						aria-label="Close search"
 					>
-						<Kbd className="font-mono text-[10px]">Esc</Kbd>
+						<Kbd className="font-mono">Esc</Kbd>
 					</button>
 				</div>
 				<Tooltip>

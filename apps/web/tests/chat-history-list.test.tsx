@@ -58,6 +58,7 @@ vi.mock("@workspace/ui/components/dropdown-menu", async () => {
 				{children}
 			</button>
 		),
+		DropdownMenuSeparator: () => <hr />,
 		DropdownMenuTrigger: ({
 			asChild: _asChild,
 			children,

@@ -210,6 +210,15 @@ vi.mock("@workspace/ui/components/input-group", () => ({
 	) => <textarea data-slot="input-group-control" {...props} />,
 }));
 
+vi.mock("@workspace/ui/components/kbd", () => ({
+	Kbd: ({
+		children,
+		...props
+	}: React.PropsWithChildren<React.ComponentProps<"kbd">>) => (
+		<kbd {...props}>{children}</kbd>
+	),
+}));
+
 vi.mock("@workspace/ui/components/scroll-area", () => ({
 	ScrollArea: ({
 		children,

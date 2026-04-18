@@ -11,7 +11,7 @@ export function ShortcutHint({
 	return (
 		<Kbd
 			aria-hidden="true"
-			className={cn("ml-auto shrink-0 font-mono text-[10px]", className)}
+			className={cn("ml-auto shrink-0 font-mono", className)}
 		>
 			<span className="text-xs">⌘</span>
 			{keyLabel}
