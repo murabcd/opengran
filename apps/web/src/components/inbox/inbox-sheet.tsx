@@ -680,7 +680,7 @@ const InboxPanel = React.memo(function InboxPanel({
 
 	if (!activeWorkspaceId) {
 		return (
-			<ScrollArea className="min-h-0 flex-1" scrollbarOrientation="none">
+			<ScrollArea className="min-h-0 flex-1">
 				<Empty className="min-h-[24rem] border-none">
 					<EmptyHeader>
 						<EmptyMedia variant="icon">
@@ -702,7 +702,7 @@ const InboxPanel = React.memo(function InboxPanel({
 
 	if (items.length === 0) {
 		return (
-			<ScrollArea className="min-h-0 flex-1" scrollbarOrientation="none">
+			<ScrollArea className="min-h-0 flex-1">
 				<Empty className="min-h-[24rem] border-none">
 					<EmptyHeader>
 						<EmptyMedia variant="icon">
@@ -724,7 +724,7 @@ const InboxPanel = React.memo(function InboxPanel({
 
 	if (visibleItems.length === 0) {
 		return (
-			<ScrollArea className="min-h-0 flex-1" scrollbarOrientation="none">
+			<ScrollArea className="min-h-0 flex-1">
 				<Empty className="min-h-[24rem] border-none">
 					<EmptyHeader>
 						<EmptyMedia variant="icon">
@@ -741,21 +741,27 @@ const InboxPanel = React.memo(function InboxPanel({
 	}
 
 	return (
-		<ScrollArea className="min-h-0 flex-1" scrollbarOrientation="none">
+		<ScrollArea className="min-h-0 flex-1">
 			<div>
 				{visibleItems.map((item) => {
 					const isRead =
 						item.isRead || optimisticReadItemIds.has(String(item._id));
 					const avatarProps = getInboxAvatarProps({ item, currentUser });
+					const itemTitle = formatInboxTitle(
+						item.kind,
+						item.title,
+						item.actorDisplayName,
+					);
 
 					return (
 						<div
 							key={item._id}
-							className="group border-b transition-colors hover:bg-accent/20"
+							className="group relative border-b transition-colors hover:bg-accent/20"
 						>
 							<button
 								type="button"
-								className="w-full cursor-pointer px-3 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+								aria-label={`Mark ${itemTitle} as read`}
+								className="absolute inset-0 z-0 cursor-pointer rounded-none focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 								onClick={() => {
 									void handleMarkItemRead(item).catch((error) => {
 										toast.error(
@@ -766,10 +772,11 @@ const InboxPanel = React.memo(function InboxPanel({
 										);
 									});
 								}}
-							>
+							/>
+							<div className="relative z-10">
 								<div
 									className={cn(
-										"grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1",
+										"pointer-events-none grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1 px-3 py-3",
 										isRead && "opacity-50",
 									)}
 								>
@@ -791,11 +798,7 @@ const InboxPanel = React.memo(function InboxPanel({
 									<div className="min-w-0">
 										<div className="flex items-start justify-between gap-3">
 											<p className="truncate text-sm font-medium text-foreground">
-												{formatInboxTitle(
-													item.kind,
-													item.title,
-													item.actorDisplayName,
-												)}
+												{itemTitle}
 											</p>
 											<p className="shrink-0 pt-0.5 text-xs text-muted-foreground">
 												{formatInboxTimestamp(item.occurredAt)}
@@ -813,23 +816,26 @@ const InboxPanel = React.memo(function InboxPanel({
 										</p>
 									</div>
 								</div>
-							</button>
-							<div className="px-3 pb-3 pl-9">
-								<Button
-									type="button"
-									variant="outline"
-									size="sm"
-									className="relative z-10 cursor-pointer text-xs"
-									onClick={() => {
-										void handleOpenItem(item).catch((error) => {
-											toast.error(
-												getErrorMessage(error, "Failed to open inbox item"),
-											);
-										});
-									}}
-								>
-									Reply
-								</Button>
+								<div className="px-3 pb-3 pl-9">
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										className={cn(
+											"relative z-10 cursor-pointer text-xs",
+											isRead && "opacity-50",
+										)}
+										onClick={() => {
+											void handleOpenItem(item).catch((error) => {
+												toast.error(
+													getErrorMessage(error, "Failed to open inbox item"),
+												);
+											});
+										}}
+									>
+										Reply
+									</Button>
+								</div>
 							</div>
 						</div>
 					);
