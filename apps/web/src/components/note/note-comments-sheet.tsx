@@ -1289,6 +1289,7 @@ function CommentsSheetPanel({
 
 type NoteCommentsSheetProps = {
 	noteId: Id<"notes"> | null;
+	noteContent: string;
 	editor: Editor | null;
 	currentUser: CommentViewer;
 	open: boolean;
@@ -1312,6 +1313,7 @@ type NoteCommentsSheetControllerProps = NoteCommentsSheetProps & {
 
 function useNoteCommentsSheetController({
 	noteId,
+	noteContent,
 	editor,
 	currentUser,
 	open,
@@ -1365,6 +1367,7 @@ function useNoteCommentsSheetController({
 	const [visibleThreadIds, setVisibleThreadIds] = React.useState<Set<string>>(
 		() => collectVisibleThreadIds(editor),
 	);
+	const lastAnchorSyncKeyRef = React.useRef<string>("");
 	const [isCreating, startCreating] = React.useTransition();
 	const [isReplySubmitting, startReplying] = React.useTransition();
 	const replyComposerRef = React.useRef<HTMLDivElement | null>(null);
@@ -1466,8 +1469,16 @@ function useNoteCommentsSheetController({
 	);
 
 	React.useEffect(() => {
-		setVisibleThreadIds(collectVisibleThreadIds(editor));
+		const nextSyncKey = `${noteId ?? "no-note"}:${noteContent}`;
+		if (lastAnchorSyncKeyRef.current === nextSyncKey) {
+			return;
+		}
 
+		lastAnchorSyncKeyRef.current = nextSyncKey;
+		setVisibleThreadIds(collectVisibleThreadIds(editor));
+	}, [editor, noteContent, noteId]);
+
+	React.useEffect(() => {
 		if (!editor) {
 			return;
 		}

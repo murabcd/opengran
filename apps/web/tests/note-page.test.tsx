@@ -390,6 +390,43 @@ describe("NotePage", () => {
 		);
 	});
 
+	it("passes hydrated note content to the comments sheet", async () => {
+		const { NotePage } = await import("../src/components/note/note-page");
+		const noteContent = JSON.stringify({
+			type: "doc",
+			content: [
+				{
+					type: "paragraph",
+					content: [{ type: "text", text: "Anchored comment text" }],
+				},
+			],
+		});
+
+		render(
+			<NotePage
+				noteId={"note-1" as never}
+				note={
+					{
+						_id: "note-1",
+						title: "Commented note",
+						content: noteContent,
+						searchableText: "Anchored comment text",
+						templateSlug: null,
+						calendarEventKey: undefined,
+					} as never
+				}
+			/>,
+		);
+
+		await waitFor(() => {
+			const latestCall =
+				noteCommentsSheetMock.mock.calls[
+					noteCommentsSheetMock.mock.calls.length - 1
+				];
+			expect(latestCall?.[0]).toMatchObject({ noteContent });
+		});
+	});
+
 	it("saves an empty title after clearing it", async () => {
 		const { NotePage } = await import("../src/components/note/note-page");
 

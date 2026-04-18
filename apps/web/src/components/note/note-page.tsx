@@ -1175,6 +1175,7 @@ const useNotePageController = ({
 
 	return {
 		appendChatResponseToNote,
+		content,
 		editor,
 		focusEditor,
 		handleEnhanceTranscript,
@@ -1664,6 +1665,7 @@ function NotePageContent({
 
 			<NoteCommentsSheet
 				noteId={controller.noteId}
+				noteContent={controller.content}
 				editor={controller.editor}
 				currentUser={currentUser}
 				open={commentsOpen}
