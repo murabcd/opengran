@@ -42,6 +42,15 @@ const hasTextSelection = (editor: Editor) => {
 	return editor.state.doc.textBetween(from, to, "\n").trim().length > 0;
 };
 
+const getTextSelectionKey = (editor: Editor) => {
+	if (!hasTextSelection(editor)) {
+		return null;
+	}
+
+	const { from, to } = editor.state.selection;
+	return `${from}:${to}`;
+};
+
 function NoteSelectionMenuTooltip({
 	label,
 	children,
@@ -162,6 +171,9 @@ const BLOCK_STYLE_OPTIONS: BlockStyleOption[] = [
 export function NoteSelectionMenu({ onComment }: { onComment: () => void }) {
 	const { editor } = useTiptap();
 	const [blockMenuOpen, setBlockMenuOpen] = React.useState(false);
+	const [suppressedSelectionKey, setSuppressedSelectionKey] = React.useState<
+		string | null
+	>(null);
 	const bubbleMenuRef = React.useRef<HTMLDivElement | null>(null);
 	const blockMenuCloseReasonRef = React.useRef<"apply" | "dismiss" | null>(
 		null,
@@ -189,15 +201,47 @@ export function NoteSelectionMenu({ onComment }: { onComment: () => void }) {
 
 		editor.chain().setTextSelection(collapsePosition).blur().run();
 	}, [editor]);
+	const handleCommentClick = React.useCallback(() => {
+		const currentSelectionKey = getTextSelectionKey(editor);
+
+		setBlockMenuOpen(false);
+		setSuppressedSelectionKey(currentSelectionKey);
+		onComment();
+		dismissBlockSelectionMenu();
+	}, [dismissBlockSelectionMenu, editor, onComment]);
+
+	React.useEffect(() => {
+		const handleSelectionUpdate = () => {
+			const currentSelectionKey = getTextSelectionKey(editor);
+			setSuppressedSelectionKey((previousSelectionKey) =>
+				previousSelectionKey === currentSelectionKey
+					? previousSelectionKey
+					: null,
+			);
+		};
+
+		editor.on("selectionUpdate", handleSelectionUpdate);
+		return () => {
+			editor.off("selectionUpdate", handleSelectionUpdate);
+		};
+	}, [editor]);
 
 	return (
 		<BubbleMenu
 			ref={bubbleMenuRef}
 			updateDelay={150}
 			options={{ offset: 8 }}
-			shouldShow={({ editor: currentEditor }) =>
-				blockMenuOpen || hasTextSelection(currentEditor)
-			}
+			shouldShow={({ editor: currentEditor }) => {
+				if (blockMenuOpen) {
+					return true;
+				}
+
+				if (!hasTextSelection(currentEditor)) {
+					return false;
+				}
+
+				return getTextSelectionKey(currentEditor) !== suppressedSelectionKey;
+			}}
 		>
 			<div className="note-selection-menu">
 				<DropdownMenu
@@ -340,7 +384,7 @@ export function NoteSelectionMenu({ onComment }: { onComment: () => void }) {
 						type="button"
 						variant="ghost"
 						size="icon-sm"
-						onClick={onComment}
+						onClick={handleCommentClick}
 					>
 						<MessageSquareText data-icon="inline-start" />
 						<span className="sr-only">Comment</span>

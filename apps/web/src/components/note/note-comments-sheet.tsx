@@ -31,6 +31,7 @@ import {
 	InputGroup,
 	InputGroupAddon,
 	InputGroupButton,
+	InputGroupInput,
 	InputGroupTextarea,
 } from "@workspace/ui/components/input-group";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
@@ -55,7 +56,7 @@ import {
 	APP_SIDEBAR_EXPANDED_WIDTH,
 } from "@workspace/ui/lib/panel-dimensions";
 import { cn } from "@workspace/ui/lib/utils";
-import { useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import {
 	ArrowUp,
 	Bell,
@@ -67,7 +68,6 @@ import {
 	Minus,
 	MoreHorizontal,
 	PencilLine,
-	Reply,
 	SlidersHorizontal,
 	Square,
 	Trash2,
@@ -99,11 +99,12 @@ import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
-const MAX_VISIBLE_THREAD_DEPTH = 3;
 const COMMENTS_PANEL_STORAGE_KEY_DESKTOP =
 	"opengran.note-comments-panel-width.desktop";
 const COMMENTS_PANEL_STORAGE_KEY_MOBILE =
 	"opengran.note-comments-panel-width.mobile";
+const INITIAL_VISIBLE_THREAD_COMMENTS = 2;
+const THREAD_COMMENT_PAGE_SIZE = 4;
 
 type ThreadView = "all" | "open" | "resolved";
 
@@ -113,6 +114,10 @@ type ThreadDetail = ThreadSummary & { comments: ThreadComment[] };
 type ThreadCommentNode = {
 	comment: ThreadComment;
 	children: ThreadCommentNode[];
+};
+type FlattenedThreadComment = {
+	comment: ThreadComment;
+	depth: number;
 };
 type CommentViewer = {
 	name: string;
@@ -125,8 +130,6 @@ type CommentsUiState = {
 	replyBody: string;
 	editBody: string;
 	expandedThreadId: Id<"noteCommentThreads"> | null;
-	replyingThreadId: Id<"noteCommentThreads"> | null;
-	replyParentCommentId: Id<"noteComments"> | null;
 	editingThreadId: Id<"noteCommentThreads"> | null;
 	editingCommentId: Id<"noteComments"> | null;
 	threadActionsOpenId: Id<"noteCommentThreads"> | null;
@@ -194,11 +197,29 @@ const resolveAuthorIdentity = ({
 	};
 };
 
-const formatCommentTimestamp = (value: number) =>
-	new Intl.DateTimeFormat(undefined, {
-		hour: "numeric",
-		minute: "2-digit",
-	}).format(value);
+const commentTimeFormatter = new Intl.DateTimeFormat(undefined, {
+	hour: "numeric",
+	minute: "2-digit",
+});
+
+const commentDateFormatter = new Intl.DateTimeFormat(undefined, {
+	month: "short",
+	day: "numeric",
+});
+
+const isSameCalendarDay = (left: Date, right: Date) =>
+	left.getFullYear() === right.getFullYear() &&
+	left.getMonth() === right.getMonth() &&
+	left.getDate() === right.getDate();
+
+const formatCommentTimestamp = (value: number) => {
+	const timestamp = new Date(value);
+	const now = new Date();
+
+	return isSameCalendarDay(timestamp, now)
+		? commentTimeFormatter.format(timestamp)
+		: commentDateFormatter.format(timestamp);
+};
 
 const formatDiscussionTitle = (
 	authorName: string,
@@ -220,8 +241,6 @@ const INITIAL_COMMENTS_UI_STATE: CommentsUiState = {
 	replyBody: "",
 	editBody: "",
 	expandedThreadId: null,
-	replyingThreadId: null,
-	replyParentCommentId: null,
 	editingThreadId: null,
 	editingCommentId: null,
 	threadActionsOpenId: null,
@@ -270,11 +289,29 @@ const buildCommentTree = (comments: ThreadComment[]) => {
 	return roots;
 };
 
-const collectVisibleThreadIds = (editor: Editor | null) => {
+const flattenCommentTree = (
+	nodes: ThreadCommentNode[],
+	depth = 0,
+): FlattenedThreadComment[] => {
+	const flattened: FlattenedThreadComment[] = [];
+
+	for (const node of nodes) {
+		flattened.push({
+			comment: node.comment,
+			depth,
+		});
+		flattened.push(...flattenCommentTree(node.children, depth + 1));
+	}
+
+	return flattened;
+};
+
+const collectVisibleThreadOrder = (editor: Editor | null) => {
 	const threadIds = new Set<string>();
+	const orderedThreadIds: string[] = [];
 
 	if (!editor) {
-		return threadIds;
+		return orderedThreadIds;
 	}
 
 	editor.state.doc.descendants((node) => {
@@ -287,21 +324,24 @@ const collectVisibleThreadIds = (editor: Editor | null) => {
 				typeof mark.attrs.threadId === "string"
 					? mark.attrs.threadId.trim()
 					: "";
-			if (threadId) {
+			if (threadId && !threadIds.has(threadId)) {
 				threadIds.add(threadId);
+				orderedThreadIds.push(threadId);
 			}
 		}
 
 		return true;
 	});
 
-	return threadIds;
+	return orderedThreadIds;
 };
 
 function CommentComposerField({
 	value,
 	onChange,
 	onSubmit,
+	shouldFocusOnMount = false,
+	singleLine = false,
 	isSubmitting,
 	ariaLabel,
 	sendAriaLabel,
@@ -310,113 +350,203 @@ function CommentComposerField({
 	value: string;
 	onChange: (value: string) => void;
 	onSubmit: () => void;
+	shouldFocusOnMount?: boolean;
+	singleLine?: boolean;
 	isSubmitting: boolean;
 	ariaLabel: string;
 	sendAriaLabel: string;
 	placeholder: string;
 }) {
-	return (
-		<InputGroup className="min-h-[96px] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30">
-			<InputGroupTextarea
-				value={value}
-				onChange={(event) => onChange(event.target.value)}
-				onKeyDown={(event) => {
-					if (event.key !== "Enter" || event.shiftKey) {
-						return;
-					}
+	const containerRef = React.useRef<HTMLDivElement | null>(null);
 
-					event.preventDefault();
-					onSubmit();
-				}}
-				rows={1}
-				placeholder={placeholder}
-				aria-label={ariaLabel}
-				className="min-h-[40px] max-h-52 overflow-y-auto px-4 pt-2 pb-0 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
-			/>
-			<InputGroupAddon align="block-end" className="gap-1 px-4 pb-2.5">
-				<InputGroupButton
-					type="button"
-					variant="default"
-					size="icon-sm"
-					className="ml-auto rounded-full"
-					aria-label={sendAriaLabel}
-					onClick={onSubmit}
-					disabled={isSubmitting || value.trim().length === 0}
+	React.useEffect(() => {
+		if (!shouldFocusOnMount) {
+			return;
+		}
+
+		const focusComposerControl = () => {
+			const control = containerRef.current?.querySelector(
+				'[data-slot="input-group-control"]',
+			);
+
+			if (
+				!(
+					control instanceof HTMLInputElement ||
+					control instanceof HTMLTextAreaElement
+				)
+			) {
+				return;
+			}
+
+			control.focus({ preventScroll: true });
+			const cursorPosition = control.value.length;
+			control.setSelectionRange(cursorPosition, cursorPosition);
+		};
+
+		const frameId = window.requestAnimationFrame(focusComposerControl);
+		const immediateTimeoutId = window.setTimeout(focusComposerControl, 0);
+		const delayedTimeoutId = window.setTimeout(focusComposerControl, 50);
+
+		return () => {
+			window.cancelAnimationFrame(frameId);
+			window.clearTimeout(immediateTimeoutId);
+			window.clearTimeout(delayedTimeoutId);
+		};
+	}, [shouldFocusOnMount]);
+
+	return (
+		<div ref={containerRef}>
+			<InputGroup
+				className={cn(
+					"overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30",
+					singleLine ? "h-12 min-h-0" : "min-h-[96px]",
+				)}
+			>
+				{singleLine ? (
+					<InputGroupInput
+						value={value}
+						onChange={(event) => onChange(event.target.value)}
+						onKeyDown={(event) => {
+							if (event.key !== "Enter" || event.shiftKey) {
+								return;
+							}
+
+							event.preventDefault();
+							onSubmit();
+						}}
+						placeholder={placeholder}
+						aria-label={ariaLabel}
+						className="h-full px-4 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+					/>
+				) : (
+					<InputGroupTextarea
+						value={value}
+						onChange={(event) => onChange(event.target.value)}
+						onKeyDown={(event) => {
+							if (event.key !== "Enter" || event.shiftKey) {
+								return;
+							}
+
+							event.preventDefault();
+							onSubmit();
+						}}
+						rows={1}
+						placeholder={placeholder}
+						aria-label={ariaLabel}
+						className="min-h-[40px] max-h-52 overflow-y-auto px-4 pt-2 pb-0 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+					/>
+				)}
+				<InputGroupAddon
+					align={singleLine ? "inline-end" : "block-end"}
+					className={singleLine ? "gap-1 pr-2" : "gap-1 px-4 pb-2.5"}
 				>
-					{isSubmitting ? (
-						<LoaderCircle className="size-4 animate-spin" />
-					) : (
-						<ArrowUp className="size-4" />
-					)}
-				</InputGroupButton>
-			</InputGroupAddon>
-		</InputGroup>
+					<InputGroupButton
+						type="button"
+						variant="default"
+						size="icon-sm"
+						className={cn(singleLine ? "rounded-full" : "ml-auto rounded-full")}
+						aria-label={sendAriaLabel}
+						onClick={onSubmit}
+						disabled={isSubmitting || value.trim().length === 0}
+					>
+						{isSubmitting ? (
+							<LoaderCircle className="size-4 animate-spin" />
+						) : (
+							<ArrowUp className="size-4" />
+						)}
+					</InputGroupButton>
+				</InputGroupAddon>
+			</InputGroup>
+		</div>
+	);
+}
+
+function CommentComposerDismissButton({
+	label,
+	onClick,
+	showShortcut = false,
+}: {
+	label: string;
+	onClick: () => void;
+	showShortcut?: boolean;
+}) {
+	return (
+		<div className="pointer-events-none mb-3 flex justify-center">
+			<Button
+				type="button"
+				variant="ghost"
+				className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/80 px-4 py-1.5 text-sm text-secondary-foreground shadow-sm hover:bg-secondary"
+				onClick={onClick}
+			>
+				<span>{label}</span>
+				{showShortcut ? (
+					<span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] leading-none text-muted-foreground">
+						Esc
+					</span>
+				) : null}
+			</Button>
+		</div>
 	);
 }
 
 function ThreadCommentNodeItem({
-	node,
-	depth = 0,
-	flattenIndent = false,
+	item,
 	currentUser,
 	commentActionsOpenId,
 	setCommentActionsOpenId,
-	replyingThreadId,
-	replyParentCommentId,
+	handleStartEditComment,
+	handleCancelEdit,
+	handleDeleteComment,
 	editingCommentId,
 	editBody,
-	replyBody,
 	isReplySubmitting,
-	editComposerRef,
-	replyComposerRef,
 	setEditBody,
-	setReplyBody,
 	handleSaveEdit,
-	handleReply,
-	handleStartReplyToComment,
-	handleStartEditComment,
-	handleDeleteComment,
 }: {
-	node: ThreadCommentNode;
-	depth?: number;
-	flattenIndent?: boolean;
+	item: FlattenedThreadComment;
 	currentUser: CommentViewer;
 	commentActionsOpenId: Id<"noteComments"> | null;
 	setCommentActionsOpenId: (commentId: Id<"noteComments"> | null) => void;
-	replyingThreadId: Id<"noteCommentThreads"> | null;
-	replyParentCommentId: Id<"noteComments"> | null;
+	handleStartEditComment: (comment: ThreadComment) => void;
+	handleCancelEdit: () => void;
+	handleDeleteComment: (comment: ThreadComment) => void;
 	editingCommentId: Id<"noteComments"> | null;
 	editBody: string;
-	replyBody: string;
 	isReplySubmitting: boolean;
-	editComposerRef: React.RefObject<HTMLDivElement | null>;
-	replyComposerRef: React.RefObject<HTMLDivElement | null>;
 	setEditBody: (value: string) => void;
-	setReplyBody: (value: string) => void;
 	handleSaveEdit: () => void;
-	handleReply: () => void;
-	handleStartReplyToComment: (comment: ThreadComment) => void;
-	handleStartEditComment: (comment: ThreadComment) => void;
-	handleDeleteComment: (comment: ThreadComment) => void;
 }) {
 	const commentAuthor = resolveAuthorIdentity({
-		name: node.comment.authorName,
+		name: item.comment.authorName,
 		currentUser,
 	});
 	const canManageComment = commentAuthor.name === "You";
-	const isReplyComposerOpen =
-		replyingThreadId === node.comment.threadId &&
-		replyParentCommentId === node.comment._id;
-	const nextDepth = depth >= MAX_VISIBLE_THREAD_DEPTH ? depth : depth + 1;
-	const flattenChildren = depth >= MAX_VISIBLE_THREAD_DEPTH;
+	const isEditingComment = editingCommentId === item.comment._id;
+	const composerContainerRef = React.useRef<HTMLDivElement | null>(null);
+
+	React.useEffect(() => {
+		if (!isEditingComment) {
+			return;
+		}
+
+		const scrollComposerIntoView = () => {
+			composerContainerRef.current?.scrollIntoView({
+				block: "nearest",
+				inline: "nearest",
+			});
+		};
+
+		const frameId = window.requestAnimationFrame(scrollComposerIntoView);
+		const timeoutId = window.setTimeout(scrollComposerIntoView, 50);
+
+		return () => {
+			window.cancelAnimationFrame(frameId);
+			window.clearTimeout(timeoutId);
+		};
+	}, [isEditingComment]);
 
 	return (
-		<div
-			className={cn(
-				"min-w-0",
-				depth > 0 && !flattenIndent && "ml-3 border-l border-border/60 pl-4",
-			)}
-		>
+		<div className="min-w-0">
 			<div className="group">
 				<div className="grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1">
 					<div className="flex pt-0.5">
@@ -435,135 +565,103 @@ function ThreadCommentNodeItem({
 							<p className="truncate text-sm font-medium">
 								{commentAuthor.name}
 							</p>
-							<div className="relative flex min-w-[3.75rem] shrink-0 items-start justify-end pt-0.5">
+							<div className="relative flex min-w-[6.5rem] shrink-0 items-start justify-end pt-0.5">
 								<span
 									className={cn(
 										"pointer-events-none text-xs text-muted-foreground transition-opacity duration-150",
-										commentActionsOpenId === node.comment._id
+										commentActionsOpenId === item.comment._id
 											? "opacity-0"
 											: "opacity-100 group-hover:opacity-0 group-focus-within:opacity-0",
 									)}
 								>
-									{formatCommentTimestamp(node.comment.createdAt)}
+									{formatCommentTimestamp(item.comment.createdAt)}
 								</span>
-								<DropdownMenu
-									open={commentActionsOpenId === node.comment._id}
-									onOpenChange={(nextOpen) =>
-										setCommentActionsOpenId(nextOpen ? node.comment._id : null)
-									}
+								<div
+									className={cn(
+										"absolute top-0 right-0 flex items-center gap-1 transition-opacity duration-150",
+										commentActionsOpenId === item.comment._id
+											? "opacity-100"
+											: "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+									)}
 								>
-									<DropdownMenuTrigger asChild>
-										<Button
-											type="button"
-											variant="ghost"
-											size="icon-sm"
-											className={cn(
-												"absolute top-0 right-0 z-10 h-6 w-6 cursor-pointer rounded-md transition-opacity duration-150",
-												commentActionsOpenId === node.comment._id
-													? "opacity-100"
-													: "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-											)}
-											aria-label="Comment actions"
-										>
-											<MoreHorizontal className="size-4" />
-										</Button>
-									</DropdownMenuTrigger>
-									<DropdownMenuContent align="end" className="min-w-36">
-										<DropdownMenuItem
-											className="cursor-pointer"
-											onSelect={() => handleStartReplyToComment(node.comment)}
-										>
-											<Reply className="size-4" />
-											<span>Reply</span>
-										</DropdownMenuItem>
-										{canManageComment ? (
-											<DropdownMenuItem
-												className="cursor-pointer"
-												onSelect={() => handleStartEditComment(node.comment)}
+									<DropdownMenu
+										modal
+										open={commentActionsOpenId === item.comment._id}
+										onOpenChange={(nextOpen) =>
+											setCommentActionsOpenId(
+												nextOpen ? item.comment._id : null,
+											)
+										}
+									>
+										<DropdownMenuTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="h-6 w-6 cursor-pointer rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+												aria-label="Comment actions"
 											>
-												<PencilLine className="size-4" />
-												<span>Edit</span>
-											</DropdownMenuItem>
-										) : null}
-										{canManageComment ? (
-											<DropdownMenuItem
-												variant="destructive"
-												className="cursor-pointer"
-												onSelect={() => handleDeleteComment(node.comment)}
-											>
-												<Trash2 className="size-4" />
-												<span>Delete</span>
-											</DropdownMenuItem>
-										) : null}
-									</DropdownMenuContent>
-								</DropdownMenu>
+												<MoreHorizontal className="size-4" />
+											</Button>
+										</DropdownMenuTrigger>
+										<DropdownMenuContent
+											align="end"
+											className="min-w-36"
+											onCloseAutoFocus={(event) => event.preventDefault()}
+										>
+											{canManageComment ? (
+												<DropdownMenuItem
+													className="cursor-pointer"
+													onSelect={() => handleStartEditComment(item.comment)}
+												>
+													<PencilLine className="size-4" />
+													<span>Edit</span>
+												</DropdownMenuItem>
+											) : null}
+											{canManageComment ? <DropdownMenuSeparator /> : null}
+											{canManageComment ? (
+												<DropdownMenuItem
+													variant="destructive"
+													className="cursor-pointer"
+													onSelect={() => handleDeleteComment(item.comment)}
+												>
+													<Trash2 className="size-4" />
+													<span>Delete</span>
+												</DropdownMenuItem>
+											) : null}
+										</DropdownMenuContent>
+									</DropdownMenu>
+								</div>
 							</div>
 						</div>
-						{editingCommentId === node.comment._id ? (
-							<div ref={editComposerRef} className="mt-2">
+						{isEditingComment ? (
+							<div ref={composerContainerRef} className="mt-3">
+								<CommentComposerDismissButton
+									label="Cancel edit"
+									onClick={handleCancelEdit}
+									showShortcut
+								/>
 								<CommentComposerField
+									key={`${item.comment._id}:edit`}
 									value={editBody}
 									onChange={setEditBody}
 									onSubmit={handleSaveEdit}
+									shouldFocusOnMount
+									singleLine
 									isSubmitting={isReplySubmitting}
 									ariaLabel="Edit comment"
 									sendAriaLabel="Save comment"
-									placeholder="Edit comment..."
+									placeholder="Edit Comment…"
 								/>
 							</div>
 						) : (
 							<p className="mt-0.5 whitespace-pre-wrap text-sm text-muted-foreground">
-								{node.comment.body}
+								{item.comment.body}
 							</p>
 						)}
 					</div>
 				</div>
 			</div>
-
-			{isReplyComposerOpen ? (
-				<div ref={replyComposerRef} className="mt-3">
-					<CommentComposerField
-						value={replyBody}
-						onChange={setReplyBody}
-						onSubmit={handleReply}
-						isSubmitting={isReplySubmitting}
-						ariaLabel="Reply to comment"
-						sendAriaLabel="Send reply"
-						placeholder="Reply..."
-					/>
-				</div>
-			) : null}
-
-			{node.children.length > 0 ? (
-				<div className="mt-3 space-y-3">
-					{node.children.map((child) => (
-						<ThreadCommentNodeItem
-							key={child.comment._id}
-							node={child}
-							depth={nextDepth}
-							flattenIndent={flattenChildren}
-							currentUser={currentUser}
-							commentActionsOpenId={commentActionsOpenId}
-							setCommentActionsOpenId={setCommentActionsOpenId}
-							replyingThreadId={replyingThreadId}
-							replyParentCommentId={replyParentCommentId}
-							editingCommentId={editingCommentId}
-							editBody={editBody}
-							replyBody={replyBody}
-							isReplySubmitting={isReplySubmitting}
-							editComposerRef={editComposerRef}
-							replyComposerRef={replyComposerRef}
-							setEditBody={setEditBody}
-							setReplyBody={setReplyBody}
-							handleSaveEdit={handleSaveEdit}
-							handleReply={handleReply}
-							handleStartReplyToComment={handleStartReplyToComment}
-							handleStartEditComment={handleStartEditComment}
-							handleDeleteComment={handleDeleteComment}
-						/>
-					))}
-				</div>
-			) : null}
 		</div>
 	);
 }
@@ -573,8 +671,6 @@ function DiscussionThreadRow({
 	currentUser,
 	activeThreadId,
 	expandedThreadId,
-	replyingThreadId,
-	replyParentCommentId,
 	editingCommentId,
 	threadActionsOpenId,
 	expandedThread,
@@ -583,22 +679,19 @@ function DiscussionThreadRow({
 	replyBody,
 	handleMarkThreadRead,
 	handleMarkThreadUnread,
-	handleStartEditThread,
 	handleCopyThreadLink,
 	handleToggleMuteThread,
 	handleDeleteThread,
 	handleOpenThread,
-	activeCommentTree,
+	handlePrefetchThread,
 	commentActionsOpenId,
 	setCommentActionsOpenId,
 	editBody,
-	editComposerRef,
-	replyComposerRef,
 	setEditBody,
 	setReplyBody,
 	handleSaveEdit,
+	handleCancelEdit,
 	handleReply,
-	handleStartReplyToComment,
 	handleStartEditComment,
 	handleDeleteComment,
 	setThreadActionsOpenId,
@@ -607,8 +700,6 @@ function DiscussionThreadRow({
 	currentUser: CommentViewer;
 	activeThreadId: Id<"noteCommentThreads"> | null;
 	expandedThreadId: Id<"noteCommentThreads"> | null;
-	replyingThreadId: Id<"noteCommentThreads"> | null;
-	replyParentCommentId: Id<"noteComments"> | null;
 	editingCommentId: Id<"noteComments"> | null;
 	threadActionsOpenId: Id<"noteCommentThreads"> | null;
 	expandedThread: ThreadDetail | null | undefined;
@@ -617,29 +708,25 @@ function DiscussionThreadRow({
 	replyBody: string;
 	handleMarkThreadRead: (thread: ThreadSummary) => void;
 	handleMarkThreadUnread: (threadId: Id<"noteCommentThreads">) => void;
-	handleStartEditThread: (thread: ThreadSummary) => void;
 	handleCopyThreadLink: (threadId: Id<"noteCommentThreads">) => Promise<void>;
 	handleToggleMuteThread: (thread: ThreadSummary) => void;
 	handleDeleteThread: (threadId: Id<"noteCommentThreads">) => void;
 	handleOpenThread: (thread: ThreadSummary) => void;
-	activeCommentTree: ThreadCommentNode[];
+	handlePrefetchThread: (threadId: Id<"noteCommentThreads">) => void;
 	commentActionsOpenId: Id<"noteComments"> | null;
 	setCommentActionsOpenId: (commentId: Id<"noteComments"> | null) => void;
 	editBody: string;
-	editComposerRef: React.RefObject<HTMLDivElement | null>;
-	replyComposerRef: React.RefObject<HTMLDivElement | null>;
 	setEditBody: (value: string) => void;
 	setReplyBody: (value: string) => void;
 	handleSaveEdit: () => void;
+	handleCancelEdit: () => void;
 	handleReply: () => void;
-	handleStartReplyToComment: (comment: ThreadComment) => void;
 	handleStartEditComment: (comment: ThreadComment) => void;
 	handleDeleteComment: (comment: ThreadComment) => void;
 	setThreadActionsOpenId: (threadId: Id<"noteCommentThreads"> | null) => void;
 }) {
 	const isActive = activeThreadId === thread._id;
 	const isExpanded = expandedThreadId === thread._id;
-	const isReplyComposerOpen = replyingThreadId === thread._id;
 	const isEditComposerOpen =
 		isExpanded &&
 		editingCommentId !== null &&
@@ -648,67 +735,62 @@ function DiscussionThreadRow({
 		) === true;
 	const isRead =
 		thread.isRead || optimisticReadThreadIds.has(String(thread._id));
-	const expandedDetail =
-		isExpanded && expandedThread && expandedThread._id === thread._id
-			? expandedThread
-			: null;
+	const expandedDetail = !isExpanded
+		? undefined
+		: expandedThread === undefined
+			? undefined
+			: expandedThread && expandedThread._id === thread._id
+				? expandedThread
+				: null;
 	const threadAuthor = resolveAuthorIdentity({
 		name: thread.createdByName,
 		currentUser,
 	});
 
 	return (
-		<div
-			className={cn(!isReplyComposerOpen && !isEditComposerOpen && "border-b")}
-		>
+		<div className={cn(!isExpanded && !isEditComposerOpen && "border-b")}>
 			<DiscussionThreadSummary
 				thread={thread}
 				threadAuthor={threadAuthor}
 				isRead={isRead}
 				isActive={isActive}
+				isExpanded={isExpanded}
 				threadActionsOpenId={threadActionsOpenId}
 				setThreadActionsOpenId={setThreadActionsOpenId}
 				handleMarkThreadRead={handleMarkThreadRead}
 				handleMarkThreadUnread={handleMarkThreadUnread}
-				handleStartEditThread={handleStartEditThread}
 				handleCopyThreadLink={handleCopyThreadLink}
 				handleToggleMuteThread={handleToggleMuteThread}
 				handleDeleteThread={handleDeleteThread}
 				handleOpenThread={handleOpenThread}
+				handlePrefetchThread={handlePrefetchThread}
 			/>
 
 			{isExpanded ? (
-				expandedThread === undefined ? (
-					<div className="mx-4 mt-4 border-t pt-4" />
-				) : expandedDetail === null ? (
-					<div className="mx-4 mt-4 border-t pt-4 text-sm text-muted-foreground">
+				expandedDetail === null ? (
+					<div className="mx-4 mt-4 border-b pb-4 text-sm text-muted-foreground">
 						This discussion is no longer available.
 					</div>
-				) : (
+				) : expandedDetail ? (
 					<ExpandedDiscussionThread
+						key={expandedDetail._id}
 						expandedDetail={expandedDetail}
-						activeCommentTree={activeCommentTree}
 						currentUser={currentUser}
 						commentActionsOpenId={commentActionsOpenId}
 						setCommentActionsOpenId={setCommentActionsOpenId}
-						replyingThreadId={replyingThreadId}
-						replyParentCommentId={replyParentCommentId}
 						editingCommentId={editingCommentId}
 						editBody={editBody}
 						replyBody={replyBody}
 						isReplySubmitting={isReplySubmitting}
-						editComposerRef={editComposerRef}
-						replyComposerRef={replyComposerRef}
 						setEditBody={setEditBody}
 						setReplyBody={setReplyBody}
 						handleSaveEdit={handleSaveEdit}
+						handleCancelEdit={handleCancelEdit}
 						handleReply={handleReply}
-						handleStartReplyToComment={handleStartReplyToComment}
 						handleStartEditComment={handleStartEditComment}
 						handleDeleteComment={handleDeleteComment}
-						isReplyComposerOpen={isReplyComposerOpen}
 					/>
-				)
+				) : null
 			) : null}
 		</div>
 	);
@@ -719,29 +801,31 @@ function DiscussionThreadSummary({
 	threadAuthor,
 	isRead,
 	isActive,
+	isExpanded,
 	threadActionsOpenId,
 	setThreadActionsOpenId,
 	handleMarkThreadRead,
 	handleMarkThreadUnread,
-	handleStartEditThread,
 	handleCopyThreadLink,
 	handleToggleMuteThread,
 	handleDeleteThread,
 	handleOpenThread,
+	handlePrefetchThread,
 }: {
 	thread: ThreadSummary;
 	threadAuthor: ReturnType<typeof resolveAuthorIdentity>;
 	isRead: boolean;
 	isActive: boolean;
+	isExpanded: boolean;
 	threadActionsOpenId: Id<"noteCommentThreads"> | null;
 	setThreadActionsOpenId: (threadId: Id<"noteCommentThreads"> | null) => void;
 	handleMarkThreadRead: (thread: ThreadSummary) => void;
 	handleMarkThreadUnread: (threadId: Id<"noteCommentThreads">) => void;
-	handleStartEditThread: (thread: ThreadSummary) => void;
 	handleCopyThreadLink: (threadId: Id<"noteCommentThreads">) => Promise<void>;
 	handleToggleMuteThread: (thread: ThreadSummary) => void;
 	handleDeleteThread: (threadId: Id<"noteCommentThreads">) => void;
 	handleOpenThread: (thread: ThreadSummary) => void;
+	handlePrefetchThread: (threadId: Id<"noteCommentThreads">) => void;
 }) {
 	return (
 		<div
@@ -753,15 +837,20 @@ function DiscussionThreadSummary({
 			<div className="flex items-start gap-3 px-3 py-3">
 				<button
 					type="button"
-					className="min-w-0 flex-1 cursor-pointer text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-					onClick={() => handleMarkThreadRead(thread)}
+					className={cn(
+						"min-w-0 flex-1 cursor-pointer rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+						isRead && "opacity-50",
+					)}
+					aria-expanded={isExpanded}
+					aria-label={formatDiscussionTitle(
+						threadAuthor.name,
+						thread.latestCommentIsReply ?? false,
+					)}
+					onFocus={() => handlePrefetchThread(thread._id)}
+					onClick={() => handleOpenThread(thread)}
+					onPointerEnter={() => handlePrefetchThread(thread._id)}
 				>
-					<div
-						className={cn(
-							"grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1",
-							isRead && "opacity-50",
-						)}
-					>
+					<div className="grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1">
 						<div className="flex pt-0.5">
 							<Avatar className="size-4">
 								<AvatarImage
@@ -786,12 +875,27 @@ function DiscussionThreadSummary({
 								{thread.excerpt}
 							</p>
 						</div>
-						<div className="col-start-2 min-w-0">
-							<p className="line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">
-								{thread.latestCommentPreview}
-							</p>
-						</div>
+						{isExpanded ? null : (
+							<div className="col-start-2 min-w-0">
+								<p className="line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">
+									{thread.latestCommentPreview}
+								</p>
+							</div>
+						)}
 					</div>
+					{isExpanded ? null : (
+						<div className="pl-6 pt-3">
+							<Button
+								asChild
+								type={undefined}
+								variant="outline"
+								size="sm"
+								className="pointer-events-none text-xs"
+							>
+								<span>Reply</span>
+							</Button>
+						</div>
+					)}
 				</button>
 				<div className="relative flex min-w-[3.75rem] shrink-0 items-start justify-end pt-0.5">
 					<span
@@ -799,12 +903,15 @@ function DiscussionThreadSummary({
 							"pointer-events-none text-xs text-muted-foreground transition-opacity duration-150",
 							threadActionsOpenId === thread._id
 								? "opacity-0"
-								: "opacity-100 group-hover:opacity-0 group-focus-within:opacity-0",
+								: isRead
+									? "opacity-50 group-hover:opacity-0 group-focus-within:opacity-0"
+									: "opacity-100 group-hover:opacity-0 group-focus-within:opacity-0",
 						)}
 					>
-						{formatCommentTimestamp(thread.updatedAt)}
+						{formatCommentTimestamp(thread.lastCommentAt)}
 					</span>
 					<DropdownMenu
+						modal
 						open={threadActionsOpenId === thread._id}
 						onOpenChange={(nextOpen) =>
 							setThreadActionsOpenId(nextOpen ? thread._id : null)
@@ -816,7 +923,7 @@ function DiscussionThreadSummary({
 								variant="ghost"
 								size="icon-sm"
 								className={cn(
-									"absolute top-0 right-0 z-10 h-6 w-6 cursor-pointer rounded-md transition-opacity duration-150",
+									"absolute top-0 right-0 z-10 h-6 w-6 cursor-pointer rounded-md text-muted-foreground transition-[opacity,color,background-color] duration-150 hover:bg-accent hover:text-foreground",
 									threadActionsOpenId === thread._id
 										? "opacity-100"
 										: "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
@@ -844,19 +951,11 @@ function DiscussionThreadSummary({
 							</DropdownMenuItem>
 							<DropdownMenuItem
 								className="cursor-pointer"
-								onSelect={() => handleStartEditThread(thread)}
-							>
-								<PencilLine className="size-4" />
-								<span>Edit</span>
-							</DropdownMenuItem>
-							<DropdownMenuItem
-								className="cursor-pointer"
 								onSelect={() => void handleCopyThreadLink(thread._id)}
 							>
 								<Link2 className="size-4" />
 								<span>Copy link</span>
 							</DropdownMenuItem>
-							<DropdownMenuSeparator />
 							<DropdownMenuItem
 								className="cursor-pointer"
 								onSelect={() => handleToggleMuteThread(thread)}
@@ -870,6 +969,7 @@ function DiscussionThreadSummary({
 									{thread.isMutedReplies ? "Unmute replies" : "Mute replies"}
 								</span>
 							</DropdownMenuItem>
+							<DropdownMenuSeparator />
 							<DropdownMenuItem
 								variant="destructive"
 								className="cursor-pointer"
@@ -882,107 +982,173 @@ function DiscussionThreadSummary({
 					</DropdownMenu>
 				</div>
 			</div>
-			<div className="px-3 pb-3 pl-9">
-				<Button
-					type="button"
-					variant="outline"
-					size="sm"
-					className="relative z-10 cursor-pointer text-xs"
-					onClick={() => handleOpenThread(thread)}
-				>
-					Reply
-				</Button>
-			</div>
 		</div>
 	);
 }
 
 function ExpandedDiscussionThread({
 	expandedDetail,
-	activeCommentTree,
 	currentUser,
 	commentActionsOpenId,
 	setCommentActionsOpenId,
-	replyingThreadId,
-	replyParentCommentId,
 	editingCommentId,
 	editBody,
 	replyBody,
 	isReplySubmitting,
-	editComposerRef,
-	replyComposerRef,
 	setEditBody,
 	setReplyBody,
 	handleSaveEdit,
+	handleCancelEdit,
 	handleReply,
-	handleStartReplyToComment,
 	handleStartEditComment,
 	handleDeleteComment,
-	isReplyComposerOpen,
 }: {
 	expandedDetail: ThreadDetail;
-	activeCommentTree: ThreadCommentNode[];
 	currentUser: CommentViewer;
 	commentActionsOpenId: Id<"noteComments"> | null;
 	setCommentActionsOpenId: (commentId: Id<"noteComments"> | null) => void;
-	replyingThreadId: Id<"noteCommentThreads"> | null;
-	replyParentCommentId: Id<"noteComments"> | null;
 	editingCommentId: Id<"noteComments"> | null;
 	editBody: string;
 	replyBody: string;
 	isReplySubmitting: boolean;
-	editComposerRef: React.RefObject<HTMLDivElement | null>;
-	replyComposerRef: React.RefObject<HTMLDivElement | null>;
 	setEditBody: (value: string) => void;
 	setReplyBody: (value: string) => void;
 	handleSaveEdit: () => void;
+	handleCancelEdit: () => void;
 	handleReply: () => void;
-	handleStartReplyToComment: (comment: ThreadComment) => void;
 	handleStartEditComment: (comment: ThreadComment) => void;
 	handleDeleteComment: (comment: ThreadComment) => void;
-	isReplyComposerOpen: boolean;
 }) {
+	const isEditingComment = editingCommentId !== null;
+	const commentTree = React.useMemo(
+		() => buildCommentTree(expandedDetail.comments),
+		[expandedDetail.comments],
+	);
+	const flattenedComments = React.useMemo(
+		() => flattenCommentTree(commentTree),
+		[commentTree],
+	);
+	const rootComment = flattenedComments[0] ?? null;
+	const replyComments = React.useMemo(
+		() => flattenedComments.slice(rootComment ? 1 : 0),
+		[flattenedComments, rootComment],
+	);
+	const initialVisibleReplyCount = Math.min(
+		INITIAL_VISIBLE_THREAD_COMMENTS,
+		replyComments.length,
+	);
+	const [visibleReplyCount, setVisibleReplyCount] = React.useState(
+		initialVisibleReplyCount,
+	);
+	const hiddenReplyCount = Math.max(
+		replyComments.length - visibleReplyCount,
+		0,
+	);
+	const canCollapseToRecent =
+		replyComments.length > initialVisibleReplyCount && hiddenReplyCount === 0;
+	const historyToggleLabel =
+		hiddenReplyCount > 0
+			? "Show more"
+			: canCollapseToRecent
+				? "Show less"
+				: null;
+	const visibleReplyComments =
+		visibleReplyCount > 0
+			? replyComments.slice(-visibleReplyCount)
+			: replyComments;
+
+	React.useEffect(() => {
+		const activeTargetIndex = editingCommentId
+			? replyComments.findIndex((item) => item.comment._id === editingCommentId)
+			: -1;
+		const requiredVisibleCount =
+			activeTargetIndex >= 0 ? replyComments.length - activeTargetIndex : 0;
+
+		setVisibleReplyCount((current) => {
+			const next = Math.min(
+				replyComments.length,
+				Math.max(current, initialVisibleReplyCount, requiredVisibleCount),
+			);
+			return current === next ? current : next;
+		});
+	}, [editingCommentId, initialVisibleReplyCount, replyComments]);
+
 	return (
-		<div className="mx-4 mt-4 border-t pt-4">
+		<div className="mx-4 mt-4 border-b pb-4">
 			<div className="space-y-4">
-				{activeCommentTree.map((node) => (
+				{rootComment ? (
 					<ThreadCommentNodeItem
-						key={node.comment._id}
-						node={node}
+						key={rootComment.comment._id}
+						item={rootComment}
 						currentUser={currentUser}
 						commentActionsOpenId={commentActionsOpenId}
 						setCommentActionsOpenId={setCommentActionsOpenId}
-						replyingThreadId={replyingThreadId}
-						replyParentCommentId={replyParentCommentId}
+						handleStartEditComment={handleStartEditComment}
+						handleCancelEdit={handleCancelEdit}
+						handleDeleteComment={handleDeleteComment}
 						editingCommentId={editingCommentId}
 						editBody={editBody}
-						replyBody={replyBody}
 						isReplySubmitting={isReplySubmitting}
-						editComposerRef={editComposerRef}
-						replyComposerRef={replyComposerRef}
 						setEditBody={setEditBody}
-						setReplyBody={setReplyBody}
 						handleSaveEdit={handleSaveEdit}
-						handleReply={handleReply}
-						handleStartReplyToComment={handleStartReplyToComment}
-						handleStartEditComment={handleStartEditComment}
-						handleDeleteComment={handleDeleteComment}
 					/>
-				))}
+				) : null}
+				{historyToggleLabel ? (
+					<div className="pt-1 pb-3">
+						<button
+							type="button"
+							className="inline-flex h-auto w-fit cursor-pointer rounded-sm px-0 text-xs font-normal text-muted-foreground/75 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+							onClick={() =>
+								hiddenReplyCount > 0
+									? setVisibleReplyCount((current) =>
+											Math.min(
+												replyComments.length,
+												current + THREAD_COMMENT_PAGE_SIZE,
+											),
+										)
+									: setVisibleReplyCount(initialVisibleReplyCount)
+							}
+						>
+							{historyToggleLabel}
+						</button>
+					</div>
+				) : null}
+				{visibleReplyComments.length > 0 ? (
+					<div className="ml-3 border-l border-border/60 pl-4 space-y-4">
+						{visibleReplyComments.map((item) => (
+							<ThreadCommentNodeItem
+								key={item.comment._id}
+								item={item}
+								currentUser={currentUser}
+								commentActionsOpenId={commentActionsOpenId}
+								setCommentActionsOpenId={setCommentActionsOpenId}
+								handleStartEditComment={handleStartEditComment}
+								handleCancelEdit={handleCancelEdit}
+								handleDeleteComment={handleDeleteComment}
+								editingCommentId={editingCommentId}
+								editBody={editBody}
+								isReplySubmitting={isReplySubmitting}
+								setEditBody={setEditBody}
+								handleSaveEdit={handleSaveEdit}
+							/>
+						))}
+					</div>
+				) : null}
 			</div>
 
-			{expandedDetail.isResolved ||
-			!isReplyComposerOpen ||
-			replyParentCommentId ? null : (
+			{expandedDetail.isResolved || isEditingComment ? null : (
 				<div className="mt-4">
 					<CommentComposerField
+						key={`${expandedDetail._id}:reply`}
 						value={replyBody}
 						onChange={setReplyBody}
 						onSubmit={handleReply}
+						shouldFocusOnMount
+						singleLine
 						isSubmitting={isReplySubmitting}
 						ariaLabel="Reply to thread"
 						sendAriaLabel="Send reply"
-						placeholder="Reply..."
+						placeholder="Reply…"
 					/>
 				</div>
 			)}
@@ -999,8 +1165,6 @@ type CommentsSheetBodyProps = {
 	visibleThreads: ThreadSummary[] | null | undefined;
 	activeThreadId: Id<"noteCommentThreads"> | null;
 	expandedThreadId: Id<"noteCommentThreads"> | null;
-	replyingThreadId: Id<"noteCommentThreads"> | null;
-	replyParentCommentId: Id<"noteComments"> | null;
 	editingCommentId: Id<"noteComments"> | null;
 	expandedThread: ThreadDetail | null | undefined;
 	optimisticReadThreadIds: Set<string>;
@@ -1009,24 +1173,21 @@ type CommentsSheetBodyProps = {
 	setThreadActionsOpenId: (threadId: Id<"noteCommentThreads"> | null) => void;
 	handleMarkThreadRead: (thread: ThreadSummary) => void;
 	handleMarkThreadUnread: (threadId: Id<"noteCommentThreads">) => void;
-	handleStartEditThread: (thread: ThreadSummary) => void;
 	handleCopyThreadLink: (threadId: Id<"noteCommentThreads">) => Promise<void>;
 	handleToggleMuteThread: (thread: ThreadSummary) => void;
 	handleDeleteThread: (threadId: Id<"noteCommentThreads">) => void;
 	handleOpenThread: (thread: ThreadSummary) => void;
-	activeCommentTree: ThreadCommentNode[];
+	handlePrefetchThread: (threadId: Id<"noteCommentThreads">) => void;
 	commentActionsOpenId: Id<"noteComments"> | null;
 	setCommentActionsOpenId: (commentId: Id<"noteComments"> | null) => void;
 	editBody: string;
 	replyBody: string;
 	isReplySubmitting: boolean;
-	editComposerRef: React.RefObject<HTMLDivElement | null>;
-	replyComposerRef: React.RefObject<HTMLDivElement | null>;
 	setEditBody: (value: string) => void;
 	setReplyBody: (value: string) => void;
 	handleSaveEdit: () => void;
+	handleCancelEdit: () => void;
 	handleReply: () => void;
-	handleStartReplyToComment: (comment: ThreadComment) => void;
 	handleStartEditComment: (comment: ThreadComment) => void;
 	handleDeleteComment: (comment: ThreadComment) => void;
 };
@@ -1040,8 +1201,6 @@ const CommentsSheetBody = React.memo(function CommentsSheetBody({
 	visibleThreads,
 	activeThreadId,
 	expandedThreadId,
-	replyingThreadId,
-	replyParentCommentId,
 	editingCommentId,
 	expandedThread,
 	optimisticReadThreadIds,
@@ -1050,111 +1209,97 @@ const CommentsSheetBody = React.memo(function CommentsSheetBody({
 	setThreadActionsOpenId,
 	handleMarkThreadRead,
 	handleMarkThreadUnread,
-	handleStartEditThread,
 	handleCopyThreadLink,
 	handleToggleMuteThread,
 	handleDeleteThread,
 	handleOpenThread,
-	activeCommentTree,
+	handlePrefetchThread,
 	commentActionsOpenId,
 	setCommentActionsOpenId,
 	editBody,
 	replyBody,
 	isReplySubmitting,
-	editComposerRef,
-	replyComposerRef,
 	setEditBody,
 	setReplyBody,
 	handleSaveEdit,
+	handleCancelEdit,
 	handleReply,
-	handleStartReplyToComment,
 	handleStartEditComment,
 	handleDeleteComment,
 }: CommentsSheetBodyProps) {
 	const threadList = visibleThreads ?? [];
 
 	return (
-		<>
-			{pendingSelection ? (
-				<div className="bg-accent/10 px-4 py-4">
-					<p className="mb-4 whitespace-pre-wrap text-sm text-muted-foreground">
-						{pendingSelection.text}
-					</p>
-					<CommentComposerField
-						value={draftBody}
-						onChange={setDraftBody}
-						onSubmit={handleCreateThread}
-						isSubmitting={isCreating}
-						ariaLabel="New comment"
-						sendAriaLabel="Send comment"
-						placeholder="Add a comment..."
-					/>
-				</div>
-			) : null}
-
-			<ScrollArea
-				className="min-h-0 flex-1"
-				viewportClassName="h-full"
-				scrollbarOrientation="none"
-			>
-				{visibleThreads === undefined ? null : threadList.length === 0 ? (
-					pendingSelection ? null : (
-						<Empty className="min-h-[24rem] border-none">
-							<EmptyHeader>
-								<EmptyMedia variant="icon">
-									<MessageSquareMore className="size-4" />
-								</EmptyMedia>
-								<EmptyTitle>No discussions yet</EmptyTitle>
-								<EmptyDescription>
-									Select text in the note to start the first thread.
-								</EmptyDescription>
-							</EmptyHeader>
-						</Empty>
-					)
-				) : (
-					<div>
-						{threadList.map((thread) => (
-							<DiscussionThreadRow
-								key={thread._id}
-								thread={thread}
-								currentUser={currentUser}
-								activeThreadId={activeThreadId}
-								expandedThreadId={expandedThreadId}
-								replyingThreadId={replyingThreadId}
-								replyParentCommentId={replyParentCommentId}
-								editingCommentId={editingCommentId}
-								threadActionsOpenId={threadActionsOpenId}
-								expandedThread={expandedThread}
-								optimisticReadThreadIds={optimisticReadThreadIds}
-								isReplySubmitting={isReplySubmitting}
-								replyBody={replyBody}
-								handleMarkThreadRead={handleMarkThreadRead}
-								handleMarkThreadUnread={handleMarkThreadUnread}
-								handleStartEditThread={handleStartEditThread}
-								handleCopyThreadLink={handleCopyThreadLink}
-								handleToggleMuteThread={handleToggleMuteThread}
-								handleDeleteThread={handleDeleteThread}
-								handleOpenThread={handleOpenThread}
-								activeCommentTree={activeCommentTree}
-								commentActionsOpenId={commentActionsOpenId}
-								setCommentActionsOpenId={setCommentActionsOpenId}
-								editBody={editBody}
-								editComposerRef={editComposerRef}
-								replyComposerRef={replyComposerRef}
-								setEditBody={setEditBody}
-								setReplyBody={setReplyBody}
-								handleSaveEdit={handleSaveEdit}
-								handleReply={handleReply}
-								handleStartReplyToComment={handleStartReplyToComment}
-								handleStartEditComment={handleStartEditComment}
-								handleDeleteComment={handleDeleteComment}
-								setThreadActionsOpenId={setThreadActionsOpenId}
+		<ScrollArea className="min-h-0 flex-1" viewportClassName="h-full">
+			{visibleThreads === undefined ? null : threadList.length === 0 &&
+				!pendingSelection ? (
+				<Empty className="min-h-[24rem] border-none">
+					<EmptyHeader>
+						<EmptyMedia variant="icon">
+							<MessageSquareMore className="size-4" />
+						</EmptyMedia>
+						<EmptyTitle>No discussions yet</EmptyTitle>
+						<EmptyDescription>
+							Select text in the note to start the first thread.
+						</EmptyDescription>
+					</EmptyHeader>
+				</Empty>
+			) : (
+				<div>
+					{threadList.map((thread) => (
+						<DiscussionThreadRow
+							key={thread._id}
+							thread={thread}
+							currentUser={currentUser}
+							activeThreadId={activeThreadId}
+							expandedThreadId={expandedThreadId}
+							editingCommentId={editingCommentId}
+							threadActionsOpenId={threadActionsOpenId}
+							expandedThread={expandedThread}
+							optimisticReadThreadIds={optimisticReadThreadIds}
+							isReplySubmitting={isReplySubmitting}
+							replyBody={replyBody}
+							handleMarkThreadRead={handleMarkThreadRead}
+							handleMarkThreadUnread={handleMarkThreadUnread}
+							handleCopyThreadLink={handleCopyThreadLink}
+							handleToggleMuteThread={handleToggleMuteThread}
+							handleDeleteThread={handleDeleteThread}
+							handleOpenThread={handleOpenThread}
+							handlePrefetchThread={handlePrefetchThread}
+							commentActionsOpenId={commentActionsOpenId}
+							setCommentActionsOpenId={setCommentActionsOpenId}
+							editBody={editBody}
+							setEditBody={setEditBody}
+							setReplyBody={setReplyBody}
+							handleSaveEdit={handleSaveEdit}
+							handleCancelEdit={handleCancelEdit}
+							handleReply={handleReply}
+							handleStartEditComment={handleStartEditComment}
+							handleDeleteComment={handleDeleteComment}
+							setThreadActionsOpenId={setThreadActionsOpenId}
+						/>
+					))}
+					{pendingSelection ? (
+						<div className="bg-accent/10 px-4 py-4">
+							<p className="mb-4 whitespace-pre-wrap text-sm text-muted-foreground">
+								{pendingSelection.text}
+							</p>
+							<CommentComposerField
+								key={`${pendingSelection.from}:${pendingSelection.to}:${pendingSelection.text}`}
+								value={draftBody}
+								onChange={setDraftBody}
+								onSubmit={handleCreateThread}
+								shouldFocusOnMount
+								isSubmitting={isCreating}
+								ariaLabel="New comment"
+								sendAriaLabel="Send comment"
+								placeholder="Add a Comment…"
 							/>
-						))}
-					</div>
-				)}
-			</ScrollArea>
-		</>
+						</div>
+					) : null}
+				</div>
+			)}
+		</ScrollArea>
 	);
 });
 
@@ -1270,15 +1415,27 @@ function CommentsSheetPanel({
 							onTogglePinned={onTogglePinned}
 						/>
 					) : null}
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-sm"
-						onClick={handleClose}
-					>
-						<Minus className="size-4" />
-						<span className="sr-only">Close comments</span>
-					</Button>
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon-sm"
+								onClick={handleClose}
+							>
+								<Minus className="size-4" />
+								<span className="sr-only">Close comments</span>
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent
+							side="bottom"
+							align="end"
+							sideOffset={8}
+							className="pointer-events-none select-none"
+						>
+							Hide comments
+						</TooltipContent>
+					</Tooltip>
 				</div>
 			</div>
 
@@ -1343,6 +1500,7 @@ function useNoteCommentsSheetController({
 			desktopTrailingOffset: rightSidebarReservedWidth,
 		});
 	const workspaceId = useActiveWorkspaceId();
+	const convex = useConvex();
 	const [uiState, setUiState] = React.useReducer(
 		commentsUiReducer,
 		INITIAL_COMMENTS_UI_STATE,
@@ -1353,8 +1511,6 @@ function useNoteCommentsSheetController({
 		replyBody,
 		editBody,
 		expandedThreadId,
-		replyingThreadId,
-		replyParentCommentId,
 		editingThreadId,
 		editingCommentId,
 		threadActionsOpenId,
@@ -1364,14 +1520,25 @@ function useNoteCommentsSheetController({
 	const [optimisticReadThreadIds, setOptimisticReadThreadIds] = React.useState<
 		Set<string>
 	>(() => new Set());
-	const [visibleThreadIds, setVisibleThreadIds] = React.useState<Set<string>>(
-		() => collectVisibleThreadIds(editor),
+	const [visibleThreadOrder, setVisibleThreadOrder] = React.useState<string[]>(
+		() => collectVisibleThreadOrder(editor),
 	);
 	const lastAnchorSyncKeyRef = React.useRef<string>("");
+	const lastSyncedActiveThreadIdRef =
+		React.useRef<Id<"noteCommentThreads"> | null>(null);
+	const lastThreadDetailCacheScopeKeyRef = React.useRef<string>("");
+	const prefetchedThreadDetailsRef = React.useRef<
+		Map<string, ThreadDetail | null>
+	>(new Map());
+	const inFlightThreadDetailPrefetchesRef = React.useRef<
+		Map<string, Promise<ThreadDetail | null>>
+	>(new Map());
+	const [, forceThreadDetailCacheRender] = React.useReducer(
+		(count: number) => count + 1,
+		0,
+	);
 	const [isCreating, startCreating] = React.useTransition();
 	const [isReplySubmitting, startReplying] = React.useTransition();
-	const replyComposerRef = React.useRef<HTMLDivElement | null>(null);
-	const editComposerRef = React.useRef<HTMLDivElement | null>(null);
 	const setDraftBody = React.useCallback(
 		(value: string) => setUiState({ draftBody: value }),
 		[],
@@ -1384,54 +1551,32 @@ function useNoteCommentsSheetController({
 		(value: string) => setUiState({ editBody: value }),
 		[],
 	);
-	const resetReplyComposer = React.useCallback(() => {
-		setUiState({
-			replyBody: "",
-			replyParentCommentId: null,
-		});
-	}, []);
-	const resetExpandedThreadUi = React.useCallback(() => {
-		setUiState({
-			replyingThreadId: null,
-			replyParentCommentId: null,
-			editingThreadId: null,
-			editingCommentId: null,
-			editBody: "",
-			commentActionsOpenId: null,
-		});
-	}, []);
 	const collapseExpandedThread = React.useCallback(() => {
-		setUiState({
-			expandedThreadId: null,
-			replyingThreadId: null,
-			replyParentCommentId: null,
-		});
+		setUiState({ expandedThreadId: null });
 	}, []);
-	const syncEditingLatestComment = React.useCallback((thread: ThreadDetail) => {
-		const latestComment = thread.comments.at(-1);
-		if (!latestComment) {
-			setUiState({
-				editingThreadId: null,
-				editingCommentId: null,
-				editBody: "",
-			});
-			return;
-		}
+	const syncEditingThreadStarterComment = React.useCallback(
+		(thread: ThreadDetail) => {
+			const starterComment =
+				thread.comments.find((comment) => !comment.parentCommentId) ??
+				thread.comments[0];
 
-		setUiState({
-			editingCommentId: latestComment._id,
-			editBody: latestComment.body,
-			editingThreadId: null,
-		});
-	}, []);
-	const handleDismissInlineEdit = React.useCallback(() => {
-		setUiState({
-			editingCommentId: null,
-			editBody: "",
-			replyingThreadId: expandedThreadId ?? null,
-			replyParentCommentId: null,
-		});
-	}, [expandedThreadId]);
+			if (!starterComment) {
+				setUiState({
+					editingThreadId: null,
+					editingCommentId: null,
+					editBody: "",
+				});
+				return;
+			}
+
+			setUiState({
+				editingCommentId: starterComment._id,
+				editBody: starterComment.body,
+				editingThreadId: null,
+			});
+		},
+		[],
+	);
 
 	const threads = useQuery(
 		api.noteComments.listThreads,
@@ -1461,11 +1606,91 @@ function useNoteCommentsSheetController({
 	const deleteComment = useMutation(api.noteComments.deleteComment);
 	const toggleMuteReplies = useMutation(api.noteComments.toggleMuteReplies);
 	const deleteThread = useMutation(api.noteComments.deleteThread);
-	const visibleThreads = React.useMemo(
-		() =>
-			threads?.filter((thread) => visibleThreadIds.has(String(thread._id))) ??
-			threads,
-		[threads, visibleThreadIds],
+	const visibleThreadIdSet = React.useMemo(
+		() => new Set(visibleThreadOrder),
+		[visibleThreadOrder],
+	);
+	const visibleThreads = React.useMemo(() => {
+		if (!threads) {
+			return threads;
+		}
+
+		const orderedThreads = threads.filter((thread) =>
+			visibleThreadIdSet.has(String(thread._id)),
+		);
+		const threadIndexById = new Map(
+			visibleThreadOrder.map((threadId, index) => [threadId, index]),
+		);
+
+		return orderedThreads.sort(
+			(left, right) =>
+				(threadIndexById.get(String(left._id)) ?? Number.POSITIVE_INFINITY) -
+				(threadIndexById.get(String(right._id)) ?? Number.POSITIVE_INFINITY),
+		);
+	}, [threads, visibleThreadIdSet, visibleThreadOrder]);
+	const cachedExpandedThread = expandedThreadId
+		? prefetchedThreadDetailsRef.current.get(String(expandedThreadId))
+		: undefined;
+	const resolvedExpandedThread =
+		expandedThread !== undefined ? expandedThread : cachedExpandedThread;
+	const threadDetailCacheScopeKey = `${noteId ?? "no-note"}:${workspaceId ?? "no-workspace"}`;
+
+	const commitPrefetchedThreadDetail = React.useCallback(
+		(threadId: Id<"noteCommentThreads">, detail: ThreadDetail | null) => {
+			const cacheKey = String(threadId);
+			const cachedDetail = prefetchedThreadDetailsRef.current.get(cacheKey);
+
+			if (cachedDetail === detail) {
+				return detail;
+			}
+
+			prefetchedThreadDetailsRef.current.set(cacheKey, detail);
+			React.startTransition(() => {
+				forceThreadDetailCacheRender();
+			});
+
+			return detail;
+		},
+		[],
+	);
+
+	const prefetchThreadDetail = React.useCallback(
+		(threadId: Id<"noteCommentThreads">) => {
+			if (!workspaceId || !noteId) {
+				return Promise.resolve<ThreadDetail | null>(null);
+			}
+
+			const cacheKey = String(threadId);
+			const cachedDetail = prefetchedThreadDetailsRef.current.get(cacheKey);
+			if (cachedDetail !== undefined) {
+				return Promise.resolve(cachedDetail);
+			}
+
+			const inFlightRequest =
+				inFlightThreadDetailPrefetchesRef.current.get(cacheKey);
+			if (inFlightRequest) {
+				return inFlightRequest;
+			}
+
+			const request = convex
+				.query(api.noteComments.getThread, {
+					workspaceId,
+					noteId,
+					threadId,
+				})
+				.then((detail) => commitPrefetchedThreadDetail(threadId, detail))
+				.catch((error) => {
+					console.error("Failed to prefetch comment thread detail", error);
+					return commitPrefetchedThreadDetail(threadId, null);
+				})
+				.finally(() => {
+					inFlightThreadDetailPrefetchesRef.current.delete(cacheKey);
+				});
+
+			inFlightThreadDetailPrefetchesRef.current.set(cacheKey, request);
+			return request;
+		},
+		[commitPrefetchedThreadDetail, convex, noteId, workspaceId],
 	);
 
 	React.useEffect(() => {
@@ -1475,8 +1700,49 @@ function useNoteCommentsSheetController({
 		}
 
 		lastAnchorSyncKeyRef.current = nextSyncKey;
-		setVisibleThreadIds(collectVisibleThreadIds(editor));
+		setVisibleThreadOrder(collectVisibleThreadOrder(editor));
 	}, [editor, noteContent, noteId]);
+
+	React.useEffect(() => {
+		if (
+			lastThreadDetailCacheScopeKeyRef.current === threadDetailCacheScopeKey
+		) {
+			return;
+		}
+
+		lastThreadDetailCacheScopeKeyRef.current = threadDetailCacheScopeKey;
+		prefetchedThreadDetailsRef.current.clear();
+		inFlightThreadDetailPrefetchesRef.current.clear();
+		React.startTransition(() => {
+			forceThreadDetailCacheRender();
+		});
+	}, [threadDetailCacheScopeKey]);
+
+	React.useEffect(() => {
+		if (!visibleThreads?.length) {
+			return;
+		}
+
+		for (const thread of visibleThreads) {
+			void prefetchThreadDetail(thread._id);
+		}
+	}, [prefetchThreadDetail, visibleThreads]);
+
+	React.useEffect(() => {
+		if (!expandedThreadId) {
+			return;
+		}
+
+		void prefetchThreadDetail(expandedThreadId);
+	}, [expandedThreadId, prefetchThreadDetail]);
+
+	React.useEffect(() => {
+		if (!expandedThreadId || expandedThread === undefined) {
+			return;
+		}
+
+		commitPrefetchedThreadDetail(expandedThreadId, expandedThread);
+	}, [commitPrefetchedThreadDetail, expandedThread, expandedThreadId]);
 
 	React.useEffect(() => {
 		if (!editor) {
@@ -1484,7 +1750,7 @@ function useNoteCommentsSheetController({
 		}
 
 		const syncVisibleThreads = () => {
-			setVisibleThreadIds(collectVisibleThreadIds(editor));
+			setVisibleThreadOrder(collectVisibleThreadOrder(editor));
 		};
 
 		editor.on("update", syncVisibleThreads);
@@ -1509,15 +1775,18 @@ function useNoteCommentsSheetController({
 	}, [open, onPendingSelectionChange, pendingSelection]);
 
 	React.useEffect(() => {
-		void expandedThreadId;
-		resetReplyComposer();
-	}, [expandedThreadId, resetReplyComposer]);
-
-	React.useEffect(() => {
-		if (!expandedThreadId) {
-			resetExpandedThreadUi();
+		if (expandedThreadId) {
+			return;
 		}
-	}, [expandedThreadId, resetExpandedThreadUi]);
+
+		setUiState({
+			replyBody: "",
+			editingThreadId: null,
+			editingCommentId: null,
+			editBody: "",
+			commentActionsOpenId: null,
+		});
+	}, [expandedThreadId]);
 
 	React.useEffect(() => {
 		if (
@@ -1549,57 +1818,68 @@ function useNoteCommentsSheetController({
 	}, [optimisticReadThreadIds.size, threads]);
 
 	React.useEffect(() => {
-		if (activeThreadId !== expandedThreadId) {
-			collapseExpandedThread();
-		}
-	}, [activeThreadId, collapseExpandedThread, expandedThreadId]);
-
-	React.useEffect(() => {
-		if (!replyParentCommentId && !editingCommentId) {
+		if (lastSyncedActiveThreadIdRef.current === activeThreadId) {
 			return;
 		}
 
-		const handlePointerDown = (event: PointerEvent) => {
-			const target = event.target;
-			if (!(target instanceof Node)) {
+		lastSyncedActiveThreadIdRef.current = activeThreadId;
+
+		if (!activeThreadId) {
+			collapseExpandedThread();
+			return;
+		}
+
+		setUiState({
+			view: "all",
+			expandedThreadId: activeThreadId,
+			replyBody: "",
+			editingThreadId: null,
+			editingCommentId: null,
+			editBody: "",
+			threadActionsOpenId: null,
+			commentActionsOpenId: null,
+		});
+	}, [activeThreadId, collapseExpandedThread]);
+
+	React.useEffect(() => {
+		if (
+			!resolvedExpandedThread ||
+			editingThreadId !== resolvedExpandedThread._id
+		) {
+			return;
+		}
+
+		syncEditingThreadStarterComment(resolvedExpandedThread);
+	}, [
+		editingThreadId,
+		resolvedExpandedThread,
+		syncEditingThreadStarterComment,
+	]);
+
+	React.useEffect(() => {
+		if (!editingCommentId) {
+			return;
+		}
+
+		const handleWindowKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") {
 				return;
 			}
 
-			if (
-				replyParentCommentId &&
-				replyComposerRef.current &&
-				!replyComposerRef.current.contains(target)
-			) {
-				setUiState({ replyParentCommentId: null });
-			}
-
-			if (
-				editingCommentId &&
-				editComposerRef.current &&
-				!editComposerRef.current.contains(target)
-			) {
-				handleDismissInlineEdit();
-			}
+			event.preventDefault();
+			setUiState({
+				editingThreadId: null,
+				editingCommentId: null,
+				editBody: "",
+				commentActionsOpenId: null,
+			});
 		};
 
-		document.addEventListener("pointerdown", handlePointerDown);
+		window.addEventListener("keydown", handleWindowKeyDown);
 		return () => {
-			document.removeEventListener("pointerdown", handlePointerDown);
+			window.removeEventListener("keydown", handleWindowKeyDown);
 		};
-	}, [editingCommentId, handleDismissInlineEdit, replyParentCommentId]);
-
-	const activeCommentTree = React.useMemo(
-		() => (expandedThread ? buildCommentTree(expandedThread.comments) : []),
-		[expandedThread],
-	);
-
-	React.useEffect(() => {
-		if (!expandedThread || editingThreadId !== expandedThread._id) {
-			return;
-		}
-
-		syncEditingLatestComment(expandedThread);
-	}, [editingThreadId, expandedThread, syncEditingLatestComment]);
+	}, [editingCommentId]);
 
 	const handleCreateThread = React.useCallback(() => {
 		if (
@@ -1632,8 +1912,6 @@ function useNoteCommentsSheetController({
 					setUiState({
 						draftBody: "",
 						expandedThreadId: null,
-						replyingThreadId: null,
-						replyParentCommentId: null,
 					});
 					onPendingSelectionChange(null);
 					onActiveThreadIdChange(threadId);
@@ -1669,28 +1947,17 @@ function useNoteCommentsSheetController({
 				workspaceId,
 				noteId,
 				threadId: expandedThreadId,
-				parentCommentId: replyParentCommentId ?? undefined,
 				body: replyBody,
 			})
 				.then(() => {
-					setUiState({
-						replyBody: "",
-						replyParentCommentId: null,
-					});
+					setUiState({ replyBody: "" });
 					toast.success("Reply sent");
 				})
 				.catch((error) => {
 					toast.error(getErrorMessage(error, "Failed to send reply"));
 				});
 		});
-	}, [
-		addComment,
-		expandedThreadId,
-		noteId,
-		replyBody,
-		replyParentCommentId,
-		workspaceId,
-	]);
+	}, [addComment, expandedThreadId, noteId, replyBody, workspaceId]);
 
 	const handleMarkThreadRead = React.useCallback(
 		(thread: ThreadSummary) => {
@@ -1773,29 +2040,18 @@ function useNoteCommentsSheetController({
 		(thread: ThreadSummary) => {
 			onPendingSelectionChange(null);
 			if (expandedThreadId === thread._id) {
-				if (replyingThreadId === thread._id && replyParentCommentId === null) {
-					setUiState({
-						expandedThreadId: null,
-						replyingThreadId: null,
-						replyParentCommentId: null,
-					});
-					handleMarkThreadRead(thread);
-					return;
-				}
-
 				setUiState({
-					expandedThreadId: thread._id,
-					replyingThreadId: thread._id,
-					replyParentCommentId: null,
+					expandedThreadId: null,
+					replyBody: "",
 				});
 				handleMarkThreadRead(thread);
+				onActiveThreadIdChange(null);
 				return;
 			}
 
 			setUiState({
 				expandedThreadId: thread._id,
-				replyingThreadId: thread._id,
-				replyParentCommentId: null,
+				replyBody: "",
 			});
 			handleMarkThreadRead(thread);
 			onActiveThreadIdChange(thread._id);
@@ -1805,8 +2061,6 @@ function useNoteCommentsSheetController({
 			handleMarkThreadRead,
 			onActiveThreadIdChange,
 			onPendingSelectionChange,
-			replyParentCommentId,
-			replyingThreadId,
 		],
 	);
 
@@ -1840,42 +2094,19 @@ function useNoteCommentsSheetController({
 		[markUnread, noteId, workspaceId],
 	);
 
-	const handleStartEditThread = React.useCallback(
-		(thread: ThreadSummary) => {
-			setUiState({
-				threadActionsOpenId: null,
-				replyingThreadId: null,
-				replyParentCommentId: null,
-				expandedThreadId: thread._id,
-				editingThreadId: thread._id,
-			});
-			onActiveThreadIdChange(thread._id);
-		},
-		[onActiveThreadIdChange],
-	);
-
-	const handleStartReplyToComment = React.useCallback(
-		(comment: ThreadComment) => {
-			setUiState({
-				commentActionsOpenId: null,
-				editingCommentId: null,
-				editBody: "",
-				expandedThreadId: comment.threadId,
-				replyingThreadId: comment.threadId,
-				replyParentCommentId: comment._id,
-			});
-			onActiveThreadIdChange(comment.threadId);
-		},
-		[onActiveThreadIdChange],
-	);
-
 	const handleStartEditComment = React.useCallback((comment: ThreadComment) => {
 		setUiState({
 			commentActionsOpenId: null,
-			replyingThreadId: null,
-			replyParentCommentId: null,
 			editingCommentId: comment._id,
 			editBody: comment.body,
+		});
+	}, []);
+	const handleCancelEdit = React.useCallback(() => {
+		setUiState({
+			editingThreadId: null,
+			editingCommentId: null,
+			editBody: "",
+			commentActionsOpenId: null,
 		});
 	}, []);
 
@@ -1935,15 +2166,11 @@ function useNoteCommentsSheetController({
 			})
 				.then(() => {
 					if (
-						expandedThread &&
-						expandedThread._id === comment.threadId &&
-						expandedThread.comments.length === 1
+						resolvedExpandedThread &&
+						resolvedExpandedThread._id === comment.threadId &&
+						resolvedExpandedThread.comments.length === 1
 					) {
-						setUiState({
-							expandedThreadId: null,
-							replyingThreadId: null,
-							replyParentCommentId: null,
-						});
+						setUiState({ expandedThreadId: null });
 						onActiveThreadIdChange(null);
 					}
 
@@ -1952,10 +2179,6 @@ function useNoteCommentsSheetController({
 							editingCommentId: null,
 							editBody: "",
 						});
-					}
-
-					if (replyParentCommentId === comment._id) {
-						setUiState({ replyParentCommentId: null });
 					}
 
 					toast.success("Comment deleted");
@@ -1967,10 +2190,9 @@ function useNoteCommentsSheetController({
 		[
 			deleteComment,
 			editingCommentId,
-			expandedThread,
 			noteId,
 			onActiveThreadIdChange,
-			replyParentCommentId,
+			resolvedExpandedThread,
 			workspaceId,
 		],
 	);
@@ -2037,7 +2259,7 @@ function useNoteCommentsSheetController({
 					removeThreadMarks(threadId);
 					setUiState({
 						commentActionsOpenId: null,
-						replyParentCommentId: null,
+						replyBody: "",
 					});
 
 					if (activeThreadId === threadId) {
@@ -2047,7 +2269,6 @@ function useNoteCommentsSheetController({
 					if (expandedThreadId === threadId) {
 						setUiState({
 							expandedThreadId: null,
-							replyingThreadId: null,
 						});
 					}
 
@@ -2088,38 +2309,39 @@ function useNoteCommentsSheetController({
 			visibleThreads={visibleThreads}
 			activeThreadId={activeThreadId}
 			expandedThreadId={expandedThreadId}
-			replyingThreadId={replyingThreadId}
-			replyParentCommentId={replyParentCommentId}
 			editingCommentId={editingCommentId}
-			expandedThread={expandedThread}
+			expandedThread={resolvedExpandedThread}
 			optimisticReadThreadIds={optimisticReadThreadIds}
 			currentUser={currentUser}
 			threadActionsOpenId={threadActionsOpenId}
 			setThreadActionsOpenId={(threadId) =>
-				setUiState({ threadActionsOpenId: threadId })
+				setUiState({
+					threadActionsOpenId: threadId,
+					commentActionsOpenId: null,
+				})
 			}
 			handleMarkThreadRead={handleMarkThreadRead}
 			handleMarkThreadUnread={handleMarkThreadUnread}
-			handleStartEditThread={handleStartEditThread}
 			handleCopyThreadLink={handleCopyThreadLink}
 			handleToggleMuteThread={handleToggleMuteThread}
 			handleDeleteThread={handleDeleteThread}
 			handleOpenThread={handleOpenThread}
-			activeCommentTree={activeCommentTree}
+			handlePrefetchThread={prefetchThreadDetail}
 			commentActionsOpenId={commentActionsOpenId}
 			setCommentActionsOpenId={(commentId) =>
-				setUiState({ commentActionsOpenId: commentId })
+				setUiState({
+					commentActionsOpenId: commentId,
+					threadActionsOpenId: null,
+				})
 			}
 			editBody={editBody}
 			replyBody={replyBody}
 			isReplySubmitting={isReplySubmitting}
-			editComposerRef={editComposerRef}
-			replyComposerRef={replyComposerRef}
 			setEditBody={setEditBody}
 			setReplyBody={setReplyBody}
 			handleSaveEdit={handleSaveEdit}
+			handleCancelEdit={handleCancelEdit}
 			handleReply={handleReply}
-			handleStartReplyToComment={handleStartReplyToComment}
 			handleStartEditComment={handleStartEditComment}
 			handleDeleteComment={handleDeleteComment}
 		/>

@@ -199,6 +199,61 @@ test("noteComments.markRead marks the thread as read", async () => {
 	expect(inboxItems).toEqual([]);
 });
 
+test("noteComments.markRead does not reorder threads", async () => {
+	vi.useFakeTimers();
+	vi.setSystemTime(new Date("2026-04-12T10:00:00.000Z"));
+
+	const { asOwner, noteId, workspaceId } = await createWorkspaceAndNote();
+	const firstThreadId = await asOwner.mutation(api.noteComments.createThread, {
+		workspaceId,
+		noteId,
+		excerpt: "First thread",
+		body: "First body",
+	});
+
+	vi.setSystemTime(new Date("2026-04-12T10:05:00.000Z"));
+	const secondThreadId = await asOwner.mutation(api.noteComments.createThread, {
+		workspaceId,
+		noteId,
+		excerpt: "Second thread",
+		body: "Second body",
+	});
+
+	const threadsBeforeMarkRead = await asOwner.query(api.noteComments.listThreads, {
+		workspaceId,
+		noteId,
+		view: "all",
+	});
+
+	expect(threadsBeforeMarkRead.map((thread) => thread._id)).toEqual([
+		secondThreadId,
+		firstThreadId,
+	]);
+
+	vi.setSystemTime(new Date("2026-04-12T10:10:00.000Z"));
+	await asOwner.mutation(api.noteComments.markRead, {
+		workspaceId,
+		noteId,
+		threadId: firstThreadId,
+	});
+
+	const threadsAfterMarkRead = await asOwner.query(api.noteComments.listThreads, {
+		workspaceId,
+		noteId,
+		view: "all",
+	});
+
+	expect(threadsAfterMarkRead.map((thread) => thread._id)).toEqual([
+		secondThreadId,
+		firstThreadId,
+	]);
+	expect(threadsAfterMarkRead[1]).toMatchObject({
+		_id: firstThreadId,
+		isRead: true,
+		readAt: new Date("2026-04-12T10:10:00.000Z").getTime(),
+	});
+});
+
 test("noteComments.addComment chains replies to the latest comment by default", async () => {
 	vi.useFakeTimers();
 	vi.setSystemTime(new Date("2026-04-12T10:00:00.000Z"));

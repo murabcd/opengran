@@ -666,7 +666,6 @@ export const markRead = mutation({
 		await ctx.db.patch(thread._id, {
 			isRead: true,
 			readAt: now,
-			updatedAt: now,
 		});
 		await ctx.runMutation(internal.inboxItems.setReadState, {
 			ownerTokenIdentifier: identity.tokenIdentifier,
