@@ -79,7 +79,7 @@ type AppSource = {
 	id: string;
 	title: string;
 	preview: string;
-	provider: "jira" | "yandex-tracker";
+	provider: "jira" | "posthog" | "yandex-tracker";
 };
 
 type ChatComposerProps = {
@@ -777,6 +777,8 @@ function ScopePicker({
 									<Icons.yandexTrackerLogo className="size-4 text-blue-500" />
 								) : source.provider === "jira" ? (
 									<Icons.jiraLogo className="size-4" />
+								) : source.provider === "posthog" ? (
+									<Icons.planeLogo className="size-4" />
 								) : (
 									<Grid3x3 className="size-4" />
 								)}

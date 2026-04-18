@@ -7,12 +7,14 @@ import { fileURLToPath } from "node:url";
 import { openai } from "@ai-sdk/openai";
 import {
 	consumeStream,
-	convertToModelMessages,
 	createIdGenerator,
 	generateText,
 	Output,
+	pipeAgentUIStreamToResponse,
 	smoothStream,
+	stepCountIs,
 	streamText,
+	ToolLoopAgent,
 	validateUIMessages,
 } from "ai";
 import { ConvexHttpClient } from "convex/browser";
@@ -23,10 +25,12 @@ import {
 	deriveFallbackChatTitle,
 	finalizeGeneratedChatTitle,
 } from "../../../packages/ai/src/chat-titles.mjs";
+import { buildJiraTools } from "../../../packages/ai/src/jira-tools.mjs";
 import {
 	parseTemplateStreamToStructuredNote,
 	validateTemplateStream,
 } from "../../../packages/ai/src/note-template-stream.mjs";
+import { buildPostHogTools } from "../../../packages/ai/src/posthog-tools.mjs";
 import {
 	APPLY_TEMPLATE_SYSTEM_PROMPT,
 	buildApplyTemplatePrompt,
@@ -35,6 +39,7 @@ import {
 	CHAT_TITLE_SYSTEM_PROMPT,
 	ENHANCED_NOTE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
+import { buildTrackerTools } from "../../../packages/ai/src/tracker-tools.mjs";
 import {
 	createDesktopRealtimeTranscriptionSession,
 	normalizeTranscriptionLanguage,
@@ -211,6 +216,11 @@ const getReferencedNoteIds = ({ mentions, selectedSourceIds }) =>
 		) ?? []),
 	].filter((value, index, values) => value && values.indexOf(value) === index);
 
+const getSelectedAppSourceIds = ({ selectedSourceIds }) =>
+	(selectedSourceIds ?? []).filter((value) =>
+		value.startsWith(APP_SOURCE_PREFIX),
+	);
+
 const hasWorkspaceSourceSelected = ({ selectedSourceIds }) =>
 	(selectedSourceIds ?? []).some((value) =>
 		value.startsWith(WORKSPACE_SOURCE_PREFIX),
@@ -257,6 +267,35 @@ const getNotesContext = async ({
 			].join("\n"),
 		),
 	].join("\n\n");
+};
+
+const getSelectedAppConnections = async ({
+	convexToken,
+	selectedSourceIds,
+	workspaceId,
+}) => {
+	if (!convexToken || !workspaceId) {
+		return [];
+	}
+
+	const allSelectedSourceIds = selectedSourceIds ?? [];
+	const sourceIds = getSelectedAppSourceIds({ selectedSourceIds });
+	const client = new ConvexHttpClient(getConvexUrl(), { auth: convexToken });
+
+	if (allSelectedSourceIds.length === 0) {
+		return await client.query(api.appConnections.getAllForChat, {
+			workspaceId,
+		});
+	}
+
+	if (sourceIds.length === 0) {
+		return [];
+	}
+
+	return await client.query(api.appConnections.getSelectedForChat, {
+		workspaceId,
+		sourceIds,
+	});
 };
 
 const clampWhitespace = (value) => value.replace(/\s+/g, " ").trim();
@@ -571,6 +610,7 @@ const handleChatRequest = async (request, response) => {
 		model,
 		workspaceId,
 		webSearchEnabled = false,
+		appsEnabled = true,
 		mentions,
 		selectedSourceIds,
 		convexToken,
@@ -672,19 +712,58 @@ const handleChatRequest = async (request, response) => {
 		workspaceId: resolvedWorkspaceId,
 	});
 	const recipeContext = getRecipeContext(selectedRecipe);
-
-	const systemPrompt = buildChatSystemPrompt({
+	const userProfileContext = convexClient
+		? await convexClient
+				.query(api.userPreferences.getAiProfileContext, {})
+				.catch(() => null)
+		: null;
+	const selectedAppConnections = appsEnabled
+		? await getSelectedAppConnections({
+				convexToken,
+				selectedSourceIds,
+				workspaceId: resolvedWorkspaceId,
+			})
+		: [];
+	const trackerConnection =
+		selectedAppConnections.find(
+			(connection) => connection.provider === "yandex-tracker",
+		) ?? null;
+	const jiraConnection =
+		selectedAppConnections.find(
+			(connection) => connection.provider === "jira",
+		) ?? null;
+	const posthogConnection =
+		selectedAppConnections.find(
+			(connection) => connection.provider === "posthog",
+		) ?? null;
+	const trackerTools = trackerConnection
+		? buildTrackerTools(trackerConnection)
+		: {};
+	const jiraTools = jiraConnection ? buildJiraTools(jiraConnection) : {};
+	const posthogTools = posthogConnection
+		? await buildPostHogTools(posthogConnection)
+		: {};
+	const systemPrompt = `${buildChatSystemPrompt({
 		notesContext,
 		attachedNoteContext,
 		recipeContext,
+		userProfileContext: userProfileContext ?? undefined,
 		webSearchEnabled,
-	});
-
-	const result = streamText({
-		model: openai(selectedModel.model),
-		system: systemPrompt,
-		messages: await convertToModelMessages(chatMessages),
-		tools: webSearchEnabled
+	})}${
+		trackerConnection
+			? `\n\nThe selected app source for this chat is Yandex Tracker (${trackerConnection.displayName}). Treat it as the preferred source for project history, integrations, tickets, tasks, comments, assignees, and status. If the user's request could be answered from Tracker, search Tracker first before saying the context is unavailable.`
+			: ""
+	}${
+		jiraConnection
+			? `\n\nThe selected app source for this chat is Jira (${jiraConnection.displayName}). Treat it as the preferred source for project history, tickets, tasks, comments, assignees, and status. If the user's request could be answered from Jira, search Jira first before saying the context is unavailable.`
+			: ""
+	}${
+		posthogConnection
+			? `\n\nThe selected app source for this chat is PostHog (${posthogConnection.projectName}). Treat it as the preferred source for product analytics, saved insights, dashboards, feature flags, experiments, errors, event schema, surveys, and queryable product usage context. Only read-only PostHog tools are available in this chat. If the user's request could plausibly be answered from PostHog, use the PostHog tools before saying the context is unavailable.`
+			: ""
+	}`;
+	const enabledTools = {
+		...(webSearchEnabled
 			? {
 					web_search: openai.tools.webSearch({
 						searchContextSize: "medium",
@@ -694,10 +773,22 @@ const handleChatRequest = async (request, response) => {
 						},
 					}),
 				}
-			: undefined,
+			: {}),
+		...trackerTools,
+		...jiraTools,
+		...posthogTools,
+	};
+	const agent = new ToolLoopAgent({
+		model: openai(selectedModel.model),
+		instructions: systemPrompt,
+		tools: Object.keys(enabledTools).length > 0 ? enabledTools : undefined,
+		stopWhen: Object.keys(enabledTools).length > 0 ? stepCountIs(5) : undefined,
 	});
 
-	result.pipeUIMessageStreamToResponse(response, {
+	await pipeAgentUIStreamToResponse({
+		response,
+		agent,
+		uiMessages: chatMessages,
 		originalMessages: chatMessages,
 		generateMessageId,
 		consumeSseStream: consumeStream,

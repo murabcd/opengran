@@ -25,6 +25,7 @@ const appConnectionProviderValidator = v.union(
 	v.literal("yandex-tracker"),
 	v.literal("yandex-calendar"),
 	v.literal("jira"),
+	v.literal("posthog"),
 );
 
 const appConnectionStatusValidator = v.union(
@@ -413,6 +414,8 @@ export default defineSchema({
 		accountId: v.optional(v.string()),
 		password: v.optional(v.string()),
 		baseUrl: v.optional(v.string()),
+		projectId: v.optional(v.string()),
+		projectName: v.optional(v.string()),
 		webhookSecret: v.optional(v.string()),
 		serverAddress: v.optional(v.string()),
 		calendarHomePath: v.optional(v.string()),

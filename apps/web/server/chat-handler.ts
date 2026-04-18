@@ -9,12 +9,10 @@ import {
 	stepCountIs,
 	ToolLoopAgent,
 	type ToolSet,
-	tool,
 	type UIMessage,
 	validateUIMessages,
 } from "ai";
 import { ConvexHttpClient } from "convex/browser";
-import { z } from "zod";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import {
@@ -27,8 +25,9 @@ import {
 	CHAT_TITLE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
 import { findChatModel, getChatModel } from "../src/lib/ai/models";
-import { getJiraIssue, searchJiraIssues } from "./jira";
-import { getTrackerIssue, searchTrackerIssues } from "./tracker";
+import { buildJiraTools } from "./jira";
+import { buildPostHogTools } from "./posthog";
+import { buildTrackerTools } from "./tracker";
 
 type ChatRequestBody = {
 	id?: string;
@@ -616,51 +615,16 @@ export const handleChatRequest = async (
 		selectedAppConnections.find(
 			(connection) => connection.provider === "jira",
 		) ?? null;
+	const posthogConnection =
+		selectedAppConnections.find(
+			(connection) => connection.provider === "posthog",
+		) ?? null;
 	const trackerTools = trackerConnection
-		? {
-				yandex_tracker_search: tool({
-					description:
-						"Search the selected Yandex Tracker connection for project history, integrations, tickets, tasks, queues, comments, assignees, and status. Use this before saying context is unavailable when the request could plausibly be answered from Tracker.",
-					inputSchema: z.object({
-						query: z.string().min(1),
-						limit: z.number().int().min(1).max(10).optional(),
-					}),
-					execute: async ({ query, limit }) =>
-						await searchTrackerIssues(trackerConnection, query, limit ?? 5),
-				}),
-				yandex_tracker_get_issue: tool({
-					description:
-						"Fetch a specific Yandex Tracker issue by key when the user mentions a ticket like PROJ-123 or clearly refers to a known issue key.",
-					inputSchema: z.object({
-						issueKey: z.string().min(1),
-					}),
-					execute: async ({ issueKey }) =>
-						await getTrackerIssue(trackerConnection, issueKey),
-				}),
-			}
+		? buildTrackerTools(trackerConnection)
 		: {};
-	const jiraTools = jiraConnection
-		? {
-				jira_search: tool({
-					description:
-						"Search the selected Jira connection for project history, tickets, tasks, comments, assignees, status, and technical context when the request could plausibly be answered from Jira.",
-					inputSchema: z.object({
-						query: z.string().min(1),
-						limit: z.number().int().min(1).max(10).optional(),
-					}),
-					execute: async ({ query, limit }) =>
-						await searchJiraIssues(jiraConnection, query, limit ?? 5),
-				}),
-				jira_get_issue: tool({
-					description:
-						"Fetch a specific Jira issue by key when the user mentions a ticket like PROJ-123 or clearly refers to a known issue key.",
-					inputSchema: z.object({
-						issueKey: z.string().min(1),
-					}),
-					execute: async ({ issueKey }) =>
-						await getJiraIssue(jiraConnection, issueKey),
-				}),
-			}
+	const jiraTools = jiraConnection ? buildJiraTools(jiraConnection) : {};
+	const posthogTools = posthogConnection
+		? await buildPostHogTools(posthogConnection)
 		: {};
 	const systemPrompt = `${buildChatSystemPrompt({
 		notesContext,
@@ -676,6 +640,10 @@ export const handleChatRequest = async (
 		jiraConnection
 			? `\n\nThe selected app source for this chat is Jira (${jiraConnection.displayName}). Treat it as the preferred source for project history, tickets, tasks, comments, assignees, and status. If the user's request could be answered from Jira, search Jira first before saying the context is unavailable.`
 			: ""
+	}${
+		posthogConnection
+			? `\n\nThe selected app source for this chat is PostHog (${posthogConnection.projectName}). Treat it as the preferred source for product analytics, saved insights, dashboards, feature flags, experiments, errors, event schema, surveys, and queryable product usage context. Only read-only PostHog tools are available in this chat. If the user's request could plausibly be answered from PostHog, use the PostHog tools before saying the context is unavailable.`
+			: ""
 	}`;
 	const enabledTools: ToolSet = {};
 
@@ -689,7 +657,7 @@ export const handleChatRequest = async (
 		});
 	}
 
-	Object.assign(enabledTools, trackerTools, jiraTools);
+	Object.assign(enabledTools, trackerTools, jiraTools, posthogTools);
 
 	const agent = new ToolLoopAgent({
 		model: openai(resolvedModel.model),

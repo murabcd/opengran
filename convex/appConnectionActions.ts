@@ -46,6 +46,16 @@ const jiraConnectionResultValidator = v.object({
 	lastMentionSyncAt: v.optional(v.number()),
 });
 
+const posthogConnectionResultValidator = v.object({
+	sourceId: v.string(),
+	provider: v.literal("posthog"),
+	status: v.union(v.literal("connected"), v.literal("disconnected")),
+	displayName: v.string(),
+	baseUrl: v.string(),
+	projectId: v.string(),
+	projectName: v.string(),
+});
+
 type YandexTrackerConnectionResult = {
 	sourceId: string;
 	provider: "yandex-tracker";
@@ -78,8 +88,23 @@ type JiraConnectionResult = {
 	lastMentionSyncAt?: number;
 };
 
+type PostHogConnectionResult = {
+	sourceId: string;
+	provider: "posthog";
+	status: "connected" | "disconnected";
+	displayName: string;
+	baseUrl: string;
+	projectId: string;
+	projectName: string;
+};
+
 type JiraCurrentUserResponse = {
 	accountId?: unknown;
+};
+
+type PostHogProjectResponse = {
+	id?: unknown;
+	name?: unknown;
 };
 
 const TRACKER_API_BASE_URL =
@@ -96,6 +121,27 @@ const normalizeJiraBaseUrl = (value: string) => {
 		throw new ConvexError({
 			code: "INVALID_CONNECTION_DETAILS",
 			message: "Jira base URL must be a valid URL.",
+		});
+	}
+
+	url.pathname = url.pathname.replace(/\/+$/, "");
+	url.search = "";
+	url.hash = "";
+
+	return url.toString().replace(/\/$/, "");
+};
+
+const normalizePostHogBaseUrl = (value: string) => {
+	const trimmedValue = value.trim();
+
+	let url: URL;
+
+	try {
+		url = new URL(trimmedValue);
+	} catch {
+		throw new ConvexError({
+			code: "INVALID_CONNECTION_DETAILS",
+			message: "PostHog URL must be a valid URL.",
 		});
 	}
 
@@ -261,9 +307,9 @@ export const connectJira = action({
 			});
 		}
 
-		const currentUser = (await response.json().catch(() => null)) as
-			| JiraCurrentUserResponse
-			| null;
+		const currentUser = (await response
+			.json()
+			.catch(() => null)) as JiraCurrentUserResponse | null;
 		const accountId =
 			currentUser && typeof currentUser.accountId === "string"
 				? currentUser.accountId
@@ -276,6 +322,66 @@ export const connectJira = action({
 			email,
 			token,
 			...(accountId ? { accountId } : {}),
+		});
+	},
+});
+
+export const connectPostHog = action({
+	args: {
+		workspaceId: v.id("workspaces"),
+		baseUrl: v.string(),
+		projectId: v.string(),
+		token: v.string(),
+	},
+	returns: posthogConnectionResultValidator,
+	handler: async (ctx, args): Promise<PostHogConnectionResult> => {
+		const identity = await requireIdentity(ctx);
+		const baseUrl = normalizePostHogBaseUrl(args.baseUrl);
+		const projectId = args.projectId.trim();
+		const token = args.token.trim();
+
+		if (!projectId || !token) {
+			throw new ConvexError({
+				code: "INVALID_CONNECTION_DETAILS",
+				message: "PostHog project ID and personal API key are required.",
+			});
+		}
+
+		const response = await fetch(
+			`${baseUrl}/api/projects/${encodeURIComponent(projectId)}`,
+			{
+				headers: {
+					Authorization: `Bearer ${token}`,
+					Accept: "application/json",
+				},
+			},
+		);
+
+		if (!response.ok) {
+			const responseText = await response.text().catch(() => "");
+			throw new ConvexError({
+				code: "POSTHOG_CONNECTION_FAILED",
+				message: responseText.trim()
+					? `Failed to connect PostHog: ${responseText.trim()}`
+					: `Failed to connect PostHog (${response.status}).`,
+			});
+		}
+
+		const project = (await response
+			.json()
+			.catch(() => null)) as PostHogProjectResponse | null;
+		const projectName =
+			project && typeof project.name === "string" && project.name.trim()
+				? project.name.trim()
+				: `Project ${projectId}`;
+
+		return await ctx.runMutation(internal.appConnections.upsertPostHog, {
+			ownerTokenIdentifier: identity.tokenIdentifier,
+			workspaceId: args.workspaceId,
+			baseUrl,
+			projectId,
+			projectName,
+			token,
 		});
 	},
 });
@@ -319,9 +425,9 @@ export const prepareJiraMentionSync = action({
 				});
 			}
 
-			const currentUser = (await response.json().catch(() => null)) as
-				| JiraCurrentUserResponse
-				| null;
+			const currentUser = (await response
+				.json()
+				.catch(() => null)) as JiraCurrentUserResponse | null;
 			accountId =
 				currentUser && typeof currentUser.accountId === "string"
 					? currentUser.accountId

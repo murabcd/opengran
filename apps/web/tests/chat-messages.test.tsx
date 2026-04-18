@@ -190,6 +190,49 @@ describe("ChatMessages", () => {
 		).toBe("https://openai.com/index/introducing-gpt-5");
 	});
 
+	it("renders sources from PostHog tool output parts", async () => {
+		const user = userEvent.setup();
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "assistant-posthog",
+						role: "assistant",
+						parts: [
+							{
+								type: "text",
+								text: "I found the relevant PostHog insight.",
+							},
+							{
+								type: "tool-posthog_insight_get",
+								toolCallId: "tool-posthog-1",
+								state: "output-available",
+								input: {
+									insightId: "weekly-signups",
+								},
+								output: {
+									sources: [
+										{
+											url: "https://eu.posthog.com/project/1/insights/weekly-signups",
+											title: "Weekly signups",
+										},
+									],
+								},
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Used 1 sources" }));
+		expect(
+			screen.getByRole("link", { name: "Weekly signups" }).getAttribute("href"),
+		).toBe("https://eu.posthog.com/project/1/insights/weekly-signups");
+	});
+
 	it("keeps sources visually attached to the assistant answer and clickable", async () => {
 		const user = userEvent.setup();
 		const { ChatMessages } = await import("../src/components/chat/messages");

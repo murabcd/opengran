@@ -7,6 +7,7 @@ import { internalMutation, internalQuery, query } from "./_generated/server";
 const yandexTrackerProviderValidator = v.literal("yandex-tracker");
 const yandexCalendarProviderValidator = v.literal("yandex-calendar");
 const jiraProviderValidator = v.literal("jira");
+const posthogProviderValidator = v.literal("posthog");
 const appConnectionStatusValidator = v.union(
 	v.literal("connected"),
 	v.literal("disconnected"),
@@ -48,6 +49,16 @@ const jiraConnectionSettingsValidator = v.object({
 	lastMentionSyncAt: v.optional(v.number()),
 });
 
+const posthogConnectionSettingsValidator = v.object({
+	sourceId: v.string(),
+	provider: posthogProviderValidator,
+	status: appConnectionStatusValidator,
+	displayName: v.string(),
+	baseUrl: v.string(),
+	projectId: v.string(),
+	projectName: v.string(),
+});
+
 const yandexCalendarCredentialsValidator = v.union(
 	v.object({
 		provider: yandexCalendarProviderValidator,
@@ -64,7 +75,11 @@ const appConnectionSourceValidator = v.object({
 	id: v.string(),
 	title: v.string(),
 	preview: v.string(),
-	provider: v.union(yandexTrackerProviderValidator, jiraProviderValidator),
+	provider: v.union(
+		yandexTrackerProviderValidator,
+		jiraProviderValidator,
+		posthogProviderValidator,
+	),
 });
 
 const yandexTrackerChatToolConnectionValidator = v.object({
@@ -85,9 +100,20 @@ const jiraChatToolConnectionValidator = v.object({
 	token: v.string(),
 });
 
+const posthogChatToolConnectionValidator = v.object({
+	sourceId: v.string(),
+	provider: posthogProviderValidator,
+	displayName: v.string(),
+	baseUrl: v.string(),
+	projectId: v.string(),
+	projectName: v.string(),
+	token: v.string(),
+});
+
 const chatToolConnectionValidator = v.union(
 	yandexTrackerChatToolConnectionValidator,
 	jiraChatToolConnectionValidator,
+	posthogChatToolConnectionValidator,
 );
 
 const APP_SOURCE_PREFIX = "app:";
@@ -138,6 +164,16 @@ type JiraConnectionSettings = {
 	lastMentionSyncAt?: number;
 };
 
+type PostHogConnectionSettings = {
+	sourceId: string;
+	provider: "posthog";
+	status: "connected" | "disconnected";
+	displayName: string;
+	baseUrl: string;
+	projectId: string;
+	projectName: string;
+};
+
 type ConnectionActivitySnapshot = {
 	lastWebhookReceivedAt?: number;
 	lastMentionSyncAt?: number;
@@ -147,7 +183,7 @@ type AppConnectionSource = {
 	id: string;
 	title: string;
 	preview: string;
-	provider: "jira" | "yandex-tracker";
+	provider: "jira" | "posthog" | "yandex-tracker";
 };
 
 type ChatToolConnection =
@@ -165,6 +201,15 @@ type ChatToolConnection =
 			displayName: string;
 			baseUrl: string;
 			email: string;
+			token: string;
+	  }
+	| {
+			sourceId: string;
+			provider: "posthog";
+			displayName: string;
+			baseUrl: string;
+			projectId: string;
+			projectName: string;
 			token: string;
 	  };
 
@@ -205,7 +250,9 @@ const getProviderPreview = (connection: Doc<"appConnections">) =>
 		? (connection.email ?? "Yandex Calendar")
 		: connection.provider === "jira"
 			? getJiraPreview(connection)
-			: `${connection.orgType === "x-org-id" ? "Yandex 360" : "Yandex Cloud"} • Org ${connection.orgId}`;
+			: connection.provider === "posthog"
+				? getPostHogPreview(connection)
+				: `${connection.orgType === "x-org-id" ? "Yandex 360" : "Yandex Cloud"} • Org ${connection.orgId}`;
 
 const getJiraPreview = (connection: Doc<"appConnections">) => {
 	if (!connection.baseUrl) {
@@ -222,6 +269,23 @@ const getJiraPreview = (connection: Doc<"appConnections">) => {
 	}
 };
 
+const getPostHogPreview = (connection: Doc<"appConnections">) => {
+	const projectLabel =
+		connection.projectName?.trim() ||
+		(connection.projectId ? `Project ${connection.projectId}` : "PostHog");
+
+	if (!connection.baseUrl) {
+		return projectLabel;
+	}
+
+	try {
+		const hostname = new URL(connection.baseUrl).hostname;
+		return `${hostname} • ${projectLabel}`;
+	} catch {
+		return `${connection.baseUrl} • ${projectLabel}`;
+	}
+};
+
 const generateWebhookSecret = () =>
 	`${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
 
@@ -229,7 +293,7 @@ const getOwnedConnection = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
 	workspaceId: Id<"workspaces">,
-	provider: "jira" | "yandex-calendar" | "yandex-tracker",
+	provider: "jira" | "posthog" | "yandex-calendar" | "yandex-tracker",
 ) =>
 	await ctx.db
 		.query("appConnections")
@@ -270,6 +334,13 @@ const getOwnedJiraConnection = async (
 	ownerTokenIdentifier: string,
 	workspaceId: Id<"workspaces">,
 ) => await getOwnedConnection(ctx, ownerTokenIdentifier, workspaceId, "jira");
+
+const getOwnedPostHogConnection = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+) =>
+	await getOwnedConnection(ctx, ownerTokenIdentifier, workspaceId, "posthog");
 
 const getConnectionActivity = async (
 	ctx: QueryCtx | MutationCtx,
@@ -380,6 +451,24 @@ const toChatToolConnection = (
 		};
 	}
 
+	if (
+		connection.provider === "posthog" &&
+		connection.baseUrl &&
+		connection.projectId &&
+		connection.projectName &&
+		connection.token
+	) {
+		return {
+			sourceId: toAppSourceId(connection._id),
+			provider: "posthog",
+			displayName: connection.displayName,
+			baseUrl: connection.baseUrl,
+			projectId: connection.projectId,
+			projectName: connection.projectName,
+			token: connection.token,
+		};
+	}
+
 	return null;
 };
 
@@ -427,7 +516,8 @@ export const listSources = query({
 		for (const connection of connections) {
 			if (
 				connection.provider !== "yandex-tracker" &&
-				connection.provider !== "jira"
+				connection.provider !== "jira" &&
+				connection.provider !== "posthog"
 			) {
 				continue;
 			}
@@ -462,7 +552,7 @@ export const getYandexTracker = query({
 			args.workspaceId,
 		);
 
-		if (!connection || !connection.orgType || !connection.orgId) {
+		if (!connection?.orgType || !connection.orgId) {
 			return null;
 		}
 
@@ -496,8 +586,7 @@ export const getYandexCalendar = query({
 		);
 
 		if (
-			!connection ||
-			!connection.email ||
+			!connection?.email ||
 			!connection.serverAddress ||
 			!connection.calendarHomePath
 		) {
@@ -534,7 +623,7 @@ export const getJira = query({
 			args.workspaceId,
 		);
 
-		if (!connection || !connection.baseUrl || !connection.email) {
+		if (!connection?.baseUrl || !connection.email) {
 			return null;
 		}
 
@@ -561,6 +650,44 @@ export const getJira = query({
 	},
 });
 
+export const getPostHog = query({
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
+	returns: v.union(posthogConnectionSettingsValidator, v.null()),
+	handler: async (ctx, args) => {
+		const identity = await requireIdentity(ctx);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
+		const connection = await getOwnedPostHogConnection(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
+
+		if (
+			!connection?.baseUrl ||
+			!connection.projectId ||
+			!connection.projectName
+		) {
+			return null;
+		}
+
+		return {
+			sourceId: toAppSourceId(connection._id),
+			provider: "posthog" as const,
+			status: connection.status,
+			displayName: connection.displayName,
+			baseUrl: connection.baseUrl,
+			projectId: connection.projectId,
+			projectName: connection.projectName,
+		};
+	},
+});
+
 export const getOwnedJiraConnectionInternal = internalQuery({
 	args: {
 		ownerTokenIdentifier: v.string(),
@@ -574,12 +701,7 @@ export const getOwnedJiraConnectionInternal = internalQuery({
 			args.workspaceId,
 		);
 
-		if (
-			!connection ||
-			!connection.baseUrl ||
-			!connection.email ||
-			!connection.token
-		) {
+		if (!connection?.baseUrl || !connection.email || !connection.token) {
 			return null;
 		}
 
@@ -1113,6 +1235,82 @@ export const upsertJira = internalMutation({
 			email,
 			webhookSecret,
 			...(accountId ? { accountId } : {}),
+		};
+	},
+});
+
+export const upsertPostHog = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		baseUrl: v.string(),
+		projectId: v.string(),
+		projectName: v.string(),
+		token: v.string(),
+	},
+	returns: posthogConnectionSettingsValidator,
+	handler: async (ctx, args): Promise<PostHogConnectionSettings> => {
+		await requireOwnedWorkspace(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+		const now = Date.now();
+		const baseUrl = args.baseUrl.trim();
+		const projectId = args.projectId.trim();
+		const projectName = args.projectName.trim() || `Project ${projectId}`;
+		const token = args.token.trim();
+		const displayName = projectName;
+		const existingConnection = await getOwnedPostHogConnection(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+
+		if (existingConnection) {
+			await ctx.db.patch(existingConnection._id, {
+				status: "connected",
+				displayName,
+				baseUrl,
+				projectId,
+				projectName,
+				token,
+				updatedAt: now,
+			});
+
+			return {
+				sourceId: toAppSourceId(existingConnection._id),
+				provider: "posthog" as const,
+				status: "connected" as const,
+				displayName,
+				baseUrl,
+				projectId,
+				projectName,
+			};
+		}
+
+		const id = await ctx.db.insert("appConnections", {
+			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
+			provider: "posthog",
+			status: "connected",
+			displayName,
+			baseUrl,
+			projectId,
+			projectName,
+			token,
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		return {
+			sourceId: toAppSourceId(id),
+			provider: "posthog" as const,
+			status: "connected" as const,
+			displayName,
+			baseUrl,
+			projectId,
+			projectName,
 		};
 	},
 });

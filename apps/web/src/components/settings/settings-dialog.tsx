@@ -212,6 +212,12 @@ type JiraConnectionFormState = {
 	token: string;
 };
 
+type PostHogConnectionFormState = {
+	baseUrl: string;
+	projectId: string;
+	token: string;
+};
+
 type YandexCalendarConnectionFormState = {
 	email: string;
 	password: string;
@@ -306,10 +312,13 @@ type ToolConnectionRowProps = {
 type ConnectionsSettingsState = {
 	isYandexTrackerDialogOpen: boolean;
 	isJiraDialogOpen: boolean;
+	isPostHogDialogOpen: boolean;
 	isSavingYandexTrackerConnection: boolean;
 	isSavingJiraConnection: boolean;
+	isSavingPostHogConnection: boolean;
 	yandexTrackerFormState: YandexTrackerConnectionFormState;
 	jiraFormState: JiraConnectionFormState;
+	posthogFormState: PostHogConnectionFormState;
 };
 
 type ConnectionsSettingsAction =
@@ -322,11 +331,19 @@ type ConnectionsSettingsAction =
 			value: boolean;
 	  }
 	| {
+			type: "setIsPostHogDialogOpen";
+			value: boolean;
+	  }
+	| {
 			type: "setIsSavingYandexTrackerConnection";
 			value: boolean;
 	  }
 	| {
 			type: "setIsSavingJiraConnection";
+			value: boolean;
+	  }
+	| {
+			type: "setIsSavingPostHogConnection";
 			value: boolean;
 	  }
 	| {
@@ -344,6 +361,14 @@ type ConnectionsSettingsAction =
 	| {
 			type: "patchJiraFormState";
 			value: Partial<JiraConnectionFormState>;
+	  }
+	| {
+			type: "setPostHogFormState";
+			value: PostHogConnectionFormState;
+	  }
+	| {
+			type: "patchPostHogFormState";
+			value: Partial<PostHogConnectionFormState>;
 	  };
 
 const getWorkspaceFormState = (
@@ -382,6 +407,12 @@ const initialJiraConnectionFormState: JiraConnectionFormState = {
 	token: "",
 };
 
+const initialPostHogConnectionFormState: PostHogConnectionFormState = {
+	baseUrl: "",
+	projectId: "",
+	token: "",
+};
+
 const getInitialPreferencesSettingsState = (): PreferencesSettingsState => ({
 	preferences: null,
 	isLoadingPreferences:
@@ -400,10 +431,13 @@ const initialCalendarSettingsState: CalendarSettingsState = {
 const initialConnectionsSettingsState: ConnectionsSettingsState = {
 	isYandexTrackerDialogOpen: false,
 	isJiraDialogOpen: false,
+	isPostHogDialogOpen: false,
 	isSavingYandexTrackerConnection: false,
 	isSavingJiraConnection: false,
+	isSavingPostHogConnection: false,
 	yandexTrackerFormState: initialYandexTrackerConnectionFormState,
 	jiraFormState: initialJiraConnectionFormState,
+	posthogFormState: initialPostHogConnectionFormState,
 };
 
 const preferencesSettingsReducer = (
@@ -471,10 +505,14 @@ const connectionsSettingsReducer = (
 			return { ...state, isYandexTrackerDialogOpen: action.value };
 		case "setIsJiraDialogOpen":
 			return { ...state, isJiraDialogOpen: action.value };
+		case "setIsPostHogDialogOpen":
+			return { ...state, isPostHogDialogOpen: action.value };
 		case "setIsSavingYandexTrackerConnection":
 			return { ...state, isSavingYandexTrackerConnection: action.value };
 		case "setIsSavingJiraConnection":
 			return { ...state, isSavingJiraConnection: action.value };
+		case "setIsSavingPostHogConnection":
+			return { ...state, isSavingPostHogConnection: action.value };
 		case "setYandexTrackerFormState":
 			return { ...state, yandexTrackerFormState: action.value };
 		case "patchYandexTrackerFormState":
@@ -492,6 +530,16 @@ const connectionsSettingsReducer = (
 				...state,
 				jiraFormState: {
 					...state.jiraFormState,
+					...action.value,
+				},
+			};
+		case "setPostHogFormState":
+			return { ...state, posthogFormState: action.value };
+		case "patchPostHogFormState":
+			return {
+				...state,
+				posthogFormState: {
+					...state.posthogFormState,
 					...action.value,
 				},
 			};
@@ -1557,22 +1605,31 @@ function ConnectionsSettings() {
 	const {
 		activeWorkspaceId,
 		handleConnectJira,
+		handleConnectPostHog,
 		handleCopyJiraWebhookUrl,
 		handleConnectYandexTracker,
 		handleJiraDialogOpenChange,
+		handlePostHogDialogOpenChange,
 		handleYandexTrackerDialogOpenChange,
 		isJiraDialogOpen,
 		isJiraFormValid,
+		isPostHogDialogOpen,
+		isPostHogFormValid,
 		isSavingJiraConnection,
+		isSavingPostHogConnection,
 		isSavingYandexTrackerConnection,
 		isYandexTrackerDialogOpen,
 		isYandexTrackerFormValid,
 		jiraConnection,
 		jiraFormState,
 		jiraWebhookUrl,
+		posthogFormState,
 		setJiraBaseUrl,
 		setJiraEmail,
 		setJiraToken,
+		setPostHogBaseUrl,
+		setPostHogProjectId,
+		setPostHogToken,
 		setYandexTrackerOrgId,
 		setYandexTrackerOrgType,
 		setYandexTrackerToken,
@@ -1622,6 +1679,19 @@ function ConnectionsSettings() {
 				showSyncSettings={Boolean(jiraConnection)}
 				webhookUrl={jiraWebhookUrl}
 			/>
+			<PostHogDialog
+				open={isPostHogDialogOpen}
+				onOpenChange={handlePostHogDialogOpenChange}
+				formState={posthogFormState}
+				onBaseUrlChange={setPostHogBaseUrl}
+				onProjectIdChange={setPostHogProjectId}
+				onTokenChange={setPostHogToken}
+				onConnect={() => {
+					void handleConnectPostHog();
+				}}
+				isFormValid={isPostHogFormValid}
+				isSaving={isSavingPostHogConnection}
+			/>
 		</div>
 	);
 }
@@ -1637,10 +1707,15 @@ function useConnectionsSettingsController() {
 		api.appConnections.getJira,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
+	const posthogConnection = useQuery(
+		api.appConnections.getPostHog,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const connectYandexTracker = useAction(
 		api.appConnectionActions.connectYandexTracker,
 	);
 	const connectJira = useAction(api.appConnectionActions.connectJira);
+	const connectPostHog = useAction(api.appConnectionActions.connectPostHog);
 	const prepareJiraMentionSync = useAction(
 		api.appConnectionActions.prepareJiraMentionSync,
 	);
@@ -1655,10 +1730,13 @@ function useConnectionsSettingsController() {
 	const {
 		isYandexTrackerDialogOpen,
 		isJiraDialogOpen,
+		isPostHogDialogOpen,
 		isSavingYandexTrackerConnection,
 		isSavingJiraConnection,
+		isSavingPostHogConnection,
 		yandexTrackerFormState,
 		jiraFormState,
+		posthogFormState,
 	} = state;
 
 	useEffect(() => {
@@ -1824,6 +1902,64 @@ function useConnectionsSettingsController() {
 		jiraFormState.email.trim().length > 0 &&
 		jiraFormState.token.trim().length > 0;
 
+	const handlePostHogDialogOpenChange = (open: boolean) => {
+		dispatch({ type: "setIsPostHogDialogOpen", value: open });
+
+		if (open) {
+			dispatch({
+				type: "setPostHogFormState",
+				value: {
+					baseUrl: posthogConnection?.baseUrl ?? "",
+					projectId: posthogConnection?.projectId ?? "",
+					token: "",
+				},
+			});
+		} else {
+			dispatch({
+				type: "setPostHogFormState",
+				value: initialPostHogConnectionFormState,
+			});
+		}
+	};
+
+	const handleConnectPostHog = async () => {
+		if (
+			!activeWorkspaceId ||
+			!posthogFormState.baseUrl.trim() ||
+			!posthogFormState.projectId.trim() ||
+			!posthogFormState.token.trim()
+		) {
+			return;
+		}
+
+		dispatch({ type: "setIsSavingPostHogConnection", value: true });
+
+		try {
+			await connectPostHog({
+				workspaceId: activeWorkspaceId,
+				baseUrl: posthogFormState.baseUrl.trim(),
+				projectId: posthogFormState.projectId.trim(),
+				token: posthogFormState.token.trim(),
+			});
+			toast.success("PostHog connected");
+			handlePostHogDialogOpenChange(false);
+		} catch (error) {
+			console.error("Failed to connect PostHog", error);
+			toast.error(
+				error instanceof Error
+					? withoutTrailingPeriod(error.message)
+					: "Failed to connect PostHog",
+			);
+		} finally {
+			dispatch({ type: "setIsSavingPostHogConnection", value: false });
+		}
+	};
+
+	const isPostHogFormValid =
+		posthogFormState.baseUrl.trim().length > 0 &&
+		posthogFormState.projectId.trim().length > 0 &&
+		posthogFormState.token.trim().length > 0;
+
 	const jiraWebhookUrl =
 		convexSiteUrl && jiraConnection?.webhookSecret
 			? (() => {
@@ -1848,6 +1984,12 @@ function useConnectionsSettingsController() {
 			name: "Jira",
 			buttonLabel: jiraConnection ? "Reconnect" : "Connect",
 			onButtonClick: () => handleJiraDialogOpenChange(true),
+		},
+		{
+			icon: <Icons.planeLogo className="size-5 shrink-0" />,
+			name: "PostHog",
+			buttonLabel: posthogConnection ? "Reconnect" : "Connect",
+			onButtonClick: () => handlePostHogDialogOpenChange(true),
 		},
 	];
 
@@ -1887,21 +2029,27 @@ function useConnectionsSettingsController() {
 	return {
 		activeWorkspaceId,
 		handleConnectJira,
+		handleConnectPostHog,
 		handleCopyJiraWebhookUrl,
 		handleConnectYandexTracker,
 		handleJiraDialogOpenChange,
 		handleOpenJiraWebhookSettings,
+		handlePostHogDialogOpenChange,
 		handleYandexTrackerDialogOpenChange,
 		isJiraDialogOpen,
 		isJiraFormValid,
+		isPostHogDialogOpen,
+		isPostHogFormValid,
 		isPreparingJiraMentionSync,
 		isSavingJiraConnection,
+		isSavingPostHogConnection,
 		isSavingYandexTrackerConnection,
 		isYandexTrackerDialogOpen,
 		isYandexTrackerFormValid,
 		jiraConnection,
 		jiraFormState,
 		jiraWebhookUrl,
+		posthogFormState,
 		setJiraBaseUrl: (baseUrl: string) =>
 			dispatch({
 				type: "patchJiraFormState",
@@ -1915,6 +2063,21 @@ function useConnectionsSettingsController() {
 		setJiraToken: (token: string) =>
 			dispatch({
 				type: "patchJiraFormState",
+				value: { token },
+			}),
+		setPostHogBaseUrl: (baseUrl: string) =>
+			dispatch({
+				type: "patchPostHogFormState",
+				value: { baseUrl },
+			}),
+		setPostHogProjectId: (projectId: string) =>
+			dispatch({
+				type: "patchPostHogFormState",
+				value: { projectId },
+			}),
+		setPostHogToken: (token: string) =>
+			dispatch({
+				type: "patchPostHogFormState",
 				value: { token },
 			}),
 		setYandexTrackerOrgId: (orgId: string) =>
@@ -2234,6 +2397,107 @@ function JiraDialog({
 						</CollapsibleContent>
 					</Collapsible>
 				) : null}
+				<div className="flex justify-end gap-2 pt-2">
+					<Button
+						type="button"
+						variant="ghost"
+						onClick={() => onOpenChange(false)}
+						disabled={isSaving}
+					>
+						Cancel
+					</Button>
+					<Button
+						type="button"
+						onClick={onConnect}
+						disabled={!isFormValid || isSaving}
+					>
+						{isSaving ? (
+							<>
+								<LoaderCircle className="animate-spin" />
+								Connecting
+							</>
+						) : (
+							"Connect"
+						)}
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+function PostHogDialog({
+	open,
+	onOpenChange,
+	formState,
+	onBaseUrlChange,
+	onProjectIdChange,
+	onTokenChange,
+	onConnect,
+	isFormValid,
+	isSaving,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	formState: PostHogConnectionFormState;
+	onBaseUrlChange: (baseUrl: string) => void;
+	onProjectIdChange: (projectId: string) => void;
+	onTokenChange: (token: string) => void;
+	onConnect: () => void;
+	isFormValid: boolean;
+	isSaving: boolean;
+}) {
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="sm:max-w-md">
+				<DialogHeader>
+					<DialogTitle>Connect PostHog</DialogTitle>
+					<DialogDescription>
+						Enter the credentials OpenGran should use for your PostHog project.
+					</DialogDescription>
+				</DialogHeader>
+				<FieldGroup className="gap-4">
+					<Field>
+						<Label
+							htmlFor="posthog-base-url"
+							className={SETTINGS_LABEL_CLASSNAME}
+						>
+							PostHog URL
+						</Label>
+						<Input
+							id="posthog-base-url"
+							value={formState.baseUrl}
+							onChange={(event) => onBaseUrlChange(event.target.value)}
+							placeholder="https://us.posthog.com"
+						/>
+					</Field>
+					<Field>
+						<Label
+							htmlFor="posthog-project-id"
+							className={SETTINGS_LABEL_CLASSNAME}
+						>
+							Project ID
+						</Label>
+						<Input
+							id="posthog-project-id"
+							value={formState.projectId}
+							onChange={(event) => onProjectIdChange(event.target.value)}
+							placeholder="123456"
+						/>
+					</Field>
+					<Field>
+						<Label htmlFor="posthog-token" className={SETTINGS_LABEL_CLASSNAME}>
+							Personal API key
+						</Label>
+						<Input
+							id="posthog-token"
+							type="password"
+							value={formState.token}
+							onChange={(event) => onTokenChange(event.target.value)}
+							placeholder="phx_..."
+						/>
+					</Field>
+				</FieldGroup>
 				<div className="flex justify-end gap-2 pt-2">
 					<Button
 						type="button"
