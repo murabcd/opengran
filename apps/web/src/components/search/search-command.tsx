@@ -61,6 +61,24 @@ export interface SearchCommandProject {
 
 type SearchSourceFilter = "all" | "notes" | "chats" | string;
 
+const STATIC_SOURCE_FILTER_OPTIONS = [
+	{
+		value: "all",
+		label: "All",
+		icon: GalleryHorizontalEnd,
+	},
+	{
+		value: "notes",
+		label: "Notes",
+		icon: FileText,
+	},
+	{
+		value: "chats",
+		label: "Chats",
+		icon: MessageCircle,
+	},
+] as const;
+
 interface SearchCommandProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -129,9 +147,7 @@ function useSearchCommandFilters({
 
 	React.useEffect(() => {
 		if (
-			sourceFilter !== "all" &&
-			sourceFilter !== "notes" &&
-			sourceFilter !== "chats" &&
+			isProjectSourceFilter(sourceFilter) &&
 			!projects.some((project) => project.id === sourceFilter)
 		) {
 			setState({ sourceFilter: "all" });
@@ -277,65 +293,53 @@ function SearchCommandFilters({
 										onValueChange={(value) =>
 											setState({ sourceSearchValue: value })
 										}
-										placeholder="Search sources"
+										className="pl-2"
+										placeholder="Search projects"
 									/>
 								</div>
 								<CommandList className="max-h-64">
-									<div className="flex flex-col gap-1 px-1 py-1">
-										<SearchSourceFilterOption
-											icon={GalleryHorizontalEnd}
-											label="All"
-											selected={sourceFilter === "all"}
-											onSelect={() => {
-												setState({
-													sourceFilter: "all",
-													sourcePopoverOpen: false,
-												});
-											}}
-										/>
-										<SearchSourceFilterOption
-											icon={FileText}
-											label="Notes"
-											selected={sourceFilter === "notes"}
-											onSelect={() => {
-												setState({
-													sourceFilter: "notes",
-													sourcePopoverOpen: false,
-												});
-											}}
-										/>
-										<SearchSourceFilterOption
-											icon={MessageCircle}
-											label="Chats"
-											selected={sourceFilter === "chats"}
-											onSelect={() => {
-												setState({
-													sourceFilter: "chats",
-													sourcePopoverOpen: false,
-												});
-											}}
-										/>
-										{matchingProjects.length > 0 ? (
-											matchingProjects.map((project) => (
+									<CommandGroup heading="Types" className="px-1 py-1">
+										<div className="flex flex-col gap-1">
+											{STATIC_SOURCE_FILTER_OPTIONS.map((option) => (
 												<SearchSourceFilterOption
-													key={project.id}
-													icon={FolderClosed}
-													label={project.name}
-													selected={sourceFilter === project.id}
+													key={option.value}
+													icon={option.icon}
+													label={option.label}
+													selected={sourceFilter === option.value}
 													onSelect={() => {
 														setState({
-															sourceFilter: project.id,
+															sourceFilter: option.value,
 															sourcePopoverOpen: false,
 														});
 													}}
 												/>
-											))
+											))}
+										</div>
+									</CommandGroup>
+									<CommandGroup heading="Projects" className="px-1 py-1">
+										{matchingProjects.length > 0 ? (
+											<div className="flex flex-col gap-1">
+												{matchingProjects.map((project) => (
+													<SearchSourceFilterOption
+														key={project.id}
+														icon={FolderClosed}
+														label={project.name}
+														selected={sourceFilter === project.id}
+														onSelect={() => {
+															setState({
+																sourceFilter: project.id,
+																sourcePopoverOpen: false,
+															});
+														}}
+													/>
+												))}
+											</div>
 										) : (
 											<div className="px-2 py-3 text-sm text-muted-foreground">
 												No projects found.
 											</div>
 										)}
-									</div>
+									</CommandGroup>
 								</CommandList>
 							</Command>
 						</PopoverContent>
@@ -362,7 +366,7 @@ function SearchCommandFilters({
 						<PopoverContent
 							align="start"
 							sideOffset={6}
-							className="w-fit gap-0 p-0"
+							className="w-64 gap-0 p-0"
 						>
 							<div className="flex flex-col gap-0.5 border-b border-border/80 px-2 pt-2 pb-2">
 								<SearchDatePresetOption
@@ -405,6 +409,7 @@ function SearchCommandFilters({
 									selected={dateRange}
 									defaultMonth={dateRange?.from ?? new Date()}
 									classNames={{
+										root: "w-full",
 										today:
 											"rounded-(--cell-radius) bg-muted text-foreground data-[selected=true]:rounded-(--cell-radius)",
 									}}
@@ -546,16 +551,18 @@ export function SearchCommand({
 					{itemSections.map((section) =>
 						section.items.length > 0 ? (
 							<CommandGroup key={section.key} heading={section.label}>
-								{section.items.map((item) => (
-									<SearchCommandRow
-										key={item.id}
-										item={item}
-										onSelect={() => {
-											onOpenChange(false);
-											onSelectItem(item.id);
-										}}
-									/>
-								))}
+								<div className="flex flex-col gap-1">
+									{section.items.map((item) => (
+										<SearchCommandRow
+											key={item.id}
+											item={item}
+											onSelect={() => {
+												onOpenChange(false);
+												onSelectItem(item.id);
+											}}
+										/>
+									))}
+								</div>
 							</CommandGroup>
 						) : null,
 					)}
@@ -616,10 +623,8 @@ function SearchSourceFilterOption({
 }
 
 function isProjectSourceFilter(sourceFilter: SearchSourceFilter) {
-	return (
-		sourceFilter !== "all" &&
-		sourceFilter !== "notes" &&
-		sourceFilter !== "chats"
+	return !STATIC_SOURCE_FILTER_OPTIONS.some(
+		(option) => option.value === sourceFilter,
 	);
 }
 
@@ -627,32 +632,22 @@ function getSourceFilterLabel(
 	sourceFilter: SearchSourceFilter,
 	projectName?: string,
 ) {
-	if (sourceFilter === "all") {
-		return "All";
-	}
-
-	if (sourceFilter === "notes") {
-		return "Notes";
-	}
-
-	if (sourceFilter === "chats") {
-		return "Chats";
+	const option = STATIC_SOURCE_FILTER_OPTIONS.find(
+		(candidate) => candidate.value === sourceFilter,
+	);
+	if (option) {
+		return option.label;
 	}
 
 	return projectName ?? "All";
 }
 
 function getSourceFilterIcon(sourceFilter: SearchSourceFilter) {
-	if (sourceFilter === "all") {
-		return GalleryHorizontalEnd;
-	}
-
-	if (sourceFilter === "notes") {
-		return FileText;
-	}
-
-	if (sourceFilter === "chats") {
-		return MessageCircle;
+	const option = STATIC_SOURCE_FILTER_OPTIONS.find(
+		(candidate) => candidate.value === sourceFilter,
+	);
+	if (option) {
+		return option.icon;
 	}
 
 	return FolderClosed;
