@@ -11,6 +11,7 @@ import {
 } from "@workspace/ui/components/alert-dialog";
 import { Button } from "@workspace/ui/components/button";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
+import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
 import { useMutation, useQuery } from "convex/react";
@@ -19,6 +20,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { ChatMessages } from "@/components/chat/messages";
 import { COMPOSER_DOCK_WRAPPER_CLASS } from "@/components/layout/composer-dock";
+import { PageTitle } from "@/components/layout/page-title";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
@@ -46,6 +48,7 @@ type ChatPageProps = {
 	onPrefetchChat: (chatId: string) => void;
 	onChatRemoved: (chatId: string) => void;
 	activeWorkspace: WorkspaceRecord | null;
+	isDesktopMac: boolean;
 	onOpenConnectionsSettings: () => void;
 	onCreateNoteFromResponse?: (
 		title: string,
@@ -575,6 +578,7 @@ export function ChatPage({
 	onPrefetchChat,
 	onChatRemoved,
 	activeWorkspace,
+	isDesktopMac,
 	onOpenConnectionsSettings,
 	onCreateNoteFromResponse,
 }: ChatPageProps) {
@@ -684,7 +688,12 @@ export function ChatPage({
 				viewportRef={controller.hasMessages ? containerRef : undefined}
 			>
 				<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
-					<div className="flex min-h-0 w-full max-w-5xl flex-1 flex-col pt-2 md:pt-4">
+					<div
+						className={cn(
+							"flex min-h-0 w-full max-w-5xl flex-1 flex-col",
+							isDesktopMac ? "pt-2 md:pt-4" : "pt-0",
+						)}
+					>
 						{shouldShowActiveChatSurface ? (
 							<div className="relative mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
 								<div className="flex-1 pt-8 pb-28 md:pb-32">
@@ -710,9 +719,9 @@ export function ChatPage({
 						) : (
 							<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
 								<div className="flex flex-1 flex-col gap-6 pb-8">
-									<div className="w-full">
-										<h1 className="text-lg md:text-xl">Ask anything</h1>
-									</div>
+									<PageTitle isDesktopMac={isDesktopMac} className="w-full">
+										Ask anything
+									</PageTitle>
 
 									{composer}
 

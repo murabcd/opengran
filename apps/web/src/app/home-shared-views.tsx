@@ -19,6 +19,7 @@ import {
 	isUpcomingEventLive,
 	isUpcomingEventToday,
 } from "@/app/location";
+import { PageTitle } from "@/components/layout/page-title";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
 import {
 	groupItemsByRelativeDate,
@@ -58,6 +59,7 @@ export function HomeView({
 	currentNoteId,
 	currentNoteTitle,
 	currentUser,
+	isDesktopMac,
 	onOpenNote,
 	onNoteTrashed,
 	onCreateNote,
@@ -75,6 +77,7 @@ export function HomeView({
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle: string;
 	currentUser: AppUser;
+	isDesktopMac: boolean;
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 	onCreateNote: () => void;
@@ -119,9 +122,14 @@ export function HomeView({
 
 	return (
 		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
-			<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
+			<div
+				className={cn(
+					"flex w-full max-w-5xl flex-col gap-6",
+					isDesktopMac ? "pt-2 md:pt-4" : "pt-0",
+				)}
+			>
 				<section className="mx-auto w-full max-w-xl space-y-6">
-					<h1 className="text-lg md:text-xl">Coming up</h1>
+					<PageTitle isDesktopMac={isDesktopMac}>Coming up</PageTitle>
 					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
 						<CardContent className="p-0">
 							<div className="grid min-h-[152px] md:grid-cols-[184px_minmax(0,1fr)]">
@@ -303,6 +311,7 @@ export function SharedView({
 	currentNoteId,
 	currentNoteTitle,
 	currentUser,
+	isDesktopMac,
 	onOpenNote,
 	onNoteTrashed,
 }: {
@@ -310,14 +319,20 @@ export function SharedView({
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle: string;
 	currentUser: AppUser;
+	isDesktopMac: boolean;
 	onOpenNote: (noteId: Id<"notes">) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
 	return (
 		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
-			<div className="flex w-full max-w-5xl flex-col gap-6 pt-2 md:pt-4">
+			<div
+				className={cn(
+					"flex w-full max-w-5xl flex-col gap-6",
+					isDesktopMac ? "pt-2 md:pt-4" : "pt-0",
+				)}
+			>
 				<section className="mx-auto w-full max-w-xl space-y-6">
-					<h1 className="text-lg md:text-xl">Shared with others</h1>
+					<PageTitle isDesktopMac={isDesktopMac}>Shared with others</PageTitle>
 					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
 						<CardContent className="flex items-start justify-between gap-4 p-5">
 							<div>

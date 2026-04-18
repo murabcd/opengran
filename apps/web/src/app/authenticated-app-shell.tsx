@@ -2001,6 +2001,7 @@ const AppShellContent = React.memo(function AppShellContent({
 					currentNoteId={currentNoteId}
 					currentNoteTitle={currentNoteTitle}
 					currentUser={user}
+					isDesktopMac={isDesktopMac}
 					onOpenNote={onOpenNote}
 					onNoteTrashed={onNoteTrashed}
 					onCreateNote={onCreateNote}
@@ -2022,6 +2023,7 @@ const AppShellContent = React.memo(function AppShellContent({
 					currentNoteId={currentNoteId}
 					currentNoteTitle={currentNoteTitle}
 					currentUser={user}
+					isDesktopMac={isDesktopMac}
 					onOpenNote={onOpenNote}
 					onNoteTrashed={onNoteTrashed}
 				/>
@@ -2074,6 +2076,7 @@ const AppShellContent = React.memo(function AppShellContent({
 				onPrefetchChat={onPrefetchChat}
 				onChatRemoved={onChatRemoved}
 				activeWorkspace={activeWorkspace}
+				isDesktopMac={isDesktopMac}
 				onOpenConnectionsSettings={onOpenConnectionsSettings}
 				onCreateNoteFromResponse={onCreateNoteFromChatResponse}
 			/>
