@@ -2821,12 +2821,14 @@ function ManageAccountForm({
 	]);
 
 	useEffect(() => {
-		if (!formState.avatarPreviewUrl?.startsWith("blob:")) {
+		const avatarPreviewUrl = formState.avatarPreviewUrl;
+
+		if (!avatarPreviewUrl?.startsWith("blob:")) {
 			return;
 		}
 
 		return () => {
-			URL.revokeObjectURL(formState.avatarPreviewUrl);
+			URL.revokeObjectURL(avatarPreviewUrl);
 		};
 	}, [formState.avatarPreviewUrl]);
 
@@ -2881,10 +2883,11 @@ function ManageAccountForm({
 			if (!result.storageId) {
 				throw new Error("Profile avatar upload did not return a storage id.");
 			}
+			const avatarStorageId = result.storageId;
 
 			setFormState((current) => ({
 				...current,
-				avatarStorageId: result.storageId,
+				avatarStorageId,
 				avatarPreviewUrl: URL.createObjectURL(file),
 			}));
 		} catch (error) {

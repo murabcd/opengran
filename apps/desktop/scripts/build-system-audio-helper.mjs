@@ -10,6 +10,9 @@ const outDir =
 	outDirFlagIndex >= 0 && process.argv[outDirFlagIndex + 1]
 		? resolve(process.argv[outDirFlagIndex + 1])
 		: defaultOutDir;
+const cacheRootDir = resolve(outDir, ".cache");
+const clangModuleCacheDir = resolve(cacheRootDir, "clang", "ModuleCache");
+const tmpDir = resolve(outDir, ".tmp");
 const helpers = [
 	{
 		outputFile: resolve(outDir, "opengran-system-audio-helper"),
@@ -29,6 +32,12 @@ const run = (cmd, args) =>
 	new Promise((resolvePromise, rejectPromise) => {
 		const child = spawn(cmd, args, {
 			cwd: packageRoot,
+			env: {
+				...process.env,
+				CLANG_MODULE_CACHE_PATH: clangModuleCacheDir,
+				TMPDIR: tmpDir,
+				XDG_CACHE_HOME: cacheRootDir,
+			},
 			stdio: "inherit",
 		});
 
@@ -51,10 +60,14 @@ if (process.platform !== "darwin") {
 }
 
 await mkdir(outDir, { recursive: true });
+await mkdir(clangModuleCacheDir, { recursive: true });
+await mkdir(tmpDir, { recursive: true });
 
 for (const { outputFile, sourceFile } of helpers) {
 	await run("swiftc", [
 		"-O",
+		"-module-cache-path",
+		clangModuleCacheDir,
 		"-parse-as-library",
 		"-o",
 		outputFile,
