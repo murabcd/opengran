@@ -165,6 +165,142 @@ const DOCKED_PANEL_WIDTH_KEYS = [
 	"rightInsetPanelWidth",
 ] as const satisfies Array<keyof DockedPanelWidthsState>;
 
+type SidebarProviderState = {
+	hasRightSidebar: boolean;
+	open: boolean;
+	openMobile: boolean;
+	rightMode: RightSidebarMode;
+	rightOpen: boolean;
+	rightOpenMobile: boolean;
+	rightSidebarWidth: string;
+	rightSidebarWidthMobile: string;
+	rightSidebarWidthMobileOverride: string | null;
+	rightSidebarWidthOverride: string | null;
+};
+
+type SidebarProviderAction =
+	| {
+			type: "hydrateFromStorage";
+			value: Pick<
+				SidebarProviderState,
+				| "open"
+				| "rightMode"
+				| "rightOpen"
+				| "rightSidebarWidth"
+				| "rightSidebarWidthMobile"
+			>;
+	  }
+	| { type: "setHasRightSidebar"; value: boolean }
+	| { type: "setOpen"; value: boolean }
+	| { type: "setOpenMobile"; value: boolean }
+	| { type: "setRightMode"; value: RightSidebarMode }
+	| { type: "setRightOpen"; value: boolean }
+	| { type: "setRightOpenMobile"; value: boolean }
+	| { type: "setRightSidebarWidth"; value: string }
+	| { type: "setRightSidebarWidthMobile"; value: string }
+	| { type: "setRightSidebarWidthMobileOverride"; value: string | null }
+	| { type: "setRightSidebarWidthOverride"; value: string | null };
+
+const createSidebarProviderState = (
+	defaultOpen: boolean,
+): SidebarProviderState => ({
+	hasRightSidebar: false,
+	open: defaultOpen,
+	openMobile: false,
+	rightMode: "sidebar",
+	rightOpen: false,
+	rightOpenMobile: false,
+	rightSidebarWidth: SIDEBAR_RIGHT_WIDTH,
+	rightSidebarWidthMobile: SIDEBAR_RIGHT_WIDTH_MOBILE,
+	rightSidebarWidthMobileOverride: null,
+	rightSidebarWidthOverride: null,
+});
+
+function sidebarProviderReducer(
+	state: SidebarProviderState,
+	action: SidebarProviderAction,
+): SidebarProviderState {
+	switch (action.type) {
+		case "hydrateFromStorage":
+			return {
+				...state,
+				...action.value,
+			};
+		case "setHasRightSidebar":
+			return state.hasRightSidebar === action.value
+				? state
+				: {
+						...state,
+						hasRightSidebar: action.value,
+					};
+		case "setOpen":
+			return state.open === action.value
+				? state
+				: {
+						...state,
+						open: action.value,
+					};
+		case "setOpenMobile":
+			return state.openMobile === action.value
+				? state
+				: {
+						...state,
+						openMobile: action.value,
+					};
+		case "setRightMode":
+			return state.rightMode === action.value
+				? state
+				: {
+						...state,
+						rightMode: action.value,
+					};
+		case "setRightOpen":
+			return state.rightOpen === action.value
+				? state
+				: {
+						...state,
+						rightOpen: action.value,
+					};
+		case "setRightOpenMobile":
+			return state.rightOpenMobile === action.value
+				? state
+				: {
+						...state,
+						rightOpenMobile: action.value,
+					};
+		case "setRightSidebarWidth":
+			return state.rightSidebarWidth === action.value
+				? state
+				: {
+						...state,
+						rightSidebarWidth: action.value,
+					};
+		case "setRightSidebarWidthMobile":
+			return state.rightSidebarWidthMobile === action.value
+				? state
+				: {
+						...state,
+						rightSidebarWidthMobile: action.value,
+					};
+		case "setRightSidebarWidthMobileOverride":
+			return state.rightSidebarWidthMobileOverride === action.value
+				? state
+				: {
+						...state,
+						rightSidebarWidthMobileOverride: action.value,
+					};
+		case "setRightSidebarWidthOverride":
+			return state.rightSidebarWidthOverride === action.value
+				? state
+				: {
+						...state,
+						rightSidebarWidthOverride: action.value,
+					};
+		default:
+			return state;
+	}
+}
+
 function dockedPanelWidthsReducer(
 	state: DockedPanelWidthsState,
 	widths: DockedPanelWidthsUpdate,
@@ -239,43 +375,48 @@ function SidebarProvider({
 	onOpenChange?: (open: boolean) => void;
 }) {
 	const isMobile = useIsMobile();
-	const [openMobile, setOpenMobile] = React.useState(false);
-	const [rightOpen, setRightOpen] = React.useState(false);
-	const [rightOpenMobile, setRightOpenMobile] = React.useState(false);
-	const [rightMode, setRightModeState] =
-		React.useState<RightSidebarMode>("sidebar");
-	const [rightSidebarWidth, setRightSidebarWidthState] =
-		React.useState(SIDEBAR_RIGHT_WIDTH);
-	const [rightSidebarWidthMobile, setRightSidebarWidthMobileState] =
-		React.useState(SIDEBAR_RIGHT_WIDTH_MOBILE);
-	const [rightSidebarWidthOverride, setRightSidebarWidthOverride] =
-		React.useState<string | null>(null);
-	const [rightSidebarWidthMobileOverride, setRightSidebarWidthMobileOverride] =
-		React.useState<string | null>(null);
+	const [sidebarState, dispatchSidebarState] = React.useReducer(
+		sidebarProviderReducer,
+		defaultOpen,
+		createSidebarProviderState,
+	);
 	const [dockedPanelWidths, dispatchDockedPanelWidths] = React.useReducer(
 		dockedPanelWidthsReducer,
 		INITIAL_DOCKED_PANEL_WIDTHS,
 	);
-	const [hasRightSidebar, setHasRightSidebar] = React.useState(false);
 	const { leftInsetPanelWidth, leftOverlayPanelWidth, rightInsetPanelWidth } =
 		dockedPanelWidths;
-
-	const [_open, _setOpen] = React.useState(defaultOpen);
-	const open = openProp ?? _open;
+	const {
+		hasRightSidebar,
+		open: uncontrolledOpen,
+		openMobile,
+		rightMode,
+		rightOpen,
+		rightOpenMobile,
+		rightSidebarWidth,
+		rightSidebarWidthMobile,
+		rightSidebarWidthMobileOverride,
+		rightSidebarWidthOverride,
+	} = sidebarState;
+	const open = openProp ?? uncontrolledOpen;
 	const setOpen = React.useCallback(
 		(value: boolean | ((value: boolean) => boolean)) => {
 			const openState = typeof value === "function" ? value(open) : value;
 			if (setOpenProp) {
 				setOpenProp(openState);
 			} else {
-				_setOpen(openState);
+				dispatchSidebarState({ type: "setOpen", value: openState });
 			}
 			persistSidebarState(openState);
 		},
 		[setOpenProp, open],
 	);
 
-	const initRef = React.useRef({ defaultOpen, openProp, initialized: false });
+	const initRef = React.useRef({
+		defaultOpen,
+		initialized: false,
+		isControlled: openProp !== undefined,
+	});
 	React.useEffect(() => {
 		if (initRef.current.initialized) {
 			return;
@@ -287,54 +428,98 @@ function SidebarProvider({
 			SIDEBAR_COOKIE_NAME,
 			initRef.current.defaultOpen,
 		);
-		if (!initRef.current.openProp) {
-			_setOpen(savedLeftState);
-		}
-
-		setRightOpen(getCookieBoolean(SIDEBAR_RIGHT_COOKIE_NAME, false));
-
 		const savedRightMode = getCookie(SIDEBAR_RIGHT_MODE_COOKIE_NAME);
-		if (savedRightMode === "floating" || savedRightMode === "sidebar") {
-			setRightModeState(savedRightMode);
-		}
-
-		setRightSidebarWidthState(
-			readStoredSidebarWidth(
-				SIDEBAR_RIGHT_WIDTH_STORAGE_KEY,
-				SIDEBAR_RIGHT_WIDTH,
-			),
-		);
-		setRightSidebarWidthMobileState(
-			readStoredSidebarWidth(
-				SIDEBAR_RIGHT_WIDTH_MOBILE_STORAGE_KEY,
-				SIDEBAR_RIGHT_WIDTH_MOBILE,
-			),
-		);
-	}, []);
+		dispatchSidebarState({
+			type: "hydrateFromStorage",
+			value: {
+				open: initRef.current.isControlled ? uncontrolledOpen : savedLeftState,
+				rightMode:
+					savedRightMode === "floating" || savedRightMode === "sidebar"
+						? savedRightMode
+						: "sidebar",
+				rightOpen: getCookieBoolean(SIDEBAR_RIGHT_COOKIE_NAME, false),
+				rightSidebarWidth: readStoredSidebarWidth(
+					SIDEBAR_RIGHT_WIDTH_STORAGE_KEY,
+					SIDEBAR_RIGHT_WIDTH,
+				),
+				rightSidebarWidthMobile: readStoredSidebarWidth(
+					SIDEBAR_RIGHT_WIDTH_MOBILE_STORAGE_KEY,
+					SIDEBAR_RIGHT_WIDTH_MOBILE,
+				),
+			},
+		});
+	}, [uncontrolledOpen]);
 
 	const setRightOpenWithCookie = React.useCallback(
 		(value: boolean | ((value: boolean) => boolean)) => {
 			const nextOpen = typeof value === "function" ? value(rightOpen) : value;
-			setRightOpen(nextOpen);
+			dispatchSidebarState({ type: "setRightOpen", value: nextOpen });
 			document.cookie = `${SIDEBAR_RIGHT_COOKIE_NAME}=${nextOpen}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
 		},
 		[rightOpen],
 	);
 
 	const setRightMode = React.useCallback((mode: RightSidebarMode) => {
-		setRightModeState(mode);
+		dispatchSidebarState({ type: "setRightMode", value: mode });
 		document.cookie = `${SIDEBAR_RIGHT_MODE_COOKIE_NAME}=${mode}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
 	}, []);
 
 	const setRightSidebarWidth = React.useCallback((width: string) => {
-		setRightSidebarWidthState(width);
+		dispatchSidebarState({ type: "setRightSidebarWidth", value: width });
 		storeSidebarWidth(SIDEBAR_RIGHT_WIDTH_STORAGE_KEY, width);
 	}, []);
 
 	const setRightSidebarWidthMobile = React.useCallback((width: string) => {
-		setRightSidebarWidthMobileState(width);
+		dispatchSidebarState({ type: "setRightSidebarWidthMobile", value: width });
 		storeSidebarWidth(SIDEBAR_RIGHT_WIDTH_MOBILE_STORAGE_KEY, width);
 	}, []);
+
+	const setOpenMobile = React.useCallback(
+		(value: boolean | ((value: boolean) => boolean)) => {
+			const nextOpen = typeof value === "function" ? value(openMobile) : value;
+			dispatchSidebarState({ type: "setOpenMobile", value: nextOpen });
+		},
+		[openMobile],
+	);
+
+	const setRightOpenMobile = React.useCallback(
+		(value: boolean | ((value: boolean) => boolean)) => {
+			const nextOpen =
+				typeof value === "function" ? value(rightOpenMobile) : value;
+			dispatchSidebarState({ type: "setRightOpenMobile", value: nextOpen });
+		},
+		[rightOpenMobile],
+	);
+
+	const setRightSidebarWidthOverride = React.useCallback(
+		(width: string | null) => {
+			dispatchSidebarState({
+				type: "setRightSidebarWidthOverride",
+				value: width,
+			});
+		},
+		[],
+	);
+
+	const setRightSidebarWidthMobileOverride = React.useCallback(
+		(width: string | null) => {
+			dispatchSidebarState({
+				type: "setRightSidebarWidthMobileOverride",
+				value: width,
+			});
+		},
+		[],
+	);
+
+	const setHasRightSidebar = React.useCallback(
+		(nextHasRightSidebar: boolean) => {
+			dispatchSidebarState({
+				type: "setHasRightSidebar",
+				value: nextHasRightSidebar,
+			});
+		},
+		[],
+	);
 
 	const syncDockedPanelWidths = React.useCallback(
 		(widths: DockedPanelWidthsUpdate) => {
@@ -363,13 +548,13 @@ function SidebarProvider({
 
 	const toggleSidebar = React.useCallback(() => {
 		return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
-	}, [isMobile, setOpen]);
+	}, [isMobile, setOpen, setOpenMobile]);
 
 	const toggleRightSidebar = React.useCallback(() => {
 		return isMobile
 			? setRightOpenMobile((open) => !open)
 			: setRightOpenWithCookie((open) => !open);
-	}, [isMobile, setRightOpenWithCookie]);
+	}, [isMobile, setRightOpenMobile, setRightOpenWithCookie]);
 
 	React.useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
@@ -408,7 +593,7 @@ function SidebarProvider({
 			setOpenMobile,
 			toggleSidebar,
 		}),
-		[state, open, setOpen, isMobile, openMobile, toggleSidebar],
+		[state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar],
 	);
 	const rightContextValue = React.useMemo<SidebarRightContextProps>(
 		() => ({
@@ -434,6 +619,7 @@ function SidebarProvider({
 			rightOpen,
 			setRightOpenWithCookie,
 			rightOpenMobile,
+			setRightOpenMobile,
 			toggleRightSidebar,
 			rightMode,
 			setRightMode,
@@ -442,8 +628,11 @@ function SidebarProvider({
 			rightSidebarWidthMobile,
 			setRightSidebarWidthMobile,
 			rightSidebarWidthOverride,
+			setRightSidebarWidthOverride,
 			rightSidebarWidthMobileOverride,
+			setRightSidebarWidthMobileOverride,
 			hasRightSidebar,
+			setHasRightSidebar,
 		],
 	);
 	const dockedPanelsContextValue =

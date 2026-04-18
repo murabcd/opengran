@@ -94,6 +94,71 @@ type ProjectWithNotes = {
 
 type ProjectListSort = "name" | "created" | "updated";
 
+type NavProjectsState = {
+	createError: string | null;
+	createOpen: boolean;
+	filtersOpen: boolean;
+	name: string;
+	sortBy: ProjectListSort;
+};
+
+type NavProjectsAction =
+	| { type: "setCreateError"; value: string | null }
+	| { type: "setCreateOpen"; value: boolean }
+	| { type: "setFiltersOpen"; value: boolean }
+	| { type: "setName"; value: string }
+	| { type: "setSortBy"; value: ProjectListSort };
+
+const initialNavProjectsState: NavProjectsState = {
+	createError: null,
+	createOpen: false,
+	filtersOpen: false,
+	name: "",
+	sortBy: "name",
+};
+
+function navProjectsReducer(
+	state: NavProjectsState,
+	action: NavProjectsAction,
+): NavProjectsState {
+	switch (action.type) {
+		case "setCreateError":
+			return {
+				...state,
+				createError: action.value,
+			};
+		case "setCreateOpen":
+			return action.value
+				? {
+						...state,
+						createOpen: true,
+					}
+				: {
+						...state,
+						createError: null,
+						createOpen: false,
+						name: "",
+					};
+		case "setFiltersOpen":
+			return {
+				...state,
+				filtersOpen: action.value,
+			};
+		case "setName":
+			return {
+				...state,
+				name: action.value,
+			};
+		case "setSortBy":
+			return {
+				...state,
+				sortBy: action.value,
+			};
+		default:
+			return state;
+	}
+}
+
 type ProjectItemState = {
 	confirmOpen: boolean;
 	isOpen: boolean;
@@ -190,11 +255,11 @@ export function NavProjects({
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
-	const [createOpen, setCreateOpen] = React.useState(false);
-	const [filtersOpen, setFiltersOpen] = React.useState(false);
-	const [name, setName] = React.useState("");
-	const [createError, setCreateError] = React.useState<string | null>(null);
-	const [sortBy, setSortBy] = React.useState<ProjectListSort>("name");
+	const [state, dispatch] = React.useReducer(
+		navProjectsReducer,
+		initialNavProjectsState,
+	);
+	const { createError, createOpen, filtersOpen, name, sortBy } = state;
 	const [isCreatingProject, startProjectCreation] = React.useTransition();
 	const createProject = useMutation(api.projects.create);
 	const projectEntries = React.useMemo(
@@ -207,15 +272,6 @@ export function NavProjects({
 	);
 	const isPending = projects === undefined || notes === undefined;
 
-	React.useEffect(() => {
-		if (createOpen) {
-			return;
-		}
-
-		setName("");
-		setCreateError(null);
-	}, [createOpen]);
-
 	const handleCreateProject = React.useCallback(() => {
 		if (!workspaceId) {
 			return;
@@ -223,16 +279,20 @@ export function NavProjects({
 
 		startProjectCreation(async () => {
 			try {
-				setCreateError(null);
+				dispatch({ type: "setCreateError", value: null });
 				await createProject({
 					workspaceId,
 					name,
 				});
-				setCreateOpen(false);
+				dispatch({ type: "setCreateOpen", value: false });
 			} catch (error) {
-				setCreateError(
-					error instanceof Error ? error.message : "Failed to create project.",
-				);
+				dispatch({
+					type: "setCreateError",
+					value:
+						error instanceof Error
+							? error.message
+							: "Failed to create project.",
+				});
 			}
 		});
 	}, [createProject, name, workspaceId]);
@@ -248,15 +308,19 @@ export function NavProjects({
 						<ProjectsFilterMenu
 							open={filtersOpen}
 							sortBy={sortBy}
-							onOpenChange={setFiltersOpen}
-							onSortChange={setSortBy}
+							onOpenChange={(open) =>
+								dispatch({ type: "setFiltersOpen", value: open })
+							}
+							onSortChange={(value) => dispatch({ type: "setSortBy", value })}
 						/>
 						<Tooltip>
 							<TooltipTrigger asChild>
 								<button
 									type="button"
 									aria-label="Add project"
-									onClick={() => setCreateOpen(true)}
+									onClick={() =>
+										dispatch({ type: "setCreateOpen", value: true })
+									}
 								>
 									<Plus />
 								</button>
@@ -299,7 +363,12 @@ export function NavProjects({
 					</SidebarMenu>
 				)}
 			</SidebarCollapsibleGroup>
-			<Dialog open={createOpen} onOpenChange={setCreateOpen}>
+			<Dialog
+				open={createOpen}
+				onOpenChange={(open) =>
+					dispatch({ type: "setCreateOpen", value: open })
+				}
+			>
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>Create a project</DialogTitle>
@@ -310,12 +379,15 @@ export function NavProjects({
 					</DialogHeader>
 					<ProjectComposer
 						name={name}
-						onNameChange={setName}
+						onNameChange={(value) => dispatch({ type: "setName", value })}
 						error={createError}
 						nameInputId="project-dialog-name"
 					/>
 					<div className="flex items-center justify-end gap-2">
-						<Button variant="ghost" onClick={() => setCreateOpen(false)}>
+						<Button
+							variant="ghost"
+							onClick={() => dispatch({ type: "setCreateOpen", value: false })}
+						>
 							Cancel
 						</Button>
 						<Button
