@@ -1,4 +1,4 @@
-<a href="https://opengran-oss.vercel.app">
+<a href="https://opengran.vercel.app">
   <img alt="Open-source Granola-like Notepad Built with Vite, Electron, AI SDK, and Convex." src="./apps/web/public/preview/opengran.png">
   <h1 align="center">OpenGran</h1>
 </a>
