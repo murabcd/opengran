@@ -83,6 +83,7 @@ type AppSource = {
 		| "google-calendar"
 		| "google-drive"
 		| "jira"
+		| "notion"
 		| "posthog"
 		| "yandex-calendar"
 		| "yandex-tracker";
@@ -789,6 +790,8 @@ function ScopePicker({
 									<Icons.yandexTrackerLogo className="size-4 text-blue-500" />
 								) : source.provider === "jira" ? (
 									<Icons.jiraLogo className="size-4" />
+								) : source.provider === "notion" ? (
+									<Icons.notionLogo className="size-4" />
 								) : source.provider === "posthog" ? (
 									<Icons.planeLogo className="size-4" />
 								) : (

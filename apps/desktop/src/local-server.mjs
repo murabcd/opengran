@@ -30,6 +30,7 @@ import {
 	parseTemplateStreamToStructuredNote,
 	validateTemplateStream,
 } from "../../../packages/ai/src/note-template-stream.mjs";
+import { buildNotionTools } from "../../../packages/ai/src/notion-tools.mjs";
 import { buildPostHogTools } from "../../../packages/ai/src/posthog-tools.mjs";
 import {
 	buildGoogleCalendarTools,
@@ -769,6 +770,10 @@ const handleChatRequest = async (request, response) => {
 		selectedAppConnections.find(
 			(connection) => connection.provider === "posthog",
 		) ?? null;
+	const notionConnection =
+		selectedAppConnections.find(
+			(connection) => connection.provider === "notion",
+		) ?? null;
 	const trackerTools = trackerConnection
 		? buildTrackerTools(trackerConnection)
 		: {};
@@ -844,6 +849,9 @@ const handleChatRequest = async (request, response) => {
 	const posthogTools = posthogConnection
 		? await buildPostHogTools(posthogConnection)
 		: {};
+	const notionTools = notionConnection
+		? buildNotionTools(notionConnection)
+		: {};
 	const systemPrompt = `${buildChatSystemPrompt({
 		notesContext,
 		attachedNoteContext,
@@ -874,6 +882,10 @@ const handleChatRequest = async (request, response) => {
 		posthogConnection
 			? `\n\nThe selected app source for this chat is PostHog (${posthogConnection.projectName}). Treat it as the preferred source for product analytics, saved insights, dashboards, feature flags, experiments, errors, event schema, surveys, and queryable product usage context. Only read-only PostHog tools are available in this chat. If the user's request could plausibly be answered from PostHog, use the PostHog tools before saying the context is unavailable.`
 			: ""
+	}${
+		notionConnection
+			? `\n\nThe selected app source for this chat is Notion (${notionConnection.displayName}). Treat it as the preferred source for workspace pages, specs, meeting notes, project docs, and databases. If the user's request could plausibly be answered from Notion, use the Notion tools before saying the context is unavailable. When the user provides a Notion URL or an exact Notion page or database reference, fetch it directly.`
+			: ""
 	}`;
 	const enabledTools = {
 		...(webSearchEnabled
@@ -893,6 +905,7 @@ const handleChatRequest = async (request, response) => {
 		...jiraTools,
 		...googleDriveTools,
 		...posthogTools,
+		...notionTools,
 	};
 	const agent = new ToolLoopAgent({
 		model: openai(selectedModel.model),

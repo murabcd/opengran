@@ -215,6 +215,10 @@ type PostHogConnectionFormState = {
 	token: string;
 };
 
+type NotionConnectionFormState = {
+	token: string;
+};
+
 type YandexCalendarConnectionFormState = {
 	email: string;
 	password: string;
@@ -294,12 +298,15 @@ type ConnectionsSettingsState = {
 	isYandexTrackerDialogOpen: boolean;
 	isJiraDialogOpen: boolean;
 	isPostHogDialogOpen: boolean;
+	isNotionDialogOpen: boolean;
 	isSavingYandexTrackerConnection: boolean;
 	isSavingJiraConnection: boolean;
 	isSavingPostHogConnection: boolean;
+	isSavingNotionConnection: boolean;
 	yandexTrackerFormState: YandexTrackerConnectionFormState;
 	jiraFormState: JiraConnectionFormState;
 	posthogFormState: PostHogConnectionFormState;
+	notionFormState: NotionConnectionFormState;
 };
 
 type ConnectionsSettingsAction =
@@ -316,6 +323,10 @@ type ConnectionsSettingsAction =
 			value: boolean;
 	  }
 	| {
+			type: "setIsNotionDialogOpen";
+			value: boolean;
+	  }
+	| {
 			type: "setIsSavingYandexTrackerConnection";
 			value: boolean;
 	  }
@@ -325,6 +336,10 @@ type ConnectionsSettingsAction =
 	  }
 	| {
 			type: "setIsSavingPostHogConnection";
+			value: boolean;
+	  }
+	| {
+			type: "setIsSavingNotionConnection";
 			value: boolean;
 	  }
 	| {
@@ -350,6 +365,14 @@ type ConnectionsSettingsAction =
 	| {
 			type: "patchPostHogFormState";
 			value: Partial<PostHogConnectionFormState>;
+	  }
+	| {
+			type: "setNotionFormState";
+			value: NotionConnectionFormState;
+	  }
+	| {
+			type: "patchNotionFormState";
+			value: Partial<NotionConnectionFormState>;
 	  };
 
 const getWorkspaceFormState = (
@@ -408,6 +431,10 @@ const initialPostHogConnectionFormState: PostHogConnectionFormState = {
 	token: "",
 };
 
+const initialNotionConnectionFormState: NotionConnectionFormState = {
+	token: "",
+};
+
 const getInitialPreferencesSettingsState = (): PreferencesSettingsState => ({
 	preferences: null,
 	isLoadingPreferences:
@@ -424,12 +451,15 @@ const initialConnectionsSettingsState: ConnectionsSettingsState = {
 	isYandexTrackerDialogOpen: false,
 	isJiraDialogOpen: false,
 	isPostHogDialogOpen: false,
+	isNotionDialogOpen: false,
 	isSavingYandexTrackerConnection: false,
 	isSavingJiraConnection: false,
 	isSavingPostHogConnection: false,
+	isSavingNotionConnection: false,
 	yandexTrackerFormState: initialYandexTrackerConnectionFormState,
 	jiraFormState: initialJiraConnectionFormState,
 	posthogFormState: initialPostHogConnectionFormState,
+	notionFormState: initialNotionConnectionFormState,
 };
 
 const preferencesSettingsReducer = (
@@ -485,12 +515,16 @@ const connectionsSettingsReducer = (
 			return { ...state, isJiraDialogOpen: action.value };
 		case "setIsPostHogDialogOpen":
 			return { ...state, isPostHogDialogOpen: action.value };
+		case "setIsNotionDialogOpen":
+			return { ...state, isNotionDialogOpen: action.value };
 		case "setIsSavingYandexTrackerConnection":
 			return { ...state, isSavingYandexTrackerConnection: action.value };
 		case "setIsSavingJiraConnection":
 			return { ...state, isSavingJiraConnection: action.value };
 		case "setIsSavingPostHogConnection":
 			return { ...state, isSavingPostHogConnection: action.value };
+		case "setIsSavingNotionConnection":
+			return { ...state, isSavingNotionConnection: action.value };
 		case "setYandexTrackerFormState":
 			return { ...state, yandexTrackerFormState: action.value };
 		case "patchYandexTrackerFormState":
@@ -518,6 +552,16 @@ const connectionsSettingsReducer = (
 				...state,
 				posthogFormState: {
 					...state.posthogFormState,
+					...action.value,
+				},
+			};
+		case "setNotionFormState":
+			return { ...state, notionFormState: action.value };
+		case "patchNotionFormState":
+			return {
+				...state,
+				notionFormState: {
+					...state.notionFormState,
 					...action.value,
 				},
 			};
@@ -1568,21 +1612,26 @@ function ConnectionsSettings() {
 		activeWorkspaceId,
 		handleConnectYandexCalendar,
 		handleConnectJira,
+		handleConnectNotion,
 		handleConnectPostHog,
 		handleCopyJiraWebhookUrl,
 		handleConnectYandexTracker,
 		handleJiraDialogOpenChange,
+		handleNotionDialogOpenChange,
 		handlePostHogDialogOpenChange,
 		handleYandexCalendarDialogOpenChange,
 		handleYandexTrackerDialogOpenChange,
 		isJiraDialogOpen,
 		isJiraFormValid,
+		isNotionDialogOpen,
+		isNotionFormValid,
 		isPostHogDialogOpen,
 		isPostHogFormValid,
 		isSavingYandexCalendarConnection,
 		isYandexCalendarDialogOpen,
 		isYandexCalendarFormValid,
 		isSavingJiraConnection,
+		isSavingNotionConnection,
 		isSavingPostHogConnection,
 		isSavingYandexTrackerConnection,
 		isYandexTrackerDialogOpen,
@@ -1590,10 +1639,12 @@ function ConnectionsSettings() {
 		jiraConnection,
 		jiraFormState,
 		jiraWebhookUrl,
+		notionFormState,
 		posthogFormState,
 		setJiraBaseUrl,
 		setJiraEmail,
 		setJiraToken,
+		setNotionToken,
 		setPostHogBaseUrl,
 		setPostHogProjectId,
 		setPostHogToken,
@@ -1674,6 +1725,17 @@ function ConnectionsSettings() {
 				isFormValid={isPostHogFormValid}
 				isSaving={isSavingPostHogConnection}
 			/>
+			<NotionDialog
+				open={isNotionDialogOpen}
+				onOpenChange={handleNotionDialogOpenChange}
+				formState={notionFormState}
+				onTokenChange={setNotionToken}
+				onConnect={() => {
+					void handleConnectNotion();
+				}}
+				isFormValid={isNotionFormValid}
+				isSaving={isSavingNotionConnection}
+			/>
 		</div>
 	);
 }
@@ -1700,11 +1762,16 @@ function useConnectionsSettingsController() {
 		api.appConnections.getPostHog,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
+	const notionConnection = useQuery(
+		api.appConnections.getNotion,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const connectYandexTracker = useAction(
 		api.appConnectionActions.connectYandexTracker,
 	);
 	const connectJira = useAction(api.appConnectionActions.connectJira);
 	const connectPostHog = useAction(api.appConnectionActions.connectPostHog);
+	const connectNotion = useAction(api.appConnectionActions.connectNotion);
 	const prepareJiraMentionSync = useAction(
 		api.appConnectionActions.prepareJiraMentionSync,
 	);
@@ -1724,12 +1791,15 @@ function useConnectionsSettingsController() {
 		isYandexTrackerDialogOpen,
 		isJiraDialogOpen,
 		isPostHogDialogOpen,
+		isNotionDialogOpen,
 		isSavingYandexTrackerConnection,
 		isSavingJiraConnection,
 		isSavingPostHogConnection,
+		isSavingNotionConnection,
 		yandexTrackerFormState,
 		jiraFormState,
 		posthogFormState,
+		notionFormState,
 	} = state;
 	const googleAccount = getGoogleLinkedAccount(accounts);
 	const hasGoogleCalendarToolScope = hasGoogleScope(
@@ -1967,6 +2037,52 @@ function useConnectionsSettingsController() {
 		posthogFormState.projectId.trim().length > 0 &&
 		posthogFormState.token.trim().length > 0;
 
+	const handleNotionDialogOpenChange = (open: boolean) => {
+		dispatch({ type: "setIsNotionDialogOpen", value: open });
+
+		if (open) {
+			dispatch({
+				type: "setNotionFormState",
+				value: {
+					token: "",
+				},
+			});
+		} else {
+			dispatch({
+				type: "setNotionFormState",
+				value: initialNotionConnectionFormState,
+			});
+		}
+	};
+
+	const handleConnectNotion = async () => {
+		if (!activeWorkspaceId || !notionFormState.token.trim()) {
+			return;
+		}
+
+		dispatch({ type: "setIsSavingNotionConnection", value: true });
+
+		try {
+			await connectNotion({
+				workspaceId: activeWorkspaceId,
+				token: notionFormState.token.trim(),
+			});
+			toast.success("Notion connected");
+			handleNotionDialogOpenChange(false);
+		} catch (error) {
+			console.error("Failed to connect Notion", error);
+			toast.error(
+				error instanceof Error
+					? withoutTrailingPeriod(error.message)
+					: "Failed to connect Notion",
+			);
+		} finally {
+			dispatch({ type: "setIsSavingNotionConnection", value: false });
+		}
+	};
+
+	const isNotionFormValid = notionFormState.token.trim().length > 0;
+
 	const connectGoogleTool = async ({
 		scopes,
 		onStateChange,
@@ -2122,6 +2238,13 @@ function useConnectionsSettingsController() {
 			buttonVariant: "outline",
 			onButtonClick: () => handlePostHogDialogOpenChange(true),
 		},
+		{
+			icon: <Icons.notionLogo className="size-5 shrink-0" />,
+			name: "Notion",
+			buttonLabel: notionConnection ? "Manage" : "Connect",
+			buttonVariant: "outline",
+			onButtonClick: () => handleNotionDialogOpenChange(true),
+		},
 	];
 
 	const handleCopyJiraWebhookUrl = async () => {
@@ -2161,19 +2284,24 @@ function useConnectionsSettingsController() {
 		activeWorkspaceId,
 		...yandexCalendarDialog,
 		handleConnectJira,
+		handleConnectNotion,
 		handleConnectPostHog,
 		handleCopyJiraWebhookUrl,
 		handleConnectYandexTracker,
 		handleJiraDialogOpenChange,
+		handleNotionDialogOpenChange,
 		handleOpenJiraWebhookSettings,
 		handlePostHogDialogOpenChange,
 		handleYandexTrackerDialogOpenChange,
 		isJiraDialogOpen,
 		isJiraFormValid,
+		isNotionDialogOpen,
+		isNotionFormValid,
 		isPostHogDialogOpen,
 		isPostHogFormValid,
 		isPreparingJiraMentionSync,
 		isSavingJiraConnection,
+		isSavingNotionConnection,
 		isSavingPostHogConnection,
 		isSavingYandexTrackerConnection,
 		isYandexTrackerDialogOpen,
@@ -2181,6 +2309,7 @@ function useConnectionsSettingsController() {
 		jiraConnection,
 		jiraFormState,
 		jiraWebhookUrl,
+		notionFormState,
 		posthogFormState,
 		setJiraBaseUrl: (baseUrl: string) =>
 			dispatch({
@@ -2195,6 +2324,11 @@ function useConnectionsSettingsController() {
 		setJiraToken: (token: string) =>
 			dispatch({
 				type: "patchJiraFormState",
+				value: { token },
+			}),
+		setNotionToken: (token: string) =>
+			dispatch({
+				type: "patchNotionFormState",
 				value: { token },
 			}),
 		setPostHogBaseUrl: (baseUrl: string) =>
@@ -2641,6 +2775,76 @@ function PostHogDialog({
 							value={formState.token}
 							onChange={(event) => onTokenChange(event.target.value)}
 							placeholder="phx_..."
+						/>
+					</Field>
+				</FieldGroup>
+				<div className="flex justify-end gap-2 pt-2">
+					<Button
+						type="button"
+						variant="ghost"
+						onClick={() => onOpenChange(false)}
+						disabled={isSaving}
+					>
+						Cancel
+					</Button>
+					<Button
+						type="button"
+						onClick={onConnect}
+						disabled={!isFormValid || isSaving}
+					>
+						{isSaving ? (
+							<>
+								<LoaderCircle className="animate-spin" />
+								Connecting
+							</>
+						) : (
+							"Connect"
+						)}
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+function NotionDialog({
+	open,
+	onOpenChange,
+	formState,
+	onTokenChange,
+	onConnect,
+	isFormValid,
+	isSaving,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	formState: NotionConnectionFormState;
+	onTokenChange: (token: string) => void;
+	onConnect: () => void;
+	isFormValid: boolean;
+	isSaving: boolean;
+}) {
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="sm:max-w-md">
+				<DialogHeader>
+					<DialogTitle>Connect Notion</DialogTitle>
+					<DialogDescription>
+						Enter the credentials OpenGran should use for your Notion
+						connection.
+					</DialogDescription>
+				</DialogHeader>
+				<FieldGroup className="gap-4">
+					<Field>
+						<Label htmlFor="notion-token" className={SETTINGS_LABEL_CLASSNAME}>
+							Integration secret
+						</Label>
+						<Input
+							id="notion-token"
+							type="password"
+							value={formState.token}
+							onChange={(event) => onTokenChange(event.target.value)}
+							placeholder="ntn_..."
 						/>
 					</Field>
 				</FieldGroup>

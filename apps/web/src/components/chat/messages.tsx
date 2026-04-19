@@ -68,6 +68,8 @@ const collectToolSources = (message: UIMessage): ToolSource[] => {
 			toolName !== "yandex_tracker_get_issue" &&
 			toolName !== "jira_search" &&
 			toolName !== "jira_get_issue" &&
+			toolName !== "notion_search" &&
+			toolName !== "notion_fetch" &&
 			!toolName.startsWith("posthog_")
 		) {
 			return;
@@ -378,11 +380,11 @@ export function ChatMessages({
 			})}
 
 			{showLoadingIndicator ? (
-				<div className="mx-auto w-full px-4">
-					<div className="flex w-full gap-4">
-						<div className="flex w-full flex-col space-y-4">
-							<div className="flex w-full flex-row items-start gap-2 pb-4">
-								<div className="flex flex-col gap-4 text-sm leading-6 text-muted-foreground">
+				<div className="group/message flex w-full justify-start">
+					<div className={cn("flex flex-col", CHAT_MESSAGE_MAX_WIDTH_CLASS)}>
+						<div className="flex flex-row items-start gap-2 pb-4">
+							<div className={ASSISTANT_CHAT_CONTENT_CLASS}>
+								<div className="text-sm text-muted-foreground">
 									<ShimmerText>Thinking</ShimmerText>
 								</div>
 							</div>

@@ -26,6 +26,7 @@ const appConnectionProviderValidator = v.union(
 	v.literal("yandex-calendar"),
 	v.literal("jira"),
 	v.literal("posthog"),
+	v.literal("notion"),
 );
 
 const appConnectionStatusValidator = v.union(

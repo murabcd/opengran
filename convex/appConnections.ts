@@ -8,6 +8,7 @@ const yandexTrackerProviderValidator = v.literal("yandex-tracker");
 const yandexCalendarProviderValidator = v.literal("yandex-calendar");
 const jiraProviderValidator = v.literal("jira");
 const posthogProviderValidator = v.literal("posthog");
+const notionProviderValidator = v.literal("notion");
 const appConnectionStatusValidator = v.union(
 	v.literal("connected"),
 	v.literal("disconnected"),
@@ -59,6 +60,13 @@ const posthogConnectionSettingsValidator = v.object({
 	projectName: v.string(),
 });
 
+const notionConnectionSettingsValidator = v.object({
+	sourceId: v.string(),
+	provider: notionProviderValidator,
+	status: appConnectionStatusValidator,
+	displayName: v.string(),
+});
+
 const yandexCalendarCredentialsValidator = v.union(
 	v.object({
 		provider: yandexCalendarProviderValidator,
@@ -80,6 +88,7 @@ const appConnectionSourceValidator = v.object({
 		yandexTrackerProviderValidator,
 		jiraProviderValidator,
 		posthogProviderValidator,
+		notionProviderValidator,
 	),
 });
 
@@ -120,11 +129,19 @@ const posthogChatToolConnectionValidator = v.object({
 	token: v.string(),
 });
 
+const notionChatToolConnectionValidator = v.object({
+	sourceId: v.string(),
+	provider: notionProviderValidator,
+	displayName: v.string(),
+	token: v.string(),
+});
+
 const chatToolConnectionValidator = v.union(
 	yandexCalendarChatToolConnectionValidator,
 	yandexTrackerChatToolConnectionValidator,
 	jiraChatToolConnectionValidator,
 	posthogChatToolConnectionValidator,
+	notionChatToolConnectionValidator,
 );
 
 const APP_SOURCE_PREFIX = "app:";
@@ -185,6 +202,13 @@ type PostHogConnectionSettings = {
 	projectName: string;
 };
 
+type NotionConnectionSettings = {
+	sourceId: string;
+	provider: "notion";
+	status: "connected" | "disconnected";
+	displayName: string;
+};
+
 type ConnectionActivitySnapshot = {
 	lastWebhookReceivedAt?: number;
 	lastMentionSyncAt?: number;
@@ -194,7 +218,12 @@ type AppConnectionSource = {
 	id: string;
 	title: string;
 	preview: string;
-	provider: "jira" | "posthog" | "yandex-calendar" | "yandex-tracker";
+	provider:
+		| "jira"
+		| "notion"
+		| "posthog"
+		| "yandex-calendar"
+		| "yandex-tracker";
 };
 
 type ChatToolConnection =
@@ -229,6 +258,12 @@ type ChatToolConnection =
 			baseUrl: string;
 			projectId: string;
 			projectName: string;
+			token: string;
+	  }
+	| {
+			sourceId: string;
+			provider: "notion";
+			displayName: string;
 			token: string;
 	  };
 
@@ -271,6 +306,8 @@ const getProviderPreview = (connection: Doc<"appConnections">) =>
 			? getJiraPreview(connection)
 			: connection.provider === "posthog"
 				? getPostHogPreview(connection)
+				: connection.provider === "notion"
+					? (connection.email ?? "Notion workspace")
 				: `${connection.orgType === "x-org-id" ? "Yandex 360" : "Yandex Cloud"} • Org ${connection.orgId}`;
 
 const getJiraPreview = (connection: Doc<"appConnections">) => {
@@ -312,7 +349,12 @@ const getOwnedConnection = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
 	workspaceId: Id<"workspaces">,
-	provider: "jira" | "posthog" | "yandex-calendar" | "yandex-tracker",
+	provider:
+		| "jira"
+		| "notion"
+		| "posthog"
+		| "yandex-calendar"
+		| "yandex-tracker",
 ) =>
 	await ctx.db
 		.query("appConnections")
@@ -360,6 +402,13 @@ const getOwnedPostHogConnection = async (
 	workspaceId: Id<"workspaces">,
 ) =>
 	await getOwnedConnection(ctx, ownerTokenIdentifier, workspaceId, "posthog");
+
+const getOwnedNotionConnection = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+) =>
+	await getOwnedConnection(ctx, ownerTokenIdentifier, workspaceId, "notion");
 
 const getConnectionActivity = async (
 	ctx: QueryCtx | MutationCtx,
@@ -504,6 +553,15 @@ const toChatToolConnection = (
 		};
 	}
 
+	if (connection.provider === "notion" && connection.token) {
+		return {
+			sourceId: toAppSourceId(connection._id),
+			provider: "notion",
+			displayName: connection.displayName,
+			token: connection.token,
+		};
+	}
+
 	return null;
 };
 
@@ -553,7 +611,8 @@ export const listSources = query({
 				connection.provider !== "yandex-calendar" &&
 				connection.provider !== "yandex-tracker" &&
 				connection.provider !== "jira" &&
-				connection.provider !== "posthog"
+				connection.provider !== "posthog" &&
+				connection.provider !== "notion"
 			) {
 				continue;
 			}
@@ -720,6 +779,37 @@ export const getPostHog = query({
 			baseUrl: connection.baseUrl,
 			projectId: connection.projectId,
 			projectName: connection.projectName,
+		};
+	},
+});
+
+export const getNotion = query({
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
+	returns: v.union(notionConnectionSettingsValidator, v.null()),
+	handler: async (ctx, args) => {
+		const identity = await requireIdentity(ctx);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
+		const connection = await getOwnedNotionConnection(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
+
+		if (!connection) {
+			return null;
+		}
+
+		return {
+			sourceId: toAppSourceId(connection._id),
+			provider: "notion" as const,
+			status: connection.status,
+			displayName: connection.displayName,
 		};
 	},
 });
@@ -1347,6 +1437,69 @@ export const upsertPostHog = internalMutation({
 			baseUrl,
 			projectId,
 			projectName,
+		};
+	},
+});
+
+export const upsertNotion = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		displayName: v.string(),
+		token: v.string(),
+		email: v.optional(v.string()),
+	},
+	returns: notionConnectionSettingsValidator,
+	handler: async (ctx, args): Promise<NotionConnectionSettings> => {
+		await requireOwnedWorkspace(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+		const now = Date.now();
+		const displayName = args.displayName.trim() || "Notion";
+		const token = args.token.trim();
+		const email = args.email?.trim().toLowerCase() || undefined;
+		const existingConnection = await getOwnedNotionConnection(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+
+		if (existingConnection) {
+			await ctx.db.patch(existingConnection._id, {
+				status: "connected",
+				displayName,
+				token,
+				...(email ? { email } : {}),
+				updatedAt: now,
+			});
+
+			return {
+				sourceId: toAppSourceId(existingConnection._id),
+				provider: "notion" as const,
+				status: "connected" as const,
+				displayName,
+			};
+		}
+
+		const id = await ctx.db.insert("appConnections", {
+			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
+			provider: "notion",
+			status: "connected",
+			displayName,
+			token,
+			...(email ? { email } : {}),
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		return {
+			sourceId: toAppSourceId(id),
+			provider: "notion" as const,
+			status: "connected" as const,
+			displayName,
 		};
 	},
 });

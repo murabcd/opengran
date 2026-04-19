@@ -56,6 +56,13 @@ const posthogConnectionResultValidator = v.object({
 	projectName: v.string(),
 });
 
+const notionConnectionResultValidator = v.object({
+	sourceId: v.string(),
+	provider: v.literal("notion"),
+	status: v.union(v.literal("connected"), v.literal("disconnected")),
+	displayName: v.string(),
+});
+
 type YandexTrackerConnectionResult = {
 	sourceId: string;
 	provider: "yandex-tracker";
@@ -98,6 +105,13 @@ type PostHogConnectionResult = {
 	projectName: string;
 };
 
+type NotionConnectionResult = {
+	sourceId: string;
+	provider: "notion";
+	status: "connected" | "disconnected";
+	displayName: string;
+};
+
 type JiraCurrentUserResponse = {
 	accountId?: unknown;
 };
@@ -109,6 +123,27 @@ type PostHogProjectResponse = {
 
 const TRACKER_API_BASE_URL =
 	process.env.TRACKER_API_BASE_URL ?? "https://api.tracker.yandex.net";
+const NOTION_API_BASE_URL = "https://api.notion.com/v1";
+const NOTION_API_VERSION = "2026-03-11";
+
+type NotionSelfResponse = {
+	name?: unknown;
+	type?: unknown;
+	person?: {
+		email?: unknown;
+	} | null;
+	bot?: {
+		workspace_name?: unknown;
+		owner?: {
+			type?: unknown;
+			user?: {
+				person?: {
+					email?: unknown;
+				} | null;
+			} | null;
+		} | null;
+	} | null;
+};
 
 const normalizeJiraBaseUrl = (value: string) => {
 	const trimmedValue = value.trim();
@@ -159,6 +194,32 @@ const getTrackerHeaderName = (
 	orgType: "x-org-id" | "x-cloud-org-id",
 ): "X-Org-Id" | "X-Cloud-Org-Id" =>
 	orgType === "x-cloud-org-id" ? "X-Cloud-Org-Id" : "X-Org-Id";
+
+const getNotionHeaders = (token: string, hasBody = false) => ({
+	Authorization: `Bearer ${token}`,
+	Accept: "application/json",
+	"Notion-Version": NOTION_API_VERSION,
+	...(hasBody ? { "Content-Type": "application/json" } : {}),
+});
+
+const readNotionEmail = (self: NotionSelfResponse | null) => {
+	const personEmail =
+		self?.person && typeof self.person.email === "string"
+			? self.person.email.trim().toLowerCase()
+			: "";
+
+	if (personEmail) {
+		return personEmail;
+	}
+
+	const ownerEmail =
+		self?.bot?.owner?.user?.person &&
+		typeof self.bot.owner.user.person.email === "string"
+			? self.bot.owner.user.person.email.trim().toLowerCase()
+			: "";
+
+	return ownerEmail || undefined;
+};
 
 const requireIdentity = async (ctx: ActionCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
@@ -382,6 +443,79 @@ export const connectPostHog = action({
 			projectId,
 			projectName,
 			token,
+		});
+	},
+});
+
+export const connectNotion = action({
+	args: {
+		workspaceId: v.id("workspaces"),
+		token: v.string(),
+	},
+	returns: notionConnectionResultValidator,
+	handler: async (ctx, args): Promise<NotionConnectionResult> => {
+		const identity = await requireIdentity(ctx);
+		const token = args.token.trim();
+
+		if (!token) {
+			throw new ConvexError({
+				code: "INVALID_CONNECTION_DETAILS",
+				message: "Notion integration token is required.",
+			});
+		}
+
+		const [selfResponse, searchResponse] = await Promise.all([
+			fetch(`${NOTION_API_BASE_URL}/users/me`, {
+				headers: getNotionHeaders(token),
+			}),
+			fetch(`${NOTION_API_BASE_URL}/search`, {
+				method: "POST",
+				headers: getNotionHeaders(token, true),
+				body: JSON.stringify({
+					query: "",
+					page_size: 1,
+				}),
+			}),
+		]);
+
+		if (!selfResponse.ok) {
+			const responseText = await selfResponse.text().catch(() => "");
+			throw new ConvexError({
+				code: "NOTION_CONNECTION_FAILED",
+				message: responseText.trim()
+					? `Failed to connect Notion: ${responseText.trim()}`
+					: `Failed to connect Notion (${selfResponse.status}).`,
+			});
+		}
+
+		if (!searchResponse.ok) {
+			const responseText = await searchResponse.text().catch(() => "");
+			throw new ConvexError({
+				code: "NOTION_CONNECTION_FAILED",
+				message: responseText.trim()
+					? `Failed to access Notion content: ${responseText.trim()}`
+					: `Failed to access Notion content (${searchResponse.status}).`,
+			});
+		}
+
+		const self = (await selfResponse
+			.json()
+			.catch(() => null)) as NotionSelfResponse | null;
+		const workspaceName =
+			self?.bot && typeof self.bot.workspace_name === "string"
+				? self.bot.workspace_name.trim()
+				: "";
+		const integrationName =
+			typeof self?.name === "string" ? self.name.trim() : "";
+		const displayName = workspaceName || integrationName || "Notion";
+		const email = readNotionEmail(self);
+
+		return await ctx.runMutation(internal.appConnections.upsertNotion, {
+			ownerTokenIdentifier: identity.tokenIdentifier,
+			workspaceId: args.workspaceId,
+			displayName,
+			token,
+			...(email ? { email } : {}),
 		});
 	},
 });
