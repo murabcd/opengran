@@ -85,15 +85,26 @@ import {
 	Link2,
 	LoaderCircle,
 	Paintbrush,
+	Plus,
 	SlidersHorizontal,
 	UserRound,
 } from "lucide-react";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 import { writeTextToClipboard } from "@/components/note/share-note";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
+import { useLinkedAccounts } from "@/hooks/use-linked-accounts";
 import { authClient } from "@/lib/auth-client";
 import { getAvatarSrc } from "@/lib/avatar";
+import {
+	GOOGLE_CALENDAR_SCOPE,
+	GOOGLE_CALENDAR_SCOPES,
+	GOOGLE_DRIVE_SCOPE,
+	GOOGLE_DRIVE_SCOPES,
+	getGoogleLinkedAccount,
+	hasGoogleScope,
+	type LinkedAccount,
+} from "@/lib/google-integrations";
 import { loadRuntimeConfig } from "@/lib/runtime-config";
 import {
 	getTranscriptionLanguageSelectValue,
@@ -147,25 +158,11 @@ const getSettingsNav = (isDesktopApp: boolean) =>
 		? settingsNav
 		: settingsNav.filter((item) => item.name !== "Preferences");
 
-const GOOGLE_CALENDAR_SCOPES = [
-	"openid",
-	"email",
-	"profile",
-	"https://www.googleapis.com/auth/calendar.readonly",
-] as const;
-
 const SETTINGS_LABEL_CLASSNAME = "text-xs text-muted-foreground";
 const MAX_PROFILE_AVATAR_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 const withoutTrailingPeriod = (message: string) =>
 	message.trimEnd().replace(/\.+$/u, "");
-
-type LinkedAccount = {
-	id: string;
-	providerId: string;
-	accountId: string;
-	scopes: string[];
-};
 
 type WorkspaceFormState = {
 	name: string;
@@ -253,9 +250,6 @@ type PreferencesSettingsAction =
 type CalendarSettingsState = {
 	isConnectingGoogle: boolean;
 	isSavingCalendarPreferences: boolean;
-	isYandexCalendarDialogOpen: boolean;
-	isSavingYandexCalendarConnection: boolean;
-	yandexCalendarFormState: YandexCalendarConnectionFormState;
 };
 
 type CalendarSettingsAction =
@@ -266,22 +260,6 @@ type CalendarSettingsAction =
 	| {
 			type: "setIsSavingCalendarPreferences";
 			value: boolean;
-	  }
-	| {
-			type: "setIsYandexCalendarDialogOpen";
-			value: boolean;
-	  }
-	| {
-			type: "setIsSavingYandexCalendarConnection";
-			value: boolean;
-	  }
-	| {
-			type: "setYandexCalendarFormState";
-			value: YandexCalendarConnectionFormState;
-	  }
-	| {
-			type: "patchYandexCalendarFormState";
-			value: Partial<YandexCalendarConnectionFormState>;
 	  };
 
 type CalendarVisibilityPreferences = {
@@ -306,6 +284,9 @@ type ToolConnectionRowProps = {
 	icon: React.ReactNode;
 	name: string;
 	buttonLabel: string;
+	buttonVariant?: "default" | "outline";
+	buttonDisabled?: boolean;
+	buttonIcon?: React.ReactNode;
 	onButtonClick: () => void;
 };
 
@@ -437,9 +418,6 @@ const getInitialPreferencesSettingsState = (): PreferencesSettingsState => ({
 const initialCalendarSettingsState: CalendarSettingsState = {
 	isConnectingGoogle: false,
 	isSavingCalendarPreferences: false,
-	isYandexCalendarDialogOpen: false,
-	isSavingYandexCalendarConnection: false,
-	yandexCalendarFormState: initialYandexCalendarConnectionFormState,
 };
 
 const initialConnectionsSettingsState: ConnectionsSettingsState = {
@@ -493,20 +471,6 @@ const calendarSettingsReducer = (
 			return { ...state, isConnectingGoogle: action.value };
 		case "setIsSavingCalendarPreferences":
 			return { ...state, isSavingCalendarPreferences: action.value };
-		case "setIsYandexCalendarDialogOpen":
-			return { ...state, isYandexCalendarDialogOpen: action.value };
-		case "setIsSavingYandexCalendarConnection":
-			return { ...state, isSavingYandexCalendarConnection: action.value };
-		case "setYandexCalendarFormState":
-			return { ...state, yandexCalendarFormState: action.value };
-		case "patchYandexCalendarFormState":
-			return {
-				...state,
-				yandexCalendarFormState: {
-					...state.yandexCalendarFormState,
-					...action.value,
-				},
-			};
 	}
 };
 
@@ -558,54 +522,6 @@ const connectionsSettingsReducer = (
 				},
 			};
 	}
-};
-
-const useLinkedAccounts = (
-	sessionUser: { email?: string | null } | null | undefined,
-) => {
-	const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
-	const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
-
-	const loadAccounts = useCallback(async () => {
-		if (!sessionUser) {
-			setAccounts([]);
-			return;
-		}
-
-		setIsLoadingAccounts(true);
-
-		try {
-			const result = await authClient.$fetch("/list-accounts", {
-				method: "GET",
-				throw: true,
-			});
-			setAccounts(Array.isArray(result) ? (result as LinkedAccount[]) : []);
-		} catch (error) {
-			console.error("Failed to load linked accounts", error);
-			toast.error("Failed to load linked calendar accounts");
-		} finally {
-			setIsLoadingAccounts(false);
-		}
-	}, [sessionUser]);
-
-	useEffect(() => {
-		void loadAccounts();
-	}, [loadAccounts]);
-
-	useEffect(() => {
-		const handleFocus = () => {
-			void loadAccounts();
-		};
-
-		window.addEventListener("focus", handleFocus);
-		return () => window.removeEventListener("focus", handleFocus);
-	}, [loadAccounts]);
-
-	return {
-		accounts,
-		isLoadingAccounts,
-		loadAccounts,
-	};
 };
 
 export function SettingsDialog({
@@ -1187,9 +1103,6 @@ function useCalendarSettingsController() {
 		api.appConnections.getYandexCalendar,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
-	const connectYandexCalendar = useAction(
-		api.appConnectionActions.connectYandexCalendar,
-	);
 	const [state, dispatch] = useReducer(
 		calendarSettingsReducer,
 		initialCalendarSettingsState,
@@ -1197,25 +1110,14 @@ function useCalendarSettingsController() {
 	const { accounts, isLoadingAccounts, loadAccounts } = useLinkedAccounts(
 		session?.user,
 	);
-	const {
-		isConnectingGoogle,
-		isSavingCalendarPreferences,
-		isSavingYandexCalendarConnection,
-		isYandexCalendarDialogOpen,
-		yandexCalendarFormState,
-	} = state;
+	const { isConnectingGoogle, isSavingCalendarPreferences } = state;
 
 	const calendarVisibility: CalendarVisibilityPreferences = {
 		showGoogleCalendar: calendarPreferences?.showGoogleCalendar ?? false,
 		showYandexCalendar: calendarPreferences?.showYandexCalendar ?? false,
 	};
-	const googleAccount = accounts.find(
-		(account) => account.providerId === "google",
-	);
-	const hasCalendarScope =
-		googleAccount?.scopes.includes(
-			"https://www.googleapis.com/auth/calendar.readonly",
-		) ?? false;
+	const googleAccount = getGoogleLinkedAccount(accounts);
+	const hasCalendarScope = hasGoogleScope(googleAccount, GOOGLE_CALENDAR_SCOPE);
 	const isGoogleCalendarConnected = Boolean(googleAccount && hasCalendarScope);
 	const isYandexCalendarConnected = Boolean(yandexCalendarConnection);
 	const googleCalendarAction = getGoogleCalendarAction({
@@ -1223,26 +1125,6 @@ function useCalendarSettingsController() {
 		hasCalendarScope,
 		isGoogleCalendarEnabledForWorkspace: calendarVisibility.showGoogleCalendar,
 	});
-
-	const handleYandexCalendarDialogOpenChange = (open: boolean) => {
-		dispatch({ type: "setIsYandexCalendarDialogOpen", value: open });
-
-		if (open) {
-			dispatch({
-				type: "setYandexCalendarFormState",
-				value: {
-					email: yandexCalendarConnection?.email ?? session?.user?.email ?? "",
-					password: "",
-				},
-			});
-			return;
-		}
-
-		dispatch({
-			type: "setYandexCalendarFormState",
-			value: initialYandexCalendarConnectionFormState,
-		});
-	};
 
 	const enableCalendarForWorkspace = async (provider: "google" | "yandex") => {
 		if (!activeWorkspaceId) {
@@ -1257,6 +1139,15 @@ function useCalendarSettingsController() {
 				provider === "yandex" ? true : calendarVisibility.showYandexCalendar,
 		});
 	};
+
+	const yandexCalendarDialog = useYandexCalendarConnectionDialog({
+		activeWorkspaceId,
+		defaultEmail: session?.user?.email,
+		onConnected: async () => {
+			await enableCalendarForWorkspace("yandex");
+		},
+		yandexCalendarConnection,
+	});
 
 	const handleConnectGoogleCalendar = async () => {
 		dispatch({ type: "setIsConnectingGoogle", value: true });
@@ -1316,42 +1207,6 @@ function useCalendarSettingsController() {
 		}
 	};
 
-	const handleConnectYandexCalendar = async () => {
-		if (
-			!activeWorkspaceId ||
-			!yandexCalendarFormState.email.trim() ||
-			!yandexCalendarFormState.password.trim()
-		) {
-			return;
-		}
-
-		dispatch({ type: "setIsSavingYandexCalendarConnection", value: true });
-
-		try {
-			await connectYandexCalendar({
-				workspaceId: activeWorkspaceId,
-				email: yandexCalendarFormState.email.trim(),
-				password: yandexCalendarFormState.password.trim(),
-			});
-			await enableCalendarForWorkspace("yandex");
-			toast.success("Yandex Calendar connected");
-			handleYandexCalendarDialogOpenChange(false);
-		} catch (error) {
-			console.error("Failed to connect Yandex Calendar", error);
-			toast.error(
-				error instanceof Error
-					? withoutTrailingPeriod(error.message)
-					: "Failed to connect Yandex Calendar",
-			);
-		} finally {
-			dispatch({ type: "setIsSavingYandexCalendarConnection", value: false });
-		}
-	};
-
-	const isYandexCalendarFormValid =
-		yandexCalendarFormState.email.trim().length > 0 &&
-		yandexCalendarFormState.password.trim().length > 0;
-
 	const handleCalendarVisibilityChange = async (
 		nextPreferences: CalendarVisibilityPreferences,
 	) => {
@@ -1376,7 +1231,7 @@ function useCalendarSettingsController() {
 
 	const calendarProviders: CalendarProviderRowProps[] = [
 		{
-			icon: <Icons.googleLogo className="size-5 shrink-0" />,
+			icon: <Icons.googleCalendarLogo className="size-5 shrink-0" />,
 			name: "Google Calendar",
 			checked:
 				isGoogleCalendarConnected && calendarVisibility.showGoogleCalendar,
@@ -1413,32 +1268,19 @@ function useCalendarSettingsController() {
 					showYandexCalendar: checked,
 				});
 			},
-			buttonVariant: yandexCalendarConnection ? "outline" : "default",
-			onButtonClick: () => handleYandexCalendarDialogOpenChange(true),
-			buttonDisabled: !session?.user || isSavingYandexCalendarConnection,
-			buttonLabel: yandexCalendarConnection ? "Reconnect" : "Connect",
+			buttonVariant: "outline",
+			onButtonClick: () =>
+				yandexCalendarDialog.handleYandexCalendarDialogOpenChange(true),
+			buttonDisabled:
+				!session?.user || yandexCalendarDialog.isSavingYandexCalendarConnection,
+			buttonLabel: yandexCalendarConnection ? "Manage" : "Connect",
 		},
 	];
 
 	return {
 		activeWorkspaceId,
 		calendarProviders,
-		handleConnectYandexCalendar,
-		handleYandexCalendarDialogOpenChange,
-		isSavingYandexCalendarConnection,
-		isYandexCalendarDialogOpen,
-		isYandexCalendarFormValid,
-		setYandexCalendarEmail: (email: string) =>
-			dispatch({
-				type: "patchYandexCalendarFormState",
-				value: { email },
-			}),
-		setYandexCalendarPassword: (password: string) =>
-			dispatch({
-				type: "patchYandexCalendarFormState",
-				value: { password },
-			}),
-		yandexCalendarFormState,
+		...yandexCalendarDialog,
 	};
 }
 
@@ -1454,14 +1296,23 @@ const getGoogleCalendarAction = ({
 	buttonLabel: !googleAccount
 		? "Connect"
 		: !hasCalendarScope
-			? "Grant calendar access"
-			: isGoogleCalendarEnabledForWorkspace
-				? "Reconnect"
-				: "Connect",
+			? "Grant access"
+			: "Manage",
 	buttonVariant:
 		googleAccount && hasCalendarScope && isGoogleCalendarEnabledForWorkspace
 			? ("outline" as const)
 			: ("default" as const),
+});
+
+const getGoogleToolAction = ({
+	account,
+	hasScope,
+}: {
+	account: LinkedAccount | undefined;
+	hasScope: boolean;
+}) => ({
+	buttonLabel: !account ? "Connect" : !hasScope ? "Grant access" : "Manage",
+	buttonVariant: hasScope ? ("outline" as const) : ("default" as const),
 });
 
 function CalendarProvidersSection({
@@ -1495,6 +1346,8 @@ function CalendarProviderRow({
 	buttonLabel,
 	buttonIcon,
 }: CalendarProviderRowProps) {
+	const isConnectAction = buttonLabel === "Connect";
+
 	return (
 		<div className="flex items-center justify-between gap-4">
 			<div className="flex min-w-0 items-center gap-3">
@@ -1511,12 +1364,15 @@ function CalendarProviderRow({
 				/>
 				<Button
 					type="button"
-					variant={buttonVariant}
+					variant={isConnectAction ? "outline" : buttonVariant}
+					size={isConnectAction ? "icon-sm" : "default"}
 					onClick={onButtonClick}
 					disabled={buttonDisabled}
+					aria-label={isConnectAction ? `Connect ${name}` : undefined}
+					title={isConnectAction ? `Connect ${name}` : undefined}
 				>
-					{buttonIcon}
-					{buttonLabel}
+					{buttonIcon ?? (isConnectAction ? <Plus /> : null)}
+					{isConnectAction ? null : buttonLabel}
 				</Button>
 			</div>
 		</div>
@@ -1613,20 +1469,119 @@ function YandexCalendarDialog({
 	);
 }
 
+function useYandexCalendarConnectionDialog({
+	activeWorkspaceId,
+	defaultEmail,
+	onConnected,
+	yandexCalendarConnection,
+}: {
+	activeWorkspaceId: Id<"workspaces"> | null;
+	defaultEmail?: string | null;
+	onConnected?: () => void | Promise<void>;
+	yandexCalendarConnection?: { email?: string | null } | null;
+}) {
+	const connectYandexCalendar = useAction(
+		api.appConnectionActions.connectYandexCalendar,
+	);
+	const [isYandexCalendarDialogOpen, setIsYandexCalendarDialogOpen] =
+		useState(false);
+	const [
+		isSavingYandexCalendarConnection,
+		setIsSavingYandexCalendarConnection,
+	] = useState(false);
+	const [yandexCalendarFormState, setYandexCalendarFormState] = useState(
+		initialYandexCalendarConnectionFormState,
+	);
+
+	const handleYandexCalendarDialogOpenChange = (open: boolean) => {
+		setIsYandexCalendarDialogOpen(open);
+
+		if (open) {
+			setYandexCalendarFormState({
+				email: yandexCalendarConnection?.email ?? defaultEmail ?? "",
+				password: "",
+			});
+			return;
+		}
+
+		setYandexCalendarFormState(initialYandexCalendarConnectionFormState);
+	};
+
+	const handleConnectYandexCalendar = async () => {
+		if (
+			!activeWorkspaceId ||
+			!yandexCalendarFormState.email.trim() ||
+			!yandexCalendarFormState.password.trim()
+		) {
+			return;
+		}
+
+		setIsSavingYandexCalendarConnection(true);
+
+		try {
+			await connectYandexCalendar({
+				workspaceId: activeWorkspaceId,
+				email: yandexCalendarFormState.email.trim(),
+				password: yandexCalendarFormState.password.trim(),
+			});
+			await onConnected?.();
+			toast.success("Yandex Calendar connected");
+			handleYandexCalendarDialogOpenChange(false);
+		} catch (error) {
+			console.error("Failed to connect Yandex Calendar", error);
+			toast.error(
+				error instanceof Error
+					? withoutTrailingPeriod(error.message)
+					: "Failed to connect Yandex Calendar",
+			);
+		} finally {
+			setIsSavingYandexCalendarConnection(false);
+		}
+	};
+
+	const isYandexCalendarFormValid =
+		yandexCalendarFormState.email.trim().length > 0 &&
+		yandexCalendarFormState.password.trim().length > 0;
+
+	return {
+		handleConnectYandexCalendar,
+		handleYandexCalendarDialogOpenChange,
+		isSavingYandexCalendarConnection,
+		isYandexCalendarDialogOpen,
+		isYandexCalendarFormValid,
+		setYandexCalendarEmail: (email: string) =>
+			setYandexCalendarFormState((currentState) => ({
+				...currentState,
+				email,
+			})),
+		setYandexCalendarPassword: (password: string) =>
+			setYandexCalendarFormState((currentState) => ({
+				...currentState,
+				password,
+			})),
+		yandexCalendarFormState,
+	};
+}
+
 function ConnectionsSettings() {
 	const {
 		activeWorkspaceId,
+		handleConnectYandexCalendar,
 		handleConnectJira,
 		handleConnectPostHog,
 		handleCopyJiraWebhookUrl,
 		handleConnectYandexTracker,
 		handleJiraDialogOpenChange,
 		handlePostHogDialogOpenChange,
+		handleYandexCalendarDialogOpenChange,
 		handleYandexTrackerDialogOpenChange,
 		isJiraDialogOpen,
 		isJiraFormValid,
 		isPostHogDialogOpen,
 		isPostHogFormValid,
+		isSavingYandexCalendarConnection,
+		isYandexCalendarDialogOpen,
+		isYandexCalendarFormValid,
 		isSavingJiraConnection,
 		isSavingPostHogConnection,
 		isSavingYandexTrackerConnection,
@@ -1642,10 +1597,13 @@ function ConnectionsSettings() {
 		setPostHogBaseUrl,
 		setPostHogProjectId,
 		setPostHogToken,
+		setYandexCalendarEmail,
+		setYandexCalendarPassword,
 		setYandexTrackerOrgId,
 		setYandexTrackerOrgType,
 		setYandexTrackerToken,
 		toolConnections,
+		yandexCalendarFormState,
 		yandexTrackerFormState,
 	} = useConnectionsSettingsController();
 
@@ -1660,6 +1618,18 @@ function ConnectionsSettings() {
 	return (
 		<div className="py-4">
 			<ToolConnectionsSection connections={toolConnections} />
+			<YandexCalendarDialog
+				open={isYandexCalendarDialogOpen}
+				onOpenChange={handleYandexCalendarDialogOpenChange}
+				formState={yandexCalendarFormState}
+				onEmailChange={setYandexCalendarEmail}
+				onPasswordChange={setYandexCalendarPassword}
+				onConnect={() => {
+					void handleConnectYandexCalendar();
+				}}
+				isFormValid={isYandexCalendarFormValid}
+				isSaving={isSavingYandexCalendarConnection}
+			/>
 			<YandexTrackerDialog
 				open={isYandexTrackerDialogOpen}
 				onOpenChange={handleYandexTrackerDialogOpenChange}
@@ -1711,8 +1681,15 @@ function ConnectionsSettings() {
 function useConnectionsSettingsController() {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const { data: session } = authClient.useSession();
+	const { accounts, isLoadingAccounts, loadAccounts } = useLinkedAccounts(
+		session?.user,
+	);
 	const yandexTrackerConnection = useQuery(
 		api.appConnections.getYandexTracker,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
+	const yandexCalendarConnection = useQuery(
+		api.appConnections.getYandexCalendar,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
 	const jiraConnection = useQuery(
@@ -1736,6 +1713,10 @@ function useConnectionsSettingsController() {
 		initialConnectionsSettingsState,
 	);
 	const [convexSiteUrl, setConvexSiteUrl] = useState<string | null>(null);
+	const [isConnectingGoogleCalendarTool, setIsConnectingGoogleCalendarTool] =
+		useState(false);
+	const [isConnectingGoogleDriveTool, setIsConnectingGoogleDriveTool] =
+		useState(false);
 	const [isPreparingJiraMentionSync, setIsPreparingJiraMentionSync] =
 		useState(false);
 	const lastPreparedJiraSyncKeyRef = useRef<string | null>(null);
@@ -1750,6 +1731,20 @@ function useConnectionsSettingsController() {
 		jiraFormState,
 		posthogFormState,
 	} = state;
+	const googleAccount = getGoogleLinkedAccount(accounts);
+	const hasGoogleCalendarToolScope = hasGoogleScope(
+		googleAccount,
+		GOOGLE_CALENDAR_SCOPE,
+	);
+	const hasGoogleDriveToolScope = hasGoogleScope(
+		googleAccount,
+		GOOGLE_DRIVE_SCOPE,
+	);
+	const yandexCalendarDialog = useYandexCalendarConnectionDialog({
+		activeWorkspaceId,
+		defaultEmail: session?.user?.email,
+		yandexCalendarConnection,
+	});
 
 	useEffect(() => {
 		let isMounted = true;
@@ -1972,6 +1967,81 @@ function useConnectionsSettingsController() {
 		posthogFormState.projectId.trim().length > 0 &&
 		posthogFormState.token.trim().length > 0;
 
+	const connectGoogleTool = async ({
+		scopes,
+		onStateChange,
+		successMessage,
+	}: {
+		scopes: readonly string[];
+		onStateChange: (value: boolean) => void;
+		successMessage: string;
+	}) => {
+		onStateChange(true);
+
+		try {
+			const callbackURL = window.openGranDesktop
+				? (await window.openGranDesktop.getAuthCallbackUrl()).url
+				: window.location.href;
+			const result = await authClient.$fetch("/link-social", {
+				method: "POST",
+				throw: true,
+				body: {
+					provider: "google",
+					callbackURL,
+					errorCallbackURL: callbackURL,
+					disableRedirect: true,
+					scopes: [...scopes],
+				},
+			});
+			const resultObject = result && typeof result === "object" ? result : null;
+			const url =
+				resultObject && "url" in resultObject
+					? String(resultObject.url ?? "")
+					: "";
+			const linkedWithoutRedirect =
+				resultObject !== null &&
+				"status" in resultObject &&
+				Boolean(resultObject.status) &&
+				"redirect" in resultObject &&
+				resultObject.redirect === false;
+
+			if (!url) {
+				if (linkedWithoutRedirect) {
+					await loadAccounts();
+					toast.success(successMessage);
+					return;
+				}
+
+				throw new Error("Google auth URL was not returned.");
+			}
+
+			if (window.openGranDesktop) {
+				await window.openGranDesktop.openExternalUrl(url);
+				return;
+			}
+
+			window.location.assign(url);
+		} catch (error) {
+			console.error("Failed to connect Google tool", error);
+			toast.error(
+				error instanceof Error
+					? withoutTrailingPeriod(error.message)
+					: "Failed to connect Google account",
+			);
+		} finally {
+			onStateChange(false);
+		}
+	};
+
+	const googleCalendarToolAction = getGoogleToolAction({
+		account: googleAccount,
+		hasScope: hasGoogleCalendarToolScope,
+	});
+	const googleDriveToolAction = getGoogleToolAction({
+		account: googleAccount,
+		hasScope: hasGoogleDriveToolScope,
+	});
+
 	const jiraWebhookUrl =
 		convexSiteUrl && jiraConnection?.webhookSecret
 			? (() => {
@@ -1984,23 +2054,72 @@ function useConnectionsSettingsController() {
 
 	const toolConnections: ToolConnectionRowProps[] = [
 		{
+			icon: <Icons.googleCalendarLogo className="size-5 shrink-0" />,
+			name: "Google Calendar",
+			buttonLabel: googleCalendarToolAction.buttonLabel,
+			buttonVariant: googleCalendarToolAction.buttonVariant,
+			buttonDisabled:
+				isConnectingGoogleCalendarTool || !session?.user || isLoadingAccounts,
+			buttonIcon: isConnectingGoogleCalendarTool ? (
+				<LoaderCircle className="animate-spin" />
+			) : null,
+			onButtonClick: () => {
+				void connectGoogleTool({
+					scopes: GOOGLE_CALENDAR_SCOPES,
+					onStateChange: setIsConnectingGoogleCalendarTool,
+					successMessage: "Google Calendar connected",
+				});
+			},
+		},
+		{
+			icon: <Icons.googleDriveLogo className="size-5 shrink-0" />,
+			name: "Google Drive",
+			buttonLabel: googleDriveToolAction.buttonLabel,
+			buttonVariant: googleDriveToolAction.buttonVariant,
+			buttonDisabled:
+				isConnectingGoogleDriveTool || !session?.user || isLoadingAccounts,
+			buttonIcon: isConnectingGoogleDriveTool ? (
+				<LoaderCircle className="animate-spin" />
+			) : null,
+			onButtonClick: () => {
+				void connectGoogleTool({
+					scopes: GOOGLE_DRIVE_SCOPES,
+					onStateChange: setIsConnectingGoogleDriveTool,
+					successMessage: "Google Drive connected",
+				});
+			},
+		},
+		{
+			icon: <Icons.yandexCalendarLogo className="size-5 shrink-0" />,
+			name: "Yandex Calendar",
+			buttonLabel: yandexCalendarConnection ? "Manage" : "Connect",
+			buttonVariant: "outline",
+			buttonDisabled:
+				!session?.user || yandexCalendarDialog.isSavingYandexCalendarConnection,
+			onButtonClick: () =>
+				yandexCalendarDialog.handleYandexCalendarDialogOpenChange(true),
+		},
+		{
 			icon: (
 				<Icons.yandexTrackerLogo className="size-5 shrink-0 text-blue-500" />
 			),
 			name: "Yandex Tracker",
-			buttonLabel: yandexTrackerConnection ? "Reconnect" : "Connect",
+			buttonLabel: yandexTrackerConnection ? "Manage" : "Connect",
+			buttonVariant: "outline",
 			onButtonClick: () => handleYandexTrackerDialogOpenChange(true),
 		},
 		{
 			icon: <Icons.jiraLogo className="size-5 shrink-0" />,
 			name: "Jira",
-			buttonLabel: jiraConnection ? "Reconnect" : "Connect",
+			buttonLabel: jiraConnection ? "Manage" : "Connect",
+			buttonVariant: "outline",
 			onButtonClick: () => handleJiraDialogOpenChange(true),
 		},
 		{
 			icon: <Icons.planeLogo className="size-5 shrink-0" />,
 			name: "PostHog",
-			buttonLabel: posthogConnection ? "Reconnect" : "Connect",
+			buttonLabel: posthogConnection ? "Manage" : "Connect",
+			buttonVariant: "outline",
 			onButtonClick: () => handlePostHogDialogOpenChange(true),
 		},
 	];
@@ -2040,6 +2159,7 @@ function useConnectionsSettingsController() {
 
 	return {
 		activeWorkspaceId,
+		...yandexCalendarDialog,
 		handleConnectJira,
 		handleConnectPostHog,
 		handleCopyJiraWebhookUrl,
@@ -2179,8 +2299,13 @@ function ToolConnectionRow({
 	icon,
 	name,
 	buttonLabel,
+	buttonVariant = "outline",
+	buttonDisabled = false,
+	buttonIcon,
 	onButtonClick,
 }: ToolConnectionRowProps) {
+	const isConnectAction = buttonLabel === "Connect";
+
 	return (
 		<div className="flex items-center justify-between gap-4">
 			<div className="flex min-w-0 items-center gap-3">
@@ -2189,8 +2314,17 @@ function ToolConnectionRow({
 					<Label className="text-sm font-medium text-foreground">{name}</Label>
 				</div>
 			</div>
-			<Button type="button" variant="outline" onClick={onButtonClick}>
-				{buttonLabel}
+			<Button
+				type="button"
+				variant={isConnectAction ? "outline" : buttonVariant}
+				size={isConnectAction ? "icon-sm" : "default"}
+				onClick={onButtonClick}
+				disabled={buttonDisabled}
+				aria-label={isConnectAction ? `Connect ${name}` : undefined}
+				title={isConnectAction ? `Connect ${name}` : undefined}
+			>
+				{buttonIcon ?? (isConnectAction ? <Plus /> : null)}
+				{isConnectAction ? null : buttonLabel}
 			</Button>
 		</div>
 	);
