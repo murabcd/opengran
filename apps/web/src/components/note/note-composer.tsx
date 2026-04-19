@@ -1906,6 +1906,26 @@ function NoteChatMessages({
 												variant="ghost"
 												size="icon-sm"
 												className="size-7 text-muted-foreground hover:text-foreground"
+												aria-label="Copy"
+												onClick={() => {
+													void navigator.clipboard
+														.writeText(text)
+														.then(() => toast.success("Copied"))
+														.catch(() => toast.error("Failed to copy"));
+												}}
+											>
+												<Copy className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Copy</TooltipContent>
+									</Tooltip>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-7 text-muted-foreground hover:text-foreground"
 												aria-label="Delete"
 												disabled={!onDeleteMessage}
 												onClick={() => onDeleteMessage?.(chatMessage.id)}

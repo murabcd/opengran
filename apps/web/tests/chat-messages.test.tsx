@@ -265,11 +265,15 @@ describe("ChatMessages", () => {
 		const messageColumn = sourcesSection?.parentElement;
 		const actionsRow = sourcesSection?.previousElementSibling;
 		const messageRow = actionsRow?.previousElementSibling;
+		const messageList = messageColumn?.parentElement?.parentElement;
 
 		expect(trigger.className).toContain("cursor-pointer");
 		expect(actionsRow?.className).toContain("mt-2");
-		expect(messageRow?.className).toContain("pb-2");
+		expect(sourcesSection?.className).toContain("mt-1");
+		expect(messageRow?.className).not.toContain("pb-2");
+		expect(messageRow?.className).not.toContain("pb-4");
 		expect(messageColumn?.className).not.toContain("space-y-4");
+		expect(messageList?.className).toContain("pb-9");
 
 		await user.click(trigger);
 
@@ -602,19 +606,27 @@ describe("ChatMessages", () => {
 		expect(onDeleteMessage).toHaveBeenCalledWith("user-delete");
 	});
 
-	it("does not render a copy action for user messages", async () => {
+	it("copies user messages from the message actions", async () => {
+		const user = userEvent.setup();
+		const writeTextMock = vi.fn().mockResolvedValue(undefined);
+		vi.stubGlobal("navigator", {
+			...navigator,
+			clipboard: {
+				writeText: writeTextMock,
+			},
+		});
 		const { ChatMessages } = await import("../src/components/chat/messages");
 
 		render(
 			<ChatMessages
 				messages={[
 					{
-						id: "user-no-copy",
+						id: "user-copy",
 						role: "user",
 						parts: [
 							{
 								type: "text",
-								text: "No copy here",
+								text: "Copy this user message",
 							},
 						],
 					},
@@ -622,6 +634,9 @@ describe("ChatMessages", () => {
 			/>,
 		);
 
-		expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
+		await user.click(screen.getByRole("button", { name: "Copy" }));
+
+		expect(writeTextMock).toHaveBeenCalledWith("Copy this user message");
+		expect(toastSuccessMock).toHaveBeenCalledWith("Copied");
 	});
 });

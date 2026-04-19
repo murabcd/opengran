@@ -313,11 +313,15 @@ describe("NotePage", () => {
 
 		const composer = screen.getByTestId("note-composer");
 		const dockContainer = composer.parentElement?.parentElement;
+		const contentWrapper =
+			screen.getByTestId("editor-content").parentElement?.parentElement;
 
 		expect(dockContainer).not.toBeNull();
 		expect(dockContainer?.className).toContain(
 			`pb-[${COMPOSER_DOCK_SURFACE_BOTTOM_OFFSET}px]`,
 		);
+		expect(contentWrapper?.className).toContain("pb-36");
+		expect(contentWrapper?.className).toContain("md:pb-40");
 	});
 
 	it("uses the desktop viewport min-height contract for short notes", async () => {

@@ -1506,6 +1506,93 @@ describe("NoteComposer", () => {
 		});
 	});
 
+	it("copies a user note chat message", async () => {
+		let queryCall = 0;
+		const writeTextMock = vi.fn().mockResolvedValue(undefined);
+		vi.stubGlobal("navigator", {
+			...navigator,
+			clipboard: {
+				writeText: writeTextMock,
+			},
+		});
+
+		useQueryMock.mockImplementation(() => {
+			const index = queryCall % 5;
+			queryCall += 1;
+
+			if (index === 0) {
+				return [
+					{
+						_id: "chat-doc-1",
+						_creationTime: 1,
+						chatId: "chat-1",
+						createdAt: 1,
+						title: "New chat",
+						updatedAt: 1,
+					},
+				];
+			}
+
+			if (index === 1) {
+				return [];
+			}
+
+			if (index === 2) {
+				return {
+					title: "New chat",
+				};
+			}
+
+			if (index === 3) {
+				return [];
+			}
+
+			if (index === 4) {
+				return {
+					transcriptionLanguage: null,
+				};
+			}
+
+			return undefined;
+		});
+		useChatMock.mockReturnValue({
+			error: undefined,
+			messages: [
+				{
+					id: "user-message-1",
+					role: "user",
+					parts: [{ type: "text", text: "Original question" }],
+				},
+			],
+			sendMessage: vi.fn(),
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			status: "ready",
+			stop: vi.fn(),
+		});
+
+		const { NoteComposer } = await import(
+			"../src/components/note/note-composer"
+		);
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<NoteComposer
+					noteContext={{
+						noteId: "note-1",
+						text: "",
+						title: "New note",
+					}}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		fireEvent.focus(screen.getByRole("textbox"));
+		fireEvent.click(await screen.findByRole("button", { name: "Copy" }));
+
+		expect(writeTextMock).toHaveBeenCalledWith("Original question");
+	});
+
 	it("regenerates a note chat response with the ai sdk regenerate flow", async () => {
 		let queryCall = 0;
 

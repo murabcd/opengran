@@ -190,7 +190,7 @@ export function ChatMessages({
 		(lastMessage === undefined || lastMessage.role !== "assistant");
 
 	return (
-		<div className="space-y-4">
+		<div className="space-y-4 pb-9">
 			{messages.map((message) => {
 				const textParts = extractTextParts(message);
 				const renderedText = textParts.map((part) => part.text).join("\n\n");
@@ -216,14 +216,7 @@ export function ChatMessages({
 						)}
 					>
 						<div className={cn("flex flex-col", CHAT_MESSAGE_MAX_WIDTH_CLASS)}>
-							<div
-								className={cn(
-									"flex flex-row items-start gap-2 pb-4",
-									message.role === "assistant" &&
-										messageSources.length > 0 &&
-										"pb-2",
-								)}
-							>
+							<div className="flex flex-row items-start gap-2">
 								<div
 									className={cn(
 										message.role === "user"
@@ -349,6 +342,26 @@ export function ChatMessages({
 												variant="ghost"
 												size="icon-sm"
 												className="size-7 text-muted-foreground hover:text-foreground"
+												aria-label="Copy"
+												onClick={() => {
+													void navigator.clipboard
+														.writeText(messageText)
+														.then(() => toast.success("Copied"))
+														.catch(() => toast.error("Failed to copy"));
+												}}
+											>
+												<Copy className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Copy</TooltipContent>
+									</Tooltip>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												className="size-7 text-muted-foreground hover:text-foreground"
 												aria-label="Delete"
 												disabled={!onDeleteMessage}
 												onClick={() => onDeleteMessage?.(message.id)}
@@ -361,7 +374,7 @@ export function ChatMessages({
 								</div>
 							) : null}
 							{message.role === "assistant" && messageSources.length > 0 ? (
-								<Sources defaultOpen={false}>
+								<Sources defaultOpen={false} className="mt-1">
 									<SourcesTrigger count={messageSources.length} />
 									<SourcesContent>
 										{messageSources.map((source) => (

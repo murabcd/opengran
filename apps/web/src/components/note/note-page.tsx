@@ -1502,7 +1502,7 @@ const NotePageEditorPane = React.memo(function NotePageEditorPane({
 							"mx-auto flex w-full max-w-xl flex-1 flex-col",
 						)}
 					>
-						<div className="flex-1 pt-4 pb-28 md:pt-8 md:pb-32">
+						<div className="flex-1 pt-4 pb-36 md:pt-8 md:pb-40">
 							<div className="flex flex-col gap-6">
 								<div>
 									<Textarea
