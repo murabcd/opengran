@@ -5,10 +5,19 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action } from "./_generated/server";
-import { authComponent, createAuth } from "./auth";
+import {
+	fetchGoogleJsonWithRetry,
+	GOOGLE_CALENDAR_SCOPE,
+	type GoogleAuthContext,
+	getGoogleAccessToken,
+	getGoogleAuthContext,
+} from "./googleAuth";
 import { listYandexUpcomingEvents } from "./yandexCalendar";
 
 const UPCOMING_EVENTS_LIMIT = 12;
+const CALENDAR_TOOL_EVENT_LIMIT = 10;
+const CALENDAR_TOOL_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+const CALENDAR_TOOL_LOOKAHEAD_MS = 180 * 24 * 60 * 60 * 1000;
 
 const upcomingCalendarEventValidator = v.object({
 	id: v.string(),
@@ -35,6 +44,18 @@ const upcomingEventsResponseValidator = v.union(
 		connectedCalendarCount: v.number(),
 	}),
 );
+
+const calendarToolSourceValidator = v.object({
+	type: v.literal("url"),
+	url: v.string(),
+	title: v.string(),
+});
+
+const calendarToolResponseValidator = v.object({
+	connection: v.string(),
+	events: v.array(upcomingCalendarEventValidator),
+	sources: v.array(calendarToolSourceValidator),
+});
 
 type GoogleCalendarListResponse = {
 	items?: GoogleCalendarListEntry[];
@@ -121,9 +142,6 @@ type RequestedCalendarWindow = {
 	timeMax: number;
 };
 
-const GOOGLE_CALENDAR_SCOPE =
-	"https://www.googleapis.com/auth/calendar.readonly";
-
 const getRequestedCalendarWindow = ({
 	timeMax,
 	timeMin,
@@ -151,140 +169,6 @@ const getRequestedCalendarWindow = ({
 	};
 };
 
-type BetterAuthInstance = ReturnType<typeof createAuth>;
-
-type GoogleAuthContext = {
-	auth: BetterAuthInstance;
-	headers: Headers;
-};
-
-type GoogleAccessTokenResult = {
-	accessToken: string;
-	scopes: string[];
-};
-
-const parseGoogleScopeList = (scope: string | null | undefined) =>
-	scope
-		?.split(/[,\s]+/)
-		.map((value) => value.trim())
-		.filter(Boolean) ?? [];
-
-const resolveGoogleScopes = (tokens: {
-	scope?: string | null;
-	scopes?: string[];
-}) => {
-	if (Array.isArray(tokens.scopes)) {
-		return tokens.scopes.filter(Boolean);
-	}
-
-	return parseGoogleScopeList(tokens.scope);
-};
-
-const getGoogleAuthContext = async (ctx: ActionCtx): Promise<GoogleAuthContext> => {
-	const identity = await ctx.auth.getUserIdentity();
-
-	if (!identity) {
-		throw new ConvexError({
-			code: "UNAUTHENTICATED",
-			message: "You must be signed in to access calendar events.",
-		});
-	}
-
-	return await authComponent.getAuth(createAuth, ctx);
-};
-
-const getGoogleAccessToken = async (
-	authContext: GoogleAuthContext,
-): Promise<GoogleAccessTokenResult | null> => {
-	const { auth, headers } = authContext;
-
-	try {
-		const tokens = await auth.api.getAccessToken({
-			body: { providerId: "google" },
-			headers,
-		});
-
-		if (!tokens?.accessToken) {
-			return null;
-		}
-
-		return {
-			accessToken: tokens.accessToken,
-			scopes: resolveGoogleScopes(tokens),
-		};
-	} catch {
-		return null;
-	}
-};
-
-const refreshGoogleAccessToken = async (
-	authContext: GoogleAuthContext,
-): Promise<GoogleAccessTokenResult | null> => {
-	const { auth, headers } = authContext;
-
-	try {
-		const tokens = await auth.api.refreshToken({
-			body: { providerId: "google" },
-			headers,
-		});
-
-		if (!tokens?.accessToken) {
-			return null;
-		}
-
-		return {
-			accessToken: tokens.accessToken,
-			scopes: resolveGoogleScopes(tokens),
-		};
-	} catch {
-		return null;
-	}
-};
-
-const fetchGoogleJson = async <T>(accessToken: string, url: URL): Promise<T> => {
-	const response = await fetch(url, {
-		headers: {
-			Authorization: `Bearer ${accessToken}`,
-		},
-	});
-
-	if (!response.ok) {
-		const responseText = await response.text().catch(() => "");
-		const error = new Error(
-			`Google Calendar request failed with status ${response.status}.${responseText ? ` ${responseText}` : ""}`,
-		) as Error & { status?: number };
-		error.status = response.status;
-		throw error;
-	}
-
-	return (await response.json()) as T;
-};
-
-const fetchGoogleJsonWithRetry = async <T>(
-	authContext: GoogleAuthContext,
-	initialTokens: GoogleAccessTokenResult,
-	url: URL,
-) => {
-	try {
-		return await fetchGoogleJson<T>(initialTokens.accessToken, url);
-	} catch (error) {
-		if (
-			!(error instanceof Error) ||
-			(error as Error & { status?: number }).status !== 401
-		) {
-			throw error;
-		}
-
-		const refreshedTokens = await refreshGoogleAccessToken(authContext);
-
-		if (!refreshedTokens?.accessToken) {
-			throw error;
-		}
-
-		return await fetchGoogleJson<T>(refreshedTokens.accessToken, url);
-	}
-};
-
 const isVisibleCalendar = (calendar: GoogleCalendarListEntry) =>
 	Boolean(calendar.id) &&
 	calendar.hidden !== true &&
@@ -293,7 +177,8 @@ const isVisibleCalendar = (calendar: GoogleCalendarListEntry) =>
 
 const hasDeclinedEvent = (event: GoogleCalendarEvent) =>
 	event.attendees?.some(
-		(attendee) => attendee.self === true && attendee.responseStatus === "declined",
+		(attendee) =>
+			attendee.self === true && attendee.responseStatus === "declined",
 	) ?? false;
 
 const isIgnoredEventType = (event: GoogleCalendarEvent) =>
@@ -433,11 +318,12 @@ const fetchGoogleUpcomingEvents = async ({
 	calendarListUrl.searchParams.set("showDeleted", "false");
 	calendarListUrl.searchParams.set("minAccessRole", "reader");
 
-	const calendarList = await fetchGoogleJsonWithRetry<GoogleCalendarListResponse>(
-		authContext,
-		googleTokens,
-		calendarListUrl,
-	);
+	const calendarList =
+		await fetchGoogleJsonWithRetry<GoogleCalendarListResponse>(
+			authContext,
+			googleTokens,
+			calendarListUrl,
+		);
 	const calendars = (calendarList.items ?? []).filter(isVisibleCalendar);
 
 	if (calendars.length === 0) {
@@ -623,11 +509,7 @@ export const listUpcomingGoogleEvents = action({
 				connectedCalendarCount,
 			};
 		} catch (error) {
-			if (
-				error instanceof Error &&
-				"status" in error &&
-				error.status === 401
-			) {
+			if (error instanceof Error && "status" in error && error.status === 401) {
 				return {
 					status: "not_connected" as const,
 					events: [] as UpcomingCalendarEvent[],
@@ -636,5 +518,208 @@ export const listUpcomingGoogleEvents = action({
 
 			throw error;
 		}
+	},
+});
+
+const getCalendarToolWindow = () => {
+	const now = Date.now();
+
+	return {
+		now,
+		timeMin: now - CALENDAR_TOOL_LOOKBACK_MS,
+		timeMax: now + CALENDAR_TOOL_LOOKAHEAD_MS,
+	};
+};
+
+const sortCalendarToolEvents = (events: UpcomingCalendarEvent[]) =>
+	[...events].sort(
+		(left, right) =>
+			new Date(left.startAt).getTime() - new Date(right.startAt).getTime(),
+	);
+
+const buildCalendarToolSources = (events: UpcomingCalendarEvent[]) => {
+	const seen = new Set<string>();
+
+	return events.flatMap((event) => {
+		if (!event.htmlLink || seen.has(event.htmlLink)) {
+			return [];
+		}
+
+		seen.add(event.htmlLink);
+
+		return [
+			{
+				type: "url" as const,
+				url: event.htmlLink,
+				title: event.title,
+			},
+		];
+	});
+};
+
+const matchesCalendarSearchQuery = (
+	event: UpcomingCalendarEvent,
+	query: string,
+) => {
+	const normalizedQuery = query.trim().toLowerCase();
+
+	if (!normalizedQuery) {
+		return true;
+	}
+
+	return [
+		event.title,
+		event.calendarName,
+		event.location ?? "",
+		event.meetingUrl ?? "",
+	]
+		.join(" ")
+		.toLowerCase()
+		.includes(normalizedQuery);
+};
+
+const toCalendarToolResponse = ({
+	connection,
+	events,
+	limit,
+	meetingsOnly,
+	query,
+}: {
+	connection: string;
+	events: UpcomingCalendarEvent[];
+	limit?: number;
+	meetingsOnly?: boolean;
+	query?: string;
+}) => {
+	const limitedEvents = sortCalendarToolEvents(
+		events.filter((event) => {
+			if (meetingsOnly && !event.isMeeting) {
+				return false;
+			}
+
+			if (query && !matchesCalendarSearchQuery(event, query)) {
+				return false;
+			}
+
+			return true;
+		}),
+	).slice(0, Math.max(1, Math.min(limit ?? CALENDAR_TOOL_EVENT_LIMIT, 25)));
+
+	return {
+		connection,
+		events: limitedEvents,
+		sources: buildCalendarToolSources(limitedEvents),
+	};
+};
+
+export const listGoogleCalendarEventsForTool = action({
+	args: {
+		workspaceId: v.id("workspaces"),
+		limit: v.optional(v.number()),
+		meetingsOnly: v.optional(v.boolean()),
+	},
+	returns: calendarToolResponseValidator,
+	handler: async (ctx, args) => {
+		const authContext = await getGoogleAuthContext(ctx);
+		const { now, timeMin, timeMax } = getCalendarToolWindow();
+		const result = await fetchGoogleUpcomingEvents({
+			authContext,
+			now,
+			timeMin: new Date(timeMin).toISOString(),
+			timeMax: new Date(timeMax).toISOString(),
+		});
+
+		void args.workspaceId;
+
+		return toCalendarToolResponse({
+			connection: "Google Calendar",
+			events: dedupeUpcomingEvents(result.events),
+			limit: args.limit,
+			meetingsOnly: args.meetingsOnly,
+		});
+	},
+});
+
+export const searchGoogleCalendarEventsForTool = action({
+	args: {
+		workspaceId: v.id("workspaces"),
+		query: v.string(),
+		limit: v.optional(v.number()),
+		meetingsOnly: v.optional(v.boolean()),
+	},
+	returns: calendarToolResponseValidator,
+	handler: async (ctx, args) => {
+		const authContext = await getGoogleAuthContext(ctx);
+		const { now, timeMin, timeMax } = getCalendarToolWindow();
+		const result = await fetchGoogleUpcomingEvents({
+			authContext,
+			now,
+			timeMin: new Date(timeMin).toISOString(),
+			timeMax: new Date(timeMax).toISOString(),
+		});
+
+		void args.workspaceId;
+
+		return toCalendarToolResponse({
+			connection: "Google Calendar",
+			events: dedupeUpcomingEvents(result.events),
+			limit: args.limit,
+			meetingsOnly: args.meetingsOnly,
+			query: args.query,
+		});
+	},
+});
+
+export const listYandexCalendarEventsForTool = action({
+	args: {
+		workspaceId: v.id("workspaces"),
+		limit: v.optional(v.number()),
+		meetingsOnly: v.optional(v.boolean()),
+	},
+	returns: calendarToolResponseValidator,
+	handler: async (ctx, args) => {
+		const { now, timeMin, timeMax } = getCalendarToolWindow();
+		const result = await fetchYandexUpcomingEvents({
+			ctx,
+			now,
+			timeMin,
+			timeMax,
+			workspaceId: args.workspaceId,
+		});
+
+		return toCalendarToolResponse({
+			connection: "Yandex Calendar",
+			events: dedupeUpcomingEvents(result.events),
+			limit: args.limit,
+			meetingsOnly: args.meetingsOnly,
+		});
+	},
+});
+
+export const searchYandexCalendarEventsForTool = action({
+	args: {
+		workspaceId: v.id("workspaces"),
+		query: v.string(),
+		limit: v.optional(v.number()),
+		meetingsOnly: v.optional(v.boolean()),
+	},
+	returns: calendarToolResponseValidator,
+	handler: async (ctx, args) => {
+		const { now, timeMin, timeMax } = getCalendarToolWindow();
+		const result = await fetchYandexUpcomingEvents({
+			ctx,
+			now,
+			timeMin,
+			timeMax,
+			workspaceId: args.workspaceId,
+		});
+
+		return toCalendarToolResponse({
+			connection: "Yandex Calendar",
+			events: dedupeUpcomingEvents(result.events),
+			limit: args.limit,
+			meetingsOnly: args.meetingsOnly,
+			query: args.query,
+		});
 	},
 });

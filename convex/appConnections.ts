@@ -76,6 +76,7 @@ const appConnectionSourceValidator = v.object({
 	title: v.string(),
 	preview: v.string(),
 	provider: v.union(
+		yandexCalendarProviderValidator,
 		yandexTrackerProviderValidator,
 		jiraProviderValidator,
 		posthogProviderValidator,
@@ -89,6 +90,15 @@ const yandexTrackerChatToolConnectionValidator = v.object({
 	orgType: yandexTrackerOrgTypeValidator,
 	orgId: v.string(),
 	token: v.string(),
+});
+
+const yandexCalendarChatToolConnectionValidator = v.object({
+	sourceId: v.string(),
+	provider: yandexCalendarProviderValidator,
+	displayName: v.string(),
+	email: v.string(),
+	serverAddress: v.string(),
+	calendarHomePath: v.string(),
 });
 
 const jiraChatToolConnectionValidator = v.object({
@@ -111,6 +121,7 @@ const posthogChatToolConnectionValidator = v.object({
 });
 
 const chatToolConnectionValidator = v.union(
+	yandexCalendarChatToolConnectionValidator,
 	yandexTrackerChatToolConnectionValidator,
 	jiraChatToolConnectionValidator,
 	posthogChatToolConnectionValidator,
@@ -183,10 +194,18 @@ type AppConnectionSource = {
 	id: string;
 	title: string;
 	preview: string;
-	provider: "jira" | "posthog" | "yandex-tracker";
+	provider: "jira" | "posthog" | "yandex-calendar" | "yandex-tracker";
 };
 
 type ChatToolConnection =
+	| {
+			sourceId: string;
+			provider: "yandex-calendar";
+			displayName: string;
+			email: string;
+			serverAddress: string;
+			calendarHomePath: string;
+	  }
 	| {
 			sourceId: string;
 			provider: "yandex-tracker";
@@ -420,6 +439,22 @@ const toChatToolConnection = (
 	}
 
 	if (
+		connection.provider === "yandex-calendar" &&
+		connection.email &&
+		connection.serverAddress &&
+		connection.calendarHomePath
+	) {
+		return {
+			sourceId: toAppSourceId(connection._id),
+			provider: "yandex-calendar",
+			displayName: connection.displayName,
+			email: connection.email,
+			serverAddress: connection.serverAddress,
+			calendarHomePath: connection.calendarHomePath,
+		};
+	}
+
+	if (
 		connection.provider === "yandex-tracker" &&
 		connection.orgType &&
 		connection.orgId &&
@@ -515,6 +550,7 @@ export const listSources = query({
 
 		for (const connection of connections) {
 			if (
+				connection.provider !== "yandex-calendar" &&
 				connection.provider !== "yandex-tracker" &&
 				connection.provider !== "jira" &&
 				connection.provider !== "posthog"

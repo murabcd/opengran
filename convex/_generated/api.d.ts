@@ -16,6 +16,8 @@ import type * as calendarPreferences from "../calendarPreferences.js";
 import type * as chats from "../chats.js";
 import type * as crons from "../crons.js";
 import type * as desktopApi from "../desktopApi.js";
+import type * as googleAuth from "../googleAuth.js";
+import type * as googleTools from "../googleTools.js";
 import type * as http from "../http.js";
 import type * as inboxItems from "../inboxItems.js";
 import type * as jiraWebhook from "../jiraWebhook.js";
@@ -47,6 +49,8 @@ declare const fullApi: ApiFromModules<{
   chats: typeof chats;
   crons: typeof crons;
   desktopApi: typeof desktopApi;
+  googleAuth: typeof googleAuth;
+  googleTools: typeof googleTools;
   http: typeof http;
   inboxItems: typeof inboxItems;
   jiraWebhook: typeof jiraWebhook;
