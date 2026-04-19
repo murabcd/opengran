@@ -9,6 +9,7 @@
     "release:prepare": "bun install --frozen-lockfile && bun run version-packages && bun run check && bun run typecheck && bun run test",
     "version-packages": "changeset version",
     "dev": "concurrently --kill-others-on-fail -n web,desktop,convex -c green,cyan,magenta \"bun run dev:web\" \"bun run dev:desktop\" \"bunx convex dev\"",
+    "dev:marketing": "turbo run dev --filter=marketing",
     "dev:web": "OPENGRAN_ENV_MODE=local turbo run dev --filter=web",
     "dev:desktop": "OPENGRAN_ENV_MODE=local bun --filter=desktop run dev",
     "dev:desktop:native": "OPENGRAN_ENV_MODE=local bun --filter=desktop run dev:bundled",
@@ -22,7 +23,8 @@
     "test:convex": "bun run --cwd convex test:once",
     "typecheck": "turbo run typecheck && bun run typecheck:convex",
     "typecheck:convex": "bun run --cwd convex typecheck",
-    "preview": "turbo run preview --filter=web"
+    "preview": "turbo run preview --filter=web",
+    "preview:marketing": "turbo run preview --filter=marketing"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",

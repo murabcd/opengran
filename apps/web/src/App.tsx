@@ -14,6 +14,7 @@ import {
 	FieldLabel,
 } from "@workspace/ui/components/field";
 import { Icons } from "@workspace/ui/components/icons";
+import { OpenGranMark } from "@workspace/ui/components/open-gran-mark";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { cn } from "@workspace/ui/lib/utils";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
@@ -39,7 +40,6 @@ import {
 	getSharedNoteShareId,
 	getThemeFireworkColors,
 } from "@/app/location";
-import { OpenGranMark } from "@/components/ui/open-gran-mark";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { DESKTOP_AUTH_SAFE_TOP_CLASS } from "@/lib/desktop-chrome";
