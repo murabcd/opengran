@@ -334,19 +334,22 @@ export function SharedView({
 				<section className="mx-auto w-full max-w-xl space-y-6">
 					<PageTitle isDesktopMac={isDesktopMac}>Shared with others</PageTitle>
 					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
-						<CardContent className="flex items-start justify-between gap-4 p-5">
+						<CardContent
+							aria-busy={sharedNotes === undefined}
+							className="flex items-start justify-between gap-4 p-5"
+						>
 							<div>
-								<p className="text-5xl leading-none tracking-tight tabular-nums">
-									{sharedNotes?.length ?? 0}
-								</p>
+								{sharedNotes !== undefined ? (
+									<p className="text-5xl leading-none tracking-tight tabular-nums">
+										{sharedNotes.length}
+									</p>
+								) : null}
 							</div>
 						</CardContent>
 					</Card>
 				</section>
 				<section className="flex justify-center py-4">
-					{sharedNotes === undefined ? (
-						<SharedNotesSkeleton />
-					) : sharedNotes.length > 0 ? (
+					{sharedNotes === undefined ? null : sharedNotes.length > 0 ? (
 						<div className="w-full max-w-xl">
 							<SharedNotesList
 								notes={sharedNotes}
@@ -377,27 +380,6 @@ export function SharedView({
 }
 
 function HomeNotesSkeleton() {
-	return (
-		<div className="w-full max-w-xl space-y-3">
-			<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
-				Today
-			</div>
-			<div className="space-y-2">
-				{HOME_NOTE_SKELETON_IDS.map((id) => (
-					<div key={id} className="flex items-center gap-3 rounded-lg p-1">
-						<Skeleton className="size-8 rounded-lg" />
-						<div className="min-w-0 flex-1 space-y-2">
-							<Skeleton className="h-4 w-32" />
-							<Skeleton className="h-3 w-48" />
-						</div>
-					</div>
-				))}
-			</div>
-		</div>
-	);
-}
-
-function SharedNotesSkeleton() {
 	return (
 		<div className="w-full max-w-xl space-y-3">
 			<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">

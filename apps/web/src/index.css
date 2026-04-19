@@ -84,6 +84,14 @@ body {
 	background: var(--note-comment-active-background);
 }
 
+.shared-note-page-content .note-comment-anchor,
+.shared-note-page-content .note-comment-anchor:hover,
+.shared-note-page-content .note-comment-anchor[data-active-thread="true"] {
+	border-bottom-color: transparent;
+	background: transparent;
+	cursor: text;
+}
+
 :where(.note-tiptap.ProseMirror, .note-streamdown) > :first-child {
 	margin-top: 0;
 }

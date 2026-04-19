@@ -14,6 +14,7 @@ import {
 	FieldLabel,
 } from "@workspace/ui/components/field";
 import { Icons } from "@workspace/ui/components/icons";
+import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { cn } from "@workspace/ui/lib/utils";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import {
@@ -580,10 +581,12 @@ function MainApp() {
 					<AuthBootstrapScreen isDesktopMac={controller.isDesktopMac} />
 				}
 			>
-				<SharedNotePageSurface
-					note={controller.sharedNote}
-					onOpenNote={controller.handleOpenOwnedSharedNote}
-				/>
+				<ScrollArea className="h-svh" viewportClassName="overscroll-contain">
+					<SharedNotePageSurface
+						note={controller.sharedNote}
+						onOpenNote={controller.handleOpenOwnedSharedNote}
+					/>
+				</ScrollArea>
 			</React.Suspense>
 		);
 	}
@@ -789,10 +792,12 @@ function AppGate({
 			<React.Suspense
 				fallback={<AuthBootstrapScreen isDesktopMac={isDesktopMac} />}
 			>
-				<SharedNotePageSurface
-					note={sharedNote}
-					onOpenNote={onOpenOwnedSharedNote}
-				/>
+				<ScrollArea className="h-svh" viewportClassName="overscroll-contain">
+					<SharedNotePageSurface
+						note={sharedNote}
+						onOpenNote={onOpenOwnedSharedNote}
+					/>
+				</ScrollArea>
 			</React.Suspense>
 		);
 	}
