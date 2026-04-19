@@ -60,6 +60,11 @@ import {
 import * as React from "react";
 import { chatModels } from "@/lib/ai/models";
 import { getAvatarSrc } from "@/lib/avatar";
+import {
+	type ChatAppSourceProvider,
+	getAppSourceLabel,
+	getSelectedScopeLabel,
+} from "@/lib/chat-source-display";
 import type { WorkspaceRecord } from "@/lib/workspaces";
 
 type ContextPage = {
@@ -79,14 +84,7 @@ type AppSource = {
 	id: string;
 	title: string;
 	preview: string;
-	provider:
-		| "google-calendar"
-		| "google-drive"
-		| "jira"
-		| "notion"
-		| "posthog"
-		| "yandex-calendar"
-		| "yandex-tracker";
+	provider: ChatAppSourceProvider;
 };
 
 type ChatComposerProps = {
@@ -183,12 +181,13 @@ export function ChatComposer({
 		workspaceSources,
 		sourceSearchTerm,
 	);
-	const scopesLabel =
-		selectedSourceIds.length === 0
-			? "All sources"
-			: selectedSourceIds.length === 1
-				? "1 scope"
-				: `${selectedSourceIds.length} scopes`;
+	const scopesLabel = getSelectedScopeLabel({
+		selectedSourceIds,
+		workspaceSourceId,
+		workspaceLabel: activeWorkspace?.name ?? null,
+		workspaceSources,
+		appSources,
+	});
 	const mentionedPages = React.useMemo(
 		() =>
 			mentions.flatMap((mentionId) => {
@@ -798,7 +797,9 @@ function ScopePicker({
 									<Grid3x3 className="size-4" />
 								)}
 								<div className="min-w-0">
-									<div className="truncate">{source.title}</div>
+									<div className="truncate">
+										{getAppSourceLabel(source.provider)}
+									</div>
 								</div>
 							</DropdownMenuCheckboxItem>
 						);
@@ -881,8 +882,8 @@ function WorkspaceScopeMenu({
 						{!workspaceSourceSelected ? (
 							<span className="text-xs text-muted-foreground tabular-nums">
 								{selectedWorkspaceNoteCount === 1
-									? "1 scope"
-									: `${selectedWorkspaceNoteCount} scopes`}
+									? "1 source"
+									: `${selectedWorkspaceNoteCount} sources`}
 							</span>
 						) : null}
 						<Check className="size-4 text-muted-foreground" />
