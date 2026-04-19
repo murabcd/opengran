@@ -663,6 +663,11 @@ export function ChatPage({
 	);
 	const shouldShowActiveChatSurface =
 		controller.hasMessages || activeChatId === chatId;
+	// Web chat uses a 4rem shell header, while the native mac shell keeps a
+	// taller md offset. Matching the shell height keeps short-chat docks flush.
+	const chatSurfaceMinHeightClass = isDesktopMac
+		? "min-h-[calc(100dvh-4rem)] md:min-h-[calc(100dvh-5rem)]"
+		: "min-h-[calc(100dvh-4rem)] md:min-h-[calc(100dvh-4rem)]";
 	const composer = (
 		<ChatComposer
 			hasMessages={controller.hasMessages}
@@ -742,7 +747,12 @@ export function ChatPage({
 						)}
 					>
 						{shouldShowActiveChatSurface ? (
-							<div className="relative mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
+							<div
+								className={cn(
+									"relative mx-auto flex w-full max-w-xl flex-1 flex-col",
+									chatSurfaceMinHeightClass,
+								)}
+							>
 								<div className="flex-1 pt-8 pb-28 md:pb-32">
 									<ChatMessages
 										messages={controller.messages}
@@ -764,7 +774,12 @@ export function ChatPage({
 								</div>
 							</div>
 						) : (
-							<div className="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-xl flex-1 flex-col md:min-h-[calc(100svh-5rem)]">
+							<div
+								className={cn(
+									"mx-auto flex w-full max-w-xl flex-1 flex-col",
+									chatSurfaceMinHeightClass,
+								)}
+							>
 								<div className="flex flex-1 flex-col gap-6 pb-8">
 									<PageTitle isDesktopMac={isDesktopMac} className="w-full">
 										Ask anything

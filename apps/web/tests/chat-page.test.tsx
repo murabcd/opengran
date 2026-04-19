@@ -16,6 +16,8 @@ const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
 const scrollToBottomMock = vi.fn();
 const useStickyScrollToBottomMock = vi.fn();
+const chatPageSurfaceMinHeightClass =
+	"min-h-[calc(100dvh-4rem)] md:min-h-[calc(100dvh-4rem)]";
 
 const mockChatPageMutations = () => {
 	let mutationCallCount = 0;
@@ -974,5 +976,50 @@ describe("ChatPage", () => {
 		expect(dockContainer?.className).toContain(
 			`pb-[${COMPOSER_DOCK_SURFACE_BOTTOM_OFFSET}px]`,
 		);
+	});
+
+	it("uses the full dynamic viewport height for active chat surfaces", async () => {
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		useChatMock.mockReturnValue({
+			messages: [
+				{
+					id: "user-1",
+					role: "user",
+					parts: [{ type: "text", text: "Original question" }],
+				},
+			],
+			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			error: undefined,
+			status: "ready",
+			stop: stopMock,
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={"chat-1"}
+					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		const surface = Array.from(document.querySelectorAll("div")).find(
+			(element) => element.className.includes(chatPageSurfaceMinHeightClass),
+		);
+
+		expect(surface).not.toBeUndefined();
+		expect(surface?.className).toContain(chatPageSurfaceMinHeightClass);
 	});
 });
