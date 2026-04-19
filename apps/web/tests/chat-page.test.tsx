@@ -129,6 +129,9 @@ vi.mock("@/lib/auth-client", () => ({
 		convex: {
 			token: convexTokenMock,
 		},
+		useSession: () => ({
+			data: null,
+		}),
 	},
 }));
 

@@ -32,6 +32,11 @@ import {
 } from "../../../packages/ai/src/note-template-stream.mjs";
 import { buildPostHogTools } from "../../../packages/ai/src/posthog-tools.mjs";
 import {
+	buildGoogleCalendarTools,
+	buildGoogleDriveTools,
+	buildYandexCalendarTools,
+} from "../../../packages/ai/src/productivity-tools.mjs";
+import {
 	APPLY_TEMPLATE_SYSTEM_PROMPT,
 	buildApplyTemplatePrompt,
 	buildChatSystemPrompt,
@@ -281,21 +286,37 @@ const getSelectedAppConnections = async ({
 	const allSelectedSourceIds = selectedSourceIds ?? [];
 	const sourceIds = getSelectedAppSourceIds({ selectedSourceIds });
 	const client = new ConvexHttpClient(getConvexUrl(), { auth: convexToken });
+	const googleSources = await client
+		.action(api.googleTools.listAvailableSources, {})
+		.catch(() => []);
 
 	if (allSelectedSourceIds.length === 0) {
-		return await client.query(api.appConnections.getAllForChat, {
+		const connections = await client.query(api.appConnections.getAllForChat, {
 			workspaceId,
 		});
+		return [...connections, ...googleSources];
 	}
 
 	if (sourceIds.length === 0) {
-		return [];
+		return googleSources.filter((source) =>
+			allSelectedSourceIds.includes(source.id),
+		);
 	}
 
-	return await client.query(api.appConnections.getSelectedForChat, {
-		workspaceId,
-		sourceIds,
-	});
+	const connections = await client.query(
+		api.appConnections.getSelectedForChat,
+		{
+			workspaceId,
+			sourceIds,
+		},
+	);
+
+	return [
+		...connections,
+		...googleSources.filter((source) =>
+			allSelectedSourceIds.includes(source.id),
+		),
+	];
 };
 
 const clampWhitespace = (value) => value.replace(/\s+/g, " ").trim();
@@ -728,9 +749,21 @@ const handleChatRequest = async (request, response) => {
 		selectedAppConnections.find(
 			(connection) => connection.provider === "yandex-tracker",
 		) ?? null;
+	const yandexCalendarConnection =
+		selectedAppConnections.find(
+			(connection) => connection.provider === "yandex-calendar",
+		) ?? null;
 	const jiraConnection =
 		selectedAppConnections.find(
 			(connection) => connection.provider === "jira",
+		) ?? null;
+	const googleCalendarConnection =
+		selectedAppConnections.find(
+			(connection) => connection.provider === "google-calendar",
+		) ?? null;
+	const googleDriveConnection =
+		selectedAppConnections.find(
+			(connection) => connection.provider === "google-drive",
 		) ?? null;
 	const posthogConnection =
 		selectedAppConnections.find(
@@ -739,7 +772,75 @@ const handleChatRequest = async (request, response) => {
 	const trackerTools = trackerConnection
 		? buildTrackerTools(trackerConnection)
 		: {};
+	const googleCalendarTools =
+		googleCalendarConnection && convexClient && resolvedWorkspaceId
+			? buildGoogleCalendarTools({
+					listEvents: async ({ limit, meetingsOnly }) =>
+						await convexClient.action(
+							api.calendar.listGoogleCalendarEventsForTool,
+							{
+								workspaceId: resolvedWorkspaceId,
+								...(typeof limit === "number" ? { limit } : {}),
+								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
+							},
+						),
+					searchEvents: async ({ query, limit, meetingsOnly }) =>
+						await convexClient.action(
+							api.calendar.searchGoogleCalendarEventsForTool,
+							{
+								workspaceId: resolvedWorkspaceId,
+								query: query ?? "",
+								...(typeof limit === "number" ? { limit } : {}),
+								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
+							},
+						),
+				})
+			: {};
+	const yandexCalendarTools =
+		yandexCalendarConnection && convexClient && resolvedWorkspaceId
+			? buildYandexCalendarTools({
+					listEvents: async ({ limit, meetingsOnly }) =>
+						await convexClient.action(
+							api.calendar.listYandexCalendarEventsForTool,
+							{
+								workspaceId: resolvedWorkspaceId,
+								...(typeof limit === "number" ? { limit } : {}),
+								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
+							},
+						),
+					searchEvents: async ({ query, limit, meetingsOnly }) =>
+						await convexClient.action(
+							api.calendar.searchYandexCalendarEventsForTool,
+							{
+								workspaceId: resolvedWorkspaceId,
+								query: query ?? "",
+								...(typeof limit === "number" ? { limit } : {}),
+								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
+							},
+						),
+				})
+			: {};
 	const jiraTools = jiraConnection ? buildJiraTools(jiraConnection) : {};
+	const googleDriveTools =
+		googleDriveConnection && convexClient
+			? buildGoogleDriveTools({
+					searchFiles: async ({ query, limit }) =>
+						await convexClient.action(
+							api.googleTools.searchGoogleDriveFilesForTool,
+							{
+								query,
+								...(typeof limit === "number" ? { limit } : {}),
+							},
+						),
+					getFile: async ({ fileId }) =>
+						await convexClient.action(
+							api.googleTools.getGoogleDriveFileForTool,
+							{
+								fileId,
+							},
+						),
+				})
+			: {};
 	const posthogTools = posthogConnection
 		? await buildPostHogTools(posthogConnection)
 		: {};
@@ -754,8 +855,20 @@ const handleChatRequest = async (request, response) => {
 			? `\n\nThe selected app source for this chat is Yandex Tracker (${trackerConnection.displayName}). Treat it as the preferred source for project history, integrations, tickets, tasks, comments, assignees, and status. If the user's request could be answered from Tracker, search Tracker first before saying the context is unavailable.`
 			: ""
 	}${
+		googleCalendarConnection
+			? "\n\nThe selected app source for this chat is Google Calendar. Treat it as the preferred source for meeting schedules, event timing, attendee context, and calendar availability."
+			: ""
+	}${
+		yandexCalendarConnection
+			? "\n\nThe selected app source for this chat is Yandex Calendar. Treat it as the preferred source for meeting schedules, event timing, attendee context, and calendar availability."
+			: ""
+	}${
 		jiraConnection
 			? `\n\nThe selected app source for this chat is Jira (${jiraConnection.displayName}). Treat it as the preferred source for project history, tickets, tasks, comments, assignees, and status. If the user's request could be answered from Jira, search Jira first before saying the context is unavailable.`
+			: ""
+	}${
+		googleDriveConnection
+			? "\n\nThe selected app source for this chat is Google Drive. Treat it as the preferred source for connected Google docs, spreadsheets, presentations, and file metadata. Only read-only Drive tools are available in this chat."
 			: ""
 	}${
 		posthogConnection
@@ -775,7 +888,10 @@ const handleChatRequest = async (request, response) => {
 				}
 			: {}),
 		...trackerTools,
+		...googleCalendarTools,
+		...yandexCalendarTools,
 		...jiraTools,
+		...googleDriveTools,
 		...posthogTools,
 	};
 	const agent = new ToolLoopAgent({

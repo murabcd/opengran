@@ -79,7 +79,13 @@ type AppSource = {
 	id: string;
 	title: string;
 	preview: string;
-	provider: "jira" | "posthog" | "yandex-tracker";
+	provider:
+		| "google-calendar"
+		| "google-drive"
+		| "jira"
+		| "posthog"
+		| "yandex-calendar"
+		| "yandex-tracker";
 };
 
 type ChatComposerProps = {
@@ -773,7 +779,13 @@ function ScopePicker({
 								className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
 								onCheckedChange={() => onToggleSource(source.id)}
 							>
-								{source.provider === "yandex-tracker" ? (
+								{source.provider === "google-calendar" ? (
+									<Icons.googleCalendarLogo className="size-4" />
+								) : source.provider === "google-drive" ? (
+									<Icons.googleDriveLogo className="size-4" />
+								) : source.provider === "yandex-calendar" ? (
+									<Icons.yandexCalendarLogo className="size-4" />
+								) : source.provider === "yandex-tracker" ? (
 									<Icons.yandexTrackerLogo className="size-4 text-blue-500" />
 								) : source.provider === "jira" ? (
 									<Icons.jiraLogo className="size-4" />
