@@ -661,7 +661,7 @@ function SidebarProvider({
 		<SidebarShellContext.Provider value={shellContextValue}>
 			<SidebarRightContext.Provider value={rightContextValue}>
 				<SidebarDockedPanelsContext.Provider value={dockedPanelsContextValue}>
-					<TooltipProvider delayDuration={0}>
+					<TooltipProvider>
 						<div
 							data-slot="sidebar-wrapper"
 							style={
