@@ -73,6 +73,17 @@ vi.mock("@workspace/ui/components/popover", () => ({
 	),
 }));
 
+vi.mock("@workspace/ui/components/tooltip", () => ({
+	Tooltip: ({ children }: React.PropsWithChildren) => <>{children}</>,
+	TooltipContent: ({ children }: React.PropsWithChildren) => (
+		<div>{children}</div>
+	),
+	TooltipTrigger: ({
+		asChild: _asChild,
+		children,
+	}: React.PropsWithChildren<{ asChild?: boolean }>) => <>{children}</>,
+}));
+
 vi.mock("@workspace/ui/components/command", () => ({
 	Command: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
 	CommandEmpty: ({ children }: React.PropsWithChildren) => (
@@ -394,5 +405,32 @@ describe("NoteActionsMenu", () => {
 		expect(
 			screen.getAllByRole("button", { name: "Rename" }).length,
 		).toBeGreaterThan(0);
+	});
+
+	it("renders a gold filled star when the note is starred", async () => {
+		useQueryMock.mockImplementation((_query, args) =>
+			args && typeof args === "object" && "id" in args
+				? {
+						_id: "note-1",
+						title: "Test note",
+						visibility: "private",
+						shareId: null,
+						isStarred: true,
+					}
+				: [],
+		);
+
+		const { NoteStarButton } = await import(
+			"../src/components/note/note-actions-menu"
+		);
+
+		const { container } = render(<NoteStarButton noteId={"note-1" as never} />);
+		const button = screen.getByRole("button", {
+			name: "Remove note from favorites",
+		});
+		const starIcon = container.querySelector("svg");
+
+		expect(button.className).toContain("text-warning-foreground");
+		expect(starIcon?.getAttribute("class")).toContain("fill-current");
 	});
 });
