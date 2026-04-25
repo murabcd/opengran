@@ -17,6 +17,7 @@ const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
 const scrollToBottomMock = vi.fn();
 const useStickyScrollToBottomMock = vi.fn();
+const dropdownMenuModalValues: Array<boolean | undefined> = [];
 const chatPageSurfaceMinHeightClass =
 	"min-h-[calc(100dvh-4rem)] md:min-h-[calc(100dvh-4rem)]";
 
@@ -232,9 +233,13 @@ vi.mock("@workspace/ui/components/command", () => ({
 }));
 
 vi.mock("@workspace/ui/components/dropdown-menu", () => ({
-	DropdownMenu: ({ children }: React.PropsWithChildren) => (
-		<div>{children}</div>
-	),
+	DropdownMenu: ({
+		children,
+		modal,
+	}: React.PropsWithChildren<{ modal?: boolean }>) => {
+		dropdownMenuModalValues.push(modal);
+		return <div>{children}</div>;
+	},
 	DropdownMenuCheckboxItem: ({
 		children,
 		checked,
@@ -358,6 +363,7 @@ vi.mock("@workspace/ui/components/tooltip", () => ({
 
 describe("ChatPage", () => {
 	beforeEach(async () => {
+		dropdownMenuModalValues.length = 0;
 		const { clearCachedConvexToken } = await import("../src/lib/convex-token");
 		clearCachedConvexToken();
 		convexTokenMock.mockReset();
@@ -519,6 +525,30 @@ describe("ChatPage", () => {
 			},
 		);
 	}, 10_000);
+
+	it("does not opt the chat source picker into non-modal dropdown behavior", async () => {
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={null}
+					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		expect(dropdownMenuModalValues).not.toContain(false);
+	});
 
 	it("shows a stop button while streaming and stops the response", async () => {
 		const user = userEvent.setup();

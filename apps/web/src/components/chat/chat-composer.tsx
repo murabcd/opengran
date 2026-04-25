@@ -697,7 +697,7 @@ function ScopePicker({
 	const isSearchingWorkspaceNotes = sourceSearchTerm.trim().length > 0;
 
 	return (
-		<DropdownMenu open={open} onOpenChange={onOpenChange} modal={false}>
+		<DropdownMenu open={open} onOpenChange={onOpenChange}>
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<DropdownMenuTrigger asChild>
