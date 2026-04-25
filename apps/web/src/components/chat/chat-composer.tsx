@@ -89,7 +89,7 @@ type AppSource = {
 };
 
 type ChatComposerProps = {
-	hasMessages: boolean;
+	useCompactLayout: boolean;
 	draft: string;
 	editingMessageId?: string | null;
 	topAccessory?: React.ReactNode;
@@ -134,7 +134,7 @@ type ChatComposerProps = {
 };
 
 export function ChatComposer({
-	hasMessages,
+	useCompactLayout,
 	draft,
 	editingMessageId,
 	topAccessory,
@@ -206,7 +206,7 @@ export function ChatComposer({
 
 	return (
 		<div
-			className={`relative mx-auto w-full max-w-xl ${hasMessages ? "mt-auto" : ""}`}
+			className={`relative mx-auto w-full max-w-xl ${useCompactLayout ? "mt-auto" : ""}`}
 		>
 			<label htmlFor="chat-prompt" className="sr-only">
 				Prompt
@@ -217,11 +217,11 @@ export function ChatComposer({
 				topAccessory={topAccessory}
 			/>
 			<InputGroup
-				className={`${hasMessages ? "min-h-[96px]" : "min-h-[148px]"} max-h-[32rem] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30`}
+				className={`${useCompactLayout ? "min-h-[96px]" : "min-h-[148px]"} max-h-[32rem] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30`}
 			>
 				{showTopAddon ? (
 					<ChatComposerTopAddon
-						hasMessages={hasMessages}
+						useCompactLayout={useCompactLayout}
 						mentionedPages={mentionedPages}
 						onRemoveMention={onRemoveMention}
 						mentionPicker={
@@ -246,13 +246,13 @@ export function ChatComposer({
 					value={draft}
 					onChange={(event) => onDraftChange(event.target.value)}
 					onKeyDown={onDraftKeyDown}
-					rows={hasMessages ? 1 : 3}
+					rows={useCompactLayout ? 1 : 3}
 					placeholder="Ask, search, or make anything..."
-					className={`${hasMessages ? "min-h-[40px] pt-2 pb-0" : "min-h-[64px] pt-2"} max-h-[24rem] overflow-y-auto px-4 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0`}
+					className={`${useCompactLayout ? "min-h-[40px] pt-2 pb-0" : "min-h-[64px] pt-2"} max-h-[24rem] overflow-y-auto px-4 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0`}
 				/>
 
 				<ChatComposerFooter
-					hasMessages={hasMessages}
+					useCompactLayout={useCompactLayout}
 					draft={draft}
 					isLoading={isLoading}
 					onSubmit={onSubmit}
@@ -487,12 +487,12 @@ function ChatComposerTopAccessory({
 }
 
 function ChatComposerTopAddon({
-	hasMessages,
+	useCompactLayout,
 	mentionedPages,
 	onRemoveMention,
 	mentionPicker,
 }: {
-	hasMessages: boolean;
+	useCompactLayout: boolean;
 	mentionedPages: ContextPage[];
 	onRemoveMention: (pageId: string) => void;
 	mentionPicker: React.ReactNode;
@@ -500,7 +500,7 @@ function ChatComposerTopAddon({
 	return (
 		<InputGroupAddon
 			align="block-start"
-			className={`px-4 pb-0 ${hasMessages ? "pt-2.5" : "pt-4"}`}
+			className={`px-4 pb-0 ${useCompactLayout ? "pt-2.5" : "pt-4"}`}
 		>
 			{mentionPicker}
 			{mentionedPages.length > 0 ? (
@@ -540,7 +540,7 @@ function ChatComposerMentionChips({
 }
 
 function ChatComposerFooter({
-	hasMessages,
+	useCompactLayout,
 	draft,
 	isLoading,
 	onSubmit,
@@ -548,7 +548,7 @@ function ChatComposerFooter({
 	modelPicker,
 	scopePicker,
 }: {
-	hasMessages: boolean;
+	useCompactLayout: boolean;
 	draft: string;
 	isLoading: boolean;
 	onSubmit: () => void | Promise<void>;
@@ -559,7 +559,7 @@ function ChatComposerFooter({
 	return (
 		<InputGroupAddon
 			align="block-end"
-			className={`gap-1 px-4 ${hasMessages ? "pb-2.5" : "pb-4"}`}
+			className={`gap-1 px-4 ${useCompactLayout ? "pb-2.5" : "pb-4"}`}
 		>
 			{modelPicker}
 			{scopePicker}

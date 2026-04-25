@@ -1022,6 +1022,50 @@ describe("ChatPage", () => {
 		).toBeTruthy();
 	});
 
+	it("uses the compact composer layout for an active chat even before messages load", async () => {
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		useChatMock.mockReturnValue({
+			messages: [],
+			sendMessage: sendMessageMock,
+			regenerate: regenerateMock,
+			setMessages: vi.fn(),
+			error: undefined,
+			status: "ready",
+			stop: stopMock,
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId={"chat-1"}
+					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		const composerGroup = screen
+			.getByPlaceholderText("Ask, search, or make anything...")
+			.closest("div");
+
+		expect(composerGroup?.className).toContain("min-h-[96px]");
+		expect(composerGroup?.className).not.toContain("min-h-[148px]");
+		expect(
+			screen
+				.getByPlaceholderText("Ask, search, or make anything...")
+				.getAttribute("rows"),
+		).toBe("1");
+	});
+
 	it("keeps the Ask AI composer dock aligned with the note chat baseline", async () => {
 		const { ChatPage } = await import("../src/components/chat/chat-page");
 

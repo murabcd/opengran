@@ -699,7 +699,7 @@ export function ChatPage({
 		: "min-h-[calc(100dvh-4rem)] md:min-h-[calc(100dvh-4rem)]";
 	const composer = (
 		<ChatComposer
-			hasMessages={controller.hasMessages}
+			useCompactLayout={shouldShowActiveChatSurface}
 			draft={controller.draft}
 			topAccessory={
 				controller.hasMessages && !isChatViewportAtBottom ? (
