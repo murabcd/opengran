@@ -148,7 +148,7 @@ function ChatHistoryItem({
 	return (
 		<div
 			className={cn(
-				"group flex items-center rounded-lg p-1 transition-colors hover:bg-card/50 has-[[data-chat-actions]:focus-visible]:bg-transparent has-[[data-chat-actions]:hover]:bg-transparent",
+				"group flex items-center rounded-lg p-1 transition-colors hover:bg-accent has-[[data-chat-actions]:focus-visible]:bg-transparent has-[[data-chat-actions]:hover]:bg-transparent",
 				activeChatId === storedChatId ? "bg-transparent" : "bg-transparent",
 			)}
 		>

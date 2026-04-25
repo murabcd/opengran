@@ -508,7 +508,7 @@ function NotesList({
 									<div
 										key={note._id}
 										className={cn(
-											"group flex items-center rounded-lg p-1 transition-colors hover:bg-card/50 has-[[data-note-actions]:focus-visible]:bg-transparent has-[[data-note-actions]:hover]:bg-transparent",
+											"group flex items-center rounded-lg p-1 transition-colors hover:bg-accent has-[[data-note-actions]:focus-visible]:bg-transparent has-[[data-note-actions]:hover]:bg-transparent",
 											isActive ? "bg-transparent" : "bg-transparent",
 										)}
 									>

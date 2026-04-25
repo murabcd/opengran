@@ -198,7 +198,7 @@ function AutomationListItemRow({
 
 	return (
 		<>
-			<div className="group flex items-center rounded-lg p-1 transition-colors hover:bg-card/50 has-[[data-automation-actions]:focus-visible]:bg-transparent has-[[data-automation-actions]:hover]:bg-transparent">
+			<div className="group flex items-center rounded-lg p-1 transition-colors hover:bg-accent has-[[data-automation-actions]:focus-visible]:bg-transparent has-[[data-automation-actions]:hover]:bg-transparent">
 				<button
 					type="button"
 					className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
