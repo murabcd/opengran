@@ -10,4 +10,11 @@ crons.cron(
 	{},
 );
 
+crons.interval(
+	"reconcile due automations",
+	{ minutes: 1 },
+	internal.automations.reconcileDueAutomations,
+	{},
+);
+
 export default crons;

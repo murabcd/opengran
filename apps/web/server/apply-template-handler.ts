@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { openai } from "@ai-sdk/openai";
 import { smoothStream, streamText } from "ai";
+import { NOTE_GENERATION_MODEL_ID } from "../../../packages/ai/src/models.mjs";
 import {
 	APPLY_TEMPLATE_SYSTEM_PROMPT,
 	buildApplyTemplatePrompt,
@@ -98,7 +99,7 @@ export const handleApplyTemplateRequest = async (
 	response.flushHeaders?.();
 
 	const result = streamText({
-		model: openai("gpt-5.4-mini"),
+		model: openai(NOTE_GENERATION_MODEL_ID),
 		system: APPLY_TEMPLATE_SYSTEM_PROMPT,
 		prompt: buildApplyTemplatePrompt({
 			title,

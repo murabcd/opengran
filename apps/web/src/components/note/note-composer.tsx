@@ -109,7 +109,7 @@ import {
 import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
-import { getChatModel } from "@/lib/ai/models";
+import { getChatModel, NOTE_CHAT_MODEL_ID } from "@/lib/ai/models";
 import { getChatText } from "@/lib/chat-message";
 import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
@@ -140,7 +140,7 @@ import {
 } from "../layout/docked-panel-dimensions";
 
 type NoteChatPresentation = "inline" | "floating" | "sidebar";
-const NOTE_CHAT_MODEL = getChatModel("gpt-5.4-mini");
+const NOTE_CHAT_MODEL = getChatModel(NOTE_CHAT_MODEL_ID);
 const NOTE_CHAT_FLOATING_WIDTH = "min(28rem, calc(100vw - 2rem))";
 const NOTE_CHAT_FLOATING_HEIGHT_STORAGE_KEY_PREFIX =
 	"opengran.noteComposer.floatingHeight";

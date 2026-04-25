@@ -7,6 +7,7 @@ export type AppUser = {
 export type AppView =
 	| "home"
 	| "chat"
+	| "automation"
 	| "inbox"
 	| "shared"
 	| "note"
@@ -34,7 +35,14 @@ export type AppLocationState = {
 	shouldStopNoteCaptureWhenMeetingEnds: boolean;
 	scheduledAutoStartNoteCaptureAt: string | null;
 	pendingCalendarEvent: UpcomingCalendarEvent | null;
-	canonicalPath: "/home" | "/chat" | "/inbox" | "/shared" | "/note" | null;
+	canonicalPath:
+		| "/home"
+		| "/chat"
+		| "/automations"
+		| "/inbox"
+		| "/shared"
+		| "/note"
+		| null;
 	canonicalSearch: string;
 };
 

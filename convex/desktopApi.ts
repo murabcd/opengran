@@ -18,6 +18,11 @@ import {
 	finalizeGeneratedChatTitle,
 } from "../packages/ai/src/chat-titles.mjs";
 import {
+	CHAT_SERVER_MODELS,
+	CHAT_TITLE_MODEL_ID,
+	NOTE_GENERATION_MODEL_ID,
+} from "../packages/ai/src/models.mjs";
+import {
 	parseTemplateStreamToStructuredNote,
 	validateTemplateStream,
 } from "../packages/ai/src/note-template-stream.mjs";
@@ -79,15 +84,9 @@ type ApplyTemplateRequestBody = {
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
 const MAX_NOTE_CONTEXT_LENGTH = 16_000;
-const CHAT_TITLE_MODEL = "gpt-5.4-nano";
 const APP_SOURCE_PREFIX = "app:";
 const WORKSPACE_SOURCE_PREFIX = "workspace:";
-const chatModels = [
-	{ id: "auto", model: "gpt-5.4" },
-	{ id: "gpt-5.4", model: "gpt-5.4" },
-	{ id: "gpt-5.4-mini", model: "gpt-5.4-mini" },
-	{ id: "gpt-5.4-nano", model: "gpt-5.4-nano" },
-];
+const chatModels = CHAT_SERVER_MODELS;
 const fallbackChatModel = chatModels[0];
 const generateMessageId = createIdGenerator({
 	prefix: "msg",
@@ -212,7 +211,7 @@ const generateChatTitle = async ({
 
 	try {
 		const { text } = await generateText({
-			model: openai(CHAT_TITLE_MODEL),
+			model: openai(CHAT_TITLE_MODEL_ID),
 			system: CHAT_TITLE_SYSTEM_PROMPT,
 			prompt: buildChatTitlePrompt({
 				userText,
@@ -754,7 +753,7 @@ export const handleEnhanceNoteRequest = async (request: Request) => {
 	}
 
 	const { output } = await generateText({
-		model: openai("gpt-5.4-mini"),
+		model: openai(NOTE_GENERATION_MODEL_ID),
 		system: ENHANCED_NOTE_SYSTEM_PROMPT,
 		output: Output.object({
 			schema: structuredNoteSchema,
@@ -806,7 +805,7 @@ export const handleApplyTemplateRequest = async (request: Request) => {
 	}
 
 	const result = streamText({
-		model: openai("gpt-5.4-mini"),
+		model: openai(NOTE_GENERATION_MODEL_ID),
 		system: APPLY_TEMPLATE_SYSTEM_PROMPT,
 		prompt: buildApplyTemplatePrompt({
 			title,

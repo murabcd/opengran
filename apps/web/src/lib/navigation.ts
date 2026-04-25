@@ -1,4 +1,11 @@
-import { Home, Inbox, MessageCircle, Search, UsersRound } from "lucide-react";
+import {
+	Clock,
+	Home,
+	Inbox,
+	MessageCircle,
+	Search,
+	UsersRound,
+} from "lucide-react";
 
 export const SIDEBAR_NAVIGATION = [
 	{
@@ -25,13 +32,21 @@ export const SIDEBAR_NAVIGATION = [
 		icon: MessageCircle,
 	},
 	{
+		title: "Automations",
+		action: "view",
+		view: "automation",
+		icon: Clock,
+	},
+	{
 		title: "Inbox",
 		action: "inbox",
 		icon: Inbox,
 	},
 ] as const;
 
-export function getSidebarViewTitle(view: "home" | "chat" | "shared") {
+export function getSidebarViewTitle(
+	view: "home" | "chat" | "automation" | "shared",
+) {
 	const item = SIDEBAR_NAVIGATION.find(
 		(item) => item.action === "view" && item.view === view,
 	);

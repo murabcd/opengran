@@ -74,6 +74,12 @@ import {
 	shouldAutoStartNoteCaptureFromUrl,
 	toStoredChatMessages,
 } from "@/app/location";
+import type {
+	AutomationDraft,
+	AutomationListItem,
+} from "@/components/automations/automation-types";
+import { AutomationsPage } from "@/components/automations/automations-page";
+import { CreateAutomationDialog } from "@/components/automations/create-automation-dialog";
 import { readDesktopInboxPanelPinnedState } from "@/components/inbox/inbox-panel-state";
 import { AppShellInset } from "@/components/layout/app-shell-inset";
 import {
@@ -196,6 +202,9 @@ const useAppShellState = ({
 	const [settingsOpen, setSettingsOpen] = React.useState(false);
 	const [settingsPage, setSettingsPage] =
 		React.useState<SettingsPage>("Profile");
+	const [automationDialogOpen, setAutomationDialogOpen] = React.useState(false);
+	const [editingAutomationId, setEditingAutomationId] =
+		React.useState<Id<"automations"> | null>(null);
 	const [isSigningOut, startSignOut] = React.useTransition();
 	const [activeWorkspaceId, setActiveWorkspaceId] =
 		React.useState<Id<"workspaces"> | null>(() => workspaces[0]?._id ?? null);
@@ -345,6 +354,8 @@ const useAppShellState = ({
 			setCurrentNoteCommentsOpener(null);
 			setSettingsPage(input.settingsPage);
 			setSettingsOpen(input.settingsOpen);
+			setAutomationDialogOpen(false);
+			setEditingAutomationId(null);
 		},
 		[],
 	);
@@ -397,11 +408,22 @@ const useAppShellState = ({
 	);
 	const saveNote = useMutation(api.notes.save);
 	const createWorkspace = useMutation(api.workspaces.create);
+	const createAutomation = useMutation(api.automations.create);
+	const updateAutomation = useMutation(api.automations.update);
+	const runAutomationNow = useMutation(api.automations.runNow);
+	const toggleAutomationPaused = useMutation(api.automations.togglePaused);
+	const deleteAutomation = useMutation(api.automations.remove);
 	const listUpcomingGoogleEvents = useAction(
 		api.calendar.listUpcomingGoogleEvents,
 	);
 	const chats = useQuery(
 		api.chats.list,
+		resolvedActiveWorkspaceId
+			? { workspaceId: resolvedActiveWorkspaceId }
+			: "skip",
+	);
+	const automations = useQuery(
+		api.automations.list,
 		resolvedActiveWorkspaceId
 			? { workspaceId: resolvedActiveWorkspaceId }
 			: "skip",
@@ -764,11 +786,161 @@ const useAppShellState = ({
 		window.history.pushState(null, "", "/chat");
 	}, [shouldKeepPinnedInboxOpen]);
 
+	const openStoredChat = React.useCallback(
+		(chatId: string) => {
+			void preloadChatPageSurface();
+			setInboxOpen(shouldKeepPinnedInboxOpen());
+			setCurrentView("chat");
+			setSettingsOpen(false);
+			setCurrentChatId(chatId);
+			setChatComposerId(chatId);
+			window.history.pushState(
+				null,
+				"",
+				`/chat?chatId=${encodeURIComponent(chatId)}`,
+			);
+		},
+		[shouldKeepPinnedInboxOpen],
+	);
+
+	const editingAutomation = React.useMemo(
+		() =>
+			editingAutomationId
+				? ((automations ?? []).find(
+						(automation) => automation.id === editingAutomationId,
+					) ?? null)
+				: null,
+		[automations, editingAutomationId],
+	);
+
+	const handleAutomationDialogOpenChange = React.useCallback(
+		(open: boolean) => {
+			setAutomationDialogOpen(open);
+			if (!open) {
+				setEditingAutomationId(null);
+			}
+		},
+		[],
+	);
+
+	const handleCreateAutomationOpen = React.useCallback(() => {
+		setEditingAutomationId(null);
+		setAutomationDialogOpen(true);
+	}, []);
+
+	const handleEditAutomationOpen = React.useCallback(
+		(automationId: Id<"automations">) => {
+			setEditingAutomationId(automationId);
+			setAutomationDialogOpen(true);
+		},
+		[],
+	);
+
+	const handleAutomationSave = React.useCallback(
+		async (automation: AutomationDraft) => {
+			if (!resolvedActiveWorkspaceId) {
+				toast.error("Select a workspace before creating an automation");
+				return;
+			}
+
+			const input = {
+				title: automation.title,
+				prompt: automation.prompt,
+				model: automation.model,
+				schedulePeriod: automation.schedulePeriod,
+				scheduledAt: automation.scheduledAt,
+				timezone: automation.timezone,
+				target: {
+					kind: "project" as const,
+					projectId: automation.target.projectId,
+				},
+			};
+
+			try {
+				if (editingAutomationId) {
+					await updateAutomation({
+						automationId: editingAutomationId,
+						...input,
+					});
+					toast.success("Automation updated");
+				} else {
+					await createAutomation({
+						workspaceId: resolvedActiveWorkspaceId,
+						...input,
+					});
+					toast.success("Automation created");
+				}
+
+				setAutomationDialogOpen(false);
+				setEditingAutomationId(null);
+			} catch (error) {
+				console.error("Failed to save automation", error);
+				toast.error("Failed to save automation");
+			}
+		},
+		[
+			createAutomation,
+			editingAutomationId,
+			resolvedActiveWorkspaceId,
+			updateAutomation,
+		],
+	);
+
+	const handleOpenAutomation = React.useCallback(
+		(automation: AutomationListItem) => {
+			openStoredChat(automation.chatId);
+		},
+		[openStoredChat],
+	);
+
+	const handleRunAutomationNow = React.useCallback(
+		async (automationId: Id<"automations">) => {
+			try {
+				const result = await runAutomationNow({ automationId });
+				openStoredChat(result.chatId);
+			} catch (error) {
+				console.error("Failed to run automation", error);
+				toast.error("Failed to run automation");
+			}
+		},
+		[openStoredChat, runAutomationNow],
+	);
+
+	const handleToggleAutomationPaused = React.useCallback(
+		async (automationId: Id<"automations">) => {
+			try {
+				const automation = await toggleAutomationPaused({ automationId });
+				toast.success(
+					automation.isPaused ? "Automation paused" : "Automation resumed",
+				);
+			} catch (error) {
+				console.error("Failed to update automation", error);
+				toast.error("Failed to update automation");
+			}
+		},
+		[toggleAutomationPaused],
+	);
+
+	const handleDeleteAutomation = React.useCallback(
+		async (automationId: Id<"automations">) => {
+			try {
+				await deleteAutomation({ automationId });
+				toast.success("Automation deleted");
+			} catch (error) {
+				console.error("Failed to delete automation", error);
+				toast.error("Failed to delete automation");
+			}
+		},
+		[deleteAutomation],
+	);
+
 	const handleViewChange = React.useCallback(
 		(view: AppView) => {
 			if (view === "inbox") {
 				setInboxOpen(true);
 				setSettingsOpen(false);
+				setAutomationDialogOpen(false);
+				setEditingAutomationId(null);
 				return;
 			}
 
@@ -784,6 +956,8 @@ const useAppShellState = ({
 			setInboxOpen(shouldKeepPinnedInboxOpen());
 			setCurrentView(view);
 			setSettingsOpen(false);
+			setAutomationDialogOpen(false);
+			setEditingAutomationId(null);
 			setCurrentNoteEditorActions(null);
 			setCurrentNoteCommentsOpener(null);
 			const search =
@@ -795,9 +969,11 @@ const useAppShellState = ({
 				"",
 				view === "note"
 					? `/note${search}`
-					: view === "shared"
-						? "/shared"
-						: "/home",
+					: view === "automation"
+						? "/automations"
+						: view === "shared"
+							? "/shared"
+							: "/home",
 			);
 		},
 		[openFreshChat, resolvedCurrentNoteId, shouldKeepPinnedInboxOpen],
@@ -1177,20 +1353,10 @@ const useAppShellState = ({
 	);
 	const handleOpenChat = React.useCallback(
 		(chatId: string) => {
-			void preloadChatPageSurface();
 			handlePrefetchChat(chatId);
-			setInboxOpen(shouldKeepPinnedInboxOpen());
-			setCurrentView("chat");
-			setSettingsOpen(false);
-			setCurrentChatId(chatId);
-			setChatComposerId(chatId);
-			window.history.pushState(
-				null,
-				"",
-				`/chat?chatId=${encodeURIComponent(chatId)}`,
-			);
+			openStoredChat(chatId);
 		},
-		[handlePrefetchChat, shouldKeepPinnedInboxOpen],
+		[handlePrefetchChat, openStoredChat],
 	);
 
 	const handleNewChat = React.useCallback(() => {
@@ -1279,9 +1445,11 @@ const useAppShellState = ({
 				? "Page Not Found"
 				: resolvedCurrentView === "chat"
 					? getSidebarViewTitle("chat")
-					: resolvedCurrentView === "shared" || isSharedNote
-						? getSidebarViewTitle("shared")
-						: getSidebarViewTitle("home"),
+					: resolvedCurrentView === "automation"
+						? getSidebarViewTitle("automation")
+						: resolvedCurrentView === "shared" || isSharedNote
+							? getSidebarViewTitle("shared")
+							: getSidebarViewTitle("home"),
 		chats,
 		chatComposerId,
 		currentChatId,
@@ -1308,6 +1476,11 @@ const useAppShellState = ({
 				return;
 			}
 
+			if (resolvedCurrentView === "automation") {
+				handleViewChange("automation");
+				return;
+			}
+
 			handleViewChange(
 				resolvedCurrentView === "shared" || isSharedNote ? "shared" : "home",
 			);
@@ -1316,22 +1489,31 @@ const useAppShellState = ({
 		handleChatRemoved,
 		handleCreateNote,
 		handleCreateNoteFromChatResponse,
+		handleCreateAutomationOpen,
+		handleEditAutomationOpen,
+		handleOpenAutomation,
 		handleInboxOpenChange,
 		handleNewChat,
 		handleNoteTrashed,
+		handleDeleteAutomation,
 		handleOpenCalendarEventNote,
 		handleOpenCalendarSettings,
 		handleOpenChat,
 		handlePrefetchChat,
 		handlePrefetchNote,
 		handleQuickNote,
+		handleRunAutomationNow,
 		handleSettingsOpenChange,
 		handleSignOut,
+		handleToggleAutomationPaused,
 		handleViewChange,
 		handleWorkspaceCreate,
 		inboxOpen,
 		initialChatMessages,
 		isInitialChatMessagesLoading,
+		automationDialogOpen,
+		automations: automations ?? [],
+		editingAutomation,
 		isDesktopMac,
 		isLoadingUpcomingCalendarEvents,
 		isResolvingCurrentNoteRoute: isResolvingCurrentNote,
@@ -1343,12 +1525,14 @@ const useAppShellState = ({
 		settingsOpen,
 		settingsPage,
 		setActiveWorkspaceId,
+		handleAutomationDialogOpenChange,
 		setCurrentNoteCommentsOpener,
 		setCurrentNoteEditorActions,
 		setCurrentNoteTitle,
 		sharedNotes,
 		shouldAutoStartNoteCapture,
 		shouldStopNoteCaptureWhenMeetingEnds,
+		handleAutomationSave,
 		upcomingCalendarEvents,
 		upcomingCalendarStatus,
 		user,
@@ -1372,6 +1556,7 @@ type AppShellHeaderProps = {
 	onNoteTitleChange: (title: string) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 	onNewChat: () => void;
+	onNewAutomation: () => void;
 };
 
 function AppShellHeader({
@@ -1390,6 +1575,7 @@ function AppShellHeader({
 	onNoteTitleChange,
 	onNoteTrashed,
 	onNewChat,
+	onNewAutomation,
 }: AppShellHeaderProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const { state: sidebarState } = useSidebarShell();
@@ -1571,6 +1757,7 @@ function AppShellHeader({
 					onCreateNote={onCreateNote}
 					onNoteTrashed={onNoteTrashed}
 					onNewChat={onNewChat}
+					onNewAutomation={onNewAutomation}
 				/>
 			</div>
 		</header>
@@ -1694,6 +1881,7 @@ function AppShellHeaderActions({
 	onCreateNote,
 	onNoteTrashed,
 	onNewChat,
+	onNewAutomation,
 }: Pick<
 	AppShellHeaderProps,
 	| "currentView"
@@ -1706,6 +1894,7 @@ function AppShellHeaderActions({
 	| "onCreateNote"
 	| "onNoteTrashed"
 	| "onNewChat"
+	| "onNewAutomation"
 >) {
 	if (currentView === "home") {
 		return (
@@ -1729,6 +1918,19 @@ function AppShellHeaderActions({
 			>
 				<Plus />
 				New chat
+			</Button>
+		);
+	}
+
+	if (currentView === "automation") {
+		return (
+			<Button
+				variant="outline"
+				data-app-region={isDesktopMac ? "no-drag" : undefined}
+				onClick={onNewAutomation}
+			>
+				<Plus />
+				New automation
 			</Button>
 		);
 	}
@@ -1914,6 +2116,13 @@ const AppShellContent = React.memo(function AppShellContent({
 	shouldAutoStartNoteCapture,
 	shouldStopNoteCaptureWhenMeetingEnds,
 	onGoHome,
+	onCreateAutomation,
+	automations,
+	onEditAutomation,
+	onOpenAutomation,
+	onRunAutomationNow,
+	onToggleAutomationPaused,
+	onDeleteAutomation,
 }: {
 	isDesktopMac: boolean;
 	currentView: AppView;
@@ -1963,6 +2172,13 @@ const AppShellContent = React.memo(function AppShellContent({
 	shouldAutoStartNoteCapture: boolean;
 	shouldStopNoteCaptureWhenMeetingEnds: boolean;
 	onGoHome: () => void;
+	onCreateAutomation: () => void;
+	automations: AutomationListItem[];
+	onEditAutomation: (automationId: Id<"automations">) => void;
+	onOpenAutomation: (automation: AutomationListItem) => void;
+	onRunAutomationNow: (automationId: Id<"automations">) => void;
+	onToggleAutomationPaused: (automationId: Id<"automations">) => void;
+	onDeleteAutomation: (automationId: Id<"automations">) => void;
 }) {
 	const noteViewScrollRef = React.useRef<HTMLDivElement | null>(null);
 	const noteScrollResetKey =
@@ -2026,6 +2242,26 @@ const AppShellContent = React.memo(function AppShellContent({
 					isDesktopMac={isDesktopMac}
 					onOpenNote={onOpenNote}
 					onNoteTrashed={onNoteTrashed}
+				/>
+			</ScrollArea>
+		);
+	}
+
+	if (currentView === "automation") {
+		return (
+			<ScrollArea
+				className="min-h-0 flex-1"
+				viewportClassName="overscroll-contain"
+			>
+				<AutomationsPage
+					automations={automations}
+					isDesktopMac={isDesktopMac}
+					onCreateAutomation={onCreateAutomation}
+					onDeleteAutomation={onDeleteAutomation}
+					onEditAutomation={onEditAutomation}
+					onOpenAutomation={onOpenAutomation}
+					onRunAutomationNow={onRunAutomationNow}
+					onToggleAutomationPaused={onToggleAutomationPaused}
 				/>
 			</ScrollArea>
 		);
@@ -2189,6 +2425,7 @@ export function AuthenticatedAppShell({
 						onNoteTitleChange={controller.setCurrentNoteTitle}
 						onNoteTrashed={controller.handleNoteTrashed}
 						onNewChat={controller.handleNewChat}
+						onNewAutomation={controller.handleCreateAutomationOpen}
 					/>
 					<AppShellContent
 						isDesktopMac={controller.isDesktopMac}
@@ -2240,8 +2477,21 @@ export function AuthenticatedAppShell({
 							controller.shouldStopNoteCaptureWhenMeetingEnds
 						}
 						onGoHome={handleGoHome}
+						onCreateAutomation={controller.handleCreateAutomationOpen}
+						automations={controller.automations}
+						onEditAutomation={controller.handleEditAutomationOpen}
+						onOpenAutomation={controller.handleOpenAutomation}
+						onRunAutomationNow={controller.handleRunAutomationNow}
+						onToggleAutomationPaused={controller.handleToggleAutomationPaused}
+						onDeleteAutomation={controller.handleDeleteAutomation}
 					/>
 				</AppShellInset>
+				<CreateAutomationDialog
+					open={controller.automationDialogOpen}
+					onOpenChange={controller.handleAutomationDialogOpenChange}
+					onCreateAutomation={controller.handleAutomationSave}
+					initialAutomation={controller.editingAutomation}
+				/>
 			</SidebarProvider>
 		</ActiveWorkspaceProvider>
 	);

@@ -27,6 +27,11 @@ import {
 } from "../../../packages/ai/src/chat-titles.mjs";
 import { buildJiraTools } from "../../../packages/ai/src/jira-tools.mjs";
 import {
+	CHAT_SERVER_MODELS,
+	CHAT_TITLE_MODEL_ID,
+	NOTE_GENERATION_MODEL_ID,
+} from "../../../packages/ai/src/models.mjs";
+import {
 	parseTemplateStreamToStructuredNote,
 	validateTemplateStream,
 } from "../../../packages/ai/src/note-template-stream.mjs";
@@ -54,13 +59,6 @@ import {
 const runtimeDir = dirname(fileURLToPath(import.meta.url));
 const webDistDir = resolve(runtimeDir, "../../web/dist");
 
-const chatModels = [
-	{ id: "auto", model: "gpt-5.4" },
-	{ id: "gpt-5.4", model: "gpt-5.4" },
-	{ id: "gpt-5.4-mini", model: "gpt-5.4-mini" },
-	{ id: "gpt-5.4-nano", model: "gpt-5.4-nano" },
-];
-
 const mimeTypes = {
 	".css": "text/css; charset=utf-8",
 	".html": "text/html; charset=utf-8",
@@ -71,11 +69,11 @@ const mimeTypes = {
 	".woff2": "font/woff2",
 };
 
-const fallbackChatModel = chatModels[0];
 const MAX_CHAT_PREVIEW_LENGTH = 180;
 const MAX_CHAT_TITLE_LENGTH = 80;
 const MAX_NOTE_CONTEXT_LENGTH = 16_000;
-const CHAT_TITLE_MODEL = "gpt-5.4-nano";
+const chatModels = CHAT_SERVER_MODELS;
+const fallbackChatModel = chatModels[0];
 const preferredExtensionBridgePorts = Array.from(
 	{ length: 20 },
 	(_value, index) => 42831 + index,
@@ -429,7 +427,7 @@ const generateChatTitle = async ({ userMessage, assistantMessage }) => {
 
 	try {
 		const { text } = await generateText({
-			model: openai(CHAT_TITLE_MODEL),
+			model: openai(CHAT_TITLE_MODEL_ID),
 			system: CHAT_TITLE_SYSTEM_PROMPT,
 			prompt: buildChatTitlePrompt({
 				userText,
@@ -1053,7 +1051,7 @@ const handleEnhanceNoteRequest = async (request, response) => {
 	}
 
 	const { output } = await generateText({
-		model: openai("gpt-5.4-mini"),
+		model: openai(NOTE_GENERATION_MODEL_ID),
 		system: ENHANCED_NOTE_SYSTEM_PROMPT,
 		output: Output.object({
 			schema: structuredNoteSchema,
@@ -1119,7 +1117,7 @@ const handleApplyTemplateRequest = async (request, response) => {
 	response.flushHeaders?.();
 
 	const result = streamText({
-		model: openai("gpt-5.4-mini"),
+		model: openai(NOTE_GENERATION_MODEL_ID),
 		system: APPLY_TEMPLATE_SYSTEM_PROMPT,
 		prompt: buildApplyTemplatePrompt({
 			title,

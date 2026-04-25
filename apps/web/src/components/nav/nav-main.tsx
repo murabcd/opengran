@@ -15,7 +15,7 @@ type NavItem = {
 	title: string;
 	icon: LucideIcon;
 	action: "search" | "view" | "inbox" | "disabled";
-	view?: "home" | "chat" | "shared";
+	view?: "home" | "chat" | "automation" | "shared";
 	isActive?: boolean;
 	badge?: number;
 };
@@ -31,7 +31,9 @@ export function NavMain({
 	className?: string;
 	items: NavItem[];
 	onCreateNote: () => void;
-	onViewChange: (view: "home" | "chat" | "shared" | "note") => void;
+	onViewChange: (
+		view: "home" | "chat" | "automation" | "shared" | "note",
+	) => void;
 	onSearchOpen: () => void;
 	onInboxToggle: () => void;
 }) {

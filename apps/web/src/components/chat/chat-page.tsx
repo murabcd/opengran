@@ -28,7 +28,7 @@ import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
 import { authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
 import { getChatText } from "@/lib/chat-message";
-import { getUIMessageSeedKey } from "@/lib/chat-snapshot";
+import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
 import {
@@ -204,6 +204,14 @@ const useChatPageController = ({
 		}
 	});
 	const truncateFromMessage = useMutation(api.chats.truncateFromMessage);
+	const storedMessages = useQuery(
+		api.chats.getMessages,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId, chatId } : "skip",
+	);
+	const runningAutomationRun = useQuery(
+		api.automations.getRunningRunForChat,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId, chatId } : "skip",
+	);
 	const transport = React.useMemo(
 		() =>
 			new DefaultChatTransport({
@@ -245,6 +253,13 @@ const useChatPageController = ({
 		messages: initialMessages,
 		transport,
 	});
+	const persistedMessages = React.useMemo(
+		() =>
+			storedMessages === undefined
+				? initialMessages
+				: toStoredChatMessages(storedMessages),
+		[initialMessages, storedMessages],
+	);
 
 	React.useEffect(() => {
 		if (!activeWorkspaceId) {
@@ -253,31 +268,45 @@ const useChatPageController = ({
 
 		void prefetchConvexToken();
 	}, [activeWorkspaceId]);
-	const initialMessagesSeedKey = React.useMemo(
-		() => getUIMessageSeedKey(initialMessages),
-		[initialMessages],
+	const persistedMessagesSeedKey = React.useMemo(
+		() => getUIMessageSeedKey(persistedMessages),
+		[persistedMessages],
 	);
-	const appliedInitialMessagesSeedKeyRef = React.useRef(initialMessagesSeedKey);
+	const appliedPersistedMessagesSeedKeyRef = React.useRef(
+		persistedMessagesSeedKey,
+	);
 
 	React.useEffect(() => {
 		setMessages((currentMessages) => {
 			const currentMessagesSeedKey = getUIMessageSeedKey(currentMessages);
-
-			if (
+			const isLocalRequestRunning =
+				status === "submitted" || status === "streaming" || isPreparingRequest;
+			const shouldUsePersistedMessages =
 				currentMessages.length === 0 ||
-				currentMessagesSeedKey === appliedInitialMessagesSeedKeyRef.current
-			) {
-				appliedInitialMessagesSeedKeyRef.current = initialMessagesSeedKey;
-				return initialMessages;
+				currentMessagesSeedKey === appliedPersistedMessagesSeedKeyRef.current ||
+				(!isLocalRequestRunning &&
+					persistedMessages.length > currentMessages.length);
+
+			if (shouldUsePersistedMessages) {
+				appliedPersistedMessagesSeedKeyRef.current = persistedMessagesSeedKey;
+				return persistedMessages;
 			}
 
 			return currentMessages;
 		});
-	}, [initialMessages, initialMessagesSeedKey, setMessages]);
+	}, [
+		isPreparingRequest,
+		persistedMessages,
+		persistedMessagesSeedKey,
+		setMessages,
+		status,
+	]);
 
-	const isLoading =
+	const isLocalChatLoading =
 		status === "submitted" || status === "streaming" || isPreparingRequest;
-	const hasMessages = messages.length > 0;
+	const isAutomationRunning = Boolean(runningAutomationRun);
+	const isLoading = isLocalChatLoading || isAutomationRunning;
+	const hasMessages = messages.length > 0 || isAutomationRunning;
 	const isNotesLoading = notes === undefined;
 	const currentChat = React.useMemo(
 		() => chats.find((chat) => getChatId(chat) === chatId) ?? null,

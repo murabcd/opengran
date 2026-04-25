@@ -11,6 +11,8 @@
 import type * as appConnectionActions from "../appConnectionActions.js";
 import type * as appConnections from "../appConnections.js";
 import type * as auth from "../auth.js";
+import type * as automationActions from "../automationActions.js";
+import type * as automations from "../automations.js";
 import type * as calendar from "../calendar.js";
 import type * as calendarPreferences from "../calendarPreferences.js";
 import type * as chats from "../chats.js";
@@ -44,6 +46,8 @@ declare const fullApi: ApiFromModules<{
   appConnectionActions: typeof appConnectionActions;
   appConnections: typeof appConnections;
   auth: typeof auth;
+  automationActions: typeof automationActions;
+  automations: typeof automations;
   calendar: typeof calendar;
   calendarPreferences: typeof calendarPreferences;
   chats: typeof chats;

@@ -2,7 +2,12 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalMutation, mutation, query } from "./_generated/server";
+import {
+	internalMutation,
+	internalQuery,
+	mutation,
+	query,
+} from "./_generated/server";
 
 const chatRoleValidator = v.union(
 	v.literal("system"),
@@ -58,6 +63,15 @@ const storedUiMessageSnapshotValidator = v.object(
 
 const storedUiMessageValidator = v.object({
 	...storedUiMessageSnapshotFields,
+	text: v.string(),
+	createdAt: v.number(),
+});
+
+const chatMessageInputValidator = v.object({
+	id: v.string(),
+	role: chatRoleValidator,
+	partsJson: v.string(),
+	metadataJson: v.optional(v.string()),
 	text: v.string(),
 	createdAt: v.number(),
 });
@@ -312,6 +326,145 @@ const getNoteChats = async (
 		)
 		.take(NOTE_CHAT_BATCH_SIZE);
 
+const saveMessageForOwnerInternal = async (
+	ctx: MutationCtx,
+	args: {
+		ownerTokenIdentifier: string;
+		workspaceId: Id<"workspaces">;
+		authorName?: string;
+		chatId: string;
+		noteId?: Id<"notes">;
+		title?: string;
+		preview?: string;
+		model?: string;
+		forceTitle?: boolean;
+		message: {
+			id: string;
+			role: "system" | "user" | "assistant";
+			partsJson: string;
+			metadataJson?: string;
+			text: string;
+			createdAt: number;
+		};
+	},
+) => {
+	await requireOwnedWorkspace(ctx, args.ownerTokenIdentifier, args.workspaceId);
+	const now = Date.now();
+	const normalizedTitle = normalizeOptionalChatTitle(args.title);
+	const normalizedPreview = normalizeChatPreview(
+		args.preview ?? args.message.text,
+	);
+	const messageCreatedAt = args.message.createdAt || now;
+	const storedChatId = clampWhitespace(args.chatId);
+	const storedNoteId = args.noteId ?? undefined;
+	const storedMessageId =
+		clampWhitespace(args.message.id) ||
+		`msg-${now}-${Math.random().toString(36).slice(2, 10)}`;
+
+	if (storedNoteId) {
+		await requireOwnedNoteId(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+			storedNoteId,
+		);
+	}
+
+	const existingChat = await getOwnedChatById(
+		ctx,
+		args.ownerTokenIdentifier,
+		args.workspaceId,
+		storedChatId,
+	);
+
+	const chatId =
+		existingChat?._id ??
+		(await ctx.db.insert("chats", {
+			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
+			authorName: args.authorName,
+			chatId: storedChatId,
+			noteId: storedNoteId,
+			title: normalizedTitle ?? "New chat",
+			preview: normalizedPreview,
+			model: args.model,
+			isArchived: false,
+			archivedAt: undefined,
+			createdAt: now,
+			updatedAt: now,
+			lastMessageAt: messageCreatedAt,
+		}));
+
+	if (existingChat) {
+		const nextTitle =
+			normalizedTitle &&
+			(args.forceTitle || shouldReplaceChatTitle(existingChat, normalizedTitle))
+				? normalizedTitle
+				: existingChat.title;
+
+		await ctx.db.patch(existingChat._id, {
+			chatId: storedChatId,
+			noteId: existingChat.noteId ?? storedNoteId,
+			authorName: existingChat.authorName ?? args.authorName,
+			workspaceId: args.workspaceId,
+			title: nextTitle,
+			preview: normalizedPreview,
+			model: args.model ?? existingChat.model,
+			isArchived: false,
+			archivedAt: undefined,
+			updatedAt: now,
+			lastMessageAt: messageCreatedAt,
+		});
+	}
+
+	const existingMessage = await ctx.db
+		.query("chatMessages")
+		.withIndex("by_chatId_and_messageId", (q) =>
+			q.eq("chatId", chatId).eq("messageId", storedMessageId),
+		)
+		.unique();
+
+	const messageId =
+		existingMessage?._id ??
+		(await ctx.db.insert("chatMessages", {
+			chatId,
+			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			messageId: storedMessageId,
+			role: args.message.role,
+			partsJson: args.message.partsJson,
+			metadataJson: args.message.metadataJson,
+			text: args.message.text,
+			createdAt: messageCreatedAt,
+		}));
+
+	if (existingMessage) {
+		await ctx.db.patch(existingMessage._id, {
+			role: args.message.role,
+			partsJson: args.message.partsJson,
+			metadataJson: args.message.metadataJson,
+			text: args.message.text,
+			createdAt: messageCreatedAt,
+		});
+	}
+
+	const [chat, message] = await Promise.all([
+		ctx.db.get(chatId),
+		ctx.db.get(messageId),
+	]);
+
+	if (!chat || !message) {
+		throw new ConvexError({
+			code: "CHAT_SAVE_FAILED",
+			message: "Failed to save chat message.",
+		});
+	}
+
+	return {
+		chat,
+		message,
+	};
+};
+
 export const list = query({
 	args: {
 		workspaceId: v.id("workspaces"),
@@ -454,6 +607,35 @@ export const getMessagesSnapshot = query({
 		const messages = await getStoredChatMessages(ctx, chat._id);
 
 		return messages.reverse().map(toStoredUiMessageSnapshot);
+	},
+});
+
+export const getMessagesForOwner = internalQuery({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		chatId: v.string(),
+	},
+	returns: v.array(storedUiMessageValidator),
+	handler: async (ctx, args) => {
+		const chat = await getOwnedActiveChatById(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+			args.chatId,
+		);
+
+		if (!chat) {
+			return [];
+		}
+
+		const messages = await getStoredChatMessages(ctx, chat._id);
+
+		return messages.reverse().map((message) => ({
+			...toStoredUiMessageSnapshot(message),
+			text: message.text,
+			createdAt: message.createdAt,
+		}));
 	},
 });
 
@@ -605,14 +787,8 @@ export const saveMessage = mutation({
 		title: v.optional(v.string()),
 		preview: v.optional(v.string()),
 		model: v.optional(v.string()),
-		message: v.object({
-			id: v.string(),
-			role: chatRoleValidator,
-			partsJson: v.string(),
-			metadataJson: v.optional(v.string()),
-			text: v.string(),
-			createdAt: v.number(),
-		}),
+		forceTitle: v.optional(v.boolean()),
+		message: chatMessageInputValidator,
 	},
 	returns: v.object({
 		chat: chatValidator,
@@ -621,122 +797,38 @@ export const saveMessage = mutation({
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
 		const ownerTokenIdentifier = identity.tokenIdentifier;
-		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
-		const authorName = getAuthorName(identity);
-		const now = Date.now();
-		const normalizedTitle = normalizeOptionalChatTitle(args.title);
-		const normalizedPreview = normalizeChatPreview(
-			args.preview ?? args.message.text,
-		);
-		const messageCreatedAt = args.message.createdAt || now;
-		const storedChatId = clampWhitespace(args.chatId);
-		const storedNoteId = args.noteId ?? undefined;
-		const storedMessageId =
-			clampWhitespace(args.message.id) ||
-			`msg-${now}-${Math.random().toString(36).slice(2, 10)}`;
-
-		if (storedNoteId) {
-			await requireOwnedNoteId(
-				ctx,
-				ownerTokenIdentifier,
-				args.workspaceId,
-				storedNoteId,
-			);
-		}
-
-		const existingChat = await getOwnedChatById(
-			ctx,
+		return await saveMessageForOwnerInternal(ctx, {
 			ownerTokenIdentifier,
-			args.workspaceId,
-			storedChatId,
-		);
-
-		const chatId =
-			existingChat?._id ??
-			(await ctx.db.insert("chats", {
-				ownerTokenIdentifier,
-				workspaceId: args.workspaceId,
-				authorName,
-				chatId: storedChatId,
-				noteId: storedNoteId,
-				title: normalizedTitle ?? "New chat",
-				preview: normalizedPreview,
-				model: args.model,
-				isArchived: false,
-				archivedAt: undefined,
-				createdAt: now,
-				updatedAt: now,
-				lastMessageAt: messageCreatedAt,
-			}));
-
-		if (existingChat) {
-			const nextTitle =
-				normalizedTitle && shouldReplaceChatTitle(existingChat, normalizedTitle)
-					? normalizedTitle
-					: existingChat.title;
-
-			await ctx.db.patch(existingChat._id, {
-				chatId: storedChatId,
-				noteId: existingChat.noteId ?? storedNoteId,
-				authorName: existingChat.authorName ?? authorName,
-				workspaceId: args.workspaceId,
-				title: nextTitle,
-				preview: normalizedPreview,
-				model: args.model ?? existingChat.model,
-				isArchived: false,
-				archivedAt: undefined,
-				updatedAt: now,
-				lastMessageAt: messageCreatedAt,
-			});
-		}
-
-		const existingMessage = await ctx.db
-			.query("chatMessages")
-			.withIndex("by_chatId_and_messageId", (q) =>
-				q.eq("chatId", chatId).eq("messageId", storedMessageId),
-			)
-			.unique();
-
-		const messageId =
-			existingMessage?._id ??
-			(await ctx.db.insert("chatMessages", {
-				chatId,
-				ownerTokenIdentifier,
-				messageId: storedMessageId,
-				role: args.message.role,
-				partsJson: args.message.partsJson,
-				metadataJson: args.message.metadataJson,
-				text: args.message.text,
-				createdAt: messageCreatedAt,
-			}));
-
-		if (existingMessage) {
-			await ctx.db.patch(existingMessage._id, {
-				role: args.message.role,
-				partsJson: args.message.partsJson,
-				metadataJson: args.message.metadataJson,
-				text: args.message.text,
-				createdAt: messageCreatedAt,
-			});
-		}
-
-		const [chat, message] = await Promise.all([
-			ctx.db.get(chatId),
-			ctx.db.get(messageId),
-		]);
-
-		if (!chat || !message) {
-			throw new ConvexError({
-				code: "CHAT_SAVE_FAILED",
-				message: "Failed to save chat message.",
-			});
-		}
-
-		return {
-			chat,
-			message,
-		};
+			workspaceId: args.workspaceId,
+			authorName: getAuthorName(identity),
+			chatId: args.chatId,
+			noteId: args.noteId,
+			title: args.title,
+			preview: args.preview,
+			model: args.model,
+			message: args.message,
+		});
 	},
+});
+
+export const saveMessageForOwner = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		authorName: v.optional(v.string()),
+		chatId: v.string(),
+		noteId: v.optional(v.id("notes")),
+		title: v.optional(v.string()),
+		preview: v.optional(v.string()),
+		model: v.optional(v.string()),
+		forceTitle: v.optional(v.boolean()),
+		message: chatMessageInputValidator,
+	},
+	returns: v.object({
+		chat: chatValidator,
+		message: chatMessageValidator,
+	}),
+	handler: async (ctx, args) => await saveMessageForOwnerInternal(ctx, args),
 });
 
 export const truncateFromMessage = mutation({

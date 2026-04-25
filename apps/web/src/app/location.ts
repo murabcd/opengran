@@ -376,11 +376,13 @@ export const getAppLocationState = (url: URL): AppLocationState => {
 				? "note"
 				: url.hash === "#chat"
 					? "chat"
-					: url.hash === "#inbox"
-						? "inbox"
-						: url.hash === "#shared"
-							? "shared"
-							: null
+					: url.hash === "#automations"
+						? "automation"
+						: url.hash === "#inbox"
+							? "inbox"
+							: url.hash === "#shared"
+								? "shared"
+								: null
 			: null;
 	const pathView =
 		pathname === "/"
@@ -391,11 +393,13 @@ export const getAppLocationState = (url: URL): AppLocationState => {
 					? "note"
 					: pathname === "/chat"
 						? "chat"
-						: pathname === "/inbox"
-							? "inbox"
-							: pathname === "/shared"
-								? "shared"
-								: null;
+						: pathname === "/automations"
+							? "automation"
+							: pathname === "/inbox"
+								? "inbox"
+								: pathname === "/shared"
+									? "shared"
+									: null;
 	const view = hashView ?? pathView;
 
 	if (view === null) {
@@ -436,11 +440,13 @@ export const getAppLocationState = (url: URL): AppLocationState => {
 				? "/home"
 				: view === "chat"
 					? "/chat"
-					: view === "inbox"
-						? "/inbox"
-						: view === "shared"
-							? "/shared"
-							: "/note",
+					: view === "automation"
+						? "/automations"
+						: view === "inbox"
+							? "/inbox"
+							: view === "shared"
+								? "/shared"
+								: "/note",
 		canonicalSearch:
 			view === "note"
 				? createNoteSearch({

@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { getFunctionName } from "convex/server";
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPOSER_DOCK_SURFACE_BOTTOM_OFFSET } from "../src/components/layout/composer-dock";
@@ -18,6 +19,49 @@ const scrollToBottomMock = vi.fn();
 const useStickyScrollToBottomMock = vi.fn();
 const chatPageSurfaceMinHeightClass =
 	"min-h-[calc(100dvh-4rem)] md:min-h-[calc(100dvh-4rem)]";
+
+const getChatPageQueryFixture = (query: unknown, args: unknown) => {
+	if (args === "skip") {
+		return undefined;
+	}
+
+	const functionName = getFunctionName(query);
+
+	if (functionName === "chats:getMessages") {
+		return [];
+	}
+
+	if (functionName === "automations:getRunningRunForChat") {
+		return null;
+	}
+
+	if (functionName === "appConnections:listSources") {
+		return [];
+	}
+
+	if (
+		functionName === "notes:list" &&
+		args &&
+		typeof args === "object" &&
+		"workspaceId" in args &&
+		args.workspaceId === "workspace-1"
+	) {
+		return [
+			{
+				_id: "meeting-notes",
+				title: "Meeting notes",
+				searchableText: "Team sync",
+			},
+			{
+				_id: "guidelines",
+				title: "Brand guidelines",
+				searchableText: "Voice and tone",
+			},
+		];
+	}
+
+	return [];
+};
 
 const mockChatPageMutations = () => {
 	let mutationCallCount = 0;
@@ -56,12 +100,14 @@ vi.mock("../src/hooks/use-sticky-scroll-to-bottom", () => ({
 
 vi.mock("../src/components/chat/messages", () => ({
 	ChatMessages: ({
+		isLoading,
 		messages,
 		onDeleteMessage,
 		onEditMessage,
 		onPlusAction,
 		onRegenerateMessage,
 	}: {
+		isLoading?: boolean;
 		messages?: Array<{
 			id: string;
 			role: string;
@@ -74,6 +120,7 @@ vi.mock("../src/components/chat/messages", () => ({
 	}) => (
 		<div>
 			<div>chat messages</div>
+			{isLoading ? <div>Thinking</div> : null}
 			{messages?.map((message) => {
 				const text = message.parts
 					.map((part) => part.text ?? "")
@@ -339,29 +386,7 @@ describe("ChatPage", () => {
 			status: "ready",
 			stop: stopMock,
 		});
-		useQueryMock.mockImplementation((_query, args) => {
-			if (
-				args &&
-				typeof args === "object" &&
-				"workspaceId" in args &&
-				args.workspaceId === "workspace-1"
-			) {
-				return [
-					{
-						_id: "meeting-notes",
-						title: "Meeting notes",
-						searchableText: "Team sync",
-					},
-					{
-						_id: "guidelines",
-						title: "Brand guidelines",
-						searchableText: "Voice and tone",
-					},
-				];
-			}
-
-			return [];
-		});
+		useQueryMock.mockImplementation(getChatPageQueryFixture);
 	});
 
 	afterEach(() => {
@@ -397,6 +422,45 @@ describe("ChatPage", () => {
 			screen.getByPlaceholderText("Ask, search, or make anything..."),
 		);
 		priorFocus.remove();
+	});
+
+	it("shows thinking while an automation run is still generating", async () => {
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+
+		useQueryMock.mockImplementation((query, args) => {
+			if (getFunctionName(query) === "automations:getRunningRunForChat") {
+				return {
+					automationId: "automation-1",
+					runId: "run-1",
+					title: "Meeting recap",
+					scheduledFor: Date.now(),
+					startedAt: Date.now(),
+				};
+			}
+
+			return getChatPageQueryFixture(query, args);
+		});
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="chat-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[]}
+					isChatsLoading={false}
+					activeChatId="chat-1"
+					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
+					onChatRemoved={vi.fn()}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		expect(screen.getByText("chat messages")).toBeTruthy();
+		expect(screen.getByText("Thinking")).toBeTruthy();
 	});
 
 	it("submits the selected AI context in the chat request body", async () => {

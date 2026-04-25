@@ -39,6 +39,7 @@ import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 type AppSidebarView =
 	| "home"
 	| "chat"
+	| "automation"
 	| "inbox"
 	| "shared"
 	| "note"
@@ -66,7 +67,9 @@ type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
 	sharedNotes: Array<Doc<"notes">> | undefined;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
 	onWorkspaceCreate: (input: { name: string }) => Promise<WorkspaceRecord>;
-	onViewChange: (view: "home" | "chat" | "inbox" | "shared" | "note") => void;
+	onViewChange: (
+		view: "home" | "chat" | "automation" | "inbox" | "shared" | "note",
+	) => void;
 	onInboxOpenChange: (open: boolean) => void;
 	settingsOpen: boolean;
 	settingsPage?: SettingsPage;
@@ -155,7 +158,9 @@ function useMobileSidebarNavigation({
 	onCreateNote: () => void;
 	onInboxOpenChange: (open: boolean) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
-	onViewChange: (view: "home" | "chat" | "inbox" | "shared" | "note") => void;
+	onViewChange: (
+		view: "home" | "chat" | "automation" | "inbox" | "shared" | "note",
+	) => void;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
 	setOpenMobile: (open: boolean) => void;
 }) {
@@ -188,7 +193,7 @@ function useMobileSidebarNavigation({
 	);
 
 	const handleViewChange = React.useCallback(
-		(view: "home" | "chat" | "inbox" | "shared" | "note") => {
+		(view: "home" | "chat" | "automation" | "inbox" | "shared" | "note") => {
 			closeMobileSidebar();
 			onViewChange(view);
 		},
@@ -267,7 +272,9 @@ function useAppSidebarModel({
 	onInboxOpenChange: (open: boolean) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onSettingsOpenChange: (open: boolean, page?: SettingsPage) => void;
-	onViewChange: (view: "home" | "chat" | "inbox" | "shared" | "note") => void;
+	onViewChange: (
+		view: "home" | "chat" | "automation" | "inbox" | "shared" | "note",
+	) => void;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
 	projects: Array<Doc<"projects">> | undefined;
 	setOpenMobile: (open: boolean) => void;
@@ -630,7 +637,9 @@ const AppSidebarHeaderSection = React.memo(function AppSidebarHeaderSection({
 	onCreateNote: () => void;
 	onInboxOpenChange: (open: boolean) => void;
 	onSearchOpen: () => void;
-	onViewChange: (view: "home" | "chat" | "inbox" | "shared" | "note") => void;
+	onViewChange: (
+		view: "home" | "chat" | "automation" | "inbox" | "shared" | "note",
+	) => void;
 	onWorkspaceCreate: (input: { name: string }) => Promise<WorkspaceRecord>;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
 	workspaces: Array<WorkspaceRecord>;

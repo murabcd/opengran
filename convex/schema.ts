@@ -34,6 +34,21 @@ const appConnectionStatusValidator = v.union(
 	v.literal("disconnected"),
 );
 
+const automationSchedulePeriodValidator = v.union(
+	v.literal("hourly"),
+	v.literal("daily"),
+	v.literal("weekdays"),
+	v.literal("weekly"),
+	v.literal("custom"),
+);
+
+const automationRunStatusValidator = v.union(
+	v.literal("running"),
+	v.literal("completed"),
+	v.literal("failed"),
+	v.literal("skipped"),
+);
+
 const inboxItemProviderValidator = v.union(
 	v.literal("jira"),
 	v.literal("notes"),
@@ -398,6 +413,67 @@ export default defineSchema({
 	})
 		.index("by_chatId_and_createdAt", ["chatId", "createdAt"])
 		.index("by_chatId_and_messageId", ["chatId", "messageId"]),
+	automations: defineTable({
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		authorName: v.optional(v.string()),
+		title: v.string(),
+		prompt: v.string(),
+		model: v.optional(v.string()),
+		schedulePeriod: automationSchedulePeriodValidator,
+		scheduledAt: v.number(),
+		timezone: v.string(),
+		targetKind: v.literal("project"),
+		targetProjectId: v.id("projects"),
+		targetLabel: v.string(),
+		chatId: v.string(),
+		isPaused: v.boolean(),
+		nextRunAt: v.optional(v.number()),
+		lastRunAt: v.optional(v.number()),
+		activeRunId: v.optional(v.id("automationRuns")),
+		scheduledFunctionId: v.optional(v.id("_scheduled_functions")),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_createdAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"createdAt",
+		])
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_updatedAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"updatedAt",
+		])
+		.index("by_isPaused_and_nextRunAt", ["isPaused", "nextRunAt"])
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_chatId", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"chatId",
+		]),
+	automationRuns: defineTable({
+		automationId: v.id("automations"),
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		chatId: v.string(),
+		scheduledFor: v.number(),
+		reason: v.union(v.literal("scheduled"), v.literal("manual")),
+		status: automationRunStatusValidator,
+		error: v.optional(v.string()),
+		startedAt: v.number(),
+		completedAt: v.optional(v.number()),
+		userMessageId: v.optional(v.string()),
+		assistantMessageId: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_automationId_and_scheduledFor", ["automationId", "scheduledFor"])
+		.index("by_ownerTokenIdentifier_and_workspaceId_and_createdAt", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+			"createdAt",
+		])
+		.index("by_status_and_startedAt", ["status", "startedAt"]),
 	appConnections: defineTable({
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),

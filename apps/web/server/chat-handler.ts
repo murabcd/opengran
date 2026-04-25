@@ -29,7 +29,7 @@ import {
 	buildChatSystemPrompt,
 	CHAT_TITLE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
-import { findChatModel, getChatModel } from "../src/lib/ai/models";
+import { CHAT_TITLE_MODEL_ID, findChatModel } from "../src/lib/ai/models";
 import { buildJiraTools } from "./jira";
 import { buildNotionTools } from "./notion";
 import { buildPostHogTools } from "./posthog";
@@ -60,7 +60,6 @@ const MAX_CHAT_TITLE_LENGTH = 80;
 const MAX_NOTE_CONTEXT_LENGTH = 16000;
 const APP_SOURCE_PREFIX = "app:";
 const WORKSPACE_SOURCE_PREFIX = "workspace:";
-const CHAT_TITLE_MODEL = getChatModel("gpt-5.4-nano").model;
 const generateMessageId = createIdGenerator({
 	prefix: "msg",
 	size: 16,
@@ -287,7 +286,7 @@ const generateChatTitle = async ({
 
 	try {
 		const { text } = await generateText({
-			model: openai(CHAT_TITLE_MODEL),
+			model: openai(CHAT_TITLE_MODEL_ID),
 			system: CHAT_TITLE_SYSTEM_PROMPT,
 			prompt: buildChatTitlePrompt({
 				userText,
