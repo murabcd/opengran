@@ -682,6 +682,9 @@ function ScopePicker({
 	onClearSelectedSources: () => void;
 	onOpenConnectionsSettings: () => void;
 }) {
+	const keepScopePickerOpen = React.useCallback((event: Event) => {
+		event.preventDefault();
+	}, []);
 	const workspaceSourceSelected = workspaceSourceId
 		? selectedSourceIds.includes(workspaceSourceId)
 		: false;
@@ -694,7 +697,7 @@ function ScopePicker({
 	const isSearchingWorkspaceNotes = sourceSearchTerm.trim().length > 0;
 
 	return (
-		<DropdownMenu open={open} onOpenChange={onOpenChange}>
+		<DropdownMenu open={open} onOpenChange={onOpenChange} modal={false}>
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<DropdownMenuTrigger asChild>
@@ -745,6 +748,7 @@ function ScopePicker({
 					<DropdownMenuCheckboxItem
 						checked={selectedSourceIds.length === 0}
 						className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
+						onSelect={keepScopePickerOpen}
 						onCheckedChange={(checked) => {
 							if (checked) {
 								onClearSelectedSources();
@@ -778,6 +782,7 @@ function ScopePicker({
 								key={sourceKey}
 								checked={selected}
 								className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
+								onSelect={keepScopePickerOpen}
 								onCheckedChange={() => onToggleSource(source.id)}
 							>
 								{source.provider === "google-calendar" ? (

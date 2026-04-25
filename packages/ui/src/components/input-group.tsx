@@ -21,6 +21,11 @@ const INPUT_GROUP_INTERACTIVE_SELECTOR = [
 	"[contenteditable='true']",
 ].join(",");
 
+const INPUT_GROUP_OVERLAY_CONTENT_SELECTOR = [
+	'[data-slot="dropdown-menu-content"]',
+	'[data-slot="dropdown-menu-sub-content"]',
+].join(",");
+
 function focusInputGroupControl(container: HTMLDivElement) {
 	const control = container.querySelector<
 		HTMLInputElement | HTMLTextAreaElement
@@ -41,9 +46,22 @@ function focusInputGroupControl(container: HTMLDivElement) {
 	}
 }
 
-function shouldIgnoreInputGroupFocusTarget(target: HTMLElement) {
+function shouldIgnoreInputGroupFocusTarget(
+	target: HTMLElement,
+	currentTarget: HTMLDivElement,
+) {
+	const targetInputGroup = target.closest<HTMLElement>(
+		'[data-slot="input-group"]',
+	);
+	const targetOverlayContent = target.closest<HTMLElement>(
+		INPUT_GROUP_OVERLAY_CONTENT_SELECTOR,
+	);
+
 	return (
 		Boolean(target.closest('[data-slot="input-group-control"]')) ||
+		(Boolean(targetInputGroup) && targetInputGroup !== currentTarget) ||
+		(targetOverlayContent !== null &&
+			!targetOverlayContent.contains(currentTarget)) ||
 		Boolean(target.closest(INPUT_GROUP_INTERACTIVE_SELECTOR))
 	);
 }
@@ -65,7 +83,7 @@ function InputGroup({
 				return;
 			}
 
-			if (shouldIgnoreInputGroupFocusTarget(target)) {
+			if (shouldIgnoreInputGroupFocusTarget(target, event.currentTarget)) {
 				return;
 			}
 
