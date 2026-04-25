@@ -467,7 +467,7 @@ function ChatComposerTopAccessory({
 					aria-label="Cancel edit"
 				>
 					<span>Cancel edit</span>
-					<Kbd className="rounded-full border border-border/60 bg-background/60 px-2">
+					<Kbd className="rounded-full border border-border/60 bg-muted px-2">
 						Esc
 					</Kbd>
 				</button>

@@ -128,11 +128,16 @@ describe("NavUser", () => {
 		const settingsShortcut = settingsButton.querySelector("kbd");
 		expect(settingsShortcut).toBeTruthy();
 		expect(settingsShortcut?.className).toContain("opacity-0");
+		expect(settingsShortcut?.className).toContain("bg-muted");
+		expect(settingsShortcut?.className).toContain("border");
 		expect(settingsShortcut?.className).toContain(
 			"group-hover/settings-item:opacity-100",
 		);
 		expect(settingsShortcut?.className).toContain(
-			"group-focus/settings-item:opacity-100",
+			"group-focus-visible/settings-item:opacity-100",
+		);
+		expect(settingsShortcut?.className).not.toContain(
+			"group-data-[highlighted]/settings-item:opacity-100",
 		);
 		expect(settingsShortcut?.getAttribute("aria-hidden")).toBe("true");
 	});

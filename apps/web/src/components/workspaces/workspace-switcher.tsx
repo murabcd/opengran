@@ -18,7 +18,6 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { Kbd } from "@workspace/ui/components/kbd";
 import {
 	SidebarMenu,
 	SidebarMenuButton,
@@ -26,6 +25,7 @@ import {
 } from "@workspace/ui/components/sidebar";
 import { ChevronsUpDown, LoaderCircle, Plus } from "lucide-react";
 import * as React from "react";
+import { ShortcutHint } from "@/components/sidebar/shortcut-hint";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { getAvatarSrc } from "@/lib/avatar";
 import { getWorkspaceRoleOption, type WorkspaceRecord } from "@/lib/workspaces";
@@ -148,7 +148,7 @@ export function WorkspaceSwitcher({
 									<DropdownMenuItem
 										key={workspace._id}
 										onClick={() => onSelect(workspace._id)}
-										className="h-8 gap-2 px-2"
+										className="group/workspace-item h-8 gap-2 px-2"
 									>
 										<Avatar className="size-6 rounded-md">
 											<AvatarImage
@@ -161,10 +161,10 @@ export function WorkspaceSwitcher({
 										</Avatar>
 										{workspace.name}
 										{index < 9 ? (
-											<Kbd className="ml-auto font-mono">
-												<span className="text-xs">⌘</span>
-												{index + 1}
-											</Kbd>
+											<ShortcutHint
+												keyLabel={String(index + 1)}
+												className="border border-border/60 bg-muted px-1.5 opacity-0 transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover/workspace-item:opacity-100 group-focus-visible/workspace-item:opacity-100"
+											/>
 										) : null}
 									</DropdownMenuItem>
 								);

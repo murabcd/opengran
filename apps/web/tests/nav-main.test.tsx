@@ -75,6 +75,8 @@ describe("NavMain", () => {
 		expect(shortcuts).toHaveLength(2);
 		for (const shortcut of shortcuts) {
 			expect(shortcut.className).toContain("opacity-0");
+			expect(shortcut.className).toContain("bg-muted");
+			expect(shortcut.className).toContain("border");
 			expect(shortcut.className).toContain("group-hover/menu-item:opacity-100");
 			expect(shortcut.getAttribute("aria-hidden")).toBe("true");
 		}

@@ -129,7 +129,12 @@ vi.mock("@workspace/ui/components/dropdown-menu", async () => {
 });
 
 vi.mock("@workspace/ui/components/kbd", () => ({
-	Kbd: ({ children }: React.PropsWithChildren) => <kbd>{children}</kbd>,
+	Kbd: ({
+		children,
+		...props
+	}: React.PropsWithChildren<React.ComponentProps<"kbd">>) => (
+		<kbd {...props}>{children}</kbd>
+	),
 }));
 
 vi.mock("@workspace/ui/components/sidebar", () => ({
@@ -219,5 +224,55 @@ describe("WorkspaceSwitcher", () => {
 
 		expect(screen.getByText("Create a workspace")).toBeTruthy();
 		expect(screen.queryByRole("button", { name: "Add workspace" })).toBeNull();
+	});
+
+	it("renders workspace shortcuts with hover-only visibility classes", async () => {
+		const { WorkspaceSwitcher } = await import(
+			"../src/components/workspaces/workspace-switcher"
+		);
+
+		const { container } = render(
+			<WorkspaceSwitcher
+				workspaces={[
+					{
+						_id: "workspace-1",
+						name: "Murad workspace",
+						role: "owner",
+						iconUrl: null,
+					} as never,
+					{
+						_id: "workspace-2",
+						name: "Personal",
+						role: "owner",
+						iconUrl: null,
+					} as never,
+				]}
+				activeWorkspaceId={"workspace-1" as never}
+				onSelect={vi.fn()}
+				onCreateWorkspace={vi.fn()}
+			/>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: /Murad workspace/i }));
+
+		const workspaceItems = Array.from(
+			container.querySelectorAll(".group\\/workspace-item"),
+		);
+		expect(workspaceItems).toHaveLength(2);
+
+		const shortcuts = Array.from(container.querySelectorAll("kbd"));
+		expect(shortcuts).toHaveLength(2);
+		expect(shortcuts[0]?.className).toContain("opacity-0");
+		expect(shortcuts[0]?.className).toContain("bg-muted");
+		expect(shortcuts[0]?.className).toContain("border");
+		expect(shortcuts[0]?.className).toContain(
+			"group-hover/workspace-item:opacity-100",
+		);
+		expect(shortcuts[0]?.className).toContain(
+			"group-focus-visible/workspace-item:opacity-100",
+		);
+		expect(shortcuts[0]?.className).not.toContain(
+			"group-data-[highlighted]/workspace-item:opacity-100",
+		);
 	});
 });

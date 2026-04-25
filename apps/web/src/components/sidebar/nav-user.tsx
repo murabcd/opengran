@@ -170,7 +170,7 @@ export function NavUser({
 							Settings
 							<ShortcutHint
 								keyLabel=","
-								className="opacity-0 transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover/settings-item:opacity-100 group-focus/settings-item:opacity-100 group-data-[highlighted]/settings-item:opacity-100"
+								className="border border-border/60 bg-muted px-1.5 opacity-0 transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover/settings-item:opacity-100 group-focus-visible/settings-item:opacity-100"
 							/>
 						</DropdownMenuItem>
 						<DropdownMenuSeparator />
