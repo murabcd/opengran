@@ -653,13 +653,13 @@ function ProjectSidebarItem({
 	return (
 		<>
 			<Collapsible
+				asChild
 				open={open}
 				onOpenChange={(nextOpen) =>
 					dispatch({ type: "setOpen", value: nextOpen })
 				}
-				className="group/collapsible"
 			>
-				<SidebarMenuItem className="group/project-item">
+				<SidebarMenuItem className="group/project-item group/collapsible">
 					<ProjectSidebarRow
 						projectName={project.name}
 						workspaceId={workspaceId}
@@ -916,13 +916,10 @@ function ProjectSidebarContent({
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
 	return (
-		<CollapsibleContent
-			forceMount
-			className="group/project-folder-content data-[state=closed]:block grid overflow-hidden transition-[grid-template-rows,opacity] duration-220 ease-[cubic-bezier(0.23,1,0.32,1)] data-[state=closed]:pointer-events-none data-[state=closed]:grid-rows-[0fr] data-[state=closed]:opacity-0 data-[state=open]:grid-rows-[1fr] data-[state=open]:opacity-100"
-		>
+		<CollapsibleContent className="group/project-folder-content overflow-hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-1 data-[state=open]:duration-200">
 			<div className="min-h-0 overflow-hidden">
 				{hasNotes ? (
-					<SidebarMenuSub className="mr-0 translate-x-0 pr-0 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] group-data-[state=closed]/project-folder-content:-translate-y-1 group-data-[state=open]/project-folder-content:translate-y-0">
+					<SidebarMenuSub className="mr-0 translate-x-0 pr-0">
 						{notes.map((note) => (
 							<ProjectNoteItem
 								key={note._id}
