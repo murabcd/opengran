@@ -335,6 +335,7 @@ export default defineSchema({
 		authorName: v.optional(v.string()),
 		chatId: v.string(),
 		noteId: v.optional(v.id("notes")),
+		isStarred: v.optional(v.boolean()),
 		title: v.string(),
 		preview: v.string(),
 		model: v.optional(v.string()),

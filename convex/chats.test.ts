@@ -96,6 +96,47 @@ test("explicit chat renames persist after saving", async () => {
 	expect(session?.title).toBe("Renamed chat title");
 });
 
+test("chat star state toggles and persists", async () => {
+	const { asOwner, workspaceId } = await createWorkspace();
+
+	await asOwner.mutation(api.chats.saveMessage, {
+		workspaceId,
+		chatId: "chat-star",
+		preview: "Prompt",
+		message: {
+			id: "msg-star-1",
+			role: "user",
+			partsJson: JSON.stringify([{ type: "text", text: "Prompt" }]),
+			text: "Prompt",
+			createdAt: 2_000,
+		},
+	});
+
+	const firstToggle = await asOwner.mutation(api.chats.toggleStar, {
+		workspaceId,
+		chatId: "chat-star",
+	});
+	expect(firstToggle.isStarred).toBe(true);
+
+	let session = await asOwner.query(api.chats.getSession, {
+		workspaceId,
+		chatId: "chat-star",
+	});
+	expect(session?.isStarred).toBe(true);
+
+	const secondToggle = await asOwner.mutation(api.chats.toggleStar, {
+		workspaceId,
+		chatId: "chat-star",
+	});
+	expect(secondToggle.isStarred).toBe(false);
+
+	session = await asOwner.query(api.chats.getSession, {
+		workspaceId,
+		chatId: "chat-star",
+	});
+	expect(session?.isStarred).toBe(false);
+});
+
 test("truncating from an edited message removes that branch of the chat", async () => {
 	const { asOwner, workspaceId } = await createWorkspace();
 

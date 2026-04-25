@@ -14,6 +14,7 @@ import { InboxSheet } from "@/components/inbox/inbox-sheet";
 import { NavMain } from "@/components/nav/nav-main";
 import { NavNotes } from "@/components/nav/nav-notes";
 import { NavProjects } from "@/components/nav/nav-projects";
+import { NavStarred } from "@/components/nav/nav-starred";
 import { NavTrash } from "@/components/nav/nav-trash";
 import { RecipesDialog } from "@/components/recipes/recipes-dialog";
 import {
@@ -77,6 +78,8 @@ type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
 	onSignOut: () => void;
 	signingOut?: boolean;
 	desktopSafeTop?: boolean;
+	currentChatId: string | null;
+	currentChatTitle?: string;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	onChatSelect: (chatId: string) => void;
@@ -473,6 +476,8 @@ export function AppSidebar({
 	onSignOut,
 	signingOut = false,
 	desktopSafeTop = false,
+	currentChatId,
+	currentChatTitle,
 	currentNoteId,
 	currentNoteTitle,
 	onChatSelect,
@@ -527,9 +532,13 @@ export function AppSidebar({
 				/>
 				<AppSidebarContentSection
 					activeWorkspaceId={activeWorkspaceId}
+					chats={chats}
+					currentChatId={currentChatId}
+					currentChatTitle={currentChatTitle}
 					currentNoteId={currentNoteId}
 					currentNoteTitle={currentNoteTitle}
 					currentView={currentView}
+					onChatSelect={model.handleChatSelect}
 					notes={notes}
 					onCreateNote={model.handleCreateNote}
 					onNotePrefetch={onNotePrefetch}
@@ -679,9 +688,13 @@ const AppSidebarHeaderSection = React.memo(function AppSidebarHeaderSection({
 
 const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 	activeWorkspaceId,
+	chats,
+	currentChatId,
+	currentChatTitle,
 	currentNoteId,
 	currentNoteTitle,
 	currentView,
+	onChatSelect,
 	notes,
 	onCreateNote,
 	onNotePrefetch,
@@ -693,9 +706,13 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 	sharedNotes,
 }: {
 	activeWorkspaceId: Id<"workspaces"> | null;
+	chats: Array<Doc<"chats">> | undefined;
+	currentChatId: string | null;
+	currentChatTitle?: string;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	currentView: AppSidebarView;
+	onChatSelect: (chatId: string) => void;
 	notes: Array<Doc<"notes">> | undefined;
 	onCreateNote: () => void;
 	onNotePrefetch: (noteId: Id<"notes">) => void;
@@ -708,6 +725,20 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 }) {
 	return (
 		<SidebarContent>
+			<NavStarred
+				chats={chats}
+				notes={notes}
+				currentChatId={currentView === "chat" ? currentChatId : null}
+				currentChatTitle={currentChatTitle}
+				currentNoteId={currentView === "note" ? currentNoteId : null}
+				currentNoteTitle={currentNoteTitle}
+				recordingNoteId={recordingNoteId}
+				onChatSelect={onChatSelect}
+				onNotePrefetch={onNotePrefetch}
+				onNoteSelect={onNoteSelect}
+				onNoteTitleChange={onNoteTitleChange}
+				onNoteTrashed={onNoteTrashed}
+			/>
 			{(sharedNotes?.length ?? 0) > 0 ? (
 				<NavNotes
 					notes={sharedNotes}
@@ -726,6 +757,7 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 			) : null}
 			<NavNotes
 				notes={notes}
+				showStarred={false}
 				currentNoteId={currentView === "note" ? currentNoteId : null}
 				currentNoteTitle={currentNoteTitle}
 				recordingNoteId={recordingNoteId}

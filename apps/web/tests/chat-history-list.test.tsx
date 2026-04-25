@@ -9,6 +9,8 @@ import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const renameChatMock = vi.fn();
+const toggleChatStarMock = vi.fn();
+const moveChatToTrashMock = vi.fn();
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
 const useMutationMock = vi.fn();
@@ -148,6 +150,7 @@ vi.mock("@workspace/ui/components/button", () => ({
 			{children}
 		</button>
 	),
+	buttonVariants: () => "",
 }));
 
 vi.mock("@workspace/ui/lib/utils", () => ({
@@ -177,11 +180,42 @@ vi.mock("sonner", () => ({
 describe("ChatHistoryList", () => {
 	beforeEach(() => {
 		renameChatMock.mockReset();
+		toggleChatStarMock.mockReset();
+		moveChatToTrashMock.mockReset();
 		toastSuccessMock.mockReset();
 		toastErrorMock.mockReset();
 		useMutationMock.mockReset();
-		useMutationMock.mockReturnValue({
-			withOptimisticUpdate: () => renameChatMock,
+		let mutationCallIndex = 0;
+		useMutationMock.mockImplementation(() => {
+			mutationCallIndex += 1;
+			const mutationPhase = ((mutationCallIndex - 1) % 3) + 1;
+
+			if (mutationPhase === 1) {
+				return {
+					withOptimisticUpdate:
+						() =>
+						async (args: {
+							chatId: string;
+							title?: string;
+							workspaceId: string;
+						}) =>
+							renameChatMock(args),
+				};
+			}
+
+			if (mutationPhase === 2) {
+				return {
+					withOptimisticUpdate:
+						() => async (args: { chatId: string; workspaceId: string }) =>
+							toggleChatStarMock(args),
+				};
+			}
+
+			return {
+				withOptimisticUpdate:
+					() => async (args: { chatId: string; workspaceId: string }) =>
+						moveChatToTrashMock(args),
+			};
 		});
 	});
 
@@ -194,6 +228,7 @@ describe("ChatHistoryList", () => {
 			"../src/components/chat/chat-history-list"
 		);
 		const onMoveToTrash = vi.fn();
+		moveChatToTrashMock.mockResolvedValue(null);
 
 		render(
 			<ChatHistoryList
@@ -221,9 +256,18 @@ describe("ChatHistoryList", () => {
 		expect(screen.getByRole("button", { name: "Move to trash" })).toBeTruthy();
 
 		fireEvent.click(screen.getByRole("button", { name: "Move to trash" }));
+		const confirmButtons = screen.getAllByRole("button", {
+			name: "Move to trash",
+		});
+		const confirmButton = confirmButtons.at(-1);
+		if (!confirmButton) {
+			throw new Error("Expected move to trash confirmation button");
+		}
+		fireEvent.click(confirmButton);
 
-		expect(onMoveToTrash).toHaveBeenCalledWith("chat-1");
-		expect(screen.queryByRole("button", { name: "Move to trash" })).toBeNull();
+		await waitFor(() => {
+			expect(onMoveToTrash).toHaveBeenCalledWith("chat-1");
+		});
 	});
 
 	it("renames a chat from the Home page actions menu", async () => {
@@ -273,6 +317,102 @@ describe("ChatHistoryList", () => {
 		await waitFor(() => {
 			expect(toastSuccessMock).toHaveBeenCalledWith("Chat renamed");
 		});
+	});
+
+	it("stars a chat from the Home page actions menu", async () => {
+		const { ChatHistoryList } = await import(
+			"../src/components/chat/chat-history-list"
+		);
+		toggleChatStarMock.mockResolvedValue({ isStarred: true });
+
+		render(
+			<ChatHistoryList
+				chats={[
+					{
+						_id: "chat-1",
+						_creationTime: Date.now(),
+						authorName: "Murad",
+						createdAt: Date.now(),
+						chatId: "chat-1",
+						noteId: undefined,
+						isStarred: false,
+						title: "Star me",
+						updatedAt: Date.now(),
+					} as never,
+				]}
+				isChatsLoading={false}
+				activeChatId={null}
+				onOpenChat={vi.fn()}
+				onPrefetchChat={vi.fn()}
+				onMoveToTrash={vi.fn()}
+			/>,
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "Open actions for Star me" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Star" }));
+
+		expect(toggleChatStarMock).toHaveBeenCalledWith({
+			workspaceId: "workspace-1",
+			chatId: "chat-1",
+		});
+		await waitFor(() => {
+			expect(toastSuccessMock).toHaveBeenCalledWith("Chat starred");
+		});
+	});
+
+	it("renders starred chats in a dedicated section before dated groups", async () => {
+		const { ChatHistoryList } = await import(
+			"../src/components/chat/chat-history-list"
+		);
+		const now = Date.now();
+
+		render(
+			<ChatHistoryList
+				chats={[
+					{
+						_id: "chat-starred",
+						_creationTime: now,
+						authorName: "Murad",
+						createdAt: now,
+						chatId: "chat-starred",
+						noteId: undefined,
+						isStarred: true,
+						title: "Starred chat",
+						updatedAt: now,
+					} as never,
+					{
+						_id: "chat-today",
+						_creationTime: now - 1_000,
+						authorName: "Murad",
+						createdAt: now - 1_000,
+						chatId: "chat-today",
+						noteId: undefined,
+						isStarred: false,
+						title: "Today chat",
+						updatedAt: now - 1_000,
+					} as never,
+				]}
+				isChatsLoading={false}
+				activeChatId={null}
+				onOpenChat={vi.fn()}
+				onPrefetchChat={vi.fn()}
+				onMoveToTrash={vi.fn()}
+			/>,
+		);
+
+		expect(screen.getByText("Starred")).toBeTruthy();
+		expect(screen.getByText("Today")).toBeTruthy();
+		expect(screen.getByText("Starred chat")).toBeTruthy();
+		expect(screen.getByText("Today chat")).toBeTruthy();
+
+		const labels = Array.from(
+			document.querySelectorAll(
+				"div.flex.h-6.shrink-0.items-center.rounded-md.px-2.text-xs.font-medium.text-foreground\\/70",
+			),
+		).map((element) => element.textContent);
+		expect(labels.slice(0, 2)).toEqual(["Starred", "Today"]);
 	});
 
 	it("prefetches a chat on hover and focus before opening it", async () => {

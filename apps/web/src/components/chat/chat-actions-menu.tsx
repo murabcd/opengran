@@ -1,3 +1,13 @@
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@workspace/ui/components/alert-dialog";
 import { Button } from "@workspace/ui/components/button";
 import {
 	Dialog,
@@ -15,7 +25,7 @@ import {
 } from "@workspace/ui/components/dropdown-menu";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation } from "convex/react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Star, StarOff, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { NoteTitleEditInput } from "@/components/note/note-title-edit-input";
@@ -23,26 +33,34 @@ import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { getChatId } from "@/lib/chat";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
+import { optimisticPatchChat } from "./optimistic-patch-chat";
+import { optimisticRemoveChat } from "./optimistic-remove-chat";
 import { optimisticRenameChat } from "./optimistic-rename-chat";
 
 type ChatActionsMenuProps = {
 	chat: Doc<"chats">;
-	onMoveToTrash: (chatId: string) => void;
 	children: React.ReactNode;
+	onMoveToTrash?: (chatId: string) => void;
+	showMoveToTrash?: boolean;
 };
 
 export function ChatActionsMenu({
 	chat,
-	onMoveToTrash,
 	children,
+	onMoveToTrash,
+	showMoveToTrash = true,
 }: ChatActionsMenuProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const renameInputRef = React.useRef<HTMLInputElement>(null);
+	const [confirmTrashOpen, setConfirmTrashOpen] = React.useState(false);
 	const [menuOpen, setMenuOpen] = React.useState(false);
 	const [renameOpen, setRenameOpen] = React.useState(false);
 	const [renameValue, setRenameValue] = React.useState(chat.title);
 	const [isRenaming, setIsRenaming] = React.useState(false);
+	const [isUpdatingStar, setIsUpdatingStar] = React.useState(false);
+	const [isMovingToTrash, setIsMovingToTrash] = React.useState(false);
 	const storedChatId = getChatId(chat);
+	const isStarred = chat.isStarred ?? false;
 	const renameChat = useMutation(api.chats.updateTitle).withOptimisticUpdate(
 		(localStore, args) => {
 			optimisticRenameChat(
@@ -52,6 +70,25 @@ export function ChatActionsMenu({
 				args.title,
 				chat.noteId,
 			);
+		},
+	);
+	const toggleStar = useMutation(api.chats.toggleStar).withOptimisticUpdate(
+		(localStore, args) => {
+			optimisticPatchChat(
+				localStore,
+				args.workspaceId,
+				args.chatId,
+				(currentChat) => ({
+					...currentChat,
+					isStarred: !(currentChat.isStarred ?? false),
+				}),
+				chat.noteId,
+			);
+		},
+	);
+	const moveToTrash = useMutation(api.chats.moveToTrash).withOptimisticUpdate(
+		(localStore, args) => {
+			optimisticRemoveChat(localStore, args.workspaceId, args.chatId);
 		},
 	);
 
@@ -126,6 +163,56 @@ export function ChatActionsMenu({
 		setRenameValue(chat.title);
 	}, [chat.title]);
 
+	const handleToggleStar = React.useCallback(async () => {
+		if (!activeWorkspaceId || isUpdatingStar) {
+			return;
+		}
+
+		setIsUpdatingStar(true);
+
+		try {
+			const result = await toggleStar({
+				workspaceId: activeWorkspaceId,
+				chatId: storedChatId,
+			});
+			toast.success(result.isStarred ? "Chat starred" : "Chat unstarred");
+		} catch (error) {
+			console.error("Failed to update chat star", error);
+			toast.error("Failed to update chat star");
+		} finally {
+			setIsUpdatingStar(false);
+		}
+	}, [activeWorkspaceId, isUpdatingStar, storedChatId, toggleStar]);
+
+	const handleMoveToTrash = React.useCallback(async () => {
+		if (!activeWorkspaceId || isMovingToTrash) {
+			return;
+		}
+
+		setIsMovingToTrash(true);
+
+		try {
+			await moveToTrash({
+				workspaceId: activeWorkspaceId,
+				chatId: storedChatId,
+			});
+			onMoveToTrash?.(storedChatId);
+			setConfirmTrashOpen(false);
+			toast.success("Chat moved to trash");
+		} catch (error) {
+			console.error("Failed to move chat to trash", error);
+			toast.error("Failed to move chat to trash");
+		} finally {
+			setIsMovingToTrash(false);
+		}
+	}, [
+		activeWorkspaceId,
+		isMovingToTrash,
+		moveToTrash,
+		onMoveToTrash,
+		storedChatId,
+	]);
+
 	return (
 		<>
 			<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -139,18 +226,34 @@ export function ChatActionsMenu({
 						<Pencil />
 						Rename
 					</DropdownMenuItem>
-					<DropdownMenuSeparator />
 					<DropdownMenuItem
-						variant="destructive"
 						className="cursor-pointer"
+						disabled={!activeWorkspaceId || isUpdatingStar}
 						onSelect={() => {
 							setMenuOpen(false);
-							onMoveToTrash(storedChatId);
+							void handleToggleStar();
 						}}
 					>
-						<Trash2 />
-						Move to trash
+						{isStarred ? <StarOff /> : <Star />}
+						{isStarred ? "Unstar" : "Star"}
 					</DropdownMenuItem>
+					{showMoveToTrash ? (
+						<>
+							<DropdownMenuSeparator />
+							<DropdownMenuItem
+								variant="destructive"
+								className="cursor-pointer"
+								disabled={isMovingToTrash || !activeWorkspaceId}
+								onSelect={() => {
+									setMenuOpen(false);
+									setConfirmTrashOpen(true);
+								}}
+							>
+								<Trash2 />
+								Move to trash
+							</DropdownMenuItem>
+						</>
+					) : null}
 				</DropdownMenuContent>
 			</DropdownMenu>
 			<Dialog open={renameOpen} onOpenChange={handleRenameOpenChange}>
@@ -198,6 +301,31 @@ export function ChatActionsMenu({
 					</div>
 				</DialogContent>
 			</Dialog>
+			<AlertDialog open={confirmTrashOpen} onOpenChange={setConfirmTrashOpen}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Move chat to trash?</AlertDialogTitle>
+						<AlertDialogDescription>
+							This removes the chat from the list. You can restore it later from
+							Trash.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={isMovingToTrash}>
+							Cancel
+						</AlertDialogCancel>
+						<AlertDialogAction
+							className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
+							onClick={() => {
+								void handleMoveToTrash();
+							}}
+							disabled={isMovingToTrash}
+						>
+							{isMovingToTrash ? "Moving..." : "Move to trash"}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</>
 	);
 }

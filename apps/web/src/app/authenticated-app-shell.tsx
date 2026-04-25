@@ -2457,6 +2457,8 @@ export function AuthenticatedAppShell({
 					onSignOut={controller.handleSignOut}
 					signingOut={controller.isSigningOut}
 					desktopSafeTop={controller.isDesktopMac}
+					currentChatId={controller.currentChatId}
+					currentChatTitle={controller.currentChatTitle}
 					currentNoteId={controller.currentNoteId}
 					currentNoteTitle={controller.currentNoteTitle}
 					onChatSelect={controller.handleOpenChat}

@@ -100,6 +100,28 @@ vi.mock("../src/components/nav/nav-notes", () => ({
 	),
 }));
 
+vi.mock("../src/components/nav/nav-starred", () => ({
+	NavStarred: ({
+		chats,
+		onChatSelect,
+	}: {
+		chats?: Array<{ _id: string; title: string }>;
+		onChatSelect: (chatId: string) => void;
+	}) => (
+		<div>
+			{chats?.map((chat) => (
+				<button
+					key={chat._id}
+					type="button"
+					onClick={() => onChatSelect(chat._id)}
+				>
+					{chat.title}
+				</button>
+			))}
+		</div>
+	),
+}));
+
 vi.mock("../src/components/nav/nav-projects", () => ({
 	NavProjects: () => null,
 }));
@@ -173,6 +195,7 @@ describe("AppSidebar mobile interactions", () => {
 	it("closes the mobile sidebar before opening inbox, search, or notes", async () => {
 		const setOpenMobile = vi.fn();
 		const onInboxOpenChange = vi.fn();
+		const onChatSelect = vi.fn();
 		const onNoteSelect = vi.fn();
 		const onCreateNote = vi.fn();
 		const onWorkspaceSelect = vi.fn();
@@ -191,14 +214,24 @@ describe("AppSidebar mobile interactions", () => {
 			<AppSidebar
 				workspaces={[{ _id: "workspace-1", name: "Workspace" } as never]}
 				activeWorkspaceId={"workspace-1" as never}
-				currentView="note"
+				currentView="chat"
 				inboxOpen={false}
 				user={{
 					name: "Murad",
 					email: "murad@example.com",
 					avatar: "",
 				}}
-				chats={[]}
+				chats={[
+					{
+						_id: "chat-1",
+						chatId: "chat-1",
+						preview: "Preview",
+						title: "First chat",
+						updatedAt: Date.now(),
+					} as never,
+				]}
+				currentChatId="chat-1"
+				currentChatTitle="First chat"
 				notes={[
 					{
 						_id: "note-1",
@@ -218,7 +251,7 @@ describe("AppSidebar mobile interactions", () => {
 				onSignOut={vi.fn()}
 				currentNoteId={"note-1" as never}
 				currentNoteTitle="First note"
-				onChatSelect={vi.fn()}
+				onChatSelect={onChatSelect}
 				onNotePrefetch={vi.fn()}
 				onNoteSelect={onNoteSelect}
 				onCreateNote={onCreateNote}
@@ -229,12 +262,14 @@ describe("AppSidebar mobile interactions", () => {
 		fireEvent.click(screen.getByRole("button", { name: "New note" }));
 		fireEvent.click(screen.getByRole("button", { name: "Open search" }));
 		fireEvent.click(screen.getByRole("button", { name: "First note" }));
+		fireEvent.click(screen.getByRole("button", { name: "First chat" }));
 		fireEvent.click(screen.getByRole("button", { name: "Create note" }));
 		fireEvent.click(screen.getByRole("button", { name: "Switch workspace" }));
 
-		expect(setOpenMobile).toHaveBeenCalledTimes(6);
+		expect(setOpenMobile).toHaveBeenCalledTimes(7);
 		expect(setOpenMobile).toHaveBeenNthCalledWith(1, false);
 		expect(onInboxOpenChange).toHaveBeenCalledWith(true);
+		expect(onChatSelect).toHaveBeenCalledWith("chat-1");
 		expect(onNoteSelect).toHaveBeenCalledWith("note-1");
 		expect(onCreateNote).toHaveBeenCalledTimes(2);
 		expect(onWorkspaceSelect).toHaveBeenCalledWith("workspace-1");

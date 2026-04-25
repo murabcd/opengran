@@ -23,6 +23,7 @@ const chatFields = {
 	authorName: v.optional(v.string()),
 	chatId: v.string(),
 	noteId: v.optional(v.id("notes")),
+	isStarred: v.optional(v.boolean()),
 	title: v.string(),
 	preview: v.string(),
 	model: v.optional(v.string()),
@@ -385,6 +386,7 @@ const saveMessageForOwnerInternal = async (
 			authorName: args.authorName,
 			chatId: storedChatId,
 			noteId: storedNoteId,
+			isStarred: false,
 			title: normalizedTitle ?? "New chat",
 			preview: normalizedPreview,
 			model: args.model,
@@ -553,6 +555,43 @@ export const getSession = query({
 			args.workspaceId,
 			args.chatId,
 		);
+	},
+});
+
+export const toggleStar = mutation({
+	args: {
+		workspaceId: v.id("workspaces"),
+		chatId: v.string(),
+	},
+	returns: v.object({
+		isStarred: v.boolean(),
+	}),
+	handler: async (ctx, args) => {
+		const ownerTokenIdentifier = await requireTokenIdentifier(ctx);
+		const chat = await getOwnedActiveChatById(
+			ctx,
+			ownerTokenIdentifier,
+			args.workspaceId,
+			args.chatId,
+		);
+
+		if (!chat) {
+			throw new ConvexError({
+				code: "CHAT_NOT_FOUND",
+				message: "Chat not found.",
+			});
+		}
+
+		const isStarred = !(chat.isStarred ?? false);
+
+		await ctx.db.patch(chat._id, {
+			isStarred,
+			updatedAt: Date.now(),
+		});
+
+		return {
+			isStarred,
+		};
 	},
 });
 

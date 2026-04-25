@@ -8,6 +8,7 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import { MessageCircle, MoreHorizontal } from "lucide-react";
+import * as React from "react";
 import { getChatId } from "@/lib/chat";
 import {
 	groupItemsByRelativeDate,
@@ -38,8 +39,16 @@ export function ChatHistoryList({
 	onPrefetchChat,
 	onMoveToTrash,
 }: ChatHistoryListProps) {
+	const starredChats = React.useMemo(
+		() => chats.filter((chat) => chat.isStarred ?? false),
+		[chats],
+	);
+	const unstarredChats = React.useMemo(
+		() => chats.filter((chat) => !(chat.isStarred ?? false)),
+		[chats],
+	);
 	const groupedChats = groupItemsByRelativeDate(
-		chats,
+		unstarredChats,
 		(chat) => chat.updatedAt || chat.createdAt || chat._creationTime,
 	);
 	const chatSections = RELATIVE_DATE_GROUP_SECTIONS.map((section) => ({
@@ -53,6 +62,25 @@ export function ChatHistoryList({
 				<ChatHistorySkeleton />
 			) : chats.length > 0 ? (
 				<div className="space-y-1">
+					{starredChats.length > 0 ? (
+						<div className="space-y-2">
+							<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
+								Starred
+							</div>
+							<div className="space-y-2">
+								{starredChats.map((chat) => (
+									<ChatHistoryItem
+										key={chat._id}
+										chat={chat}
+										activeChatId={activeChatId}
+										onOpenChat={onOpenChat}
+										onPrefetchChat={onPrefetchChat}
+										onMoveToTrash={onMoveToTrash}
+									/>
+								))}
+							</div>
+						</div>
+					) : null}
 					{chatSections.map((section) => {
 						if (section.chats.length === 0) {
 							return null;
