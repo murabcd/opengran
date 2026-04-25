@@ -24,15 +24,18 @@ import {
 	DropdownMenuLabel,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { Field, FieldGroup } from "@workspace/ui/components/field";
+import {
+	Field,
+	FieldGroup,
+	FieldLabel,
+	FieldLegend,
+	FieldSet,
+} from "@workspace/ui/components/field";
 import { Icons } from "@workspace/ui/components/icons";
 import { Input } from "@workspace/ui/components/input";
-import { Label } from "@workspace/ui/components/label";
 import {
 	Popover,
 	PopoverContent,
-	PopoverHeader,
-	PopoverTitle,
 	PopoverTrigger,
 } from "@workspace/ui/components/popover";
 import {
@@ -61,7 +64,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
 
 const AUTOMATION_PICKER_TRIGGER_CLASS_NAME =
-	"min-w-40 justify-between rounded-lg border-input bg-background text-sm shadow-xs hover:bg-background aria-expanded:bg-background dark:bg-input/30 dark:hover:bg-input/30";
+	"min-w-40 justify-between rounded-full border-transparent bg-transparent text-sm font-normal text-muted-foreground shadow-none";
 
 type CreateAutomationDialogProps = {
 	open: boolean;
@@ -226,12 +229,12 @@ export function CreateAutomationDialog({
 				</DialogHeader>
 				<FieldGroup>
 					<Field>
-						<Label
+						<FieldLabel
 							htmlFor="automation-title"
 							className="text-xs text-muted-foreground"
 						>
 							Title
-						</Label>
+						</FieldLabel>
 						<Input
 							id="automation-title"
 							value={title}
@@ -240,44 +243,49 @@ export function CreateAutomationDialog({
 						/>
 					</Field>
 					<Field>
-						<Label
+						<FieldLabel
 							htmlFor="automation-prompt"
 							className="text-xs text-muted-foreground"
 						>
 							Prompt
-						</Label>
+						</FieldLabel>
 						<Textarea
 							id="automation-prompt"
 							value={prompt}
 							onChange={(event) => setPrompt(event.target.value)}
 							placeholder="Review yesterday's meeting notes and summarize follow-ups, decisions, and open questions for my workspace."
-							className="min-h-40 resize-none"
+							className="field-sizing-fixed h-40 overflow-y-auto resize-none"
 						/>
 					</Field>
-					<div className="flex flex-wrap items-center gap-1.5 pt-2">
-						<ProjectPicker
-							open={projectPickerOpen}
-							onOpenChange={setProjectPickerOpen}
-							projects={projects ?? []}
-							target={target}
-							onTargetSelect={setTarget}
-						/>
-						<SchedulePicker
-							open={schedulePickerOpen}
-							onOpenChange={setSchedulePickerOpen}
-							scheduleLabel={scheduleLabel}
-							schedulePeriod={schedulePeriod}
-							scheduledAt={scheduledAt}
-							onSchedulePeriodChange={setSchedulePeriod}
-							onTimeChange={handleTimeChange}
-						/>
-						<ModelPicker
-							open={modelPickerOpen}
-							onOpenChange={setModelPickerOpen}
-							selectedModel={selectedModel}
-							onSelectedModelChange={setSelectedModel}
-						/>
-					</div>
+					<FieldSet className="gap-0">
+						<FieldLegend variant="label" className="sr-only">
+							Automation settings
+						</FieldLegend>
+						<div className="flex flex-wrap items-center gap-1.5">
+							<ProjectPicker
+								open={projectPickerOpen}
+								onOpenChange={setProjectPickerOpen}
+								projects={projects ?? []}
+								target={target}
+								onTargetSelect={setTarget}
+							/>
+							<SchedulePicker
+								open={schedulePickerOpen}
+								onOpenChange={setSchedulePickerOpen}
+								scheduleLabel={scheduleLabel}
+								schedulePeriod={schedulePeriod}
+								scheduledAt={scheduledAt}
+								onSchedulePeriodChange={setSchedulePeriod}
+								onTimeChange={handleTimeChange}
+							/>
+							<ModelPicker
+								open={modelPickerOpen}
+								onOpenChange={setModelPickerOpen}
+								selectedModel={selectedModel}
+								onSelectedModelChange={setSelectedModel}
+							/>
+						</div>
+					</FieldSet>
 				</FieldGroup>
 				<div className="flex justify-end gap-2 pt-2">
 					<Button
@@ -370,7 +378,7 @@ function ProjectPicker({
 			<PopoverTrigger asChild>
 				<Button
 					type="button"
-					variant="outline"
+					variant="ghost"
 					className={cn(
 						"justify-between font-normal",
 						AUTOMATION_PICKER_TRIGGER_CLASS_NAME,
@@ -388,7 +396,7 @@ function ProjectPicker({
 			<PopoverContent
 				align="start"
 				sideOffset={6}
-				className="w-72 gap-0 border-input/30 p-0"
+				className="w-64 gap-0 border-input/30 p-0 [&_[data-slot=scroll-area]]:w-full [&_[data-slot=scroll-area-viewport]]:w-full [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:w-full [&_[data-slot=scroll-area-viewport]>div]:min-w-0 [&_[data-slot=command-list]]:w-full [&_[data-slot=command-list]]:min-w-0"
 			>
 				<Command className="bg-popover p-1">
 					<CommandInput className="pl-2" placeholder="Search projects" />
@@ -473,7 +481,7 @@ function SchedulePicker({
 			<PopoverTrigger asChild>
 				<Button
 					type="button"
-					variant="outline"
+					variant="ghost"
 					className={cn(
 						"justify-between font-normal",
 						AUTOMATION_PICKER_TRIGGER_CLASS_NAME,
@@ -487,11 +495,9 @@ function SchedulePicker({
 				</Button>
 			</PopoverTrigger>
 			<PopoverContent align="start" sideOffset={6} className="w-64 gap-0 p-1.5">
-				<PopoverHeader className="px-1 pb-1">
-					<PopoverTitle className="text-xs font-medium text-muted-foreground">
-						Schedule
-					</PopoverTitle>
-				</PopoverHeader>
+				<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+					Schedule
+				</div>
 				<div className="space-y-1">
 					<Select
 						value={schedulePeriod}
