@@ -394,7 +394,7 @@ function ProjectPicker({
 					<CommandInput className="pl-2" placeholder="Search projects" />
 					<CommandList className="max-h-64">
 						<CommandEmpty>No projects found.</CommandEmpty>
-						<CommandGroup className="p-1">
+						<CommandGroup className="p-1 [&>[cmdk-group-items]]:flex [&>[cmdk-group-items]]:flex-col [&>[cmdk-group-items]]:gap-1">
 							{projects.map((project) => (
 								<ProjectPickerItem
 									key={project._id}
@@ -441,13 +441,11 @@ function ProjectPickerItem({
 			onSelect={onSelect}
 			data-checked={selected}
 			className={cn(
-				"w-full cursor-pointer gap-2 rounded-lg px-2",
-				selected && "bg-muted text-foreground",
+				"h-8 w-full cursor-pointer gap-2 overflow-hidden rounded-lg p-2 text-left text-sm ring-sidebar-ring transition-[background-color,color] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 data-selected:bg-sidebar-accent data-selected:text-sidebar-accent-foreground",
+				selected && "bg-sidebar-accent text-sidebar-accent-foreground",
 			)}
 		>
-			<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
-				<Icon className="size-4" />
-			</div>
+			<Icon className="size-4 shrink-0 text-muted-foreground group-hover/command-item:text-sidebar-accent-foreground group-data-[selected=true]/command-item:text-sidebar-accent-foreground" />
 			<div className="min-w-0 flex-1 truncate">{label}</div>
 		</CommandItem>
 	);
