@@ -52,7 +52,7 @@ describe("manage dialog create actions", () => {
 		expect(screen.getByDisplayValue("")).toBeTruthy();
 	});
 
-	it("resets recipe edits without closing the dialog", async () => {
+	it("resets recipe edits and closes the dialog on cancel", async () => {
 		useQueryMock.mockReturnValue([
 			{
 				slug: "write-prd",
@@ -72,7 +72,7 @@ describe("manage dialog create actions", () => {
 		const saveButton = screen.getByRole("button", { name: "Save" });
 		const promptInput = screen.getByLabelText("Prompt");
 
-		expect((cancelButton as HTMLButtonElement).disabled).toBe(true);
+		expect((cancelButton as HTMLButtonElement).disabled).toBe(false);
 		expect((saveButton as HTMLButtonElement).disabled).toBe(true);
 
 		fireEvent.change(promptInput, { target: { value: "Updated prompt" } });
@@ -82,14 +82,14 @@ describe("manage dialog create actions", () => {
 
 		fireEvent.click(cancelButton);
 
-		expect(onOpenChange).not.toHaveBeenCalled();
+		expect(onOpenChange).toHaveBeenCalledWith(false);
 		expect((screen.getByLabelText("Prompt") as HTMLTextAreaElement).value).toBe(
 			"Original prompt",
 		);
 		expect(
 			(screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
 				.disabled,
-		).toBe(true);
+		).toBe(false);
 		expect(
 			(screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
 				.disabled,
@@ -124,7 +124,7 @@ describe("manage dialog create actions", () => {
 		expect(screen.getByDisplayValue("Summary")).toBeTruthy();
 	});
 
-	it("resets template edits without closing the dialog", async () => {
+	it("resets template edits and closes the dialog on cancel", async () => {
 		useQueryMock.mockReturnValue([
 			{
 				slug: "stand-up",
@@ -151,7 +151,7 @@ describe("manage dialog create actions", () => {
 		const saveButton = screen.getByRole("button", { name: "Save" });
 		const contextInput = screen.getByLabelText("Meeting context");
 
-		expect((cancelButton as HTMLButtonElement).disabled).toBe(true);
+		expect((cancelButton as HTMLButtonElement).disabled).toBe(false);
 		expect((saveButton as HTMLButtonElement).disabled).toBe(true);
 
 		fireEvent.change(contextInput, { target: { value: "Updated sync" } });
@@ -161,14 +161,14 @@ describe("manage dialog create actions", () => {
 
 		fireEvent.click(cancelButton);
 
-		expect(onOpenChange).not.toHaveBeenCalled();
+		expect(onOpenChange).toHaveBeenCalledWith(false);
 		expect(
 			(screen.getByLabelText("Meeting context") as HTMLTextAreaElement).value,
 		).toBe("Daily sync");
 		expect(
 			(screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
 				.disabled,
-		).toBe(true);
+		).toBe(false);
 		expect(
 			(screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
 				.disabled,

@@ -455,11 +455,11 @@ const useTemplateDraftEditor = ({
 	};
 
 	const handleCancel = () => {
-		if (!hasChanges) {
-			return;
+		if (hasChanges) {
+			updateTemplates(() => savedTemplates);
 		}
 
-		updateTemplates(() => savedTemplates);
+		onOpenChange(false);
 	};
 
 	const handleSave = async () => {
@@ -614,11 +614,7 @@ function TemplatesEditor({
 						</Field>
 					</FieldGroup>
 					<div className="flex justify-end gap-2 pt-6">
-						<Button
-							variant="ghost"
-							onClick={onCancel}
-							disabled={!hasChanges || isSaving}
-						>
+						<Button variant="ghost" onClick={onCancel} disabled={isSaving}>
 							Cancel
 						</Button>
 						<Button

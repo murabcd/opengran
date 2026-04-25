@@ -297,11 +297,11 @@ const useRecipeDraftEditor = ({
 	};
 
 	const handleCancel = () => {
-		if (!hasChanges) {
-			return;
+		if (hasChanges) {
+			updateRecipes(() => savedRecipes);
 		}
 
-		updateRecipes(() => savedRecipes);
+		onOpenChange(false);
 	};
 
 	const handleSave = async () => {
@@ -398,11 +398,7 @@ function RecipesEditor({
 						</Field>
 					</FieldGroup>
 					<div className="flex justify-end gap-2 pt-6">
-						<Button
-							variant="ghost"
-							onClick={onCancel}
-							disabled={!hasChanges || isSaving}
-						>
+						<Button variant="ghost" onClick={onCancel} disabled={isSaving}>
 							Cancel
 						</Button>
 						<Button onClick={onSave} disabled={!hasChanges || isSaving}>
