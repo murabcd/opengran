@@ -39,7 +39,6 @@ const automationSchedulePeriodValidator = v.union(
 	v.literal("daily"),
 	v.literal("weekdays"),
 	v.literal("weekly"),
-	v.literal("custom"),
 );
 
 const automationRunStatusValidator = v.union(

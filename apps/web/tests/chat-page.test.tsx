@@ -496,7 +496,7 @@ describe("ChatPage", () => {
 			"hello",
 		);
 		await user.click(screen.getByLabelText("Web search"));
-		await user.click(screen.getByLabelText("Apps and Integrations"));
+		await user.click(screen.getByLabelText("Apps and integrations"));
 		const meetingNotesButtons = screen.getAllByRole("button", {
 			name: "Meeting notes",
 		});
@@ -627,7 +627,7 @@ describe("ChatPage", () => {
 			</ActiveWorkspaceProvider>,
 		);
 
-		await user.click(screen.getByRole("button", { name: "Connect Apps" }));
+		await user.click(screen.getByRole("button", { name: "Connect apps" }));
 
 		expect(onOpenConnectionsSettings).toHaveBeenCalledTimes(1);
 		expect(pushStateSpy).not.toHaveBeenCalledWith(

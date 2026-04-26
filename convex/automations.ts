@@ -13,7 +13,6 @@ const automationSchedulePeriodValidator = v.union(
 	v.literal("daily"),
 	v.literal("weekdays"),
 	v.literal("weekly"),
-	v.literal("custom"),
 );
 
 const automationRunReasonValidator = v.union(
@@ -287,7 +286,6 @@ const getNextRunAt = ({
 			return getWeekdayCandidate(from, scheduledAt);
 		case "weekly":
 			return getWeeklyCandidate(from, scheduledAt);
-		case "custom":
 		case "daily":
 			return getDailyCandidate(from, scheduledAt);
 	}
