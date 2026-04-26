@@ -24,15 +24,15 @@ import {
 	DropdownMenuLabel,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import {
-	Field,
-	FieldGroup,
-	FieldLabel,
-	FieldLegend,
-	FieldSet,
-} from "@workspace/ui/components/field";
+import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field";
 import { Icons } from "@workspace/ui/components/icons";
 import { Input } from "@workspace/ui/components/input";
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupTextarea,
+} from "@workspace/ui/components/input-group";
 import {
 	Popover,
 	PopoverContent,
@@ -46,10 +46,21 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@workspace/ui/components/select";
-import { Textarea } from "@workspace/ui/components/textarea";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { useQuery } from "convex/react";
-import { ChevronDown, Clock, FolderClosed } from "lucide-react";
+import {
+	AtSign,
+	ChevronDown,
+	Clock,
+	FolderClosed,
+	Grid3x3,
+	X,
+} from "lucide-react";
 import * as React from "react";
 import {
 	AUTOMATION_SCHEDULE_PERIODS,
@@ -59,18 +70,71 @@ import {
 } from "@/components/automations/automation-types";
 import { getAutomationSchedulePeriodLabel } from "@/components/automations/automation-utils";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
+import { useLinkedAccounts } from "@/hooks/use-linked-accounts";
 import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
+import { authClient } from "@/lib/auth-client";
+import {
+	type ChatAppSourceProvider,
+	getAppSourceLabel,
+} from "@/lib/chat-source-display";
+import {
+	GOOGLE_CALENDAR_SCOPE,
+	GOOGLE_CALENDAR_SOURCE_ID,
+	GOOGLE_DRIVE_SCOPE,
+	GOOGLE_DRIVE_SOURCE_ID,
+	getGoogleLinkedAccount,
+	hasGoogleScope,
+} from "@/lib/google-integrations";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
 
 const AUTOMATION_PICKER_TRIGGER_CLASS_NAME =
-	"min-w-40 justify-between rounded-full border-transparent bg-transparent text-sm font-normal text-muted-foreground shadow-none";
+	"max-w-[180px] justify-start rounded-full font-normal text-muted-foreground";
 
 type CreateAutomationDialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onCreateAutomation: (automation: AutomationDraft) => void | Promise<void>;
 	initialAutomation?: AutomationDraft | null;
+};
+
+type ConnectedAppSource = {
+	id: string;
+	title: string;
+	preview: string;
+	provider: ChatAppSourceProvider;
+};
+
+type ConnectedAppMentionRange = {
+	start: number;
+	end: number;
+};
+
+const findConnectedAppMentionRange = (
+	value: string,
+	cursorPosition: number,
+): ConnectedAppMentionRange | null => {
+	const textBeforeCursor = value.slice(0, cursorPosition);
+	const mentionStart = textBeforeCursor.lastIndexOf("@");
+
+	if (mentionStart === -1) {
+		return null;
+	}
+
+	const characterBeforeMention = value[mentionStart - 1];
+	if (characterBeforeMention && !/\s/.test(characterBeforeMention)) {
+		return null;
+	}
+
+	const mentionText = value.slice(mentionStart + 1, cursorPosition);
+	if (/\s/.test(mentionText)) {
+		return null;
+	}
+
+	return {
+		start: mentionStart,
+		end: cursorPosition,
+	};
 };
 
 const createInitialScheduledAt = () => {
@@ -92,13 +156,57 @@ export function CreateAutomationDialog({
 	initialAutomation = null,
 }: CreateAutomationDialogProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
+	const promptTextareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 	const projects = useQuery(
 		api.projects.list,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
+	const appSources = useQuery(
+		api.appConnections.listSources,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
+	const { data: session } = authClient.useSession();
+	const { accounts } = useLinkedAccounts(session?.user);
+	const googleAccount = React.useMemo(
+		() => getGoogleLinkedAccount(accounts),
+		[accounts],
+	);
+	const googleAppSources = React.useMemo(() => {
+		if (!googleAccount) {
+			return [];
+		}
+
+		const sources: ConnectedAppSource[] = [];
+
+		if (hasGoogleScope(googleAccount, GOOGLE_CALENDAR_SCOPE)) {
+			sources.push({
+				id: GOOGLE_CALENDAR_SOURCE_ID,
+				title: "Google Calendar",
+				preview: "Google account",
+				provider: "google-calendar",
+			});
+		}
+
+		if (hasGoogleScope(googleAccount, GOOGLE_DRIVE_SCOPE)) {
+			sources.push({
+				id: GOOGLE_DRIVE_SOURCE_ID,
+				title: "Google Drive",
+				preview: "Google account",
+				provider: "google-drive",
+			});
+		}
+
+		return sources;
+	}, [googleAccount]);
+	const connectedAppSources = React.useMemo(
+		() => [...googleAppSources, ...(appSources ?? [])],
+		[appSources, googleAppSources],
+	);
 	const [projectPickerOpen, setProjectPickerOpen] = React.useState(false);
 	const [schedulePickerOpen, setSchedulePickerOpen] = React.useState(false);
 	const [modelPickerOpen, setModelPickerOpen] = React.useState(false);
+	const [connectedAppsPickerOpen, setConnectedAppsPickerOpen] =
+		React.useState(false);
 	const [title, setTitle] = React.useState("");
 	const [prompt, setPrompt] = React.useState("");
 	const [selectedModel, setSelectedModel] = React.useState(defaultChatModel);
@@ -108,11 +216,27 @@ export function CreateAutomationDialog({
 		createInitialScheduledAt,
 	);
 	const [target, setTarget] = React.useState<AutomationTarget | null>(null);
+	const [selectedConnectedAppIds, setSelectedConnectedAppIds] = React.useState<
+		string[]
+	>([]);
+	const [connectedAppMentionRange, setConnectedAppMentionRange] =
+		React.useState<ConnectedAppMentionRange | null>(null);
+	const selectedConnectedApps = React.useMemo(
+		() =>
+			selectedConnectedAppIds.flatMap((sourceId) => {
+				const source = connectedAppSources.find(
+					(appSource) => appSource.id === sourceId,
+				);
+				return source ? [source] : [];
+			}),
+		[connectedAppSources, selectedConnectedAppIds],
+	);
 
 	React.useEffect(() => {
 		setProjectPickerOpen(false);
 		setSchedulePickerOpen(false);
 		setModelPickerOpen(false);
+		setConnectedAppsPickerOpen(false);
 
 		if (!open) {
 			setTitle("");
@@ -121,6 +245,8 @@ export function CreateAutomationDialog({
 			setSchedulePeriod("daily");
 			setScheduledAt(createInitialScheduledAt());
 			setTarget(null);
+			setSelectedConnectedAppIds([]);
+			setConnectedAppMentionRange(null);
 			return;
 		}
 
@@ -142,6 +268,8 @@ export function CreateAutomationDialog({
 		setSchedulePeriod("daily");
 		setScheduledAt(createInitialScheduledAt());
 		setTarget(null);
+		setSelectedConnectedAppIds([]);
+		setConnectedAppMentionRange(null);
 	}, [initialAutomation, open]);
 
 	React.useEffect(() => {
@@ -159,6 +287,80 @@ export function CreateAutomationDialog({
 
 		setTarget(null);
 	}, [projects, target]);
+
+	React.useEffect(() => {
+		setSelectedConnectedAppIds((currentIds) => {
+			const availableIds = new Set(
+				connectedAppSources.map((source) => source.id),
+			);
+			const nextIds = currentIds.filter((sourceId) =>
+				availableIds.has(sourceId),
+			);
+
+			return nextIds.length === currentIds.length ? currentIds : nextIds;
+		});
+	}, [connectedAppSources]);
+
+	const handleConnectedAppToggle = React.useCallback((sourceId: string) => {
+		setSelectedConnectedAppIds((currentIds) =>
+			currentIds.includes(sourceId)
+				? currentIds.filter((currentId) => currentId !== sourceId)
+				: [...currentIds, sourceId],
+		);
+	}, []);
+
+	const handlePromptChange = React.useCallback(
+		(event: React.ChangeEvent<HTMLTextAreaElement>) => {
+			const nextPrompt = event.target.value;
+			const mentionRange = findConnectedAppMentionRange(
+				nextPrompt,
+				event.target.selectionStart,
+			);
+
+			setPrompt(nextPrompt);
+			setConnectedAppMentionRange(mentionRange);
+			if (mentionRange) {
+				setConnectedAppsPickerOpen(true);
+			}
+		},
+		[],
+	);
+
+	const handleConnectedAppSelect = React.useCallback(
+		(sourceId: string) => {
+			setSelectedConnectedAppIds((currentIds) =>
+				currentIds.includes(sourceId) ? currentIds : [...currentIds, sourceId],
+			);
+
+			const selectedSource = connectedAppSources.find(
+				(source) => source.id === sourceId,
+			);
+			if (connectedAppMentionRange && selectedSource) {
+				const mentionText = `@${getAppSourceLabel(selectedSource.provider)}`;
+				const nextCursorPosition =
+					connectedAppMentionRange.start + mentionText.length;
+
+				setPrompt(
+					(currentPrompt) =>
+						`${currentPrompt.slice(0, connectedAppMentionRange.start)}${mentionText}${currentPrompt.slice(connectedAppMentionRange.end)}`,
+				);
+				window.requestAnimationFrame(() => {
+					promptTextareaRef.current?.focus({ preventScroll: true });
+					promptTextareaRef.current?.setSelectionRange(
+						nextCursorPosition,
+						nextCursorPosition,
+					);
+				});
+			} else {
+				window.requestAnimationFrame(() => {
+					promptTextareaRef.current?.focus({ preventScroll: true });
+				});
+			}
+
+			setConnectedAppMentionRange(null);
+		},
+		[connectedAppMentionRange, connectedAppSources],
+	);
 
 	const handleTimeChange = React.useCallback(
 		(event: React.ChangeEvent<HTMLInputElement>) => {
@@ -249,43 +451,59 @@ export function CreateAutomationDialog({
 						>
 							Prompt
 						</FieldLabel>
-						<Textarea
-							id="automation-prompt"
-							value={prompt}
-							onChange={(event) => setPrompt(event.target.value)}
-							placeholder="Review yesterday's meeting notes and summarize follow-ups, decisions, and open questions for my workspace."
-							className="field-sizing-fixed h-40 overflow-y-auto resize-none"
-						/>
+						<InputGroup className="min-h-40 items-stretch rounded-xl bg-background">
+							<InputGroupAddon align="block-start" className="px-2.5 pt-2">
+								<ConnectedAppsPicker
+									open={connectedAppsPickerOpen}
+									onOpenChange={setConnectedAppsPickerOpen}
+									sources={connectedAppSources}
+									selectedSourceIds={selectedConnectedAppIds}
+									onSelectSource={handleConnectedAppSelect}
+								/>
+								{selectedConnectedApps.length > 0 ? (
+									<ConnectedAppChips
+										sources={selectedConnectedApps}
+										onRemoveSource={handleConnectedAppToggle}
+									/>
+								) : null}
+							</InputGroupAddon>
+							<InputGroupTextarea
+								ref={promptTextareaRef}
+								id="automation-prompt"
+								value={prompt}
+								onChange={handlePromptChange}
+								placeholder="Review yesterday's meeting notes and summarize follow-ups, decisions, and open questions for my workspace."
+								className="field-sizing-fixed min-h-28 overflow-y-auto px-4 py-3"
+							/>
+							<InputGroupAddon
+								align="block-end"
+								className="flex-wrap justify-start gap-1 px-2.5 py-2"
+							>
+								<ProjectPicker
+									open={projectPickerOpen}
+									onOpenChange={setProjectPickerOpen}
+									projects={projects ?? []}
+									target={target}
+									onTargetSelect={setTarget}
+								/>
+								<SchedulePicker
+									open={schedulePickerOpen}
+									onOpenChange={setSchedulePickerOpen}
+									scheduleLabel={scheduleLabel}
+									schedulePeriod={schedulePeriod}
+									scheduledAt={scheduledAt}
+									onSchedulePeriodChange={setSchedulePeriod}
+									onTimeChange={handleTimeChange}
+								/>
+								<ModelPicker
+									open={modelPickerOpen}
+									onOpenChange={setModelPickerOpen}
+									selectedModel={selectedModel}
+									onSelectedModelChange={setSelectedModel}
+								/>
+							</InputGroupAddon>
+						</InputGroup>
 					</Field>
-					<FieldSet className="gap-0">
-						<FieldLegend variant="label" className="sr-only">
-							Automation settings
-						</FieldLegend>
-						<div className="flex flex-wrap items-center gap-1.5">
-							<ProjectPicker
-								open={projectPickerOpen}
-								onOpenChange={setProjectPickerOpen}
-								projects={projects ?? []}
-								target={target}
-								onTargetSelect={setTarget}
-							/>
-							<SchedulePicker
-								open={schedulePickerOpen}
-								onOpenChange={setSchedulePickerOpen}
-								scheduleLabel={scheduleLabel}
-								schedulePeriod={schedulePeriod}
-								scheduledAt={scheduledAt}
-								onSchedulePeriodChange={setSchedulePeriod}
-								onTimeChange={handleTimeChange}
-							/>
-							<ModelPicker
-								open={modelPickerOpen}
-								onOpenChange={setModelPickerOpen}
-								selectedModel={selectedModel}
-								onSelectedModelChange={setSelectedModel}
-							/>
-						</div>
-					</FieldSet>
 				</FieldGroup>
 				<div className="flex justify-end gap-2 pt-2">
 					<Button
@@ -308,6 +526,133 @@ export function CreateAutomationDialog({
 	);
 }
 
+function ConnectedAppsPicker({
+	open,
+	onOpenChange,
+	sources,
+	selectedSourceIds,
+	onSelectSource,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	sources: ConnectedAppSource[];
+	selectedSourceIds: string[];
+	onSelectSource: (sourceId: string) => void;
+}) {
+	return (
+		<Popover open={open} onOpenChange={onOpenChange}>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<PopoverTrigger asChild>
+						<InputGroupButton
+							variant="outline"
+							size="icon-sm"
+							className="rounded-full text-muted-foreground hover:text-foreground"
+						>
+							<AtSign />
+							<span className="sr-only">Add connected apps</span>
+						</InputGroupButton>
+					</PopoverTrigger>
+				</TooltipTrigger>
+				<TooltipContent>Add connected apps</TooltipContent>
+			</Tooltip>
+			<PopoverContent className="w-72 p-0" align="start">
+				<Command>
+					<CommandInput placeholder="Search connected apps..." />
+					<CommandList>
+						<CommandEmpty>No connected apps found.</CommandEmpty>
+						{sources.length > 0 ? (
+							<CommandGroup heading="Connected apps">
+								{sources.map((source, index) => {
+									const sourceKey = source.id
+										? `${source.provider}:${source.id}`
+										: `connected-app-${index}`;
+									const selected = selectedSourceIds.includes(source.id);
+
+									return (
+										<CommandItem
+											key={sourceKey}
+											value={`${source.provider} ${source.title}`}
+											onSelect={() => {
+												onSelectSource(source.id);
+												onOpenChange(false);
+											}}
+											data-checked={selected}
+										>
+											<ConnectedAppIcon provider={source.provider} />
+											<span className="min-w-0 flex-1 truncate">
+												{getAppSourceLabel(source.provider)}
+											</span>
+										</CommandItem>
+									);
+								})}
+							</CommandGroup>
+						) : null}
+					</CommandList>
+				</Command>
+			</PopoverContent>
+		</Popover>
+	);
+}
+
+function ConnectedAppChips({
+	sources,
+	onRemoveSource,
+}: {
+	sources: ConnectedAppSource[];
+	onRemoveSource: (sourceId: string) => void;
+}) {
+	return (
+		<div className="no-scrollbar -m-1.5 flex gap-1 overflow-y-auto p-1.5">
+			{sources.map((source) => (
+				<InputGroupButton
+					key={`${source.provider}:${source.id}`}
+					size="sm"
+					variant="secondary"
+					className="group/connected-app-chip rounded-full pl-2!"
+					onClick={() => onRemoveSource(source.id)}
+				>
+					<ConnectedAppIcon provider={source.provider} />
+					{getAppSourceLabel(source.provider)}
+					<X className="opacity-0 transition-opacity group-hover/connected-app-chip:opacity-100 group-focus-visible/connected-app-chip:opacity-100" />
+				</InputGroupButton>
+			))}
+		</div>
+	);
+}
+
+function ConnectedAppIcon({ provider }: { provider: ChatAppSourceProvider }) {
+	if (provider === "google-calendar") {
+		return <Icons.googleCalendarLogo className="size-4" />;
+	}
+
+	if (provider === "google-drive") {
+		return <Icons.googleDriveLogo className="size-4" />;
+	}
+
+	if (provider === "yandex-calendar") {
+		return <Icons.yandexCalendarLogo className="size-4" />;
+	}
+
+	if (provider === "yandex-tracker") {
+		return <Icons.yandexTrackerLogo className="size-4 text-blue-500" />;
+	}
+
+	if (provider === "jira") {
+		return <Icons.jiraLogo className="size-4" />;
+	}
+
+	if (provider === "notion") {
+		return <Icons.notionLogo className="size-4" />;
+	}
+
+	if (provider === "posthog") {
+		return <Icons.planeLogo className="size-4" />;
+	}
+
+	return <Grid3x3 className="size-4" />;
+}
+
 function ModelPicker({
 	open,
 	onOpenChange,
@@ -322,15 +667,16 @@ function ModelPicker({
 	return (
 		<DropdownMenu open={open} onOpenChange={onOpenChange}>
 			<DropdownMenuTrigger asChild>
-				<Button
+				<InputGroupButton
 					type="button"
 					variant="ghost"
-					size="icon"
-					className="size-9 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
+					size="sm"
+					className="rounded-full gap-2 font-normal text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
 					aria-label={`Model: ${selectedModel.name}`}
 				>
-					<Icons.codexLogo className="size-4" />
-				</Button>
+					<Icons.codexLogo className="size-3.5" />
+					<span className="max-w-[120px] truncate">{selectedModel.name}</span>
+				</InputGroupButton>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent side="top" align="start" className="w-72">
 				<DropdownMenuGroup>
@@ -376,13 +722,11 @@ function ProjectPicker({
 	return (
 		<Popover open={open} onOpenChange={onOpenChange}>
 			<PopoverTrigger asChild>
-				<Button
+				<InputGroupButton
 					type="button"
 					variant="ghost"
-					className={cn(
-						"justify-between font-normal",
-						AUTOMATION_PICKER_TRIGGER_CLASS_NAME,
-					)}
+					size="sm"
+					className={cn(AUTOMATION_PICKER_TRIGGER_CLASS_NAME)}
 				>
 					<span className="flex items-center gap-2">
 						<FolderClosed className="size-4 text-muted-foreground" />
@@ -391,7 +735,7 @@ function ProjectPicker({
 						</span>
 					</span>
 					<ChevronDown className="size-4 text-muted-foreground opacity-70" />
-				</Button>
+				</InputGroupButton>
 			</PopoverTrigger>
 			<PopoverContent
 				align="start"
@@ -479,20 +823,18 @@ function SchedulePicker({
 	return (
 		<Popover open={open} onOpenChange={onOpenChange}>
 			<PopoverTrigger asChild>
-				<Button
+				<InputGroupButton
 					type="button"
 					variant="ghost"
-					className={cn(
-						"justify-between font-normal",
-						AUTOMATION_PICKER_TRIGGER_CLASS_NAME,
-					)}
+					size="sm"
+					className={cn(AUTOMATION_PICKER_TRIGGER_CLASS_NAME)}
 				>
 					<span className="flex items-center gap-2">
 						<Clock className="size-4 text-muted-foreground" />
 						<span>{scheduleLabel}</span>
 					</span>
 					<ChevronDown className="size-4 text-muted-foreground opacity-70" />
-				</Button>
+				</InputGroupButton>
 			</PopoverTrigger>
 			<PopoverContent align="start" sideOffset={6} className="w-64 gap-0 p-1.5">
 				<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
