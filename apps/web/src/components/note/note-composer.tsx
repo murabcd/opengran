@@ -140,6 +140,13 @@ import {
 } from "../layout/docked-panel-dimensions";
 
 type NoteChatPresentation = "inline" | "floating" | "sidebar";
+type NoteChatMessageMetadata = {
+	recipe?: {
+		slug: RecipeSlug;
+		name: string;
+	};
+	recipeOnly?: boolean;
+};
 const NOTE_CHAT_MODEL = getChatModel(NOTE_CHAT_MODEL_ID);
 const NOTE_CHAT_FLOATING_WIDTH = "min(28rem, calc(100vw - 2rem))";
 const NOTE_CHAT_FLOATING_HEIGHT_STORAGE_KEY_PREFIX =
@@ -170,6 +177,18 @@ const NOTE_CHAT_SIDEBAR_WIDTH_STORAGE_KEY_PREFIX =
 	"opengran.noteComposer.sidebarWidth";
 const TRANSCRIPT_PROGRESSIVE_RENDER_THRESHOLD = 32;
 const TRANSCRIPT_INITIAL_WINDOW_SIZE = 32;
+
+const getNoteChatMessageMetadata = (
+	message: UIMessage,
+): NoteChatMessageMetadata | null => {
+	const metadata = message.metadata;
+
+	if (!metadata || typeof metadata !== "object") {
+		return null;
+	}
+
+	return metadata as NoteChatMessageMetadata;
+};
 
 const getNoteStorageScopeKey = (noteId: Id<"notes"> | null) =>
 	noteId ? `note:${noteId}` : "note:draft";
@@ -978,6 +997,7 @@ const useNoteComposerController = ({
 	);
 	const selectedRecipe =
 		recipes.find((recipe) => recipe.slug === selectedRecipeSlug) ?? null;
+	const canSendMessage = hasMessage || selectedRecipe !== null;
 
 	const setRightSidebarOpen = React.useCallback(
 		(open: boolean) => {
@@ -1211,7 +1231,7 @@ const useNoteComposerController = ({
 	const handleSend = React.useCallback(async () => {
 		const nextMessage = message.trim();
 
-		if (!nextMessage || isChatLoading) {
+		if ((!nextMessage && !selectedRecipe) || isChatLoading) {
 			return;
 		}
 
@@ -1235,18 +1255,30 @@ const useNoteComposerController = ({
 				},
 				recipeSlug: selectedRecipe?.slug ?? null,
 			};
+			const recipeMetadata: NoteChatMessageMetadata | undefined = selectedRecipe
+				? {
+						recipe: {
+							slug: selectedRecipe.slug,
+							name: selectedRecipe.name,
+						},
+						recipeOnly: nextMessage.length === 0,
+					}
+				: undefined;
+			const outgoingText = nextMessage || selectedRecipe?.name || "";
 			const nextOutgoingMessage = editingMessageId
 				? {
 						messageId: editingMessageId,
-						text: nextMessage,
+						text: outgoingText,
+						metadata: recipeMetadata,
 					}
-				: { text: nextMessage };
+				: { text: outgoingText, metadata: recipeMetadata };
 
 			void sendMessage(nextOutgoingMessage, {
 				body: requestBody,
 			});
 			setEditingMessageId(null);
 			setMessage("");
+			setSelectedRecipeSlug(null);
 			setIsExpanded(false);
 			resetTextareaHeight();
 		} finally {
@@ -1259,7 +1291,7 @@ const useNoteComposerController = ({
 		presentationMode,
 		readNoteContext,
 		resetTextareaHeight,
-		selectedRecipe?.slug,
+		selectedRecipe,
 		editingMessageId,
 		sendMessage,
 		setPanelMode,
@@ -1545,6 +1577,7 @@ const useNoteComposerController = ({
 		handleSubmit,
 		handleTextareaChange,
 		hasMessage,
+		canSendMessage,
 		isTranscriptViewportAtBottom:
 			transcriptSession.isTranscriptViewportAtBottom,
 		systemAudioStatus: transcriptSession.systemAudioStatus,
@@ -1730,6 +1763,34 @@ function TranscriptLanguageSelector({
 	);
 }
 
+function NoteChatRecipeReceipt({
+	isUserMessage,
+	recipe,
+}: {
+	isUserMessage: boolean;
+	recipe: NonNullable<NoteChatMessageMetadata["recipe"]>;
+}) {
+	const Icon = getRecipeIcon(recipe.slug);
+
+	return (
+		<div
+			className={cn("flex", isUserMessage ? "justify-end" : "justify-start")}
+		>
+			<div
+				className={cn(
+					"inline-flex max-w-full items-center gap-2 rounded-lg border border-border/60 bg-transparent px-2.5 py-1.5 text-sm font-medium",
+					isUserMessage ? "text-secondary-foreground" : "text-foreground",
+				)}
+			>
+				<span className="flex size-5 shrink-0 items-center justify-center rounded-md text-primary">
+					<Icon className="size-3.5" />
+				</span>
+				<span className="truncate">{recipe.name}</span>
+			</div>
+		</div>
+	);
+}
+
 function NoteChatMessages({
 	chatError,
 	chatMessages,
@@ -1764,12 +1825,15 @@ function NoteChatMessages({
 		>
 			{chatMessages.map((chatMessage) => {
 				const text = getChatText(chatMessage);
+				const metadata = getNoteChatMessageMetadata(chatMessage);
+				const selectedRecipe = metadata?.recipe ?? null;
+				const displayText = metadata?.recipeOnly ? "" : text;
 				const isStreamingAssistantMessage =
 					isChatLoading &&
 					chatMessage.role === "assistant" &&
 					chatMessage.id === chatMessages[chatMessages.length - 1]?.id;
 
-				if (!text && !isStreamingAssistantMessage) {
+				if (!displayText && !selectedRecipe && !isStreamingAssistantMessage) {
 					return null;
 				}
 
@@ -1781,37 +1845,52 @@ function NoteChatMessages({
 							getChatMessageJustifyClass(chatMessage.role),
 						)}
 					>
-						<div className={CHAT_MESSAGE_MAX_WIDTH_CLASS}>
-							<div
-								className={cn(
-									chatMessage.role === "user"
-										? USER_CHAT_BUBBLE_CLASS
-										: ASSISTANT_CHAT_CONTENT_CLASS,
-									isStreamingAssistantMessage &&
-										!text &&
-										"text-muted-foreground",
-								)}
-							>
-								{isStreamingAssistantMessage && !text ? (
-									<div className="text-sm text-muted-foreground">
-										<ShimmerText>Thinking</ShimmerText>
-									</div>
-								) : (
-									<CollapsibleMessageContent
-										role={chatMessage.role}
-										text={text}
-										isAnimating={isStreamingAssistantMessage}
-										streamdownClassName={cn(
-											chatMessage.role === "assistant" && "note-streamdown",
-										)}
-										mode={isStreamingAssistantMessage ? "streaming" : "static"}
-									/>
-								)}
-							</div>
-							{chatMessage.role === "assistant" && text ? (
+						<div
+							className={cn(
+								"flex flex-col gap-2",
+								CHAT_MESSAGE_MAX_WIDTH_CLASS,
+							)}
+						>
+							{selectedRecipe ? (
+								<NoteChatRecipeReceipt
+									isUserMessage={chatMessage.role === "user"}
+									recipe={selectedRecipe}
+								/>
+							) : null}
+							{isStreamingAssistantMessage || displayText ? (
 								<div
 									className={cn(
-										"mt-2 flex items-center gap-1",
+										chatMessage.role === "user"
+											? USER_CHAT_BUBBLE_CLASS
+											: ASSISTANT_CHAT_CONTENT_CLASS,
+										isStreamingAssistantMessage &&
+											!displayText &&
+											"text-muted-foreground",
+									)}
+								>
+									{isStreamingAssistantMessage && !displayText ? (
+										<div className="text-sm text-muted-foreground">
+											<ShimmerText>Thinking</ShimmerText>
+										</div>
+									) : displayText ? (
+										<CollapsibleMessageContent
+											role={chatMessage.role}
+											text={displayText}
+											isAnimating={isStreamingAssistantMessage}
+											streamdownClassName={cn(
+												chatMessage.role === "assistant" && "note-streamdown",
+											)}
+											mode={
+												isStreamingAssistantMessage ? "streaming" : "static"
+											}
+										/>
+									) : null}
+								</div>
+							) : null}
+							{chatMessage.role === "assistant" && displayText ? (
+								<div
+									className={cn(
+										"flex items-center gap-1",
 										CHAT_ACTIONS_VISIBILITY_CLASS,
 									)}
 								>
@@ -1841,7 +1920,7 @@ function NoteChatMessages({
 												aria-label="Copy"
 												onClick={() => {
 													void navigator.clipboard
-														.writeText(text)
+														.writeText(displayText)
 														.then(() => toast.success("Copied"))
 														.catch(() => toast.error("Failed to copy"));
 												}}
@@ -1866,9 +1945,9 @@ function NoteChatMessages({
 														return;
 													}
 
-													void Promise.resolve(onAddMessageToNote(text)).catch(
-														() => toast.error("Failed to add"),
-													);
+													void Promise.resolve(
+														onAddMessageToNote(displayText),
+													).catch(() => toast.error("Failed to add"));
 												}}
 											>
 												<Plus className="size-3.5" />
@@ -1877,48 +1956,55 @@ function NoteChatMessages({
 										<TooltipContent>Add to note</TooltipContent>
 									</Tooltip>
 								</div>
-							) : chatMessage.role === "user" && text ? (
+							) : chatMessage.role === "user" &&
+								(displayText || selectedRecipe) ? (
 								<div
 									className={cn(
-										"mt-2 flex justify-end gap-1",
+										"flex justify-end gap-1",
 										CHAT_ACTIONS_VISIBILITY_CLASS,
 									)}
 								>
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon-sm"
-												className="size-7 text-muted-foreground hover:text-foreground"
-												aria-label="Edit"
-												onClick={() => onEditMessage?.(chatMessage.id, text)}
-											>
-												<PenLine className="size-3.5" />
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent>Edit</TooltipContent>
-									</Tooltip>
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon-sm"
-												className="size-7 text-muted-foreground hover:text-foreground"
-												aria-label="Copy"
-												onClick={() => {
-													void navigator.clipboard
-														.writeText(text)
-														.then(() => toast.success("Copied"))
-														.catch(() => toast.error("Failed to copy"));
-												}}
-											>
-												<Copy className="size-3.5" />
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent>Copy</TooltipContent>
-									</Tooltip>
+									{displayText ? (
+										<>
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<Button
+														type="button"
+														variant="ghost"
+														size="icon-sm"
+														className="size-7 text-muted-foreground hover:text-foreground"
+														aria-label="Edit"
+														onClick={() =>
+															onEditMessage?.(chatMessage.id, displayText)
+														}
+													>
+														<PenLine className="size-3.5" />
+													</Button>
+												</TooltipTrigger>
+												<TooltipContent>Edit</TooltipContent>
+											</Tooltip>
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<Button
+														type="button"
+														variant="ghost"
+														size="icon-sm"
+														className="size-7 text-muted-foreground hover:text-foreground"
+														aria-label="Copy"
+														onClick={() => {
+															void navigator.clipboard
+																.writeText(displayText)
+																.then(() => toast.success("Copied"))
+																.catch(() => toast.error("Failed to copy"));
+														}}
+													>
+														<Copy className="size-3.5" />
+													</Button>
+												</TooltipTrigger>
+												<TooltipContent>Copy</TooltipContent>
+											</Tooltip>
+										</>
+									) : null}
 									<Tooltip>
 										<TooltipTrigger asChild>
 											<Button
@@ -2252,7 +2338,7 @@ function ChatInlinePopoverFooter({
 	handleKeyDown,
 	isRecipeLoading,
 	handleTextareaChange,
-	hasMessage,
+	canSendMessage,
 	isChatLoading,
 	onStop,
 	isSidebarCompact = false,
@@ -2273,7 +2359,7 @@ function ChatInlinePopoverFooter({
 	handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 	isRecipeLoading: boolean;
 	handleTextareaChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
-	hasMessage: boolean;
+	canSendMessage: boolean;
 	isChatLoading: boolean;
 	onStop: () => void;
 	isSidebarCompact?: boolean;
@@ -2352,7 +2438,7 @@ function ChatInlinePopoverFooter({
 					<InputGroupButton
 						size="sm"
 						variant="secondary"
-						className="rounded-full pl-2!"
+						className="group/recipe-chip rounded-full pl-2!"
 						onClick={onRecipeRemove}
 					>
 						{(() => {
@@ -2360,7 +2446,7 @@ function ChatInlinePopoverFooter({
 							return <Icon />;
 						})()}
 						{selectedRecipe.name}
-						<X />
+						<X className="opacity-0 transition-opacity group-hover/recipe-chip:opacity-100 group-focus-visible/recipe-chip:opacity-100" />
 					</InputGroupButton>
 				) : null}
 			</InputGroupAddon>
@@ -2395,7 +2481,7 @@ function ChatInlinePopoverFooter({
 					size="icon-sm"
 					className="ml-auto rounded-full"
 					aria-label={isChatLoading ? "Stop streaming" : "Send message"}
-					disabled={!isChatLoading && !hasMessage}
+					disabled={!isChatLoading && !canSendMessage}
 					onClick={isChatLoading ? onStop : undefined}
 				>
 					{isChatLoading ? (
@@ -2575,7 +2661,7 @@ function ChatComposerForm({
 				handleKeyDown={controller.handleKeyDown}
 				isRecipeLoading={controller.isRecipeLoading}
 				handleTextareaChange={controller.handleTextareaChange}
-				hasMessage={controller.hasMessage}
+				canSendMessage={controller.canSendMessage}
 				isChatLoading={controller.isChatLoading}
 				onStop={controller.stop}
 				isSidebarCompact={controller.isSidebarPresentation}
