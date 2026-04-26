@@ -1,3 +1,4 @@
+import type { ChatAppSourceProvider } from "@/lib/chat-source-display";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
 export const AUTOMATION_SCHEDULE_PERIODS = [
@@ -10,10 +11,22 @@ export const AUTOMATION_SCHEDULE_PERIODS = [
 export type AutomationSchedulePeriod =
 	(typeof AUTOMATION_SCHEDULE_PERIODS)[number]["value"];
 
-export type AutomationTarget = {
-	kind: "project";
+export type AutomationTarget =
+	| {
+			kind: "project";
+			label: string;
+			projectId: Id<"projects">;
+	  }
+	| {
+			kind: "notes";
+			label: string;
+			noteIds: Array<Id<"notes">>;
+	  };
+
+export type AutomationAppSource = {
+	id: string;
 	label: string;
-	projectId: Id<"projects">;
+	provider: ChatAppSourceProvider;
 };
 
 export type AutomationDraft = {
@@ -21,6 +34,7 @@ export type AutomationDraft = {
 	prompt: string;
 	model: string;
 	authorName?: string;
+	appSources: AutomationAppSource[];
 	schedulePeriod: AutomationSchedulePeriod;
 	scheduledAt: number;
 	timezone: string;

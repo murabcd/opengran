@@ -21,6 +21,7 @@ import {
 	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
 	DropdownMenuGroup,
+	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
@@ -55,8 +56,9 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useQuery } from "convex/react";
 import {
 	AtSign,
-	ChevronDown,
+	Box,
 	Clock,
+	FileText,
 	FolderClosed,
 	Grid3x3,
 	X,
@@ -64,6 +66,7 @@ import {
 import * as React from "react";
 import {
 	AUTOMATION_SCHEDULE_PERIODS,
+	type AutomationAppSource,
 	type AutomationDraft,
 	type AutomationSchedulePeriod,
 	type AutomationTarget,
@@ -85,11 +88,12 @@ import {
 	getGoogleLinkedAccount,
 	hasGoogleScope,
 } from "@/lib/google-integrations";
+import { getNoteDisplayTitle } from "@/lib/note-title";
 import { api } from "../../../../../convex/_generated/api";
-import type { Doc } from "../../../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
 const AUTOMATION_PICKER_TRIGGER_CLASS_NAME =
-	"max-w-[180px] justify-start rounded-full font-normal text-muted-foreground";
+	"group/automation-picker min-w-0 max-w-[180px] justify-start overflow-hidden rounded-full font-normal text-muted-foreground";
 
 type CreateAutomationDialogProps = {
 	open: boolean;
@@ -105,15 +109,22 @@ type ConnectedAppSource = {
 	provider: ChatAppSourceProvider;
 };
 
-type ConnectedAppMentionRange = {
-	start: number;
-	end: number;
+type AutomationNoteSource = {
+	id: Id<"notes">;
+	title: string;
+	preview: string;
 };
 
-const findConnectedAppMentionRange = (
+type NoteMentionRange = {
+	start: number;
+	end: number;
+	query: string;
+};
+
+const findNoteMentionRange = (
 	value: string,
 	cursorPosition: number,
-): ConnectedAppMentionRange | null => {
+): NoteMentionRange | null => {
 	const textBeforeCursor = value.slice(0, cursorPosition);
 	const mentionStart = textBeforeCursor.lastIndexOf("@");
 
@@ -134,6 +145,7 @@ const findConnectedAppMentionRange = (
 	return {
 		start: mentionStart,
 		end: cursorPosition,
+		query: mentionText,
 	};
 };
 
@@ -159,6 +171,10 @@ export function CreateAutomationDialog({
 	const promptTextareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 	const projects = useQuery(
 		api.projects.list,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
+	const notes = useQuery(
+		api.notes.list,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
 	const appSources = useQuery(
@@ -202,11 +218,23 @@ export function CreateAutomationDialog({
 		() => [...googleAppSources, ...(appSources ?? [])],
 		[appSources, googleAppSources],
 	);
+	const noteSources = React.useMemo<AutomationNoteSource[]>(
+		() =>
+			(notes ?? []).map((note) => ({
+				id: note._id,
+				title: getNoteDisplayTitle(note.title),
+				preview: note.searchableText.trim(),
+			})),
+		[notes],
+	);
 	const [projectPickerOpen, setProjectPickerOpen] = React.useState(false);
 	const [schedulePickerOpen, setSchedulePickerOpen] = React.useState(false);
 	const [modelPickerOpen, setModelPickerOpen] = React.useState(false);
-	const [connectedAppsPickerOpen, setConnectedAppsPickerOpen] =
-		React.useState(false);
+	const [appSourcesPickerOpen, setAppSourcesPickerOpen] = React.useState(false);
+	const [notePickerOpen, setNotePickerOpen] = React.useState(false);
+	const [noteSearchTerm, setNoteSearchTerm] = React.useState("");
+	const [noteMentionRange, setNoteMentionRange] =
+		React.useState<NoteMentionRange | null>(null);
 	const [title, setTitle] = React.useState("");
 	const [prompt, setPrompt] = React.useState("");
 	const [selectedModel, setSelectedModel] = React.useState(defaultChatModel);
@@ -219,34 +247,55 @@ export function CreateAutomationDialog({
 	const [selectedConnectedAppIds, setSelectedConnectedAppIds] = React.useState<
 		string[]
 	>([]);
-	const [connectedAppMentionRange, setConnectedAppMentionRange] =
-		React.useState<ConnectedAppMentionRange | null>(null);
-	const selectedConnectedApps = React.useMemo(
+	const [selectedNoteIds, setSelectedNoteIds] = React.useState<
+		Array<Id<"notes">>
+	>([]);
+	const selectedNoteSources = React.useMemo(
+		() =>
+			selectedNoteIds.flatMap((sourceId) => {
+				const source = noteSources.find(
+					(noteSource) => noteSource.id === sourceId,
+				);
+				return source ? [source] : [];
+			}),
+		[noteSources, selectedNoteIds],
+	);
+	const selectedConnectedAppSources = React.useMemo<AutomationAppSource[]>(
 		() =>
 			selectedConnectedAppIds.flatMap((sourceId) => {
 				const source = connectedAppSources.find(
 					(appSource) => appSource.id === sourceId,
 				);
-				return source ? [source] : [];
+				return source
+					? [
+							{
+								id: source.id,
+								label: getAppSourceLabel(source.provider),
+								provider: source.provider,
+							},
+						]
+					: [];
 			}),
 		[connectedAppSources, selectedConnectedAppIds],
 	);
-
 	React.useEffect(() => {
 		setProjectPickerOpen(false);
 		setSchedulePickerOpen(false);
 		setModelPickerOpen(false);
-		setConnectedAppsPickerOpen(false);
+		setAppSourcesPickerOpen(false);
+		setNotePickerOpen(false);
 
 		if (!open) {
 			setTitle("");
 			setPrompt("");
+			setNoteMentionRange(null);
+			setNoteSearchTerm("");
 			setSelectedModel(defaultChatModel);
 			setSchedulePeriod("daily");
 			setScheduledAt(createInitialScheduledAt());
 			setTarget(null);
 			setSelectedConnectedAppIds([]);
-			setConnectedAppMentionRange(null);
+			setSelectedNoteIds([]);
 			return;
 		}
 
@@ -258,18 +307,32 @@ export function CreateAutomationDialog({
 			);
 			setSchedulePeriod(initialAutomation.schedulePeriod);
 			setScheduledAt(new Date(initialAutomation.scheduledAt));
-			setTarget(initialAutomation.target);
+			setTarget(
+				initialAutomation.target.kind === "project"
+					? initialAutomation.target
+					: null,
+			);
+			setSelectedNoteIds(
+				initialAutomation.target.kind === "notes"
+					? initialAutomation.target.noteIds
+					: [],
+			);
+			setSelectedConnectedAppIds(
+				(initialAutomation.appSources ?? []).map((source) => source.id),
+			);
 			return;
 		}
 
 		setTitle("");
 		setPrompt("");
+		setNoteMentionRange(null);
+		setNoteSearchTerm("");
 		setSelectedModel(defaultChatModel);
 		setSchedulePeriod("daily");
 		setScheduledAt(createInitialScheduledAt());
 		setTarget(null);
 		setSelectedConnectedAppIds([]);
-		setConnectedAppMentionRange(null);
+		setSelectedNoteIds([]);
 	}, [initialAutomation, open]);
 
 	React.useEffect(() => {
@@ -301,6 +364,80 @@ export function CreateAutomationDialog({
 		});
 	}, [connectedAppSources]);
 
+	React.useEffect(() => {
+		setSelectedNoteIds((currentIds) => {
+			const availableIds = new Set(noteSources.map((source) => source.id));
+			const nextIds = currentIds.filter((sourceId) =>
+				availableIds.has(sourceId),
+			);
+
+			return nextIds.length === currentIds.length ? currentIds : nextIds;
+		});
+	}, [noteSources]);
+
+	const closeAutomationPickers = React.useCallback(() => {
+		setProjectPickerOpen(false);
+		setSchedulePickerOpen(false);
+		setModelPickerOpen(false);
+		setAppSourcesPickerOpen(false);
+		setNotePickerOpen(false);
+	}, []);
+
+	const handleNotePickerOpenChange = React.useCallback(
+		(nextOpen: boolean) => {
+			if (nextOpen) {
+				closeAutomationPickers();
+			}
+
+			setNotePickerOpen(nextOpen);
+		},
+		[closeAutomationPickers],
+	);
+
+	const handleAppSourcesPickerOpenChange = React.useCallback(
+		(nextOpen: boolean) => {
+			if (nextOpen) {
+				closeAutomationPickers();
+			}
+
+			setAppSourcesPickerOpen(nextOpen);
+		},
+		[closeAutomationPickers],
+	);
+
+	const handleProjectPickerOpenChange = React.useCallback(
+		(nextOpen: boolean) => {
+			if (nextOpen) {
+				closeAutomationPickers();
+			}
+
+			setProjectPickerOpen(nextOpen);
+		},
+		[closeAutomationPickers],
+	);
+
+	const handleSchedulePickerOpenChange = React.useCallback(
+		(nextOpen: boolean) => {
+			if (nextOpen) {
+				closeAutomationPickers();
+			}
+
+			setSchedulePickerOpen(nextOpen);
+		},
+		[closeAutomationPickers],
+	);
+
+	const handleModelPickerOpenChange = React.useCallback(
+		(nextOpen: boolean) => {
+			if (nextOpen) {
+				closeAutomationPickers();
+			}
+
+			setModelPickerOpen(nextOpen);
+		},
+		[closeAutomationPickers],
+	);
+
 	const handleConnectedAppToggle = React.useCallback((sourceId: string) => {
 		setSelectedConnectedAppIds((currentIds) =>
 			currentIds.includes(sourceId)
@@ -312,55 +449,59 @@ export function CreateAutomationDialog({
 	const handlePromptChange = React.useCallback(
 		(event: React.ChangeEvent<HTMLTextAreaElement>) => {
 			const nextPrompt = event.target.value;
-			const mentionRange = findConnectedAppMentionRange(
+			const cursorPosition = event.target.selectionStart;
+			const nextNoteMentionRange = findNoteMentionRange(
 				nextPrompt,
-				event.target.selectionStart,
+				cursorPosition,
 			);
 
 			setPrompt(nextPrompt);
-			setConnectedAppMentionRange(mentionRange);
-			if (mentionRange) {
-				setConnectedAppsPickerOpen(true);
+			setNoteMentionRange(nextNoteMentionRange);
+
+			if (nextNoteMentionRange) {
+				setNoteSearchTerm(nextNoteMentionRange.query);
+				handleNotePickerOpenChange(true);
 			}
 		},
-		[],
+		[handleNotePickerOpenChange],
 	);
 
-	const handleConnectedAppSelect = React.useCallback(
-		(sourceId: string) => {
-			setSelectedConnectedAppIds((currentIds) =>
-				currentIds.includes(sourceId) ? currentIds : [...currentIds, sourceId],
+	const handleNoteSelect = React.useCallback(
+		(noteId: Id<"notes">) => {
+			setTarget(null);
+			setSelectedNoteIds((currentIds) =>
+				currentIds.includes(noteId) ? currentIds : [...currentIds, noteId],
 			);
 
-			const selectedSource = connectedAppSources.find(
-				(source) => source.id === sourceId,
-			);
-			if (connectedAppMentionRange && selectedSource) {
-				const mentionText = `@${getAppSourceLabel(selectedSource.provider)}`;
-				const nextCursorPosition =
-					connectedAppMentionRange.start + mentionText.length;
+			setPrompt((currentPrompt) => {
+				const range = noteMentionRange;
+				if (!range) {
+					return currentPrompt;
+				}
 
-				setPrompt(
-					(currentPrompt) =>
-						`${currentPrompt.slice(0, connectedAppMentionRange.start)}${mentionText}${currentPrompt.slice(connectedAppMentionRange.end)}`,
-				);
-				window.requestAnimationFrame(() => {
-					promptTextareaRef.current?.focus({ preventScroll: true });
-					promptTextareaRef.current?.setSelectionRange(
-						nextCursorPosition,
-						nextCursorPosition,
-					);
-				});
-			} else {
-				window.requestAnimationFrame(() => {
-					promptTextareaRef.current?.focus({ preventScroll: true });
-				});
-			}
+				const nextPrompt = `${currentPrompt.slice(0, range.start)}${currentPrompt.slice(range.end)}`;
+				queueMicrotask(() => {
+					const textarea = promptTextareaRef.current;
+					if (!textarea) {
+						return;
+					}
 
-			setConnectedAppMentionRange(null);
+					textarea.focus();
+					textarea.setSelectionRange(range.start, range.start);
+				});
+				return nextPrompt;
+			});
+			setNoteMentionRange(null);
+			setNoteSearchTerm("");
 		},
-		[connectedAppMentionRange, connectedAppSources],
+		[noteMentionRange],
 	);
+
+	const handleNoteRemove = React.useCallback((noteId: Id<"notes">) => {
+		setSelectedNoteIds((currentIds) =>
+			currentIds.filter((currentId) => currentId !== noteId),
+		);
+	}, []);
 
 	const handleTimeChange = React.useCallback(
 		(event: React.ChangeEvent<HTMLInputElement>) => {
@@ -388,7 +529,18 @@ export function CreateAutomationDialog({
 
 	const handleCreate = React.useCallback(async () => {
 		const trimmedPrompt = prompt.trim();
-		if (!trimmedPrompt || !target) {
+		const effectiveTarget =
+			selectedNoteIds.length > 0
+				? ({
+						kind: "notes",
+						label:
+							selectedNoteSources.length === 1
+								? selectedNoteSources[0]?.title
+								: `${selectedNoteIds.length} notes`,
+						noteIds: selectedNoteIds,
+					} satisfies AutomationTarget)
+				: target;
+		if (!trimmedPrompt || !effectiveTarget) {
 			return;
 		}
 
@@ -398,17 +550,21 @@ export function CreateAutomationDialog({
 			title: trimmedTitle || trimmedPrompt,
 			prompt: trimmedPrompt,
 			model: selectedModel.model,
+			appSources: selectedConnectedAppSources,
 			schedulePeriod,
 			scheduledAt: scheduledAt.getTime(),
 			timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-			target,
+			target: effectiveTarget,
 		});
 	}, [
 		onCreateAutomation,
 		prompt,
 		schedulePeriod,
 		scheduledAt,
+		selectedConnectedAppSources,
 		selectedModel.model,
+		selectedNoteIds,
+		selectedNoteSources,
 		target,
 		title,
 	]);
@@ -417,6 +573,8 @@ export function CreateAutomationDialog({
 		schedulePeriod,
 		scheduledAt: scheduledAt.getTime(),
 	});
+	const canCreateAutomation =
+		prompt.trim().length > 0 && (!!target || selectedNoteIds.length > 0);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -426,7 +584,7 @@ export function CreateAutomationDialog({
 						{initialAutomation ? "Edit automation" : "New automation"}
 					</DialogTitle>
 					<DialogDescription>
-						Write the prompt and choose when this automation should run.
+						Create a prompt that runs automatically on your schedule.
 					</DialogDescription>
 				</DialogHeader>
 				<FieldGroup>
@@ -441,7 +599,7 @@ export function CreateAutomationDialog({
 							id="automation-title"
 							value={title}
 							onChange={(event) => setTitle(event.target.value)}
-							placeholder="Daily meeting recap"
+							placeholder="Meeting notes recap"
 						/>
 					</Field>
 					<Field>
@@ -453,17 +611,20 @@ export function CreateAutomationDialog({
 						</FieldLabel>
 						<InputGroup className="min-h-40 items-stretch rounded-xl bg-background">
 							<InputGroupAddon align="block-start" className="px-2.5 pt-2">
-								<ConnectedAppsPicker
-									open={connectedAppsPickerOpen}
-									onOpenChange={setConnectedAppsPickerOpen}
-									sources={connectedAppSources}
-									selectedSourceIds={selectedConnectedAppIds}
-									onSelectSource={handleConnectedAppSelect}
+								<NotePicker
+									open={notePickerOpen}
+									onOpenChange={handleNotePickerOpenChange}
+									sources={noteSources}
+									searchTerm={noteSearchTerm}
+									onSearchTermChange={setNoteSearchTerm}
+									selectedSourceIds={selectedNoteIds}
+									isLoading={notes === undefined}
+									onSelectSource={handleNoteSelect}
 								/>
-								{selectedConnectedApps.length > 0 ? (
-									<ConnectedAppChips
-										sources={selectedConnectedApps}
-										onRemoveSource={handleConnectedAppToggle}
+								{selectedNoteSources.length > 0 ? (
+									<NoteChips
+										sources={selectedNoteSources}
+										onRemoveSource={handleNoteRemove}
 									/>
 								) : null}
 							</InputGroupAddon>
@@ -472,40 +633,50 @@ export function CreateAutomationDialog({
 								id="automation-prompt"
 								value={prompt}
 								onChange={handlePromptChange}
-								placeholder="Review yesterday's meeting notes and summarize follow-ups, decisions, and open questions for my workspace."
-								className="field-sizing-fixed min-h-28 overflow-y-auto px-4 py-3"
+								placeholder="Summarize meeting notes and list follow-ups"
+								className="min-h-28 px-4 py-3 text-sm"
 							/>
 							<InputGroupAddon
 								align="block-end"
 								className="flex-wrap justify-start gap-1 px-2.5 py-2"
 							>
+								<ModelPicker
+									open={modelPickerOpen}
+									onOpenChange={handleModelPickerOpenChange}
+									selectedModel={selectedModel}
+									onSelectedModelChange={setSelectedModel}
+								/>
+								<AppSourcesPicker
+									open={appSourcesPickerOpen}
+									onOpenChange={handleAppSourcesPickerOpenChange}
+									sources={connectedAppSources}
+									selectedSourceIds={selectedConnectedAppIds}
+									onToggleSource={handleConnectedAppToggle}
+								/>
 								<ProjectPicker
 									open={projectPickerOpen}
-									onOpenChange={setProjectPickerOpen}
+									onOpenChange={handleProjectPickerOpenChange}
 									projects={projects ?? []}
-									target={target}
-									onTargetSelect={setTarget}
+									target={target?.kind === "project" ? target : null}
+									onTargetSelect={(nextTarget) => {
+										setSelectedNoteIds([]);
+										setTarget(nextTarget);
+									}}
 								/>
 								<SchedulePicker
 									open={schedulePickerOpen}
-									onOpenChange={setSchedulePickerOpen}
+									onOpenChange={handleSchedulePickerOpenChange}
 									scheduleLabel={scheduleLabel}
 									schedulePeriod={schedulePeriod}
 									scheduledAt={scheduledAt}
 									onSchedulePeriodChange={setSchedulePeriod}
 									onTimeChange={handleTimeChange}
 								/>
-								<ModelPicker
-									open={modelPickerOpen}
-									onOpenChange={setModelPickerOpen}
-									selectedModel={selectedModel}
-									onSelectedModelChange={setSelectedModel}
-								/>
 							</InputGroupAddon>
 						</InputGroup>
 					</Field>
 				</FieldGroup>
-				<div className="flex justify-end gap-2 pt-2">
+				<div className="flex justify-end gap-2 pt-6 pb-2">
 					<Button
 						type="button"
 						variant="ghost"
@@ -515,7 +686,7 @@ export function CreateAutomationDialog({
 					</Button>
 					<Button
 						type="button"
-						disabled={!prompt.trim() || !target}
+						disabled={!canCreateAutomation}
 						onClick={() => void handleCreate()}
 					>
 						{initialAutomation ? "Save" : "Create"}
@@ -526,19 +697,115 @@ export function CreateAutomationDialog({
 	);
 }
 
-function ConnectedAppsPicker({
+function AppSourcesPicker({
 	open,
 	onOpenChange,
 	sources,
 	selectedSourceIds,
-	onSelectSource,
+	onToggleSource,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	sources: ConnectedAppSource[];
 	selectedSourceIds: string[];
-	onSelectSource: (sourceId: string) => void;
+	onToggleSource: (sourceId: string) => void;
 }) {
+	const keepPickerOpen = React.useCallback((event: Event) => {
+		event.preventDefault();
+	}, []);
+	const selectedSource =
+		selectedSourceIds.length === 1
+			? sources.find((source) => source.id === selectedSourceIds[0])
+			: null;
+	const label =
+		selectedSourceIds.length === 1 && selectedSource
+			? getAppSourceLabel(selectedSource.provider)
+			: selectedSourceIds.length > 1
+				? `${selectedSourceIds.length} apps`
+				: "Apps";
+
+	return (
+		<DropdownMenu open={open} onOpenChange={onOpenChange}>
+			<DropdownMenuTrigger asChild>
+				<InputGroupButton
+					type="button"
+					variant="ghost"
+					size="sm"
+					className={cn(AUTOMATION_PICKER_TRIGGER_CLASS_NAME)}
+				>
+					<span className="flex min-w-0 flex-1 items-center gap-2">
+						<Box className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
+						<span className="min-w-0 truncate">{label}</span>
+					</span>
+				</InputGroupButton>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent side="top" align="start" className="w-64">
+				<DropdownMenuGroup>
+					<DropdownMenuLabel className="text-xs text-muted-foreground">
+						Apps
+					</DropdownMenuLabel>
+					{sources.length > 0 ? (
+						sources.map((source, index) => {
+							const selected = selectedSourceIds.includes(source.id);
+							const sourceKey = source.id
+								? `${source.provider}:${source.id}`
+								: `app-source-${index}`;
+
+							return (
+								<DropdownMenuCheckboxItem
+									key={sourceKey}
+									checked={selected}
+									className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
+									onSelect={keepPickerOpen}
+									onCheckedChange={() => onToggleSource(source.id)}
+								>
+									<ConnectedAppIcon provider={source.provider} />
+									<div className="min-w-0 truncate">
+										{getAppSourceLabel(source.provider)}
+									</div>
+								</DropdownMenuCheckboxItem>
+							);
+						})
+					) : (
+						<DropdownMenuItem disabled>No connected apps</DropdownMenuItem>
+					)}
+				</DropdownMenuGroup>
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+}
+
+function NotePicker({
+	open,
+	onOpenChange,
+	sources,
+	searchTerm = "",
+	onSearchTermChange,
+	selectedSourceIds,
+	isLoading,
+	onSelectSource,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	sources: AutomationNoteSource[];
+	searchTerm?: string;
+	onSearchTermChange: (value: string) => void;
+	selectedSourceIds: string[];
+	isLoading: boolean;
+	onSelectSource: (sourceId: Id<"notes">) => void;
+}) {
+	const filteredSources = React.useMemo(() => {
+		const query = searchTerm.trim().toLowerCase();
+
+		if (!query) {
+			return sources;
+		}
+
+		return sources.filter((source) =>
+			[source.title, source.preview].join(" ").toLowerCase().includes(query),
+		);
+	}, [searchTerm, sources]);
+
 	return (
 		<Popover open={open} onOpenChange={onOpenChange}>
 			<Tooltip>
@@ -550,39 +817,56 @@ function ConnectedAppsPicker({
 							className="rounded-full text-muted-foreground hover:text-foreground"
 						>
 							<AtSign />
-							<span className="sr-only">Add connected apps</span>
+							<span className="sr-only">Mention a note</span>
 						</InputGroupButton>
 					</PopoverTrigger>
 				</TooltipTrigger>
-				<TooltipContent>Add connected apps</TooltipContent>
+				<TooltipContent>Mention a note</TooltipContent>
 			</Tooltip>
-			<PopoverContent className="w-72 p-0" align="start">
+			<PopoverContent
+				className="w-72 p-0 [&_[data-slot=scroll-area]]:w-full [&_[data-slot=scroll-area-viewport]]:w-full [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:w-full [&_[data-slot=scroll-area-viewport]>div]:min-w-0 [&_[data-slot=command-list]]:w-full [&_[data-slot=command-list]]:min-w-0"
+				align="start"
+			>
 				<Command>
-					<CommandInput placeholder="Search connected apps..." />
+					<CommandInput
+						placeholder="Search notes..."
+						value={searchTerm}
+						onValueChange={onSearchTermChange}
+					/>
 					<CommandList>
-						<CommandEmpty>No connected apps found.</CommandEmpty>
-						{sources.length > 0 ? (
-							<CommandGroup heading="Connected apps">
-								{sources.map((source, index) => {
-									const sourceKey = source.id
-										? `${source.provider}:${source.id}`
-										: `connected-app-${index}`;
+						{isLoading ? (
+							<CommandGroup heading="Notes">
+								<div className="px-2 py-2 text-sm text-muted-foreground">
+									Loading notes...
+								</div>
+							</CommandGroup>
+						) : null}
+						<CommandEmpty>No notes found.</CommandEmpty>
+						{filteredSources.length > 0 ? (
+							<CommandGroup heading={searchTerm ? "Search results" : "Notes"}>
+								{filteredSources.map((source) => {
 									const selected = selectedSourceIds.includes(source.id);
 
 									return (
 										<CommandItem
-											key={sourceKey}
-											value={`${source.provider} ${source.title}`}
+											key={source.id}
+											value={`${source.id} ${source.title}`}
 											onSelect={() => {
 												onSelectSource(source.id);
 												onOpenChange(false);
 											}}
 											data-checked={selected}
+											className="w-full cursor-pointer gap-1.5 overflow-hidden rounded-md px-1.5"
 										>
-											<ConnectedAppIcon provider={source.provider} />
-											<span className="min-w-0 flex-1 truncate">
-												{getAppSourceLabel(source.provider)}
-											</span>
+											<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+												<FileText className="size-4" />
+											</div>
+											<div
+												className="min-w-0 flex-1 truncate"
+												title={source.title}
+											>
+												{source.title}
+											</div>
 										</CommandItem>
 									);
 								})}
@@ -595,26 +879,26 @@ function ConnectedAppsPicker({
 	);
 }
 
-function ConnectedAppChips({
+function NoteChips({
 	sources,
 	onRemoveSource,
 }: {
-	sources: ConnectedAppSource[];
-	onRemoveSource: (sourceId: string) => void;
+	sources: AutomationNoteSource[];
+	onRemoveSource: (sourceId: Id<"notes">) => void;
 }) {
 	return (
 		<div className="no-scrollbar -m-1.5 flex gap-1 overflow-y-auto p-1.5">
 			{sources.map((source) => (
 				<InputGroupButton
-					key={`${source.provider}:${source.id}`}
+					key={source.id}
 					size="sm"
 					variant="secondary"
-					className="group/connected-app-chip rounded-full pl-2!"
+					className="group/note-mention-chip max-w-48 rounded-full pl-2!"
 					onClick={() => onRemoveSource(source.id)}
 				>
-					<ConnectedAppIcon provider={source.provider} />
-					{getAppSourceLabel(source.provider)}
-					<X className="opacity-0 transition-opacity group-hover/connected-app-chip:opacity-100 group-focus-visible/connected-app-chip:opacity-100" />
+					<FileText />
+					<span className="min-w-0 truncate">{source.title}</span>
+					<X className="opacity-0 transition-opacity group-hover/note-mention-chip:opacity-100 group-focus-visible/note-mention-chip:opacity-100" />
 				</InputGroupButton>
 			))}
 		</div>
@@ -728,13 +1012,12 @@ function ProjectPicker({
 					size="sm"
 					className={cn(AUTOMATION_PICKER_TRIGGER_CLASS_NAME)}
 				>
-					<span className="flex items-center gap-2">
-						<FolderClosed className="size-4 text-muted-foreground" />
-						<span className="truncate">
-							{target?.label ?? "Select project"}
+					<span className="flex min-w-0 flex-1 items-center gap-2">
+						<FolderClosed className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
+						<span className="min-w-0 truncate">
+							{target?.label ?? "Project"}
 						</span>
 					</span>
-					<ChevronDown className="size-4 text-muted-foreground opacity-70" />
 				</InputGroupButton>
 			</PopoverTrigger>
 			<PopoverContent
@@ -830,10 +1113,9 @@ function SchedulePicker({
 					className={cn(AUTOMATION_PICKER_TRIGGER_CLASS_NAME)}
 				>
 					<span className="flex items-center gap-2">
-						<Clock className="size-4 text-muted-foreground" />
+						<Clock className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
 						<span>{scheduleLabel}</span>
 					</span>
-					<ChevronDown className="size-4 text-muted-foreground opacity-70" />
 				</InputGroupButton>
 			</PopoverTrigger>
 			<PopoverContent

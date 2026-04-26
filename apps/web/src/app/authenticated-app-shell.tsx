@@ -856,17 +856,25 @@ const useAppShellState = ({
 				return;
 			}
 
+			const target =
+				automation.target.kind === "notes"
+					? {
+							kind: "notes" as const,
+							noteIds: automation.target.noteIds,
+						}
+					: {
+							kind: "project" as const,
+							projectId: automation.target.projectId,
+						};
 			const input = {
 				title: automation.title,
 				prompt: automation.prompt,
 				model: automation.model,
+				appSources: automation.appSources,
 				schedulePeriod: automation.schedulePeriod,
 				scheduledAt: automation.scheduledAt,
 				timezone: automation.timezone,
-				target: {
-					kind: "project" as const,
-					projectId: automation.target.projectId,
-				},
+				target,
 			};
 
 			try {

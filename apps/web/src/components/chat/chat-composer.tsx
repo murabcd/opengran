@@ -603,11 +603,11 @@ function ChatComposerMentionChips({
 					key={document.id}
 					size="sm"
 					variant="secondary"
-					className="group/note-mention-chip rounded-full pl-2!"
+					className="group/note-mention-chip max-w-48 rounded-full pl-2!"
 					onClick={() => onRemoveMention(document.id)}
 				>
 					<document.icon />
-					{document.title}
+					<span className="min-w-0 truncate">{document.title}</span>
 					<X className="opacity-0 transition-opacity group-hover/note-mention-chip:opacity-100 group-focus-visible/note-mention-chip:opacity-100" />
 				</InputGroupButton>
 			))}

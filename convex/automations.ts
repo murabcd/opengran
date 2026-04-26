@@ -20,20 +20,57 @@ const automationRunReasonValidator = v.union(
 	v.literal("manual"),
 );
 
+const automationAppSourceProviderValidator = v.union(
+	v.literal("google-calendar"),
+	v.literal("google-drive"),
+	v.literal("yandex-calendar"),
+	v.literal("yandex-tracker"),
+	v.literal("jira"),
+	v.literal("posthog"),
+	v.literal("notion"),
+);
+
+const automationAppSourceValidator = v.object({
+	id: v.string(),
+	label: v.string(),
+	provider: automationAppSourceProviderValidator,
+});
+
+type AutomationAppSource = {
+	id: string;
+	label: string;
+	provider:
+		| "google-calendar"
+		| "google-drive"
+		| "yandex-calendar"
+		| "yandex-tracker"
+		| "jira"
+		| "posthog"
+		| "notion";
+};
+
 const automationListItemValidator = v.object({
 	id: v.id("automations"),
 	title: v.string(),
 	prompt: v.string(),
 	model: v.string(),
 	authorName: v.optional(v.string()),
+	appSources: v.array(automationAppSourceValidator),
 	schedulePeriod: automationSchedulePeriodValidator,
 	scheduledAt: v.number(),
 	timezone: v.string(),
-	target: v.object({
-		kind: v.literal("project"),
-		label: v.string(),
-		projectId: v.id("projects"),
-	}),
+	target: v.union(
+		v.object({
+			kind: v.literal("project"),
+			label: v.string(),
+			projectId: v.id("projects"),
+		}),
+		v.object({
+			kind: v.literal("notes"),
+			label: v.string(),
+			noteIds: v.array(v.id("notes")),
+		}),
+	),
 	chatId: v.string(),
 	createdAt: v.number(),
 	updatedAt: v.number(),
@@ -55,6 +92,7 @@ const automationRunStartValidator = v.union(
 		model: v.string(),
 		chatId: v.string(),
 		targetLabel: v.string(),
+		appSources: v.array(automationAppSourceValidator),
 		scheduledFor: v.number(),
 		reason: automationRunReasonValidator,
 		notes: v.array(
@@ -85,12 +123,34 @@ const MAX_RETURNED_AUTOMATIONS = 100;
 const MAX_DUE_AUTOMATIONS = 50;
 const MAX_CONTEXT_NOTES = 8;
 const MAX_CONTEXT_NOTE_LENGTH = 2_000;
+const MAX_APP_SOURCES = 8;
 const STALE_SCHEDULED_FUNCTION_MS = 2 * 60 * 1000;
 const DELETE_RUNS_BATCH_SIZE = 50;
+const MAX_TARGET_NOTES = MAX_CONTEXT_NOTES;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
 type AutomationSchedulePeriod = Doc<"automations">["schedulePeriod"];
+type AutomationTarget =
+	| {
+			kind: "project";
+			projectId: Id<"projects">;
+	  }
+	| {
+			kind: "notes";
+			noteIds: Array<Id<"notes">>;
+	  };
+
+const automationTargetValidator = v.union(
+	v.object({
+		kind: v.literal("project"),
+		projectId: v.id("projects"),
+	}),
+	v.object({
+		kind: v.literal("notes"),
+		noteIds: v.array(v.id("notes")),
+	}),
+);
 
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
@@ -144,6 +204,87 @@ const requireOwnedProject = async (
 	return project;
 };
 
+const requireOwnedNote = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+	noteId: Id<"notes">,
+) => {
+	const note = await ctx.db.get(noteId);
+
+	if (
+		!note ||
+		note.ownerTokenIdentifier !== ownerTokenIdentifier ||
+		note.workspaceId !== workspaceId ||
+		note.isArchived
+	) {
+		throw new ConvexError({
+			code: "NOTE_NOT_FOUND",
+			message: "Note not found.",
+		});
+	}
+
+	return note;
+};
+
+const normalizeTargetNoteIds = (noteIds: Array<Id<"notes">>) => {
+	const uniqueNoteIds = [...new Set(noteIds)];
+	if (uniqueNoteIds.length === 0) {
+		throw new ConvexError({
+			code: "AUTOMATION_TARGET_REQUIRED",
+			message: "Select at least one note or project.",
+		});
+	}
+
+	if (uniqueNoteIds.length > MAX_TARGET_NOTES) {
+		throw new ConvexError({
+			code: "AUTOMATION_TARGET_TOO_LARGE",
+			message: `Select up to ${MAX_TARGET_NOTES} notes.`,
+		});
+	}
+
+	return uniqueNoteIds;
+};
+
+const requireOwnedAutomationTarget = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+	target: AutomationTarget,
+) => {
+	if (target.kind === "project") {
+		const project = await requireOwnedProject(
+			ctx,
+			ownerTokenIdentifier,
+			workspaceId,
+			target.projectId,
+		);
+
+		return {
+			kind: "project" as const,
+			targetProjectId: project._id,
+			targetNoteIds: undefined,
+			targetLabel: project.name,
+		};
+	}
+
+	const noteIds = normalizeTargetNoteIds(target.noteIds);
+	const notes = [];
+	for (const noteId of noteIds) {
+		notes.push(
+			await requireOwnedNote(ctx, ownerTokenIdentifier, workspaceId, noteId),
+		);
+	}
+
+	return {
+		kind: "notes" as const,
+		targetProjectId: undefined,
+		targetNoteIds: noteIds,
+		targetLabel:
+			notes.length === 1 ? normalizeTitle(notes[0].title, "Note") : `${notes.length} notes`,
+	};
+};
+
 const requireOwnedAutomation = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
@@ -186,6 +327,36 @@ const normalizePrompt = (prompt: string) => {
 	}
 
 	return normalized;
+};
+
+const normalizeAppSources = (appSources: AutomationAppSource[] | undefined) => {
+	const normalizedSources = [];
+	const seenIds = new Set<string>();
+
+	for (const source of appSources ?? []) {
+		const id = clampWhitespace(source.id);
+		const label = truncate(clampWhitespace(source.label), 80);
+
+		if (!id || !label || seenIds.has(id)) {
+			continue;
+		}
+
+		seenIds.add(id);
+		normalizedSources.push({
+			id,
+			label,
+			provider: source.provider,
+		});
+	}
+
+	if (normalizedSources.length > MAX_APP_SOURCES) {
+		throw new ConvexError({
+			code: "TOO_MANY_APP_SOURCES",
+			message: `Select up to ${MAX_APP_SOURCES} app sources.`,
+		});
+	}
+
+	return normalizedSources;
 };
 
 const normalizeModel = (model: string | undefined) => {
@@ -327,14 +498,22 @@ const toListItem = (automation: Doc<"automations">) => ({
 	prompt: automation.prompt,
 	model: normalizeModel(automation.model),
 	authorName: automation.authorName,
+	appSources: automation.appSources ?? [],
 	schedulePeriod: automation.schedulePeriod,
 	scheduledAt: automation.scheduledAt,
 	timezone: automation.timezone,
-	target: {
-		kind: "project" as const,
-		label: automation.targetLabel,
-		projectId: automation.targetProjectId,
-	},
+	target:
+		automation.targetKind === "notes"
+			? {
+					kind: "notes" as const,
+					label: automation.targetLabel,
+					noteIds: automation.targetNoteIds ?? [],
+				}
+			: {
+					kind: "project" as const,
+					label: automation.targetLabel,
+					projectId: automation.targetProjectId as Id<"projects">,
+				},
 	chatId: automation.chatId,
 	createdAt: automation.createdAt,
 	updatedAt: automation.updatedAt,
@@ -347,6 +526,31 @@ const getRecentContextNotes = async (
 	ctx: MutationCtx,
 	automation: Doc<"automations">,
 ) => {
+	if (automation.targetKind === "notes") {
+		const notes = [];
+		for (const noteId of automation.targetNoteIds ?? []) {
+			const note = await ctx.db.get(noteId);
+			if (
+				note &&
+				note.ownerTokenIdentifier === automation.ownerTokenIdentifier &&
+				note.workspaceId === automation.workspaceId &&
+				!note.isArchived
+			) {
+				notes.push(note);
+			}
+		}
+
+		return notes.map((note) => ({
+			title: note.title,
+			text: truncate(note.searchableText, MAX_CONTEXT_NOTE_LENGTH),
+			updatedAt: note.updatedAt,
+		}));
+	}
+
+	if (!automation.targetProjectId) {
+		return [];
+	}
+
 	const notes = await ctx.db
 		.query("notes")
 		.withIndex("by_owner_ws_project_arch_upd", (q) =>
@@ -437,27 +641,26 @@ export const create = mutation({
 		title: v.string(),
 		prompt: v.string(),
 		model: v.optional(v.string()),
+		appSources: v.optional(v.array(automationAppSourceValidator)),
 		schedulePeriod: automationSchedulePeriodValidator,
 		scheduledAt: v.number(),
 		timezone: v.optional(v.string()),
-		target: v.object({
-			kind: v.literal("project"),
-			projectId: v.id("projects"),
-		}),
+		target: automationTargetValidator,
 	},
 	returns: automationListItemValidator,
 	handler: async (ctx, args) => {
 		const identity = await requireIdentity(ctx);
 		const ownerTokenIdentifier = identity.tokenIdentifier;
 		await requireOwnedWorkspace(ctx, ownerTokenIdentifier, args.workspaceId);
-		const project = await requireOwnedProject(
+		const target = await requireOwnedAutomationTarget(
 			ctx,
 			ownerTokenIdentifier,
 			args.workspaceId,
-			args.target.projectId,
+			args.target,
 		);
 		const now = Date.now();
 		const prompt = normalizePrompt(args.prompt);
+		const appSources = normalizeAppSources(args.appSources);
 		const nextRunAt = getNextRunAt({
 			from: now,
 			scheduledAt: args.scheduledAt,
@@ -470,12 +673,14 @@ export const create = mutation({
 			title: normalizeTitle(args.title, prompt),
 			prompt,
 			model: normalizeModel(args.model),
+			appSources,
 			schedulePeriod: args.schedulePeriod,
 			scheduledAt: args.scheduledAt,
 			timezone: normalizeTimezone(args.timezone),
-			targetKind: "project",
-			targetProjectId: project._id,
-			targetLabel: project.name,
+			targetKind: target.kind,
+			targetProjectId: target.targetProjectId,
+			targetNoteIds: target.targetNoteIds,
+			targetLabel: target.targetLabel,
 			chatId: createAutomationChatId(),
 			isPaused: false,
 			nextRunAt,
@@ -512,13 +717,11 @@ export const update = mutation({
 		title: v.string(),
 		prompt: v.string(),
 		model: v.optional(v.string()),
+		appSources: v.optional(v.array(automationAppSourceValidator)),
 		schedulePeriod: automationSchedulePeriodValidator,
 		scheduledAt: v.number(),
 		timezone: v.optional(v.string()),
-		target: v.object({
-			kind: v.literal("project"),
-			projectId: v.id("projects"),
-		}),
+		target: automationTargetValidator,
 	},
 	returns: automationListItemValidator,
 	handler: async (ctx, args) => {
@@ -529,15 +732,16 @@ export const update = mutation({
 			ownerTokenIdentifier,
 			args.automationId,
 		);
-		const project = await requireOwnedProject(
+		const target = await requireOwnedAutomationTarget(
 			ctx,
 			ownerTokenIdentifier,
 			automation.workspaceId,
-			args.target.projectId,
+			args.target,
 		);
 		await cancelScheduledFunction(ctx, automation.scheduledFunctionId);
 		const now = Date.now();
 		const prompt = normalizePrompt(args.prompt);
+		const appSources = normalizeAppSources(args.appSources);
 		const nextRunAt = automation.isPaused
 			? undefined
 			: getNextRunAt({
@@ -553,12 +757,14 @@ export const update = mutation({
 			title: normalizeTitle(args.title, prompt),
 			prompt,
 			model: normalizeModel(args.model),
+			appSources,
 			schedulePeriod: args.schedulePeriod,
 			scheduledAt: args.scheduledAt,
 			timezone: normalizeTimezone(args.timezone),
-			targetKind: "project",
-			targetProjectId: project._id,
-			targetLabel: project.name,
+			targetKind: target.kind,
+			targetProjectId: target.targetProjectId,
+			targetNoteIds: target.targetNoteIds,
+			targetLabel: target.targetLabel,
 			nextRunAt,
 			scheduledFunctionId,
 			updatedAt: now,
@@ -738,6 +944,7 @@ export const beginRun = internalMutation({
 			model: normalizeModel(automation.model),
 			chatId: automation.chatId,
 			targetLabel: automation.targetLabel,
+			appSources: automation.appSources ?? [],
 			scheduledFor: args.scheduledFor,
 			reason: args.reason,
 			notes: await getRecentContextNotes(ctx, automation),

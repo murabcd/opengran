@@ -29,6 +29,12 @@ const appConnectionProviderValidator = v.union(
 	v.literal("notion"),
 );
 
+const automationAppSourceProviderValidator = v.union(
+	appConnectionProviderValidator,
+	v.literal("google-calendar"),
+	v.literal("google-drive"),
+);
+
 const appConnectionStatusValidator = v.union(
 	v.literal("connected"),
 	v.literal("disconnected"),
@@ -420,11 +426,19 @@ export default defineSchema({
 		title: v.string(),
 		prompt: v.string(),
 		model: v.optional(v.string()),
+		appSources: v.optional(v.array(
+			v.object({
+				id: v.string(),
+				label: v.string(),
+				provider: automationAppSourceProviderValidator,
+			}),
+		)),
 		schedulePeriod: automationSchedulePeriodValidator,
 		scheduledAt: v.number(),
 		timezone: v.string(),
-		targetKind: v.literal("project"),
-		targetProjectId: v.id("projects"),
+		targetKind: v.union(v.literal("project"), v.literal("notes")),
+		targetProjectId: v.optional(v.id("projects")),
+		targetNoteIds: v.optional(v.array(v.id("notes"))),
 		targetLabel: v.string(),
 		chatId: v.string(),
 		isPaused: v.boolean(),
