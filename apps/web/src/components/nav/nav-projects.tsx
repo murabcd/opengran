@@ -52,6 +52,8 @@ import {
 	ArrowUpAZ,
 	Check,
 	ChevronRight,
+	ChevronsDown,
+	ChevronsUp,
 	Clock3,
 	FileText,
 	FolderClosed,
@@ -95,23 +97,36 @@ type ProjectWithNotes = {
 type ProjectListSort = "name" | "created" | "updated";
 
 type NavProjectsState = {
+	collapsedProjectIds: Array<Id<"projects">>;
 	createError: string | null;
 	createOpen: boolean;
+	expandedProjectIds: Array<Id<"projects">>;
 	filtersOpen: boolean;
 	name: string;
 	sortBy: ProjectListSort;
 };
 
 type NavProjectsAction =
+	| { type: "collapseExpandedProjects" }
+	| { type: "expandCollapsedProjects" }
+	| { type: "reconcileProjectIds"; value: Array<Id<"projects">> }
 	| { type: "setCreateError"; value: string | null }
 	| { type: "setCreateOpen"; value: boolean }
+	| {
+			type: "setProjectOpen";
+			id: Id<"projects">;
+			value: boolean;
+			preserveCollapsedProjects?: boolean;
+	  }
 	| { type: "setFiltersOpen"; value: boolean }
 	| { type: "setName"; value: string }
 	| { type: "setSortBy"; value: ProjectListSort };
 
 const initialNavProjectsState: NavProjectsState = {
+	collapsedProjectIds: [],
 	createError: null,
 	createOpen: false,
+	expandedProjectIds: [],
 	filtersOpen: false,
 	name: "",
 	sortBy: "name",
@@ -122,6 +137,35 @@ function navProjectsReducer(
 	action: NavProjectsAction,
 ): NavProjectsState {
 	switch (action.type) {
+		case "collapseExpandedProjects":
+			return {
+				...state,
+				collapsedProjectIds: state.expandedProjectIds,
+				expandedProjectIds: [],
+			};
+		case "expandCollapsedProjects":
+			return {
+				...state,
+				collapsedProjectIds: [],
+				expandedProjectIds: [
+					...new Set([
+						...state.collapsedProjectIds,
+						...state.expandedProjectIds,
+					]),
+				],
+			};
+		case "reconcileProjectIds": {
+			const visibleIds = new Set(action.value);
+			return {
+				...state,
+				collapsedProjectIds: state.collapsedProjectIds.filter((id) =>
+					visibleIds.has(id),
+				),
+				expandedProjectIds: state.expandedProjectIds.filter((id) =>
+					visibleIds.has(id),
+				),
+			};
+		}
 		case "setCreateError":
 			return {
 				...state,
@@ -139,6 +183,26 @@ function navProjectsReducer(
 						createOpen: false,
 						name: "",
 					};
+		case "setProjectOpen": {
+			const isAlreadyExpanded = state.expandedProjectIds.includes(action.id);
+			if (isAlreadyExpanded === action.value) {
+				return state;
+			}
+			const hasCollapsedProjectIds = state.collapsedProjectIds.length > 0;
+
+			return {
+				...state,
+				collapsedProjectIds:
+					action.preserveCollapsedProjects || hasCollapsedProjectIds
+						? action.value
+							? [...new Set([...state.collapsedProjectIds, action.id])]
+							: state.collapsedProjectIds.filter((id) => id !== action.id)
+						: state.collapsedProjectIds,
+				expandedProjectIds: action.value
+					? [...state.expandedProjectIds, action.id]
+					: state.expandedProjectIds.filter((id) => id !== action.id),
+			};
+		}
 		case "setFiltersOpen":
 			return {
 				...state,
@@ -161,7 +225,6 @@ function navProjectsReducer(
 
 type ProjectItemState = {
 	confirmOpen: boolean;
-	isOpen: boolean;
 	menuOpen: boolean;
 	renameOpen: boolean;
 	renameValue: string;
@@ -169,7 +232,6 @@ type ProjectItemState = {
 
 type ProjectItemAction =
 	| { type: "setConfirmOpen"; value: boolean }
-	| { type: "setOpen"; value: boolean }
 	| { type: "setMenuOpen"; value: boolean }
 	| { type: "setRenameOpen"; value: boolean }
 	| { type: "setRenameValue"; value: string }
@@ -178,7 +240,6 @@ type ProjectItemAction =
 
 const createProjectItemState = (projectName: string): ProjectItemState => ({
 	confirmOpen: false,
-	isOpen: false,
 	menuOpen: false,
 	renameOpen: false,
 	renameValue: projectName,
@@ -193,11 +254,6 @@ function projectItemReducer(
 			return {
 				...state,
 				confirmOpen: action.value,
-			};
-		case "setOpen":
-			return {
-				...state,
-				isOpen: action.value,
 			};
 		case "setMenuOpen":
 			return {
@@ -259,7 +315,15 @@ export function NavProjects({
 		navProjectsReducer,
 		initialNavProjectsState,
 	);
-	const { createError, createOpen, filtersOpen, name, sortBy } = state;
+	const {
+		collapsedProjectIds,
+		createError,
+		createOpen,
+		expandedProjectIds,
+		filtersOpen,
+		name,
+		sortBy,
+	} = state;
 	const [isCreatingProject, startProjectCreation] = React.useTransition();
 	const createProject = useMutation(api.projects.create);
 	const projectEntries = React.useMemo(
@@ -270,7 +334,48 @@ export function NavProjects({
 		() => sortProjectEntries(projectEntries, sortBy),
 		[projectEntries, sortBy],
 	);
+	const visibleProjectIds = React.useMemo(
+		() => visibleProjectEntries.map(({ project }) => project._id),
+		[visibleProjectEntries],
+	);
+	const expandedProjectIdSet = React.useMemo(
+		() => new Set(expandedProjectIds),
+		[expandedProjectIds],
+	);
+	const projectTreeToggleTargetCount = React.useMemo(
+		() => new Set([...collapsedProjectIds, ...expandedProjectIds]).size,
+		[collapsedProjectIds, expandedProjectIds],
+	);
+	const expandedProjectCount = expandedProjectIds.length;
+	const showProjectTreeToggle = projectTreeToggleTargetCount > 1;
+	const isProjectTreeCollapsed =
+		projectTreeToggleTargetCount > 1 &&
+		expandedProjectCount < projectTreeToggleTargetCount;
 	const isPending = projects === undefined || notes === undefined;
+
+	React.useEffect(() => {
+		dispatch({ type: "reconcileProjectIds", value: visibleProjectIds });
+	}, [visibleProjectIds]);
+
+	React.useEffect(() => {
+		if (!currentNoteId) {
+			return;
+		}
+
+		const activeProject = visibleProjectEntries.find(({ notes }) =>
+			notes.some((note) => note._id === currentNoteId),
+		);
+		if (!activeProject) {
+			return;
+		}
+
+		dispatch({
+			type: "setProjectOpen",
+			id: activeProject.project._id,
+			value: true,
+			preserveCollapsedProjects: true,
+		});
+	}, [currentNoteId, visibleProjectEntries]);
 
 	const handleCreateProject = React.useCallback(() => {
 		if (!workspaceId) {
@@ -305,6 +410,37 @@ export function NavProjects({
 				actionClassName={`${SIDEBAR_COLLAPSIBLE_GROUP_ACTION_CLASS_NAME} ${SIDEBAR_HEADER_ACTION_ROW_CLASS_NAME}`}
 				actions={
 					<div className="flex items-center gap-0.5">
+						{showProjectTreeToggle ? (
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<button
+										type="button"
+										aria-label={
+											isProjectTreeCollapsed
+												? "Reopen previous"
+												: "Collapse all"
+										}
+										onClick={() =>
+											dispatch({
+												type: isProjectTreeCollapsed
+													? "expandCollapsedProjects"
+													: "collapseExpandedProjects",
+											})
+										}
+									>
+										{isProjectTreeCollapsed ? <ChevronsDown /> : <ChevronsUp />}
+									</button>
+								</TooltipTrigger>
+								<TooltipContent
+									side="bottom"
+									align="center"
+									sideOffset={8}
+									className="pointer-events-none select-none"
+								>
+									{isProjectTreeCollapsed ? "Reopen previous" : "Collapse all"}
+								</TooltipContent>
+							</Tooltip>
+						) : null}
 						<ProjectsFilterMenu
 							open={filtersOpen}
 							sortBy={sortBy}
@@ -350,6 +486,7 @@ export function NavProjects({
 								key={project._id}
 								project={project}
 								notes={projectNotes}
+								open={expandedProjectIdSet.has(project._id)}
 								workspaceId={workspaceId}
 								currentNoteId={currentNoteId}
 								currentNoteTitle={currentNoteTitle}
@@ -358,6 +495,13 @@ export function NavProjects({
 								onNoteSelect={onNoteSelect}
 								onNoteTitleChange={onNoteTitleChange}
 								onNoteTrashed={onNoteTrashed}
+								onOpenChange={(open) =>
+									dispatch({
+										type: "setProjectOpen",
+										id: project._id,
+										value: open,
+									})
+								}
 							/>
 						))}
 					</SidebarMenu>
@@ -500,6 +644,7 @@ function ProjectFilterItem({
 function ProjectSidebarItem({
 	project,
 	notes,
+	open,
 	workspaceId,
 	currentNoteId,
 	currentNoteTitle,
@@ -508,9 +653,11 @@ function ProjectSidebarItem({
 	onNoteSelect,
 	onNoteTitleChange,
 	onNoteTrashed,
+	onOpenChange,
 }: {
 	project: Doc<"projects">;
 	notes: Array<Doc<"notes">>;
+	open: boolean;
 	workspaceId: Id<"workspaces"> | null;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
@@ -519,9 +666,9 @@ function ProjectSidebarItem({
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
+	onOpenChange: (open: boolean) => void;
 }) {
 	const hasNotes = notes.length > 0;
-	const hasActiveNote = notes.some((note) => note._id === currentNoteId);
 	const [state, dispatch] = React.useReducer(
 		projectItemReducer,
 		project.name,
@@ -532,7 +679,6 @@ function ProjectSidebarItem({
 	const ignoreInitialRenameInteractOutsideRef = React.useRef(false);
 	const [isRenaming, setIsRenaming] = React.useState(false);
 	const [isRemoving, setIsRemoving] = React.useState(false);
-	const open = hasActiveNote || state.isOpen;
 	const renameValue = state.renameOpen ? state.renameValue : project.name;
 	const renameProject = useMutation(api.projects.rename).withOptimisticUpdate(
 		(localStore, args) => {
@@ -652,13 +798,7 @@ function ProjectSidebarItem({
 
 	return (
 		<>
-			<Collapsible
-				asChild
-				open={open}
-				onOpenChange={(nextOpen) =>
-					dispatch({ type: "setOpen", value: nextOpen })
-				}
-			>
+			<Collapsible asChild open={open} onOpenChange={onOpenChange}>
 				<SidebarMenuItem className="group/project-item group/collapsible">
 					<ProjectSidebarRow
 						projectName={project.name}
@@ -675,7 +815,7 @@ function ProjectSidebarItem({
 						onMenuOpenChange={(nextOpen) =>
 							dispatch({ type: "setMenuOpen", value: nextOpen })
 						}
-						onToggleOpen={() => dispatch({ type: "setOpen", value: !open })}
+						onToggleOpen={() => onOpenChange(!open)}
 						onRenameOpenChange={handleRenameOpenChange}
 						onStartRename={handleStartRename}
 						onRenameValueChange={(value) =>
@@ -916,7 +1056,7 @@ function ProjectSidebarContent({
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
 	return (
-		<CollapsibleContent className="group/project-folder-content overflow-hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-1 data-[state=open]:duration-200">
+		<CollapsibleContent className="group/project-folder-content overflow-hidden">
 			<div className="min-h-0 overflow-hidden">
 				{hasNotes ? (
 					<SidebarMenuSub className="mr-0 translate-x-0 pr-0">
