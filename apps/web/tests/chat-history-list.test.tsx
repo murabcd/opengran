@@ -415,6 +415,46 @@ describe("ChatHistoryList", () => {
 		expect(labels.slice(0, 2)).toEqual(["Starred", "Today"]);
 	});
 
+	it("shows the latest message time instead of the original chat creation time", async () => {
+		const { ChatHistoryList } = await import(
+			"../src/components/chat/chat-history-list"
+		);
+		const createdAt = new Date("2026-04-25T12:50:54.000Z").getTime();
+		const lastMessageAt = new Date("2026-04-26T06:00:09.000Z").getTime();
+		const expectedTime = new Intl.DateTimeFormat(undefined, {
+			hour: "numeric",
+			minute: "2-digit",
+		}).format(new Date(lastMessageAt));
+
+		render(
+			<ChatHistoryList
+				chats={[
+					{
+						_id: "chat-1",
+						_creationTime: createdAt,
+						authorName: "Murad",
+						createdAt,
+						chatId: "chat-1",
+						lastMessageAt,
+						noteId: undefined,
+						title: "Meeting recap",
+						updatedAt: lastMessageAt,
+					} as never,
+				]}
+				isChatsLoading={false}
+				activeChatId={null}
+				onOpenChat={vi.fn()}
+				onPrefetchChat={vi.fn()}
+				onMoveToTrash={vi.fn()}
+			/>,
+		);
+
+		const time = screen.getByText(expectedTime);
+		expect(time.getAttribute("dateTime")).toBe(
+			new Date(lastMessageAt).toISOString(),
+		);
+	});
+
 	it("prefetches a chat on hover and focus before opening it", async () => {
 		const { ChatHistoryList } = await import(
 			"../src/components/chat/chat-history-list"

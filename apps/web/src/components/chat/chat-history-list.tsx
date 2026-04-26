@@ -26,10 +26,13 @@ type ChatHistoryListProps = {
 	onMoveToTrash: (chatId: string) => void;
 };
 
-const chatCreatedTimeFormatter = new Intl.DateTimeFormat(undefined, {
+const chatActivityTimeFormatter = new Intl.DateTimeFormat(undefined, {
 	hour: "numeric",
 	minute: "2-digit",
 });
+
+const getChatActivityTime = (chat: Doc<"chats">) =>
+	chat.lastMessageAt || chat.updatedAt || chat.createdAt || chat._creationTime;
 
 export function ChatHistoryList({
 	chats,
@@ -141,8 +144,9 @@ function ChatHistoryItem({
 }) {
 	const storedChatId = getChatId(chat);
 	const preview = chat.authorName?.trim() || "Unknown user";
-	const createdTime = chatCreatedTimeFormatter.format(
-		new Date(chat.createdAt || chat._creationTime),
+	const activityTime = getChatActivityTime(chat);
+	const formattedActivityTime = chatActivityTimeFormatter.format(
+		new Date(activityTime),
 	);
 
 	return (
@@ -171,12 +175,10 @@ function ChatHistoryItem({
 						<span className="truncate">{preview}</span>
 						<span aria-hidden="true">·</span>
 						<time
-							dateTime={new Date(
-								chat.createdAt || chat._creationTime,
-							).toISOString()}
+							dateTime={new Date(activityTime).toISOString()}
 							className="shrink-0 tabular-nums"
 						>
-							{createdTime}
+							{formattedActivityTime}
 						</time>
 					</div>
 				</div>
