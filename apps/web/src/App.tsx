@@ -28,18 +28,14 @@ import {
 	Volume2,
 } from "lucide-react";
 import * as React from "react";
-import {
-	AuthenticatedAppShellSurface,
-	preloadAuthenticatedAppShellSurface,
-	preloadSharedNotePageSurface,
-	SharedNotePageSurface,
-} from "@/app/app-surfaces";
 import type { SocialAuthProvider } from "@/app/app-types";
+import { AuthenticatedAppShell } from "@/app/authenticated-app-shell";
 import {
 	GOOGLE_CALENDAR_SCOPES,
 	getSharedNoteShareId,
 	getThemeFireworkColors,
 } from "@/app/location";
+import { SharedNotePage } from "@/components/note/shared-note-page";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { DESKTOP_AUTH_SAFE_TOP_CLASS } from "@/lib/desktop-chrome";
@@ -537,57 +533,14 @@ const useAppBootstrapState = () => {
 function MainApp() {
 	const controller = useAppBootstrapState();
 
-	React.useEffect(() => {
-		if (controller.sharedNoteShareId) {
-			void preloadSharedNotePageSurface();
-			return;
-		}
-
-		if (!controller.session?.user || !controller.isConvexAuthenticated) {
-			return;
-		}
-
-		const preloadAuthenticatedShell = () => {
-			void preloadAuthenticatedAppShellSurface();
-		};
-
-		if (typeof window.requestIdleCallback === "function") {
-			const idleCallbackId = window.requestIdleCallback(
-				preloadAuthenticatedShell,
-				{
-					timeout: 400,
-				},
-			);
-
-			return () => {
-				window.cancelIdleCallback(idleCallbackId);
-			};
-		}
-
-		const timeoutId = window.setTimeout(preloadAuthenticatedShell, 0);
-		return () => {
-			window.clearTimeout(timeoutId);
-		};
-	}, [
-		controller.isConvexAuthenticated,
-		controller.session?.user,
-		controller.sharedNoteShareId,
-	]);
-
 	if (controller.sharedNoteShareId) {
 		return (
-			<React.Suspense
-				fallback={
-					<AuthBootstrapScreen isDesktopMac={controller.isDesktopMac} />
-				}
-			>
-				<ScrollArea className="h-svh" viewportClassName="overscroll-contain">
-					<SharedNotePageSurface
-						note={controller.sharedNote}
-						onOpenNote={controller.handleOpenOwnedSharedNote}
-					/>
-				</ScrollArea>
-			</React.Suspense>
+			<ScrollArea className="h-svh" viewportClassName="overscroll-contain">
+				<SharedNotePage
+					note={controller.sharedNote}
+					onOpenNote={controller.handleOpenOwnedSharedNote}
+				/>
+			</ScrollArea>
 		);
 	}
 
@@ -789,16 +742,9 @@ function AppGate({
 }) {
 	if (sharedNoteShareId) {
 		return (
-			<React.Suspense
-				fallback={<AuthBootstrapScreen isDesktopMac={isDesktopMac} />}
-			>
-				<ScrollArea className="h-svh" viewportClassName="overscroll-contain">
-					<SharedNotePageSurface
-						note={sharedNote}
-						onOpenNote={onOpenOwnedSharedNote}
-					/>
-				</ScrollArea>
-			</React.Suspense>
+			<ScrollArea className="h-svh" viewportClassName="overscroll-contain">
+				<SharedNotePage note={sharedNote} onOpenNote={onOpenOwnedSharedNote} />
+			</ScrollArea>
 		);
 	}
 
@@ -868,15 +814,11 @@ function AppGate({
 	}
 
 	return (
-		<React.Suspense
-			fallback={<AuthBootstrapScreen isDesktopMac={isDesktopMac} />}
-		>
-			<AuthenticatedAppShellSurface
-				session={session}
-				workspaces={workspaces}
-				initialDesktopMac={isDesktopMac}
-			/>
-		</React.Suspense>
+		<AuthenticatedAppShell
+			session={session}
+			workspaces={workspaces}
+			initialDesktopMac={isDesktopMac}
+		/>
 	);
 }
 

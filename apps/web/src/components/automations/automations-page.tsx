@@ -47,7 +47,7 @@ import type { AutomationListItem } from "./automation-types";
 import { getAutomationSchedulePeriodLabel } from "./automation-utils";
 
 type AutomationsPageProps = {
-	automations: AutomationListItem[];
+	automations: AutomationListItem[] | undefined;
 	isDesktopMac: boolean;
 	onCreateAutomation: () => void;
 	onDeleteAutomation: (automationId: AutomationListItem["id"]) => void;
@@ -78,17 +78,22 @@ export function AutomationsPage({
 				<section className="mx-auto w-full max-w-xl space-y-6">
 					<PageTitle isDesktopMac={isDesktopMac}>Automate work</PageTitle>
 					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
-						<CardContent className="flex items-start justify-between gap-4 p-5">
+						<CardContent
+							aria-busy={automations === undefined}
+							className="flex items-start justify-between gap-4 p-5"
+						>
 							<div>
-								<p className="text-5xl leading-none tracking-tight tabular-nums">
-									{automations.length}
-								</p>
+								{automations !== undefined ? (
+									<p className="text-5xl leading-none tracking-tight tabular-nums">
+										{automations.length}
+									</p>
+								) : null}
 							</div>
 						</CardContent>
 					</Card>
 				</section>
 				<section className="flex justify-center py-4">
-					{automations.length > 0 ? (
+					{automations === undefined ? null : automations.length > 0 ? (
 						<AutomationsList
 							automations={automations}
 							onDeleteAutomation={onDeleteAutomation}

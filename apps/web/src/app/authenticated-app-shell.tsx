@@ -53,12 +53,6 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import {
-	ChatPageSurface,
-	NotePageSurface,
-	preloadChatPageSurface,
-	preloadNotePageSurface,
-} from "@/app/app-surfaces";
 import type { AppUser, AppView, UpcomingCalendarEvent } from "@/app/app-types";
 import { HomeView, SharedView } from "@/app/home-shared-views";
 import {
@@ -80,6 +74,7 @@ import type {
 } from "@/components/automations/automation-types";
 import { AutomationsPage } from "@/components/automations/automations-page";
 import { CreateAutomationDialog } from "@/components/automations/create-automation-dialog";
+import { ChatPage } from "@/components/chat/chat-page";
 import { optimisticRenameChat } from "@/components/chat/optimistic-rename-chat";
 import { readDesktopInboxPanelPinnedState } from "@/components/inbox/inbox-panel-state";
 import { AppShellInset } from "@/components/layout/app-shell-inset";
@@ -87,7 +82,7 @@ import {
 	NoteActionsMenu,
 	NoteStarButton,
 } from "@/components/note/note-actions-menu";
-import type { NoteEditorActions } from "@/components/note/note-page";
+import { type NoteEditorActions, NotePage } from "@/components/note/note-page";
 import { OPEN_NOTE_COMMENTS_EVENT } from "@/components/note/note-page-events";
 import { NoteTitleEditInput } from "@/components/note/note-title-edit-input";
 import { optimisticRenameNote } from "@/components/note/optimistic-rename-note";
@@ -778,7 +773,6 @@ const useAppShellState = ({
 	}, [inboxOpen]);
 
 	const openFreshChat = React.useCallback(() => {
-		void preloadChatPageSurface();
 		setInboxOpen(shouldKeepPinnedInboxOpen());
 		setCurrentView("chat");
 		setSettingsOpen(false);
@@ -789,7 +783,6 @@ const useAppShellState = ({
 
 	const openStoredChat = React.useCallback(
 		(chatId: string) => {
-			void preloadChatPageSurface();
 			setInboxOpen(shouldKeepPinnedInboxOpen());
 			setCurrentView("chat");
 			setSettingsOpen(false);
@@ -950,10 +943,6 @@ const useAppShellState = ({
 				return;
 			}
 
-			if (view === "note") {
-				void preloadNotePageSurface();
-			}
-
 			setInboxOpen(shouldKeepPinnedInboxOpen());
 			setCurrentView(view);
 			setSettingsOpen(false);
@@ -987,9 +976,10 @@ const useAppShellState = ({
 		}
 	}, []);
 
-	const handlePrefetchNote = React.useCallback((_noteId: Id<"notes">) => {
-		void preloadNotePageSurface();
-	}, []);
+	const handlePrefetchNote = React.useCallback(
+		(_noteId: Id<"notes">) => {},
+		[],
+	);
 
 	const openNote = React.useCallback(
 		(
@@ -1096,7 +1086,6 @@ const useAppShellState = ({
 	);
 
 	const handleQuickNote = React.useCallback(() => {
-		void preloadNotePageSurface();
 		setCurrentView("note");
 		setSettingsOpen(false);
 		setCurrentNoteId(null);
@@ -1405,34 +1394,6 @@ const useAppShellState = ({
 		[selectedChatMessages],
 	);
 
-	React.useEffect(() => {
-		if ((notes?.length ?? 0) === 0 && (sharedNotes?.length ?? 0) === 0) {
-			return;
-		}
-
-		const preloadNotesSurface = () => {
-			void preloadNotePageSurface();
-		};
-
-		if ("requestIdleCallback" in globalThis) {
-			const idleCallbackId = globalThis.requestIdleCallback(
-				preloadNotesSurface,
-				{
-					timeout: 1_000,
-				},
-			);
-
-			return () => {
-				globalThis.cancelIdleCallback(idleCallbackId);
-			};
-		}
-
-		const timeoutId = globalThis.setTimeout(preloadNotesSurface, 150);
-		return () => {
-			globalThis.clearTimeout(timeoutId);
-		};
-	}, [notes, sharedNotes]);
-
 	return {
 		activeWorkspaceId: resolvedActiveWorkspaceId,
 		breadcrumbDetailLabel:
@@ -1516,7 +1477,7 @@ const useAppShellState = ({
 		initialChatMessages,
 		isInitialChatMessagesLoading,
 		automationDialogOpen,
-		automations: automations ?? [],
+		automations,
 		editingAutomation,
 		isDesktopMac,
 		isLoadingUpcomingCalendarEvents,
@@ -2231,7 +2192,7 @@ const AppShellContent = React.memo(function AppShellContent({
 	shouldStopNoteCaptureWhenMeetingEnds: boolean;
 	onGoHome: () => void;
 	onCreateAutomation: () => void;
-	automations: AutomationListItem[];
+	automations: AutomationListItem[] | undefined;
 	onEditAutomation: (automationId: Id<"automations">) => void;
 	onOpenAutomation: (automation: AutomationListItem) => void;
 	onRunAutomationNow: (automationId: Id<"automations">) => void;
@@ -2332,49 +2293,45 @@ const AppShellContent = React.memo(function AppShellContent({
 				viewportClassName="overscroll-contain"
 				viewportRef={noteViewScrollRef}
 			>
-				<React.Suspense fallback={null}>
-					<NotePageSurface
-						key={currentNoteId ?? "new"}
-						autoStartTranscription={shouldAutoStartNoteCapture}
-						currentUser={user}
-						isDesktopMac={isDesktopMac}
-						noteId={currentNoteId}
-						note={selectedNote}
-						externalTitle={currentNoteTitle}
-						onAutoStartTranscriptionHandled={onAutoStartNoteCaptureHandled}
-						onCommentsOpenChange={onNoteCommentsOpenChange}
-						onTitleChange={onNoteTitleChange}
-						onEditorActionsChange={onNoteEditorActionsChange}
-						scrollParentRef={noteViewScrollRef}
-						stopTranscriptionWhenMeetingEnds={
-							shouldStopNoteCaptureWhenMeetingEnds
-						}
-					/>
-				</React.Suspense>
+				<NotePage
+					key={currentNoteId ?? "new"}
+					autoStartTranscription={shouldAutoStartNoteCapture}
+					currentUser={user}
+					isDesktopMac={isDesktopMac}
+					noteId={currentNoteId}
+					note={selectedNote}
+					externalTitle={currentNoteTitle}
+					onAutoStartTranscriptionHandled={onAutoStartNoteCaptureHandled}
+					onCommentsOpenChange={onNoteCommentsOpenChange}
+					onTitleChange={onNoteTitleChange}
+					onEditorActionsChange={onNoteEditorActionsChange}
+					scrollParentRef={noteViewScrollRef}
+					stopTranscriptionWhenMeetingEnds={
+						shouldStopNoteCaptureWhenMeetingEnds
+					}
+				/>
 			</ScrollArea>
 		);
 	}
 
 	return (
-		<React.Suspense fallback={<div className="flex-1 bg-background" />}>
-			<ChatPageSurface
-				key={chatComposerId}
-				chatId={chatComposerId}
-				initialMessages={initialChatMessages}
-				isInitialMessagesLoading={isInitialChatMessagesLoading}
-				onChatPersisted={onChatPersisted}
-				chats={chats ?? []}
-				isChatsLoading={chats === undefined}
-				activeChatId={currentChatId}
-				onOpenChat={onOpenChat}
-				onPrefetchChat={onPrefetchChat}
-				onChatRemoved={onChatRemoved}
-				activeWorkspace={activeWorkspace}
-				isDesktopMac={isDesktopMac}
-				onOpenConnectionsSettings={onOpenConnectionsSettings}
-				onCreateNoteFromResponse={onCreateNoteFromChatResponse}
-			/>
-		</React.Suspense>
+		<ChatPage
+			key={chatComposerId}
+			chatId={chatComposerId}
+			initialMessages={initialChatMessages}
+			isInitialMessagesLoading={isInitialChatMessagesLoading}
+			onChatPersisted={onChatPersisted}
+			chats={chats ?? []}
+			isChatsLoading={chats === undefined}
+			activeChatId={currentChatId}
+			onOpenChat={onOpenChat}
+			onPrefetchChat={onPrefetchChat}
+			onChatRemoved={onChatRemoved}
+			activeWorkspace={activeWorkspace}
+			isDesktopMac={isDesktopMac}
+			onOpenConnectionsSettings={onOpenConnectionsSettings}
+			onCreateNoteFromResponse={onCreateNoteFromChatResponse}
+		/>
 	);
 });
 
