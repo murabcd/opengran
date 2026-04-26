@@ -675,6 +675,7 @@ export function SettingsDialog({
 							{activePage === "Profile" ? (
 								<ManageAccountForm
 									user={user}
+									onCancel={() => onOpenChange(false)}
 									onSave={() => onOpenChange(false)}
 								/>
 							) : activePage === "Appearance" ? (
@@ -686,6 +687,7 @@ export function SettingsDialog({
 							) : activePage === "Workspace" ? (
 								<WorkspaceSettings
 									workspace={workspace}
+									onCancel={() => onOpenChange(false)}
 									onSave={() => onOpenChange(false)}
 								/>
 							) : activePage === "Calendar" ? (
@@ -2879,9 +2881,11 @@ function NotionDialog({
 
 function WorkspaceSettings({
 	workspace,
+	onCancel,
 	onSave,
 }: {
 	workspace: WorkspaceRecord | null;
+	onCancel: () => void;
 	onSave: () => void;
 }) {
 	const generateIconUploadUrl = useMutation(
@@ -2937,11 +2941,15 @@ function WorkspaceSettings({
 		name: trimmedName || workspace.name,
 	});
 	const handleCancel = () => {
-		if (!hasChanges || isSaving || isUploadingIcon) {
+		if (isSaving || isUploadingIcon) {
 			return;
 		}
 
-		setFormState(getWorkspaceFormState(workspace));
+		if (hasChanges) {
+			setFormState(getWorkspaceFormState(workspace));
+		}
+
+		onCancel();
 	};
 
 	const handleUpload = async (file: File) => {
@@ -3086,7 +3094,7 @@ function WorkspaceSettings({
 				<Button
 					variant="ghost"
 					onClick={handleCancel}
-					disabled={!hasChanges || isSaving || isUploadingIcon}
+					disabled={isSaving || isUploadingIcon}
 				>
 					Cancel
 				</Button>
@@ -3396,9 +3404,11 @@ function DataControlAction({
 
 function ManageAccountForm({
 	user,
+	onCancel,
 	onSave,
 }: {
 	user: SettingsUser;
+	onCancel: () => void;
 	onSave: () => void;
 }) {
 	const userPreferences = useQuery(api.userPreferences.get, {});
@@ -3466,16 +3476,20 @@ function ManageAccountForm({
 		email: user.email,
 	});
 	const handleCancel = () => {
-		if (!hasChanges || isSavingPreferences || isUploadingAvatar) {
+		if (isSavingPreferences || isUploadingAvatar) {
 			return;
 		}
 
-		setFormState(
-			getProfileFormState({
-				user,
-				userPreferences,
-			}),
-		);
+		if (hasChanges) {
+			setFormState(
+				getProfileFormState({
+					user,
+					userPreferences,
+				}),
+			);
+		}
+
+		onCancel();
 	};
 
 	const handleAvatarUpload = async (file: File) => {
@@ -3646,7 +3660,7 @@ function ManageAccountForm({
 				<Button
 					variant="ghost"
 					onClick={handleCancel}
-					disabled={!hasChanges || isSavingPreferences || isUploadingAvatar}
+					disabled={isSavingPreferences || isUploadingAvatar}
 				>
 					Cancel
 				</Button>

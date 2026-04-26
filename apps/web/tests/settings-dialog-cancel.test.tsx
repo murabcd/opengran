@@ -51,7 +51,7 @@ describe("settings dialog cancel actions", () => {
 		vi.clearAllMocks();
 	});
 
-	it("resets profile edits without closing settings", async () => {
+	it("resets profile edits and closes settings", async () => {
 		const onOpenChange = vi.fn();
 		const { SettingsDialog } = await import(
 			"../src/components/settings/settings-dialog"
@@ -74,24 +74,24 @@ describe("settings dialog cancel actions", () => {
 		const cancelButton = screen.getByRole("button", { name: "Cancel" });
 		const nameInput = screen.getByLabelText("Full name");
 
-		expect((cancelButton as HTMLButtonElement).disabled).toBe(true);
+		expect((cancelButton as HTMLButtonElement).disabled).toBe(false);
 
 		fireEvent.change(nameInput, { target: { value: "Jane Updated" } });
 
 		expect((cancelButton as HTMLButtonElement).disabled).toBe(false);
 		fireEvent.click(cancelButton);
 
-		expect(onOpenChange).not.toHaveBeenCalled();
+		expect(onOpenChange).toHaveBeenCalledWith(false);
 		expect((screen.getByLabelText("Full name") as HTMLInputElement).value).toBe(
 			"Jane Doe",
 		);
 		expect(
 			(screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
 				.disabled,
-		).toBe(true);
+		).toBe(false);
 	});
 
-	it("resets workspace edits without closing settings", async () => {
+	it("resets workspace edits and closes settings", async () => {
 		const onOpenChange = vi.fn();
 		const { SettingsDialog } = await import(
 			"../src/components/settings/settings-dialog"
@@ -125,20 +125,20 @@ describe("settings dialog cancel actions", () => {
 		const cancelButton = screen.getByRole("button", { name: "Cancel" });
 		const nameInput = screen.getByLabelText("Name");
 
-		expect((cancelButton as HTMLButtonElement).disabled).toBe(true);
+		expect((cancelButton as HTMLButtonElement).disabled).toBe(false);
 
 		fireEvent.change(nameInput, { target: { value: "New workspace" } });
 
 		expect((cancelButton as HTMLButtonElement).disabled).toBe(false);
 		fireEvent.click(cancelButton);
 
-		expect(onOpenChange).not.toHaveBeenCalled();
+		expect(onOpenChange).toHaveBeenCalledWith(false);
 		expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
 			"OpenGran",
 		);
 		expect(
 			(screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
 				.disabled,
-		).toBe(true);
+		).toBe(false);
 	});
 });
