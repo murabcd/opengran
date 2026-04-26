@@ -109,6 +109,77 @@ describe("ChatMessages", () => {
 		expect(column?.className).not.toContain("w-full");
 	});
 
+	it("renders recipe-only user messages as receipt chips instead of text bubbles", async () => {
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "user-recipe-only",
+						role: "user",
+						metadata: {
+							recipe: {
+								slug: "sales-questions",
+								name: "Sales questions",
+							},
+							recipeOnly: true,
+						},
+						parts: [
+							{
+								type: "text",
+								text: "Sales questions",
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		const receipt = screen.getByText("Sales questions").parentElement;
+
+		expect(receipt?.className).toContain("bg-transparent");
+		expect(receipt?.className).not.toContain("bg-secondary");
+		expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+	});
+
+	it("renders recipe receipts above user message text", async () => {
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				messages={[
+					{
+						id: "user-recipe-with-text",
+						role: "user",
+						metadata: {
+							recipe: {
+								slug: "write-weekly-recap",
+								name: "Write weekly recap",
+							},
+							recipeOnly: false,
+						},
+						parts: [
+							{
+								type: "text",
+								text: "whats this?",
+							},
+						],
+					},
+				]}
+			/>,
+		);
+
+		const receipt = screen.getByText("Write weekly recap").parentElement;
+		const messageBubble = screen.getByText("whats this?").parentElement;
+		const messageColumn = messageBubble?.parentElement?.parentElement;
+
+		expect(receipt?.className).toContain("bg-transparent");
+		expect(messageBubble?.className).toContain("bg-secondary");
+		expect(messageColumn?.className).toContain("items-end");
+		expect(screen.getByRole("button", { name: "Edit" })).toBeDefined();
+	});
+
 	it("renders sources from structured tool output parts", async () => {
 		const user = userEvent.setup();
 		const { ChatMessages } = await import("../src/components/chat/messages");

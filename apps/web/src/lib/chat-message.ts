@@ -1,4 +1,13 @@
 import type { UIMessage } from "ai";
+import type { RecipeSlug } from "@/lib/recipes";
+
+export type ChatMessageMetadata = {
+	recipe?: {
+		slug: RecipeSlug;
+		name: string;
+	};
+	recipeOnly?: boolean;
+};
 
 export const extractTextParts = (message: UIMessage) =>
 	message.parts.filter(
@@ -13,3 +22,15 @@ export const getChatText = (message: UIMessage) =>
 		.map((part) => part.text)
 		.join("\n\n")
 		.trim();
+
+export const getChatMessageMetadata = (
+	message: UIMessage,
+): ChatMessageMetadata | null => {
+	const metadata = message.metadata;
+
+	if (!metadata || typeof metadata !== "object") {
+		return null;
+	}
+
+	return metadata as ChatMessageMetadata;
+};

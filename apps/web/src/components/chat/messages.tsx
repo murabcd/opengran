@@ -23,7 +23,12 @@ import {
 	getChatMessageJustifyClass,
 	USER_CHAT_BUBBLE_CLASS,
 } from "@/components/chat/message-layout";
-import { extractTextParts, getChatText } from "@/lib/chat-message";
+import { ChatRecipeReceipt } from "@/components/chat/recipe-receipt";
+import {
+	extractTextParts,
+	getChatMessageMetadata,
+	getChatText,
+} from "@/lib/chat-message";
 
 type ToolSource = {
 	href: string;
@@ -194,16 +199,19 @@ export function ChatMessages({
 			{messages.map((message) => {
 				const textParts = extractTextParts(message);
 				const renderedText = textParts.map((part) => part.text).join("\n\n");
-				const messageText = getChatText(message);
+				const metadata = getChatMessageMetadata(message);
+				const selectedRecipe = metadata?.recipe ?? null;
+				const displayText = metadata?.recipeOnly ? "" : renderedText;
+				const messageText = metadata?.recipeOnly ? "" : getChatText(message);
 				const messageSources =
 					message.role === "assistant" ? collectMessageSources(message) : [];
 				const isStreamingAssistantMessage =
 					isLoading &&
 					message.role === "assistant" &&
 					message.id === lastMessage?.id;
-				const isEmpty = textParts.length === 0;
+				const isEmpty = displayText.length === 0;
 
-				if (isEmpty && !isStreamingAssistantMessage) {
+				if (isEmpty && !selectedRecipe && !isStreamingAssistantMessage) {
 					return null;
 				}
 
@@ -215,32 +223,46 @@ export function ChatMessages({
 							getChatMessageJustifyClass(message.role),
 						)}
 					>
-						<div className={cn("flex flex-col", CHAT_MESSAGE_MAX_WIDTH_CLASS)}>
-							<div className="flex flex-row items-start gap-2">
-								<div
-									className={cn(
-										message.role === "user"
-											? USER_CHAT_BUBBLE_CLASS
-											: ASSISTANT_CHAT_CONTENT_CLASS,
-										isStreamingAssistantMessage &&
-											isEmpty &&
-											"text-muted-foreground",
-									)}
-								>
-									{isStreamingAssistantMessage && isEmpty ? (
-										<div className="text-sm text-muted-foreground">
-											<ShimmerText>Thinking</ShimmerText>
-										</div>
-									) : (
-										<CollapsibleMessageContent
-											role={message.role}
-											text={renderedText}
-											isAnimating={Boolean(isStreamingAssistantMessage)}
-											streamdownClassName="note-streamdown"
-										/>
-									)}
+						<div
+							className={cn(
+								"flex flex-col",
+								message.role === "user" ? "items-end" : "items-start",
+								CHAT_MESSAGE_MAX_WIDTH_CLASS,
+							)}
+						>
+							{selectedRecipe ? (
+								<ChatRecipeReceipt
+									isUserMessage={message.role === "user"}
+									recipe={selectedRecipe}
+								/>
+							) : null}
+							{isStreamingAssistantMessage || displayText ? (
+								<div className="mt-2 flex flex-row items-start gap-2 first:mt-0">
+									<div
+										className={cn(
+											message.role === "user"
+												? USER_CHAT_BUBBLE_CLASS
+												: ASSISTANT_CHAT_CONTENT_CLASS,
+											isStreamingAssistantMessage &&
+												isEmpty &&
+												"text-muted-foreground",
+										)}
+									>
+										{isStreamingAssistantMessage && isEmpty ? (
+											<div className="text-sm text-muted-foreground">
+												<ShimmerText>Thinking</ShimmerText>
+											</div>
+										) : (
+											<CollapsibleMessageContent
+												role={message.role}
+												text={displayText}
+												isAnimating={Boolean(isStreamingAssistantMessage)}
+												streamdownClassName="note-streamdown"
+											/>
+										)}
+									</div>
 								</div>
-							</div>
+							) : null}
 							{message.role === "assistant" && !isEmpty ? (
 								<div
 									className={cn(
@@ -313,48 +335,54 @@ export function ChatMessages({
 									</Tooltip>
 								</div>
 							) : null}
-							{message.role === "user" && !isEmpty ? (
+							{message.role === "user" && (!isEmpty || selectedRecipe) ? (
 								<div
 									className={cn(
 										"mt-2 flex justify-end gap-1",
 										CHAT_ACTIONS_VISIBILITY_CLASS,
 									)}
 								>
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon-sm"
-												className="size-7 text-muted-foreground hover:text-foreground"
-												aria-label="Edit"
-												onClick={() => onEditMessage?.(message.id, messageText)}
-											>
-												<PenLine className="size-3.5" />
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent>Edit</TooltipContent>
-									</Tooltip>
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon-sm"
-												className="size-7 text-muted-foreground hover:text-foreground"
-												aria-label="Copy"
-												onClick={() => {
-													void navigator.clipboard
-														.writeText(messageText)
-														.then(() => toast.success("Copied"))
-														.catch(() => toast.error("Failed to copy"));
-												}}
-											>
-												<Copy className="size-3.5" />
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent>Copy</TooltipContent>
-									</Tooltip>
+									{messageText ? (
+										<>
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<Button
+														type="button"
+														variant="ghost"
+														size="icon-sm"
+														className="size-7 text-muted-foreground hover:text-foreground"
+														aria-label="Edit"
+														onClick={() =>
+															onEditMessage?.(message.id, messageText)
+														}
+													>
+														<PenLine className="size-3.5" />
+													</Button>
+												</TooltipTrigger>
+												<TooltipContent>Edit</TooltipContent>
+											</Tooltip>
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<Button
+														type="button"
+														variant="ghost"
+														size="icon-sm"
+														className="size-7 text-muted-foreground hover:text-foreground"
+														aria-label="Copy"
+														onClick={() => {
+															void navigator.clipboard
+																.writeText(messageText)
+																.then(() => toast.success("Copied"))
+																.catch(() => toast.error("Failed to copy"));
+														}}
+													>
+														<Copy className="size-3.5" />
+													</Button>
+												</TooltipTrigger>
+												<TooltipContent>Copy</TooltipContent>
+											</Tooltip>
+										</>
+									) : null}
 									<Tooltip>
 										<TooltipTrigger asChild>
 											<Button

@@ -89,6 +89,7 @@ import {
 	getChatMessageJustifyClass,
 	USER_CHAT_BUBBLE_CLASS,
 } from "@/components/chat/message-layout";
+import { ChatRecipeReceipt } from "@/components/chat/recipe-receipt";
 import {
 	COMPOSER_DOCK_BOTTOM_OFFSET,
 	COMPOSER_OVERLAY_FOOTER_PADDING,
@@ -110,7 +111,7 @@ import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
 import { getChatModel, NOTE_CHAT_MODEL_ID } from "@/lib/ai/models";
-import { getChatText } from "@/lib/chat-message";
+import { getChatMessageMetadata, getChatText } from "@/lib/chat-message";
 import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
@@ -140,13 +141,6 @@ import {
 } from "../layout/docked-panel-dimensions";
 
 type NoteChatPresentation = "inline" | "floating" | "sidebar";
-type NoteChatMessageMetadata = {
-	recipe?: {
-		slug: RecipeSlug;
-		name: string;
-	};
-	recipeOnly?: boolean;
-};
 const NOTE_CHAT_MODEL = getChatModel(NOTE_CHAT_MODEL_ID);
 const NOTE_CHAT_FLOATING_WIDTH = "min(28rem, calc(100vw - 2rem))";
 const NOTE_CHAT_FLOATING_HEIGHT_STORAGE_KEY_PREFIX =
@@ -177,18 +171,6 @@ const NOTE_CHAT_SIDEBAR_WIDTH_STORAGE_KEY_PREFIX =
 	"opengran.noteComposer.sidebarWidth";
 const TRANSCRIPT_PROGRESSIVE_RENDER_THRESHOLD = 32;
 const TRANSCRIPT_INITIAL_WINDOW_SIZE = 32;
-
-const getNoteChatMessageMetadata = (
-	message: UIMessage,
-): NoteChatMessageMetadata | null => {
-	const metadata = message.metadata;
-
-	if (!metadata || typeof metadata !== "object") {
-		return null;
-	}
-
-	return metadata as NoteChatMessageMetadata;
-};
 
 const getNoteStorageScopeKey = (noteId: Id<"notes"> | null) =>
 	noteId ? `note:${noteId}` : "note:draft";
@@ -1255,7 +1237,7 @@ const useNoteComposerController = ({
 				},
 				recipeSlug: selectedRecipe?.slug ?? null,
 			};
-			const recipeMetadata: NoteChatMessageMetadata | undefined = selectedRecipe
+			const recipeMetadata: UIMessage["metadata"] | undefined = selectedRecipe
 				? {
 						recipe: {
 							slug: selectedRecipe.slug,
@@ -1763,34 +1745,6 @@ function TranscriptLanguageSelector({
 	);
 }
 
-function NoteChatRecipeReceipt({
-	isUserMessage,
-	recipe,
-}: {
-	isUserMessage: boolean;
-	recipe: NonNullable<NoteChatMessageMetadata["recipe"]>;
-}) {
-	const Icon = getRecipeIcon(recipe.slug);
-
-	return (
-		<div
-			className={cn("flex", isUserMessage ? "justify-end" : "justify-start")}
-		>
-			<div
-				className={cn(
-					"inline-flex max-w-full items-center gap-2 rounded-lg border border-border/60 bg-transparent px-2.5 py-1.5 text-sm font-medium",
-					isUserMessage ? "text-secondary-foreground" : "text-foreground",
-				)}
-			>
-				<span className="flex size-5 shrink-0 items-center justify-center rounded-md text-primary">
-					<Icon className="size-3.5" />
-				</span>
-				<span className="truncate">{recipe.name}</span>
-			</div>
-		</div>
-	);
-}
-
 function NoteChatMessages({
 	chatError,
 	chatMessages,
@@ -1825,7 +1779,7 @@ function NoteChatMessages({
 		>
 			{chatMessages.map((chatMessage) => {
 				const text = getChatText(chatMessage);
-				const metadata = getNoteChatMessageMetadata(chatMessage);
+				const metadata = getChatMessageMetadata(chatMessage);
 				const selectedRecipe = metadata?.recipe ?? null;
 				const displayText = metadata?.recipeOnly ? "" : text;
 				const isStreamingAssistantMessage =
@@ -1848,11 +1802,12 @@ function NoteChatMessages({
 						<div
 							className={cn(
 								"flex flex-col gap-2",
+								chatMessage.role === "user" ? "items-end" : "items-start",
 								CHAT_MESSAGE_MAX_WIDTH_CLASS,
 							)}
 						>
 							{selectedRecipe ? (
-								<NoteChatRecipeReceipt
+								<ChatRecipeReceipt
 									isUserMessage={chatMessage.role === "user"}
 									recipe={selectedRecipe}
 								/>
