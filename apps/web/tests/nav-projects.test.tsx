@@ -240,6 +240,25 @@ vi.mock("@workspace/ui/components/sidebar", () => ({
 	SidebarMenuSub: ({ children }: React.PropsWithChildren) => (
 		<div>{children}</div>
 	),
+	SidebarMenuSubButton: ({
+		asChild,
+		children,
+		...props
+	}: React.PropsWithChildren<
+		React.ButtonHTMLAttributes<HTMLButtonElement> & {
+			asChild?: boolean;
+		}
+	>) =>
+		asChild ? (
+			children
+		) : (
+			<button type="button" {...props}>
+				{children}
+			</button>
+		),
+	SidebarMenuSubItem: ({ children }: React.PropsWithChildren) => (
+		<div>{children}</div>
+	),
 }));
 
 vi.mock("@workspace/ui/components/skeleton", () => ({
@@ -473,6 +492,48 @@ describe("NavProjects", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Updated" }));
 
 		expect(getRenderedProjectNames()).toEqual(["Beta", "Gamma", "Alpha"]);
+	});
+
+	it("shows more and less controls for long project note lists", async () => {
+		const { NavProjects } = await import("../src/components/nav/nav-projects");
+		const notes = Array.from({ length: 6 }, (_, index) =>
+			createNote({
+				id: `note-${index + 1}`,
+				projectId: "project-a",
+				title: `Project note ${index + 1}`,
+				createdAt: index + 1,
+				updatedAt: index + 1,
+			}),
+		);
+
+		render(
+			<NavProjects
+				workspaceId={"workspace-1" as never}
+				projects={[
+					createProject({
+						id: "project-a",
+						name: "Alpha",
+						createdAt: 10,
+						updatedAt: 10,
+					}),
+				]}
+				notes={notes}
+				currentNoteId={null}
+				onPrefetchNote={vi.fn()}
+				onNoteSelect={vi.fn()}
+			/>,
+		);
+
+		expect(screen.getByText("Project note 5")).toBeTruthy();
+		expect(screen.queryByText("Project note 6")).toBeNull();
+
+		fireEvent.click(screen.getByRole("button", { name: /show more/i }));
+
+		expect(screen.getByText("Project note 6")).toBeTruthy();
+
+		fireEvent.click(screen.getByRole("button", { name: /show less/i }));
+
+		expect(screen.queryByText("Project note 6")).toBeNull();
 	});
 });
 

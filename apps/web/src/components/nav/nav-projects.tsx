@@ -39,6 +39,8 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 	SidebarMenuSub,
+	SidebarMenuSubButton,
+	SidebarMenuSubItem,
 } from "@workspace/ui/components/sidebar";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import {
@@ -82,6 +84,7 @@ const SIDEBAR_PROJECT_SKELETON_IDS = [
 	"sidebar-project-skeleton-1",
 	"sidebar-project-skeleton-2",
 ] as const;
+const MAX_VISIBLE_PROJECT_NOTES = 5;
 const MAX_PROJECT_NAME_LENGTH = 48;
 const SIDEBAR_HEADER_ACTION_ROW_CLASS_NAME =
 	"aspect-auto w-auto gap-0.5 rounded-xl p-0 hover:bg-transparent [&_button]:flex [&_button]:size-5 [&_button]:cursor-pointer [&_button]:items-center [&_button]:justify-center [&_button]:rounded-md [&_button]:p-0 [&_button]:text-inherit [&_button]:outline-hidden [&_button]:transition-colors [&_button:hover]:bg-sidebar-accent [&_button:hover]:text-sidebar-accent-foreground [&_button[data-state=open]]:bg-sidebar-accent [&_button[data-state=open]]:text-sidebar-accent-foreground [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-sidebar-ring [&_button>svg]:size-4 [&_button>svg]:shrink-0";
@@ -1055,12 +1058,18 @@ function ProjectSidebarContent({
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
+	const [showAllNotes, setShowAllNotes] = React.useState(false);
+	const hasMoreNotes = notes.length > MAX_VISIBLE_PROJECT_NOTES;
+	const visibleNotes = showAllNotes
+		? notes
+		: notes.slice(0, MAX_VISIBLE_PROJECT_NOTES);
+
 	return (
 		<CollapsibleContent className="group/project-folder-content overflow-hidden">
 			<div className="min-h-0 overflow-hidden">
 				{hasNotes ? (
 					<SidebarMenuSub className="mr-0 translate-x-0 pr-0">
-						{notes.map((note) => (
+						{visibleNotes.map((note) => (
 							<ProjectNoteItem
 								key={note._id}
 								note={note}
@@ -1073,6 +1082,24 @@ function ProjectSidebarContent({
 								onNoteTrashed={onNoteTrashed}
 							/>
 						))}
+						{hasMoreNotes ? (
+							<SidebarMenuSubItem>
+								<SidebarMenuSubButton
+									asChild
+									className="cursor-pointer text-sidebar-foreground/70 hover:bg-transparent hover:text-inherit"
+								>
+									<button
+										type="button"
+										onClick={() => setShowAllNotes((prev) => !prev)}
+									>
+										<MoreHorizontal />
+										<span className="text-xs">
+											{showAllNotes ? "Show less" : "Show more"}
+										</span>
+									</button>
+								</SidebarMenuSubButton>
+							</SidebarMenuSubItem>
+						) : null}
 					</SidebarMenuSub>
 				) : (
 					<div className="px-8 py-2 text-xs text-sidebar-foreground/50">
