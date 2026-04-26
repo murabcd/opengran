@@ -96,7 +96,7 @@ function CommandList({
 	return (
 		<ScrollArea
 			className={cn("max-h-72", className)}
-			viewportClassName="scroll-py-1 outline-none"
+			viewportClassName="scroll-py-1 outline-none [&>div]:!block [&>div]:!min-w-0 [&>div]:!w-full"
 		>
 			<CommandPrimitive.List data-slot="command-list" {...props} />
 		</ScrollArea>
