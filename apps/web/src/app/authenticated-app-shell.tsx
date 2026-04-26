@@ -1,4 +1,14 @@
 import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@workspace/ui/components/alert-dialog";
+import {
 	Breadcrumb,
 	BreadcrumbItem,
 	BreadcrumbLink,
@@ -7,7 +17,13 @@ import {
 	BreadcrumbSeparator,
 } from "@workspace/ui/components/breadcrumb";
 import { Button } from "@workspace/ui/components/button";
-import { DropdownMenuItem } from "@workspace/ui/components/dropdown-menu";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@workspace/ui/components/dropdown-menu";
 import {
 	Empty,
 	EmptyContent,
@@ -47,8 +63,11 @@ import {
 	Copy,
 	MessageSquareText,
 	MoreHorizontal,
+	Pencil,
 	Plus,
 	Redo2,
+	SquarePen,
+	Trash2,
 	Undo2,
 } from "lucide-react";
 import * as React from "react";
@@ -1523,6 +1542,7 @@ type AppShellHeaderProps = {
 	onCreateNote: () => void;
 	onNoteTitleChange: (title: string) => void;
 	onNoteTrashed: (noteId: Id<"notes">) => void;
+	onChatTrashed: (chatId: string) => void;
 	onNewChat: () => void;
 	onNewAutomation: () => void;
 };
@@ -1545,6 +1565,7 @@ function AppShellHeader({
 	onCreateNote,
 	onNoteTitleChange,
 	onNoteTrashed,
+	onChatTrashed,
 	onNewChat,
 	onNewAutomation,
 }: AppShellHeaderProps) {
@@ -1766,8 +1787,11 @@ function AppShellHeader({
 					currentNoteEditorActions={currentNoteEditorActions}
 					currentNoteCommentsOpener={currentNoteCommentsOpener}
 					isDesktopMac={isDesktopMac}
+					currentChatId={currentChatId}
+					onOpenChatTitleEditor={openBreadcrumbTitleEditor}
 					onCreateNote={onCreateNote}
 					onNoteTrashed={onNoteTrashed}
+					onChatTrashed={onChatTrashed}
 					onNewChat={onNewChat}
 					onNewAutomation={onNewAutomation}
 				/>
@@ -1897,8 +1921,11 @@ function AppShellHeaderActions({
 	currentNoteEditorActions,
 	currentNoteCommentsOpener,
 	isDesktopMac,
+	currentChatId,
+	onOpenChatTitleEditor,
 	onCreateNote,
 	onNoteTrashed,
+	onChatTrashed,
 	onNewChat,
 	onNewAutomation,
 }: Pick<
@@ -1910,11 +1937,15 @@ function AppShellHeaderActions({
 	| "currentNoteEditorActions"
 	| "currentNoteCommentsOpener"
 	| "isDesktopMac"
+	| "currentChatId"
 	| "onCreateNote"
 	| "onNoteTrashed"
+	| "onChatTrashed"
 	| "onNewChat"
 	| "onNewAutomation"
->) {
+> & {
+	onOpenChatTitleEditor: () => void;
+}) {
 	if (currentView === "home") {
 		return (
 			<Button
@@ -1930,14 +1961,13 @@ function AppShellHeaderActions({
 
 	if (currentView === "chat") {
 		return (
-			<Button
-				variant="outline"
-				data-app-region={isDesktopMac ? "no-drag" : undefined}
-				onClick={onNewChat}
-			>
-				<Plus />
-				New chat
-			</Button>
+			<ChatHeaderActions
+				chatId={currentChatId}
+				isDesktopMac={isDesktopMac}
+				onNewChat={onNewChat}
+				onRenameChat={onOpenChatTitleEditor}
+				onChatTrashed={onChatTrashed}
+			/>
 		);
 	}
 
@@ -2092,6 +2122,139 @@ function NoteHeaderActionsMenu({
 				<MoreHorizontal className="size-4" />
 			</Button>
 		</NoteActionsMenu>
+	);
+}
+
+function ChatHeaderActions({
+	chatId,
+	isDesktopMac,
+	onNewChat,
+	onRenameChat,
+	onChatTrashed,
+}: {
+	chatId: string | null;
+	isDesktopMac: boolean;
+	onNewChat: () => void;
+	onRenameChat: () => void;
+	onChatTrashed: (chatId: string) => void;
+}) {
+	const activeWorkspaceId = useActiveWorkspaceId();
+	const [confirmTrashOpen, setConfirmTrashOpen] = React.useState(false);
+	const [isMovingToTrash, setIsMovingToTrash] = React.useState(false);
+	const moveChatToTrash = useMutation(api.chats.moveToTrash);
+
+	const handleConfirmTrash = React.useCallback(() => {
+		if (!activeWorkspaceId || !chatId || isMovingToTrash) {
+			return;
+		}
+
+		setIsMovingToTrash(true);
+
+		void moveChatToTrash({ workspaceId: activeWorkspaceId, chatId })
+			.then(() => {
+				onChatTrashed(chatId);
+				setConfirmTrashOpen(false);
+				toast.success("Chat moved to trash");
+			})
+			.catch((error) => {
+				console.error("Failed to move chat to trash", error);
+				toast.error("Failed to move chat to trash");
+			})
+			.finally(() => {
+				setIsMovingToTrash(false);
+			});
+	}, [
+		activeWorkspaceId,
+		chatId,
+		isMovingToTrash,
+		moveChatToTrash,
+		onChatTrashed,
+	]);
+
+	return (
+		<div
+			className="flex items-center gap-1"
+			data-app-region={isDesktopMac ? "no-drag" : undefined}
+		>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon-sm"
+						aria-label="New chat"
+						onClick={onNewChat}
+					>
+						<SquarePen className="size-4" />
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>New chat</TooltipContent>
+			</Tooltip>
+			<DropdownMenu>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<DropdownMenuTrigger asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon-sm"
+								aria-label="More actions"
+								className="text-muted-foreground hover:text-foreground"
+							>
+								<MoreHorizontal className="size-4" />
+							</Button>
+						</DropdownMenuTrigger>
+					</TooltipTrigger>
+					<TooltipContent>More actions</TooltipContent>
+				</Tooltip>
+				<DropdownMenuContent
+					align="end"
+					className="w-44 overflow-hidden rounded-lg p-1"
+				>
+					<DropdownMenuItem
+						className="cursor-pointer"
+						disabled={!chatId}
+						onSelect={onRenameChat}
+					>
+						<Pencil />
+						Rename
+					</DropdownMenuItem>
+					<DropdownMenuSeparator />
+					<DropdownMenuItem
+						variant="destructive"
+						className="cursor-pointer"
+						disabled={!chatId}
+						onSelect={() => setConfirmTrashOpen(true)}
+					>
+						<Trash2 />
+						Delete
+					</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
+			<AlertDialog open={confirmTrashOpen} onOpenChange={setConfirmTrashOpen}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Move chat to trash?</AlertDialogTitle>
+						<AlertDialogDescription>
+							This removes the chat from the list. You can restore it later from
+							Trash.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={isMovingToTrash}>
+							Cancel
+						</AlertDialogCancel>
+						<AlertDialogAction
+							className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
+							onClick={handleConfirmTrash}
+							disabled={isMovingToTrash}
+						>
+							{isMovingToTrash ? "Moving..." : "Move to trash"}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</div>
 	);
 }
 
@@ -2444,6 +2607,7 @@ export function AuthenticatedAppShell({
 						onCreateNote={controller.handleQuickNote}
 						onNoteTitleChange={controller.setCurrentNoteTitle}
 						onNoteTrashed={controller.handleNoteTrashed}
+						onChatTrashed={controller.handleChatRemoved}
 						onNewChat={controller.handleNewChat}
 						onNewAutomation={controller.handleCreateAutomationOpen}
 					/>
