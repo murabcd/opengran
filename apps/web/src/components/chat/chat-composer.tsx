@@ -88,6 +88,40 @@ type AppSource = {
 	provider: ChatAppSourceProvider;
 };
 
+type NoteMentionRange = {
+	start: number;
+	end: number;
+	query: string;
+};
+
+const findNoteMentionRange = (
+	value: string,
+	cursorPosition: number,
+): NoteMentionRange | null => {
+	const textBeforeCursor = value.slice(0, cursorPosition);
+	const mentionStart = textBeforeCursor.lastIndexOf("@");
+
+	if (mentionStart === -1) {
+		return null;
+	}
+
+	const characterBeforeMention = value[mentionStart - 1];
+	if (characterBeforeMention && !/\s/.test(characterBeforeMention)) {
+		return null;
+	}
+
+	const mentionText = value.slice(mentionStart + 1, cursorPosition);
+	if (/\s/.test(mentionText)) {
+		return null;
+	}
+
+	return {
+		start: mentionStart,
+		end: cursorPosition,
+		query: mentionText,
+	};
+};
+
 type ChatComposerProps = {
 	useCompactLayout: boolean;
 	draft: string;
@@ -178,6 +212,8 @@ export function ChatComposer({
 	onOpenConnectionsSettings,
 }: ChatComposerProps) {
 	const promptRef = React.useRef<HTMLTextAreaElement | null>(null);
+	const [noteMentionRange, setNoteMentionRange] =
+		React.useState<NoteMentionRange | null>(null);
 	const filteredWorkspaceSources = filterWorkspaceSources(
 		workspaceSources,
 		sourceSearchTerm,
@@ -203,6 +239,46 @@ export function ChatComposer({
 		editingMessageId,
 		onCancelEdit,
 	});
+	const handleDraftChange = React.useCallback(
+		(event: React.ChangeEvent<HTMLTextAreaElement>) => {
+			const nextDraft = event.target.value;
+			const mentionRange = findNoteMentionRange(
+				nextDraft,
+				event.target.selectionStart,
+			);
+
+			onDraftChange(nextDraft);
+			setNoteMentionRange(mentionRange);
+
+			if (mentionRange) {
+				onDocumentSearchTermChange(mentionRange.query);
+				onMentionPopoverOpenChange(true);
+			}
+		},
+		[onDocumentSearchTermChange, onDraftChange, onMentionPopoverOpenChange],
+	);
+	const handleAddMention = React.useCallback(
+		(pageId: string) => {
+			onAddMention(pageId);
+
+			if (noteMentionRange) {
+				const nextCursorPosition = noteMentionRange.start;
+				onDraftChange(
+					`${draft.slice(0, noteMentionRange.start)}${draft.slice(noteMentionRange.end)}`,
+				);
+				window.requestAnimationFrame(() => {
+					promptRef.current?.focus({ preventScroll: true });
+					promptRef.current?.setSelectionRange(
+						nextCursorPosition,
+						nextCursorPosition,
+					);
+				});
+			}
+
+			setNoteMentionRange(null);
+		},
+		[draft, noteMentionRange, onAddMention, onDraftChange],
+	);
 
 	return (
 		<div
@@ -234,7 +310,7 @@ export function ChatComposer({
 								isNotesLoading={isNotesLoading}
 								emptyStateMessage={emptyStateMessage}
 								shouldSearchDocuments={shouldSearchDocuments}
-								onAddMention={onAddMention}
+								onAddMention={handleAddMention}
 							/>
 						}
 					/>
@@ -244,7 +320,7 @@ export function ChatComposer({
 					ref={promptRef}
 					id="chat-prompt"
 					value={draft}
-					onChange={(event) => onDraftChange(event.target.value)}
+					onChange={handleDraftChange}
 					onKeyDown={onDraftKeyDown}
 					rows={useCompactLayout ? 1 : 3}
 					placeholder="Ask, search, or make anything..."
@@ -527,12 +603,12 @@ function ChatComposerMentionChips({
 					key={document.id}
 					size="sm"
 					variant="secondary"
-					className="rounded-full pl-2!"
+					className="group/note-mention-chip rounded-full pl-2!"
 					onClick={() => onRemoveMention(document.id)}
 				>
 					<document.icon />
 					{document.title}
-					<X />
+					<X className="opacity-0 transition-opacity group-hover/note-mention-chip:opacity-100 group-focus-visible/note-mention-chip:opacity-100" />
 				</InputGroupButton>
 			))}
 		</div>
@@ -736,7 +812,7 @@ function ScopePicker({
 						onSelect={(event) => event.preventDefault()}
 					>
 						<label htmlFor="apps">
-							<Grid3x3 /> Apps and Integrations
+							<Grid3x3 /> Apps and integrations
 							<Switch
 								id="apps"
 								className="ml-auto"
@@ -755,7 +831,7 @@ function ScopePicker({
 							}
 						}}
 					>
-						<CirclePlus /> All sources i can access
+						<CirclePlus /> All sources I can access
 					</DropdownMenuCheckboxItem>
 					<WorkspaceScopeMenu
 						hasWorkspaceScopes={hasWorkspaceScopes}
@@ -814,7 +890,7 @@ function ScopePicker({
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem onClick={onOpenConnectionsSettings}>
-						<Plus /> Connect Apps
+						<Plus /> Connect apps
 					</DropdownMenuItem>
 					<DropdownMenuLabel className="text-xs text-muted-foreground">
 						We&apos;ll only search in the sources selected here.
