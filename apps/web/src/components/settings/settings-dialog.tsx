@@ -85,7 +85,6 @@ import {
 	Link2,
 	LoaderCircle,
 	Paintbrush,
-	Plus,
 	SlidersHorizontal,
 	UserRound,
 } from "lucide-react";
@@ -293,6 +292,70 @@ type ToolConnectionRowProps = {
 	buttonIcon?: React.ReactNode;
 	onButtonClick: () => void;
 };
+
+type AppConnectionStatus = "connected" | "disconnected";
+
+type YandexTrackerConnectionSettings = {
+	sourceId: string;
+	provider: "yandex-tracker";
+	status: AppConnectionStatus;
+	displayName: string;
+	orgType: "x-org-id" | "x-cloud-org-id";
+	orgId: string;
+};
+
+type YandexCalendarConnectionSettings = {
+	sourceId: string;
+	provider: "yandex-calendar";
+	status: AppConnectionStatus;
+	displayName: string;
+	email: string;
+	serverAddress: string;
+	calendarHomePath: string;
+};
+
+type JiraConnectionSettings = {
+	sourceId: string;
+	provider: "jira";
+	status: AppConnectionStatus;
+	displayName: string;
+	baseUrl: string;
+	email: string;
+	accountId?: string;
+	webhookSecret?: string;
+	lastWebhookReceivedAt?: number;
+	lastMentionSyncAt?: number;
+};
+
+type PostHogConnectionSettings = {
+	sourceId: string;
+	provider: "posthog";
+	status: AppConnectionStatus;
+	displayName: string;
+	baseUrl: string;
+	projectId: string;
+	projectName: string;
+};
+
+type NotionConnectionSettings = {
+	sourceId: string;
+	provider: "notion";
+	status: AppConnectionStatus;
+	displayName: string;
+};
+
+type StableConnectionSettings = {
+	yandexTracker: YandexTrackerConnectionSettings | null;
+	yandexCalendar: YandexCalendarConnectionSettings | null;
+	jira: JiraConnectionSettings | null;
+	posthog: PostHogConnectionSettings | null;
+	notion: NotionConnectionSettings | null;
+};
+
+const stableConnectionSettingsByWorkspace = new Map<
+	string,
+	StableConnectionSettings
+>();
 
 type ConnectionsSettingsState = {
 	isYandexTrackerDialogOpen: boolean;
@@ -1296,7 +1359,7 @@ function useCalendarSettingsController() {
 			onButtonClick: () => {
 				void handleConnectGoogleCalendar();
 			},
-			buttonDisabled: isConnectingGoogle || !session?.user || isLoadingAccounts,
+			buttonDisabled: isConnectingGoogle || !session?.user,
 			buttonLabel: googleCalendarAction.buttonLabel,
 			buttonIcon: isConnectingGoogle ? (
 				<LoaderCircle className="animate-spin" />
@@ -1392,8 +1455,6 @@ function CalendarProviderRow({
 	buttonLabel,
 	buttonIcon,
 }: CalendarProviderRowProps) {
-	const isConnectAction = buttonLabel === "Connect";
-
 	return (
 		<div className="flex items-center justify-between gap-4">
 			<div className="flex min-w-0 items-center gap-3">
@@ -1410,15 +1471,13 @@ function CalendarProviderRow({
 				/>
 				<Button
 					type="button"
-					variant={isConnectAction ? "outline" : buttonVariant}
-					size={isConnectAction ? "icon-sm" : "default"}
+					variant={buttonVariant}
+					size="default"
 					onClick={onButtonClick}
 					disabled={buttonDisabled}
-					aria-label={isConnectAction ? `Connect ${name}` : undefined}
-					title={isConnectAction ? `Connect ${name}` : undefined}
 				>
-					{buttonIcon ?? (isConnectAction ? <Plus /> : null)}
-					{isConnectAction ? null : buttonLabel}
+					{buttonIcon}
+					{buttonLabel}
 				</Button>
 			</div>
 		</div>
@@ -1745,29 +1804,54 @@ function ConnectionsSettings() {
 function useConnectionsSettingsController() {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const { data: session } = authClient.useSession();
-	const { accounts, isLoadingAccounts, loadAccounts } = useLinkedAccounts(
-		session?.user,
-	);
-	const yandexTrackerConnection = useQuery(
+	const { accounts, loadAccounts } = useLinkedAccounts(session?.user);
+	const stableConnectionSettingsKey =
+		activeWorkspaceId && session?.user?.email
+			? `${session.user.email}:${activeWorkspaceId}`
+			: null;
+	const yandexTrackerConnectionResult = useQuery(
 		api.appConnections.getYandexTracker,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
-	const yandexCalendarConnection = useQuery(
+	const yandexCalendarConnectionResult = useQuery(
 		api.appConnections.getYandexCalendar,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
-	const jiraConnection = useQuery(
+	const jiraConnectionResult = useQuery(
 		api.appConnections.getJira,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
-	const posthogConnection = useQuery(
+	const posthogConnectionResult = useQuery(
 		api.appConnections.getPostHog,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
-	const notionConnection = useQuery(
+	const notionConnectionResult = useQuery(
 		api.appConnections.getNotion,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
+	const stableConnectionSettings = stableConnectionSettingsKey
+		? stableConnectionSettingsByWorkspace.get(stableConnectionSettingsKey)
+		: undefined;
+	const yandexTrackerConnection =
+		yandexTrackerConnectionResult === undefined
+			? (stableConnectionSettings?.yandexTracker ?? null)
+			: yandexTrackerConnectionResult;
+	const yandexCalendarConnection =
+		yandexCalendarConnectionResult === undefined
+			? (stableConnectionSettings?.yandexCalendar ?? null)
+			: yandexCalendarConnectionResult;
+	const jiraConnection =
+		jiraConnectionResult === undefined
+			? (stableConnectionSettings?.jira ?? null)
+			: jiraConnectionResult;
+	const posthogConnection =
+		posthogConnectionResult === undefined
+			? (stableConnectionSettings?.posthog ?? null)
+			: posthogConnectionResult;
+	const notionConnection =
+		notionConnectionResult === undefined
+			? (stableConnectionSettings?.notion ?? null)
+			: notionConnectionResult;
 	const connectYandexTracker = useAction(
 		api.appConnectionActions.connectYandexTracker,
 	);
@@ -1817,6 +1901,52 @@ function useConnectionsSettingsController() {
 		defaultEmail: session?.user?.email,
 		yandexCalendarConnection,
 	});
+
+	useEffect(() => {
+		if (!stableConnectionSettingsKey) {
+			return;
+		}
+
+		const previous = stableConnectionSettingsByWorkspace.get(
+			stableConnectionSettingsKey,
+		) ?? {
+			yandexTracker: null,
+			yandexCalendar: null,
+			jira: null,
+			posthog: null,
+			notion: null,
+		};
+
+		stableConnectionSettingsByWorkspace.set(stableConnectionSettingsKey, {
+			yandexTracker:
+				yandexTrackerConnectionResult === undefined
+					? previous.yandexTracker
+					: yandexTrackerConnectionResult,
+			yandexCalendar:
+				yandexCalendarConnectionResult === undefined
+					? previous.yandexCalendar
+					: yandexCalendarConnectionResult,
+			jira:
+				jiraConnectionResult === undefined
+					? previous.jira
+					: jiraConnectionResult,
+			posthog:
+				posthogConnectionResult === undefined
+					? previous.posthog
+					: posthogConnectionResult,
+			notion:
+				notionConnectionResult === undefined
+					? previous.notion
+					: notionConnectionResult,
+		});
+	}, [
+		jiraConnectionResult,
+		notionConnectionResult,
+		posthogConnectionResult,
+		stableConnectionSettingsKey,
+		yandexCalendarConnectionResult,
+		yandexTrackerConnectionResult,
+	]);
 
 	useEffect(() => {
 		let isMounted = true;
@@ -2176,8 +2306,7 @@ function useConnectionsSettingsController() {
 			name: "Google Calendar",
 			buttonLabel: googleCalendarToolAction.buttonLabel,
 			buttonVariant: googleCalendarToolAction.buttonVariant,
-			buttonDisabled:
-				isConnectingGoogleCalendarTool || !session?.user || isLoadingAccounts,
+			buttonDisabled: isConnectingGoogleCalendarTool || !session?.user,
 			buttonIcon: isConnectingGoogleCalendarTool ? (
 				<LoaderCircle className="animate-spin" />
 			) : null,
@@ -2194,8 +2323,7 @@ function useConnectionsSettingsController() {
 			name: "Google Drive",
 			buttonLabel: googleDriveToolAction.buttonLabel,
 			buttonVariant: googleDriveToolAction.buttonVariant,
-			buttonDisabled:
-				isConnectingGoogleDriveTool || !session?.user || isLoadingAccounts,
+			buttonDisabled: isConnectingGoogleDriveTool || !session?.user,
 			buttonIcon: isConnectingGoogleDriveTool ? (
 				<LoaderCircle className="animate-spin" />
 			) : null,
@@ -2440,8 +2568,6 @@ function ToolConnectionRow({
 	buttonIcon,
 	onButtonClick,
 }: ToolConnectionRowProps) {
-	const isConnectAction = buttonLabel === "Connect";
-
 	return (
 		<div className="flex items-center justify-between gap-4">
 			<div className="flex min-w-0 items-center gap-3">
@@ -2452,15 +2578,13 @@ function ToolConnectionRow({
 			</div>
 			<Button
 				type="button"
-				variant={isConnectAction ? "outline" : buttonVariant}
-				size={isConnectAction ? "icon-sm" : "default"}
+				variant={buttonVariant}
+				size="default"
 				onClick={onButtonClick}
 				disabled={buttonDisabled}
-				aria-label={isConnectAction ? `Connect ${name}` : undefined}
-				title={isConnectAction ? `Connect ${name}` : undefined}
 			>
-				{buttonIcon ?? (isConnectAction ? <Plus /> : null)}
-				{isConnectAction ? null : buttonLabel}
+				{buttonIcon}
+				{buttonLabel}
 			</Button>
 		</div>
 	);

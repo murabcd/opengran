@@ -3,11 +3,20 @@ import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import type { LinkedAccount } from "@/lib/google-integrations";
 
+const linkedAccountsCache = new Map<string, LinkedAccount[]>();
+
 export const useLinkedAccounts = (
 	sessionUser: { email?: string | null } | null | undefined,
 ) => {
-	const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
+	const cacheKey = sessionUser?.email ?? null;
+	const [accounts, setAccounts] = useState<LinkedAccount[]>(() =>
+		cacheKey ? (linkedAccountsCache.get(cacheKey) ?? []) : [],
+	);
 	const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
+
+	useEffect(() => {
+		setAccounts(cacheKey ? (linkedAccountsCache.get(cacheKey) ?? []) : []);
+	}, [cacheKey]);
 
 	const loadAccounts = useCallback(async () => {
 		if (!sessionUser) {
@@ -22,14 +31,20 @@ export const useLinkedAccounts = (
 				method: "GET",
 				throw: true,
 			});
-			setAccounts(Array.isArray(result) ? (result as LinkedAccount[]) : []);
+			const nextAccounts = Array.isArray(result)
+				? (result as LinkedAccount[])
+				: [];
+			if (cacheKey) {
+				linkedAccountsCache.set(cacheKey, nextAccounts);
+			}
+			setAccounts(nextAccounts);
 		} catch (error) {
 			console.error("Failed to load linked accounts", error);
 			toast.error("Failed to load linked Google accounts");
 		} finally {
 			setIsLoadingAccounts(false);
 		}
-	}, [sessionUser]);
+	}, [cacheKey, sessionUser]);
 
 	useEffect(() => {
 		void loadAccounts();
