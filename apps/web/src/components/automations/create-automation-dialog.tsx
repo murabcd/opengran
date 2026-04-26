@@ -836,7 +836,21 @@ function SchedulePicker({
 					<ChevronDown className="size-4 text-muted-foreground opacity-70" />
 				</InputGroupButton>
 			</PopoverTrigger>
-			<PopoverContent align="start" sideOffset={6} className="w-64 gap-0 p-1.5">
+			<PopoverContent
+				align="start"
+				sideOffset={6}
+				className="w-64 gap-0 p-1.5"
+				onFocusOutside={(event) => event.preventDefault()}
+				onInteractOutside={(event) => {
+					const target = event.target;
+					if (
+						target instanceof HTMLElement &&
+						target.closest("[data-slot='select-content']")
+					) {
+						event.preventDefault();
+					}
+				}}
+			>
 				<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
 					Schedule
 				</div>

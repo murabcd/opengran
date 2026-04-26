@@ -10,8 +10,10 @@ import * as React from "react";
 const INPUT_GROUP_INTERACTIVE_SELECTOR = [
 	"button",
 	"a[href]",
+	"input",
 	"label",
 	"select",
+	"textarea",
 	"[role='button']",
 	"[role='checkbox']",
 	"[role='link']",
@@ -24,6 +26,8 @@ const INPUT_GROUP_INTERACTIVE_SELECTOR = [
 const INPUT_GROUP_OVERLAY_CONTENT_SELECTOR = [
 	'[data-slot="dropdown-menu-content"]',
 	'[data-slot="dropdown-menu-sub-content"]',
+	'[data-slot="popover-content"]',
+	'[data-slot="select-content"]',
 ].join(",");
 
 function focusInputGroupControl(container: HTMLDivElement) {

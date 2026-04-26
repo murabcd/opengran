@@ -5,7 +5,6 @@ export const AUTOMATION_SCHEDULE_PERIODS = [
 	{ value: "daily", label: "Daily" },
 	{ value: "weekdays", label: "Weekdays" },
 	{ value: "weekly", label: "Weekly" },
-	{ value: "custom", label: "Custom" },
 ] as const;
 
 export type AutomationSchedulePeriod =
