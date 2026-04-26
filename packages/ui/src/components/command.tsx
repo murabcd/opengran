@@ -91,14 +91,65 @@ CommandInput.displayName = CommandPrimitive.Input.displayName;
 
 function CommandList({
 	className,
+	onWheel,
 	...props
 }: React.ComponentProps<typeof CommandPrimitive.List>) {
+	const handleWheel = React.useCallback(
+		(
+			event: React.WheelEvent<React.ElementRef<typeof CommandPrimitive.List>>,
+		) => {
+			onWheel?.(event);
+			if (event.defaultPrevented) {
+				return;
+			}
+
+			const scrollArea = event.currentTarget.closest(
+				'[data-slot="scroll-area"]',
+			);
+			const viewport = scrollArea?.querySelector<HTMLElement>(
+				'[data-slot="scroll-area-viewport"]',
+			);
+			if (!viewport) {
+				return;
+			}
+
+			const maxScrollTop = viewport.scrollHeight - viewport.clientHeight;
+			if (maxScrollTop <= 0) {
+				return;
+			}
+
+			const deltaY =
+				event.deltaMode === WheelEvent.DOM_DELTA_LINE
+					? event.deltaY * 16
+					: event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+						? event.deltaY * viewport.clientHeight
+						: event.deltaY;
+			const nextScrollTop = Math.min(
+				Math.max(viewport.scrollTop + deltaY, 0),
+				maxScrollTop,
+			);
+
+			if (nextScrollTop === viewport.scrollTop) {
+				return;
+			}
+
+			event.preventDefault();
+			event.stopPropagation();
+			viewport.scrollTop = nextScrollTop;
+		},
+		[onWheel],
+	);
+
 	return (
 		<ScrollArea
-			className={cn("max-h-72", className)}
-			viewportClassName="scroll-py-1 outline-none [&>div]:!block [&>div]:!min-w-0 [&>div]:!w-full"
+			className={cn("max-h-72 min-w-0", className)}
+			viewportClassName="max-h-[inherit] scroll-py-1 outline-none [&>div]:!block [&>div]:!min-w-0 [&>div]:!w-full"
 		>
-			<CommandPrimitive.List data-slot="command-list" {...props} />
+			<CommandPrimitive.List
+				data-slot="command-list"
+				onWheel={handleWheel}
+				{...props}
+			/>
 		</ScrollArea>
 	);
 }
