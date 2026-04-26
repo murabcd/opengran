@@ -22,23 +22,14 @@ import { ChatMessages } from "@/components/chat/messages";
 import { COMPOSER_DOCK_WRAPPER_CLASS } from "@/components/layout/composer-dock";
 import { PageTitle } from "@/components/layout/page-title";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
-import { useLinkedAccounts } from "@/hooks/use-linked-accounts";
+import { useAppSources } from "@/hooks/use-app-sources";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
-import { authClient } from "@/lib/auth-client";
 import { getChatId } from "@/lib/chat";
 import { getChatText } from "@/lib/chat-message";
 import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
-import {
-	GOOGLE_CALENDAR_SCOPE,
-	GOOGLE_CALENDAR_SOURCE_ID,
-	GOOGLE_DRIVE_SCOPE,
-	GOOGLE_DRIVE_SOURCE_ID,
-	getGoogleLinkedAccount,
-	hasGoogleScope,
-} from "@/lib/google-integrations";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { WorkspaceRecord } from "@/lib/workspaces";
 import { api } from "../../../../../convex/_generated/api";
@@ -100,8 +91,6 @@ const useChatPageController = ({
 	| "activeWorkspace"
 >) => {
 	const activeWorkspaceId = useActiveWorkspaceId();
-	const { data: session } = authClient.useSession();
-	const { accounts } = useLinkedAccounts(session?.user);
 	const [draft, setDraft] = React.useState("");
 	const [confirmTrashChatId, setConfirmTrashChatId] = React.useState<
 		string | null
@@ -132,45 +121,7 @@ const useChatPageController = ({
 		api.notes.list,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
-	const appSources = useQuery(
-		api.appConnections.listSources,
-		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
-	);
-	const googleAccount = React.useMemo(
-		() => getGoogleLinkedAccount(accounts),
-		[accounts],
-	);
-	const googleAppSources = React.useMemo(() => {
-		if (!googleAccount) {
-			return [];
-		}
-
-		const sources = [];
-
-		if (hasGoogleScope(googleAccount, GOOGLE_CALENDAR_SCOPE)) {
-			sources.push({
-				id: GOOGLE_CALENDAR_SOURCE_ID,
-				title: "Google Calendar",
-				preview: "Google account",
-				provider: "google-calendar" as const,
-			});
-		}
-
-		if (hasGoogleScope(googleAccount, GOOGLE_DRIVE_SCOPE)) {
-			sources.push({
-				id: GOOGLE_DRIVE_SOURCE_ID,
-				title: "Google Drive",
-				preview: "Google account",
-				provider: "google-drive" as const,
-			});
-		}
-
-		return sources;
-	}, [googleAccount]);
-	const mergedAppSources = React.useMemo(
-		() => [...googleAppSources, ...(appSources ?? [])],
-		[appSources, googleAppSources],
-	);
+	const appSources = useAppSources(activeWorkspaceId);
 	React.useEffect(() => {
 		void activeWorkspaceId;
 		setSelectedSourceIds([]);
@@ -600,7 +551,7 @@ const useChatPageController = ({
 		sourcesOpen,
 		webSearchEnabled,
 		workspaceSources,
-		appSources: mergedAppSources,
+		appSources,
 		documentSearchTerm,
 		editingMessageId,
 		mentions,

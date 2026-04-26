@@ -14,6 +14,7 @@ const toastSuccessMock = vi.fn();
 const truncateFromMessageMock = vi.fn();
 const useChatMock = vi.fn();
 const useQueryMock = vi.fn();
+const useActionMock = vi.fn();
 const useMutationMock = vi.fn();
 const scrollToBottomMock = vi.fn();
 const useStickyScrollToBottomMock = vi.fn();
@@ -86,6 +87,7 @@ vi.mock("@ai-sdk/react", () => ({
 
 vi.mock("convex/react", () => ({
 	useQuery: useQueryMock,
+	useAction: useActionMock,
 	useMutation: useMutationMock,
 }));
 
@@ -375,6 +377,7 @@ describe("ChatPage", () => {
 		scrollToBottomMock.mockReset();
 		truncateFromMessageMock.mockResolvedValue(undefined);
 		useQueryMock.mockReset();
+		useActionMock.mockReset();
 		useMutationMock.mockReset();
 		useStickyScrollToBottomMock.mockReturnValue({
 			containerRef: vi.fn(),
@@ -393,6 +396,7 @@ describe("ChatPage", () => {
 			stop: stopMock,
 		});
 		useQueryMock.mockImplementation(getChatPageQueryFixture);
+		useActionMock.mockReturnValue(vi.fn().mockResolvedValue([]));
 	});
 
 	afterEach(() => {

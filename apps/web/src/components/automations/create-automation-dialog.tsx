@@ -73,21 +73,12 @@ import {
 } from "@/components/automations/automation-types";
 import { getAutomationSchedulePeriodLabel } from "@/components/automations/automation-utils";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
-import { useLinkedAccounts } from "@/hooks/use-linked-accounts";
+import { type AppSource, useAppSources } from "@/hooks/use-app-sources";
 import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
-import { authClient } from "@/lib/auth-client";
 import {
 	type ChatAppSourceProvider,
 	getAppSourceLabel,
 } from "@/lib/chat-source-display";
-import {
-	GOOGLE_CALENDAR_SCOPE,
-	GOOGLE_CALENDAR_SOURCE_ID,
-	GOOGLE_DRIVE_SCOPE,
-	GOOGLE_DRIVE_SOURCE_ID,
-	getGoogleLinkedAccount,
-	hasGoogleScope,
-} from "@/lib/google-integrations";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
@@ -100,13 +91,6 @@ type CreateAutomationDialogProps = {
 	onOpenChange: (open: boolean) => void;
 	onCreateAutomation: (automation: AutomationDraft) => void | Promise<void>;
 	initialAutomation?: AutomationDraft | null;
-};
-
-type ConnectedAppSource = {
-	id: string;
-	title: string;
-	preview: string;
-	provider: ChatAppSourceProvider;
 };
 
 type AutomationNoteSource = {
@@ -177,47 +161,7 @@ export function CreateAutomationDialog({
 		api.notes.list,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
-	const appSources = useQuery(
-		api.appConnections.listSources,
-		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
-	);
-	const { data: session } = authClient.useSession();
-	const { accounts } = useLinkedAccounts(session?.user);
-	const googleAccount = React.useMemo(
-		() => getGoogleLinkedAccount(accounts),
-		[accounts],
-	);
-	const googleAppSources = React.useMemo(() => {
-		if (!googleAccount) {
-			return [];
-		}
-
-		const sources: ConnectedAppSource[] = [];
-
-		if (hasGoogleScope(googleAccount, GOOGLE_CALENDAR_SCOPE)) {
-			sources.push({
-				id: GOOGLE_CALENDAR_SOURCE_ID,
-				title: "Google Calendar",
-				preview: "Google account",
-				provider: "google-calendar",
-			});
-		}
-
-		if (hasGoogleScope(googleAccount, GOOGLE_DRIVE_SCOPE)) {
-			sources.push({
-				id: GOOGLE_DRIVE_SOURCE_ID,
-				title: "Google Drive",
-				preview: "Google account",
-				provider: "google-drive",
-			});
-		}
-
-		return sources;
-	}, [googleAccount]);
-	const connectedAppSources = React.useMemo(
-		() => [...googleAppSources, ...(appSources ?? [])],
-		[appSources, googleAppSources],
-	);
+	const connectedAppSources = useAppSources(activeWorkspaceId);
 	const noteSources = React.useMemo<AutomationNoteSource[]>(
 		() =>
 			(notes ?? []).map((note) => ({
@@ -706,7 +650,7 @@ function AppSourcesPicker({
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	sources: ConnectedAppSource[];
+	sources: AppSource[];
 	selectedSourceIds: string[];
 	onToggleSource: (sourceId: string) => void;
 }) {
