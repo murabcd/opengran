@@ -682,9 +682,9 @@ function ModelPicker({
 					<DropdownMenuTrigger asChild>
 						<InputGroupButton
 							size="sm"
-							className="rounded-full gap-2 font-normal"
+							className="group rounded-full gap-2 font-normal"
 						>
-							<Icons.codexLogo className="size-3.5 text-muted-foreground" />
+							<Icons.codexLogo className="size-3.5 text-muted-foreground transition-colors group-hover:text-foreground group-data-[state=open]:text-foreground" />
 							{selectedModel.name}
 						</InputGroupButton>
 					</DropdownMenuTrigger>
@@ -779,9 +779,9 @@ function ScopePicker({
 					<DropdownMenuTrigger asChild>
 						<InputGroupButton
 							size="sm"
-							className="max-w-[180px] justify-start rounded-full font-normal"
+							className="group max-w-[180px] justify-start rounded-full font-normal"
 						>
-							<Globe />
+							<Globe className="text-muted-foreground transition-colors group-hover:text-foreground group-data-[state=open]:text-foreground" />
 							<span className="max-w-[160px] truncate">{scopesLabel}</span>
 						</InputGroupButton>
 					</DropdownMenuTrigger>
@@ -892,9 +892,6 @@ function ScopePicker({
 					<DropdownMenuItem onClick={onOpenConnectionsSettings}>
 						<Plus /> Connect apps
 					</DropdownMenuItem>
-					<DropdownMenuLabel className="text-xs text-muted-foreground">
-						We&apos;ll only search in the sources selected here.
-					</DropdownMenuLabel>
 				</DropdownMenuGroup>
 			</DropdownMenuContent>
 		</DropdownMenu>

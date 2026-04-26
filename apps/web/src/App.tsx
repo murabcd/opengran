@@ -30,11 +30,7 @@ import {
 import * as React from "react";
 import type { SocialAuthProvider } from "@/app/app-types";
 import { AuthenticatedAppShell } from "@/app/authenticated-app-shell";
-import {
-	GOOGLE_CALENDAR_SCOPES,
-	getSharedNoteShareId,
-	getThemeFireworkColors,
-} from "@/app/location";
+import { getSharedNoteShareId, getThemeFireworkColors } from "@/app/location";
 import { SharedNotePage } from "@/components/note/shared-note-page";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { type AuthSession, authClient } from "@/lib/auth-client";
@@ -260,8 +256,6 @@ const useAppBootstrapState = () => {
 
 			try {
 				setAuthError(null);
-				const scopes =
-					provider === "google" ? [...GOOGLE_CALENDAR_SCOPES] : undefined;
 				const callbackURL = window.openGranDesktop
 					? (await window.openGranDesktop.getAuthCallbackUrl()).url
 					: window.location.href;
@@ -271,7 +265,6 @@ const useAppBootstrapState = () => {
 					callbackURL,
 					errorCallbackURL: callbackURL,
 					disableRedirect: Boolean(window.openGranDesktop),
-					scopes,
 				});
 			} catch (error) {
 				setAuthError(
