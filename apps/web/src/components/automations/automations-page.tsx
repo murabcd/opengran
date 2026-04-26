@@ -76,7 +76,7 @@ export function AutomationsPage({
 				)}
 			>
 				<section className="mx-auto w-full max-w-xl space-y-6">
-					<PageTitle isDesktopMac={isDesktopMac}>Automate work</PageTitle>
+					<PageTitle isDesktopMac={isDesktopMac}>Automated work</PageTitle>
 					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
 						<CardContent
 							aria-busy={automations === undefined}
@@ -234,7 +234,7 @@ function AutomationListItemRow({
 						<button
 							type="button"
 							data-automation-actions
-							className="flex aspect-square size-5 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground opacity-0 outline-hidden transition-[color,opacity] group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+							className="flex aspect-square size-5 cursor-pointer items-center justify-center rounded-md p-0 text-muted-foreground opacity-0 outline-hidden transition-[color,opacity] group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:opacity-100 data-[state=open]:text-foreground"
 							aria-label={`Open actions for ${automation.title}`}
 						>
 							<MoreHorizontal className="size-4" />
