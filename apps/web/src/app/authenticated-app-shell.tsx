@@ -2171,6 +2171,19 @@ function ChatHeaderActions({
 		onChatTrashed,
 	]);
 
+	if (!chatId) {
+		return (
+			<Button
+				variant="outline"
+				data-app-region={isDesktopMac ? "no-drag" : undefined}
+				onClick={onNewChat}
+			>
+				<Plus />
+				New chat
+			</Button>
+		);
+	}
+
 	return (
 		<div
 			className="flex items-center gap-1"
