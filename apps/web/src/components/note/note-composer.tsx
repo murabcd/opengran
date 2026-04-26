@@ -2048,13 +2048,16 @@ export function NoteChatHeader({
 											<SelectItem
 												key={chat._id}
 												value={chat.chatId}
+												className="min-w-0"
 												onFocus={() => handlePrefetchNoteChat(chat.chatId)}
 												onMouseEnter={() => handlePrefetchNoteChat(chat.chatId)}
 												onPointerDown={() =>
 													handlePrefetchNoteChat(chat.chatId)
 												}
 											>
-												<span className="truncate">{chat.title}</span>
+												<span className="block min-w-0 truncate">
+													{chat.title}
+												</span>
 											</SelectItem>
 										))}
 									</SelectGroup>
@@ -2066,13 +2069,16 @@ export function NoteChatHeader({
 											<SelectItem
 												key={chat._id}
 												value={chat.chatId}
+												className="min-w-0"
 												onFocus={() => handlePrefetchNoteChat(chat.chatId)}
 												onMouseEnter={() => handlePrefetchNoteChat(chat.chatId)}
 												onPointerDown={() =>
 													handlePrefetchNoteChat(chat.chatId)
 												}
 											>
-												<span className="truncate">{chat.title}</span>
+												<span className="block min-w-0 truncate">
+													{chat.title}
+												</span>
 											</SelectItem>
 										))}
 									</SelectGroup>
