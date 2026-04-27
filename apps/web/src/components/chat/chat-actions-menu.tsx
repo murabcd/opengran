@@ -44,6 +44,40 @@ type ChatActionsMenuProps = {
 	showMoveToTrash?: boolean;
 };
 
+type ChatActionsMenuState = {
+	confirmTrashOpen: boolean;
+	menuOpen: boolean;
+	renameOpen: boolean;
+	renameValue: string;
+	isRenaming: boolean;
+	isUpdatingStar: boolean;
+	isMovingToTrash: boolean;
+};
+
+type ChatActionsMenuStateUpdate =
+	| Partial<ChatActionsMenuState>
+	| ((currentState: ChatActionsMenuState) => Partial<ChatActionsMenuState>);
+
+const createChatActionsMenuState = (
+	chat: Doc<"chats">,
+): ChatActionsMenuState => ({
+	confirmTrashOpen: false,
+	menuOpen: false,
+	renameOpen: false,
+	renameValue: chat.title,
+	isRenaming: false,
+	isUpdatingStar: false,
+	isMovingToTrash: false,
+});
+
+const chatActionsMenuStateReducer = (
+	state: ChatActionsMenuState,
+	update: ChatActionsMenuStateUpdate,
+): ChatActionsMenuState => ({
+	...state,
+	...(typeof update === "function" ? update(state) : update),
+});
+
 export function ChatActionsMenu({
 	chat,
 	children,
@@ -52,13 +86,20 @@ export function ChatActionsMenu({
 }: ChatActionsMenuProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const renameInputRef = React.useRef<HTMLInputElement>(null);
-	const [confirmTrashOpen, setConfirmTrashOpen] = React.useState(false);
-	const [menuOpen, setMenuOpen] = React.useState(false);
-	const [renameOpen, setRenameOpen] = React.useState(false);
-	const [renameValue, setRenameValue] = React.useState(chat.title);
-	const [isRenaming, setIsRenaming] = React.useState(false);
-	const [isUpdatingStar, setIsUpdatingStar] = React.useState(false);
-	const [isMovingToTrash, setIsMovingToTrash] = React.useState(false);
+	const [menuState, updateMenuState] = React.useReducer(
+		chatActionsMenuStateReducer,
+		null,
+		() => createChatActionsMenuState(chat),
+	);
+	const {
+		confirmTrashOpen,
+		menuOpen,
+		renameOpen,
+		renameValue,
+		isRenaming,
+		isUpdatingStar,
+		isMovingToTrash,
+	} = menuState;
 	const storedChatId = getChatId(chat);
 	const isStarred = chat.isStarred ?? false;
 	const renameChat = useMutation(api.chats.updateTitle).withOptimisticUpdate(
@@ -97,7 +138,7 @@ export function ChatActionsMenu({
 			return;
 		}
 
-		setRenameValue(chat.title);
+		updateMenuState({ renameValue: chat.title });
 	}, [chat.title, renameOpen]);
 
 	const handleRename = React.useCallback(async () => {
@@ -109,12 +150,11 @@ export function ChatActionsMenu({
 		const currentTitle = chat.title.trim();
 
 		if (nextTitle === currentTitle) {
-			setRenameOpen(false);
-			setRenameValue(nextTitle);
+			updateMenuState({ renameOpen: false, renameValue: nextTitle });
 			return;
 		}
 
-		setIsRenaming(true);
+		updateMenuState({ isRenaming: true });
 
 		try {
 			await renameChat({
@@ -122,14 +162,13 @@ export function ChatActionsMenu({
 				chatId: storedChatId,
 				title: nextTitle,
 			});
-			setRenameOpen(false);
-			setRenameValue(nextTitle);
+			updateMenuState({ renameOpen: false, renameValue: nextTitle });
 			toast.success("Chat renamed");
 		} catch (error) {
 			console.error("Failed to rename chat", error);
 			toast.error("Failed to rename chat");
 		} finally {
-			setIsRenaming(false);
+			updateMenuState({ isRenaming: false });
 		}
 	}, [
 		activeWorkspaceId,
@@ -143,7 +182,7 @@ export function ChatActionsMenu({
 	const handleRenameOpenChange = React.useCallback(
 		(open: boolean) => {
 			if (open) {
-				setRenameOpen(true);
+				updateMenuState({ renameOpen: true });
 				return;
 			}
 
@@ -153,14 +192,15 @@ export function ChatActionsMenu({
 	);
 
 	const handleStartRename = React.useCallback(() => {
-		setMenuOpen(false);
-		setRenameValue(chat.title);
-		setRenameOpen(true);
+		updateMenuState({
+			menuOpen: false,
+			renameValue: chat.title,
+			renameOpen: true,
+		});
 	}, [chat.title]);
 
 	const handleRenameCancel = React.useCallback(() => {
-		setRenameOpen(false);
-		setRenameValue(chat.title);
+		updateMenuState({ renameOpen: false, renameValue: chat.title });
 	}, [chat.title]);
 
 	const handleToggleStar = React.useCallback(async () => {
@@ -168,7 +208,7 @@ export function ChatActionsMenu({
 			return;
 		}
 
-		setIsUpdatingStar(true);
+		updateMenuState({ isUpdatingStar: true });
 
 		try {
 			const result = await toggleStar({
@@ -180,7 +220,7 @@ export function ChatActionsMenu({
 			console.error("Failed to update chat star", error);
 			toast.error("Failed to update chat star");
 		} finally {
-			setIsUpdatingStar(false);
+			updateMenuState({ isUpdatingStar: false });
 		}
 	}, [activeWorkspaceId, isUpdatingStar, storedChatId, toggleStar]);
 
@@ -189,7 +229,7 @@ export function ChatActionsMenu({
 			return;
 		}
 
-		setIsMovingToTrash(true);
+		updateMenuState({ isMovingToTrash: true });
 
 		try {
 			await moveToTrash({
@@ -197,13 +237,13 @@ export function ChatActionsMenu({
 				chatId: storedChatId,
 			});
 			onMoveToTrash?.(storedChatId);
-			setConfirmTrashOpen(false);
+			updateMenuState({ confirmTrashOpen: false });
 			toast.success("Chat moved to trash");
 		} catch (error) {
 			console.error("Failed to move chat to trash", error);
 			toast.error("Failed to move chat to trash");
 		} finally {
-			setIsMovingToTrash(false);
+			updateMenuState({ isMovingToTrash: false });
 		}
 	}, [
 		activeWorkspaceId,
@@ -215,7 +255,10 @@ export function ChatActionsMenu({
 
 	return (
 		<>
-			<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+			<DropdownMenu
+				open={menuOpen}
+				onOpenChange={(open) => updateMenuState({ menuOpen: open })}
+			>
 				<DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
 				<DropdownMenuContent align="end">
 					<DropdownMenuItem
@@ -230,7 +273,7 @@ export function ChatActionsMenu({
 						className="cursor-pointer"
 						disabled={!activeWorkspaceId || isUpdatingStar}
 						onSelect={() => {
-							setMenuOpen(false);
+							updateMenuState({ menuOpen: false });
 							void handleToggleStar();
 						}}
 					>
@@ -245,8 +288,10 @@ export function ChatActionsMenu({
 								className="cursor-pointer"
 								disabled={isMovingToTrash || !activeWorkspaceId}
 								onSelect={() => {
-									setMenuOpen(false);
-									setConfirmTrashOpen(true);
+									updateMenuState({
+										menuOpen: false,
+										confirmTrashOpen: true,
+									});
 								}}
 							>
 								<Trash2 />
@@ -275,7 +320,7 @@ export function ChatActionsMenu({
 							inputRef={renameInputRef}
 							value={renameValue}
 							placeholder="New chat"
-							onValueChange={setRenameValue}
+							onValueChange={(value) => updateMenuState({ renameValue: value })}
 							onCommit={() => {
 								void handleRename();
 							}}
@@ -301,7 +346,10 @@ export function ChatActionsMenu({
 					</div>
 				</DialogContent>
 			</Dialog>
-			<AlertDialog open={confirmTrashOpen} onOpenChange={setConfirmTrashOpen}>
+			<AlertDialog
+				open={confirmTrashOpen}
+				onOpenChange={(open) => updateMenuState({ confirmTrashOpen: open })}
+			>
 				<AlertDialogContent>
 					<AlertDialogHeader>
 						<AlertDialogTitle>Move chat to trash?</AlertDialogTitle>

@@ -145,7 +145,85 @@ const formatTimeInputValue = (value: Date) => {
 	return `${hours}:${minutes}`;
 };
 
-export function CreateAutomationDialog({
+type AutomationDialogState = {
+	projectPickerOpen: boolean;
+	schedulePickerOpen: boolean;
+	modelPickerOpen: boolean;
+	appSourcesPickerOpen: boolean;
+	notePickerOpen: boolean;
+	noteSearchTerm: string;
+	noteMentionRange: NoteMentionRange | null;
+	title: string;
+	prompt: string;
+	selectedModel: typeof defaultChatModel;
+	schedulePeriod: AutomationSchedulePeriod;
+	scheduledAt: Date;
+	target: AutomationTarget | null;
+	selectedConnectedAppIds: string[];
+	selectedNoteIds: Array<Id<"notes">>;
+};
+
+type AutomationDialogStateUpdate =
+	| Partial<AutomationDialogState>
+	| ((currentState: AutomationDialogState) => Partial<AutomationDialogState>);
+
+const createEmptyAutomationDialogState = (): AutomationDialogState => ({
+	projectPickerOpen: false,
+	schedulePickerOpen: false,
+	modelPickerOpen: false,
+	appSourcesPickerOpen: false,
+	notePickerOpen: false,
+	noteSearchTerm: "",
+	noteMentionRange: null,
+	title: "",
+	prompt: "",
+	selectedModel: defaultChatModel,
+	schedulePeriod: "daily",
+	scheduledAt: createInitialScheduledAt(),
+	target: null,
+	selectedConnectedAppIds: [],
+	selectedNoteIds: [],
+});
+
+const createAutomationDialogState = (
+	initialAutomation: AutomationDraft | null,
+): AutomationDialogState => {
+	const emptyState = createEmptyAutomationDialogState();
+
+	if (!initialAutomation) {
+		return emptyState;
+	}
+
+	return {
+		...emptyState,
+		title: initialAutomation.title,
+		prompt: initialAutomation.prompt,
+		selectedModel: findChatModel(initialAutomation.model) ?? defaultChatModel,
+		schedulePeriod: initialAutomation.schedulePeriod,
+		scheduledAt: new Date(initialAutomation.scheduledAt),
+		target:
+			initialAutomation.target.kind === "project"
+				? initialAutomation.target
+				: null,
+		selectedConnectedAppIds: (initialAutomation.appSources ?? []).map(
+			(source) => source.id,
+		),
+		selectedNoteIds:
+			initialAutomation.target.kind === "notes"
+				? initialAutomation.target.noteIds
+				: [],
+	};
+};
+
+const automationDialogStateReducer = (
+	state: AutomationDialogState,
+	update: AutomationDialogStateUpdate,
+): AutomationDialogState => ({
+	...state,
+	...(typeof update === "function" ? update(state) : update),
+});
+
+function useCreateAutomationDialogElement({
 	open,
 	onOpenChange,
 	onCreateAutomation,
@@ -171,29 +249,28 @@ export function CreateAutomationDialog({
 			})),
 		[notes],
 	);
-	const [projectPickerOpen, setProjectPickerOpen] = React.useState(false);
-	const [schedulePickerOpen, setSchedulePickerOpen] = React.useState(false);
-	const [modelPickerOpen, setModelPickerOpen] = React.useState(false);
-	const [appSourcesPickerOpen, setAppSourcesPickerOpen] = React.useState(false);
-	const [notePickerOpen, setNotePickerOpen] = React.useState(false);
-	const [noteSearchTerm, setNoteSearchTerm] = React.useState("");
-	const [noteMentionRange, setNoteMentionRange] =
-		React.useState<NoteMentionRange | null>(null);
-	const [title, setTitle] = React.useState("");
-	const [prompt, setPrompt] = React.useState("");
-	const [selectedModel, setSelectedModel] = React.useState(defaultChatModel);
-	const [schedulePeriod, setSchedulePeriod] =
-		React.useState<AutomationSchedulePeriod>("daily");
-	const [scheduledAt, setScheduledAt] = React.useState(
-		createInitialScheduledAt,
+	const [dialogState, updateDialogState] = React.useReducer(
+		automationDialogStateReducer,
+		null,
+		() => createAutomationDialogState(initialAutomation),
 	);
-	const [target, setTarget] = React.useState<AutomationTarget | null>(null);
-	const [selectedConnectedAppIds, setSelectedConnectedAppIds] = React.useState<
-		string[]
-	>([]);
-	const [selectedNoteIds, setSelectedNoteIds] = React.useState<
-		Array<Id<"notes">>
-	>([]);
+	const {
+		projectPickerOpen,
+		schedulePickerOpen,
+		modelPickerOpen,
+		appSourcesPickerOpen,
+		notePickerOpen,
+		noteSearchTerm,
+		noteMentionRange,
+		title,
+		prompt,
+		selectedModel,
+		schedulePeriod,
+		scheduledAt,
+		target,
+		selectedConnectedAppIds,
+		selectedNoteIds,
+	} = dialogState;
 	const selectedNoteSources = React.useMemo(
 		() =>
 			selectedNoteIds.flatMap((sourceId) => {
@@ -223,60 +300,9 @@ export function CreateAutomationDialog({
 		[connectedAppSources, selectedConnectedAppIds],
 	);
 	React.useEffect(() => {
-		setProjectPickerOpen(false);
-		setSchedulePickerOpen(false);
-		setModelPickerOpen(false);
-		setAppSourcesPickerOpen(false);
-		setNotePickerOpen(false);
-
-		if (!open) {
-			setTitle("");
-			setPrompt("");
-			setNoteMentionRange(null);
-			setNoteSearchTerm("");
-			setSelectedModel(defaultChatModel);
-			setSchedulePeriod("daily");
-			setScheduledAt(createInitialScheduledAt());
-			setTarget(null);
-			setSelectedConnectedAppIds([]);
-			setSelectedNoteIds([]);
-			return;
-		}
-
-		if (initialAutomation) {
-			setTitle(initialAutomation.title);
-			setPrompt(initialAutomation.prompt);
-			setSelectedModel(
-				findChatModel(initialAutomation.model) ?? defaultChatModel,
-			);
-			setSchedulePeriod(initialAutomation.schedulePeriod);
-			setScheduledAt(new Date(initialAutomation.scheduledAt));
-			setTarget(
-				initialAutomation.target.kind === "project"
-					? initialAutomation.target
-					: null,
-			);
-			setSelectedNoteIds(
-				initialAutomation.target.kind === "notes"
-					? initialAutomation.target.noteIds
-					: [],
-			);
-			setSelectedConnectedAppIds(
-				(initialAutomation.appSources ?? []).map((source) => source.id),
-			);
-			return;
-		}
-
-		setTitle("");
-		setPrompt("");
-		setNoteMentionRange(null);
-		setNoteSearchTerm("");
-		setSelectedModel(defaultChatModel);
-		setSchedulePeriod("daily");
-		setScheduledAt(createInitialScheduledAt());
-		setTarget(null);
-		setSelectedConnectedAppIds([]);
-		setSelectedNoteIds([]);
+		updateDialogState(
+			createAutomationDialogState(open ? initialAutomation : null),
+		);
 	}, [initialAutomation, open]);
 
 	React.useEffect(() => {
@@ -292,39 +318,45 @@ export function CreateAutomationDialog({
 			return;
 		}
 
-		setTarget(null);
+		updateDialogState({ target: null });
 	}, [projects, target]);
 
 	React.useEffect(() => {
-		setSelectedConnectedAppIds((currentIds) => {
+		updateDialogState((currentState) => {
 			const availableIds = new Set(
 				connectedAppSources.map((source) => source.id),
 			);
-			const nextIds = currentIds.filter((sourceId) =>
+			const nextIds = currentState.selectedConnectedAppIds.filter((sourceId) =>
 				availableIds.has(sourceId),
 			);
 
-			return nextIds.length === currentIds.length ? currentIds : nextIds;
+			return nextIds.length === currentState.selectedConnectedAppIds.length
+				? {}
+				: { selectedConnectedAppIds: nextIds };
 		});
 	}, [connectedAppSources]);
 
 	React.useEffect(() => {
-		setSelectedNoteIds((currentIds) => {
+		updateDialogState((currentState) => {
 			const availableIds = new Set(noteSources.map((source) => source.id));
-			const nextIds = currentIds.filter((sourceId) =>
+			const nextIds = currentState.selectedNoteIds.filter((sourceId) =>
 				availableIds.has(sourceId),
 			);
 
-			return nextIds.length === currentIds.length ? currentIds : nextIds;
+			return nextIds.length === currentState.selectedNoteIds.length
+				? {}
+				: { selectedNoteIds: nextIds };
 		});
 	}, [noteSources]);
 
 	const closeAutomationPickers = React.useCallback(() => {
-		setProjectPickerOpen(false);
-		setSchedulePickerOpen(false);
-		setModelPickerOpen(false);
-		setAppSourcesPickerOpen(false);
-		setNotePickerOpen(false);
+		updateDialogState({
+			projectPickerOpen: false,
+			schedulePickerOpen: false,
+			modelPickerOpen: false,
+			appSourcesPickerOpen: false,
+			notePickerOpen: false,
+		});
 	}, []);
 
 	const handleNotePickerOpenChange = React.useCallback(
@@ -333,7 +365,7 @@ export function CreateAutomationDialog({
 				closeAutomationPickers();
 			}
 
-			setNotePickerOpen(nextOpen);
+			updateDialogState({ notePickerOpen: nextOpen });
 		},
 		[closeAutomationPickers],
 	);
@@ -344,7 +376,7 @@ export function CreateAutomationDialog({
 				closeAutomationPickers();
 			}
 
-			setAppSourcesPickerOpen(nextOpen);
+			updateDialogState({ appSourcesPickerOpen: nextOpen });
 		},
 		[closeAutomationPickers],
 	);
@@ -355,7 +387,7 @@ export function CreateAutomationDialog({
 				closeAutomationPickers();
 			}
 
-			setProjectPickerOpen(nextOpen);
+			updateDialogState({ projectPickerOpen: nextOpen });
 		},
 		[closeAutomationPickers],
 	);
@@ -366,7 +398,7 @@ export function CreateAutomationDialog({
 				closeAutomationPickers();
 			}
 
-			setSchedulePickerOpen(nextOpen);
+			updateDialogState({ schedulePickerOpen: nextOpen });
 		},
 		[closeAutomationPickers],
 	);
@@ -377,17 +409,21 @@ export function CreateAutomationDialog({
 				closeAutomationPickers();
 			}
 
-			setModelPickerOpen(nextOpen);
+			updateDialogState({ modelPickerOpen: nextOpen });
 		},
 		[closeAutomationPickers],
 	);
 
 	const handleConnectedAppToggle = React.useCallback((sourceId: string) => {
-		setSelectedConnectedAppIds((currentIds) =>
-			currentIds.includes(sourceId)
-				? currentIds.filter((currentId) => currentId !== sourceId)
-				: [...currentIds, sourceId],
-		);
+		updateDialogState((currentState) => ({
+			selectedConnectedAppIds: currentState.selectedConnectedAppIds.includes(
+				sourceId,
+			)
+				? currentState.selectedConnectedAppIds.filter(
+						(currentId) => currentId !== sourceId,
+					)
+				: [...currentState.selectedConnectedAppIds, sourceId],
+		}));
 	}, []);
 
 	const handlePromptChange = React.useCallback(
@@ -399,11 +435,13 @@ export function CreateAutomationDialog({
 				cursorPosition,
 			);
 
-			setPrompt(nextPrompt);
-			setNoteMentionRange(nextNoteMentionRange);
+			updateDialogState({
+				prompt: nextPrompt,
+				noteMentionRange: nextNoteMentionRange,
+			});
 
 			if (nextNoteMentionRange) {
-				setNoteSearchTerm(nextNoteMentionRange.query);
+				updateDialogState({ noteSearchTerm: nextNoteMentionRange.query });
 				handleNotePickerOpenChange(true);
 			}
 		},
@@ -412,18 +450,21 @@ export function CreateAutomationDialog({
 
 	const handleNoteSelect = React.useCallback(
 		(noteId: Id<"notes">) => {
-			setTarget(null);
-			setSelectedNoteIds((currentIds) =>
-				currentIds.includes(noteId) ? currentIds : [...currentIds, noteId],
-			);
-
-			setPrompt((currentPrompt) => {
+			updateDialogState((currentState) => {
 				const range = noteMentionRange;
+				const nextNoteIds = currentState.selectedNoteIds.includes(noteId)
+					? currentState.selectedNoteIds
+					: [...currentState.selectedNoteIds, noteId];
 				if (!range) {
-					return currentPrompt;
+					return {
+						target: null,
+						selectedNoteIds: nextNoteIds,
+						noteMentionRange: null,
+						noteSearchTerm: "",
+					};
 				}
 
-				const nextPrompt = `${currentPrompt.slice(0, range.start)}${currentPrompt.slice(range.end)}`;
+				const nextPrompt = `${currentState.prompt.slice(0, range.start)}${currentState.prompt.slice(range.end)}`;
 				queueMicrotask(() => {
 					const textarea = promptTextareaRef.current;
 					if (!textarea) {
@@ -433,18 +474,24 @@ export function CreateAutomationDialog({
 					textarea.focus();
 					textarea.setSelectionRange(range.start, range.start);
 				});
-				return nextPrompt;
+				return {
+					target: null,
+					selectedNoteIds: nextNoteIds,
+					prompt: nextPrompt,
+					noteMentionRange: null,
+					noteSearchTerm: "",
+				};
 			});
-			setNoteMentionRange(null);
-			setNoteSearchTerm("");
 		},
 		[noteMentionRange],
 	);
 
 	const handleNoteRemove = React.useCallback((noteId: Id<"notes">) => {
-		setSelectedNoteIds((currentIds) =>
-			currentIds.filter((currentId) => currentId !== noteId),
-		);
+		updateDialogState((currentState) => ({
+			selectedNoteIds: currentState.selectedNoteIds.filter(
+				(currentId) => currentId !== noteId,
+			),
+		}));
 	}, []);
 
 	const handleTimeChange = React.useCallback(
@@ -462,10 +509,10 @@ export function CreateAutomationDialog({
 				return;
 			}
 
-			setScheduledAt((currentValue) => {
-				const nextDate = new Date(currentValue);
+			updateDialogState((currentState) => {
+				const nextDate = new Date(currentState.scheduledAt);
 				nextDate.setHours(hours, minutes, 0, 0);
-				return nextDate;
+				return { scheduledAt: nextDate };
 			});
 		},
 		[],
@@ -542,7 +589,9 @@ export function CreateAutomationDialog({
 						<Input
 							id="automation-title"
 							value={title}
-							onChange={(event) => setTitle(event.target.value)}
+							onChange={(event) =>
+								updateDialogState({ title: event.target.value })
+							}
 							placeholder="Meeting notes recap"
 						/>
 					</Field>
@@ -560,7 +609,9 @@ export function CreateAutomationDialog({
 									onOpenChange={handleNotePickerOpenChange}
 									sources={noteSources}
 									searchTerm={noteSearchTerm}
-									onSearchTermChange={setNoteSearchTerm}
+									onSearchTermChange={(value) =>
+										updateDialogState({ noteSearchTerm: value })
+									}
 									selectedSourceIds={selectedNoteIds}
 									isLoading={notes === undefined}
 									onSelectSource={handleNoteSelect}
@@ -588,7 +639,9 @@ export function CreateAutomationDialog({
 									open={modelPickerOpen}
 									onOpenChange={handleModelPickerOpenChange}
 									selectedModel={selectedModel}
-									onSelectedModelChange={setSelectedModel}
+									onSelectedModelChange={(value) =>
+										updateDialogState({ selectedModel: value })
+									}
 								/>
 								<AppSourcesPicker
 									open={appSourcesPickerOpen}
@@ -603,8 +656,10 @@ export function CreateAutomationDialog({
 									projects={projects ?? []}
 									target={target?.kind === "project" ? target : null}
 									onTargetSelect={(nextTarget) => {
-										setSelectedNoteIds([]);
-										setTarget(nextTarget);
+										updateDialogState({
+											selectedNoteIds: [],
+											target: nextTarget,
+										});
 									}}
 								/>
 								<SchedulePicker
@@ -613,7 +668,9 @@ export function CreateAutomationDialog({
 									scheduleLabel={scheduleLabel}
 									schedulePeriod={schedulePeriod}
 									scheduledAt={scheduledAt}
-									onSchedulePeriodChange={setSchedulePeriod}
+									onSchedulePeriodChange={(value) =>
+										updateDialogState({ schedulePeriod: value })
+									}
 									onTimeChange={handleTimeChange}
 								/>
 							</InputGroupAddon>
@@ -639,6 +696,10 @@ export function CreateAutomationDialog({
 			</DialogContent>
 		</Dialog>
 	);
+}
+
+export function CreateAutomationDialog(props: CreateAutomationDialogProps) {
+	return useCreateAutomationDialogElement(props);
 }
 
 function AppSourcesPicker({

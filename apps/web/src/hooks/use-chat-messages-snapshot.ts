@@ -62,7 +62,7 @@ const writeChatMessagesSnapshotCacheEntry = ({
 	}
 };
 
-export const getCachedChatMessagesSnapshot = ({
+const getCachedChatMessagesSnapshot = ({
 	chatId,
 	workspaceId,
 }: {

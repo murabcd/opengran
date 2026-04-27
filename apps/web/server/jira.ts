@@ -1,5 +1,1 @@
-export {
-	buildJiraTools,
-	getJiraIssue,
-	searchJiraIssues,
-} from "../../../packages/ai/src/jira-tools.mjs";
+export { buildJiraTools } from "../../../packages/ai/src/jira-tools.mjs";

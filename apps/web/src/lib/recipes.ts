@@ -5,7 +5,7 @@ import {
 	type LucideIcon,
 } from "lucide-react";
 
-export const RECIPE_ICONS = {
+const RECIPE_ICONS = {
 	"write-prd": FileText,
 	"sales-questions": Handshake,
 	"write-weekly-recap": CalendarDays,

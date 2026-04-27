@@ -361,7 +361,7 @@ function useDockedPanelWidths() {
 	return context;
 }
 
-function SidebarProvider({
+function useSidebarProviderElement({
 	defaultOpen = true,
 	open: openProp,
 	onOpenChange: setOpenProp,
@@ -684,6 +684,16 @@ function SidebarProvider({
 			</SidebarRightContext.Provider>
 		</SidebarShellContext.Provider>
 	);
+}
+
+function SidebarProvider(
+	props: React.ComponentProps<"div"> & {
+		defaultOpen?: boolean;
+		open?: boolean;
+		onOpenChange?: (open: boolean) => void;
+	},
+) {
+	return useSidebarProviderElement(props);
 }
 
 function Sidebar({

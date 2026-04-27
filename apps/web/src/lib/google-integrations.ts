@@ -21,9 +21,6 @@ export const GOOGLE_DRIVE_SCOPES = [
 	GOOGLE_DRIVE_SCOPE,
 ] as const;
 
-export const GOOGLE_CALENDAR_SOURCE_ID = "app:google-calendar";
-export const GOOGLE_DRIVE_SOURCE_ID = "app:google-drive";
-
 export const getGoogleLinkedAccount = (accounts: LinkedAccount[]) =>
 	accounts.find((account) => account.providerId === "google");
 

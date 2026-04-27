@@ -103,13 +103,6 @@ const getChatIdFromUrl = (url: URL) => {
 	return nextValue ? nextValue : null;
 };
 
-export const GOOGLE_CALENDAR_SCOPES = [
-	"openid",
-	"email",
-	"profile",
-	"https://www.googleapis.com/auth/calendar.readonly",
-] as const;
-
 export function getThemeFireworkColors() {
 	if (typeof window === "undefined") {
 		return ["#afabff", "#8f88ff", "#7166ff", "#564dff", "#4138d9"];

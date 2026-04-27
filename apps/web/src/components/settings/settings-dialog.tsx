@@ -3526,7 +3526,7 @@ function DataControlAction({
 	);
 }
 
-function ManageAccountForm({
+function useManageAccountFormElement({
 	user,
 	onCancel,
 	onSave,
@@ -3852,6 +3852,14 @@ function ManageAccountForm({
 			</div>
 		</div>
 	);
+}
+
+function ManageAccountForm(props: {
+	user: SettingsUser;
+	onCancel: () => void;
+	onSave: () => void;
+}) {
+	return useManageAccountFormElement(props);
 }
 
 function getInitials(name: string, email: string) {

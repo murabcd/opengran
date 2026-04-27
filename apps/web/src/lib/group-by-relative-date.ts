@@ -1,11 +1,11 @@
-export type RelativeDateGroupKey =
+type RelativeDateGroupKey =
 	| "today"
 	| "yesterday"
 	| "lastWeek"
 	| "lastMonth"
 	| "older";
 
-export type RelativeDateGroups<T> = Record<RelativeDateGroupKey, T[]>;
+type RelativeDateGroups<T> = Record<RelativeDateGroupKey, T[]>;
 
 export const RELATIVE_DATE_GROUP_SECTIONS = [
 	{ key: "today", label: "Today" },
