@@ -106,6 +106,9 @@ export const useTranscriptSessionRepository = (
 					: null,
 			[latestTranscriptSessionSummaryQuery],
 		);
+	const isLatestTranscriptSessionSummaryLoading = Boolean(
+		noteId && latestTranscriptSessionSummaryQuery === undefined,
+	);
 
 	const refreshLatestTranscriptSession = React.useCallback(async () => {
 		const requestId = latestTranscriptSessionRequestIdRef.current + 1;
@@ -342,6 +345,7 @@ export const useTranscriptSessionRepository = (
 			clearDraft,
 			completeSession,
 			isLatestTranscriptSessionLoading,
+			isLatestTranscriptSessionSummaryLoading,
 			latestTranscriptSession,
 			latestTranscriptSessionSummary,
 			loadDraft,
@@ -356,6 +360,7 @@ export const useTranscriptSessionRepository = (
 			clearDraft,
 			completeSession,
 			isLatestTranscriptSessionLoading,
+			isLatestTranscriptSessionSummaryLoading,
 			latestTranscriptSession,
 			latestTranscriptSessionSummary,
 			loadDraft,

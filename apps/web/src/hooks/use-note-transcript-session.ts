@@ -303,8 +303,8 @@ export const useNoteTranscriptSession = ({
 	const isTranscriptSessionReady = isViewingCaptureScope
 		? previousTranscriptDraftKeyRef.current === captureTranscriptDraftKey &&
 			isTranscriptDraftReady &&
-			!captureTranscriptSessionRepository.isLatestTranscriptSessionLoading
-		: !effectiveCurrentNoteTranscriptSessionRepository.isLatestTranscriptSessionLoading;
+			!captureTranscriptSessionRepository.isLatestTranscriptSessionSummaryLoading
+		: !effectiveCurrentNoteTranscriptSessionRepository.isLatestTranscriptSessionSummaryLoading;
 	const isStoredTranscriptLoading = isViewingCaptureScope
 		? captureTranscriptSessionRepository.isLatestTranscriptSessionLoading
 		: effectiveCurrentNoteTranscriptSessionRepository.isLatestTranscriptSessionLoading;
@@ -314,8 +314,12 @@ export const useNoteTranscriptSession = ({
 				latestTranscriptSessionSummary.sessionId ===
 					generatedTranscriptSessionId),
 	);
+	const captureStoredTranscript =
+		captureLatestTranscriptSession?.finalTranscript?.trim() ||
+		captureLatestTranscriptSessionSummary?.finalTranscript?.trim() ||
+		"";
 	const visibleHasPendingGenerateTranscript = isViewingCaptureScope
-		? hasPendingGenerateTranscript
+		? hasPendingGenerateTranscript || Boolean(captureStoredTranscript)
 		: Boolean(currentNoteStoredTranscript.trim());
 
 	React.useEffect(() => {
@@ -802,7 +806,8 @@ export const useNoteTranscriptSession = ({
 	const handleGenerateNotes = React.useCallback(() => {
 		const transcript = isViewingCaptureScope
 			? pendingGenerateTranscript.trim() ||
-				createTranscriptText(transcriptUtterancesRef.current)
+				createTranscriptText(transcriptUtterancesRef.current) ||
+				captureStoredTranscript
 			: currentNoteStoredTranscript.trim();
 
 		if (!transcript || isGeneratingNotes || !onEnhanceTranscript) {
@@ -856,6 +861,7 @@ export const useNoteTranscriptSession = ({
 	}, [
 		captureTranscriptDraftKey,
 		captureTranscriptSessionRepository,
+		captureStoredTranscript,
 		currentNoteLatestTranscriptSession,
 		currentNoteLatestTranscriptSessionSummary,
 		currentNoteScopeKey,

@@ -214,9 +214,7 @@ export function NoteStarButton({
 					variant="ghost"
 					size="icon"
 					className={cn(
-						isStarred
-							? "text-warning-foreground hover:text-warning-foreground"
-							: "text-muted-foreground hover:text-foreground",
+						"text-muted-foreground hover:text-foreground",
 						className,
 					)}
 					aria-label={
@@ -228,7 +226,11 @@ export function NoteStarButton({
 						void handleToggleStar();
 					}}
 				>
-					<Star className={cn("size-4", isStarred && "fill-current")} />
+					{isStarred ? (
+						<StarOff className="size-4" />
+					) : (
+						<Star className="size-4" />
+					)}
 				</Button>
 			</TooltipTrigger>
 			<TooltipContent>{isStarred ? "Unstar note" : "Star note"}</TooltipContent>
