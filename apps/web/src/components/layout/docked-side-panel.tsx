@@ -22,6 +22,8 @@ type DockedPanelWidthsUpdate = {
 };
 
 const DOCKED_PANEL_TRANSITION_DURATION_MS = 220;
+const useIsomorphicLayoutEffect =
+	typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
 
 function getDockedPanelInsetWidth({
 	isMobile,
@@ -51,16 +53,23 @@ function getDockedPanelOverlayWidth({
 	return !isMobile && open && !isPinned ? `${panelWidth}px` : null;
 }
 
-const clearDockedPanelWidths = (
-	widths: DockedPanelWidthsUpdate,
-): DockedPanelWidthsUpdate => ({
-	leftInsetPanelWidth:
-		widths.leftInsetPanelWidth === undefined ? undefined : null,
-	leftOverlayPanelWidth:
-		widths.leftOverlayPanelWidth === undefined ? undefined : null,
-	rightInsetPanelWidth:
-		widths.rightInsetPanelWidth === undefined ? undefined : null,
-});
+const clearDockedPanelWidths = (widths: DockedPanelWidthsUpdate) => {
+	const nextWidths: DockedPanelWidthsUpdate = {};
+
+	if ("leftInsetPanelWidth" in widths) {
+		nextWidths.leftInsetPanelWidth = null;
+	}
+
+	if ("leftOverlayPanelWidth" in widths) {
+		nextWidths.leftOverlayPanelWidth = null;
+	}
+
+	if ("rightInsetPanelWidth" in widths) {
+		nextWidths.rightInsetPanelWidth = null;
+	}
+
+	return nextWidths;
+};
 
 function useSyncDockedPanelWidths({
 	leftInsetPanelWidth,
@@ -69,12 +78,21 @@ function useSyncDockedPanelWidths({
 }: DockedPanelWidthsUpdate) {
 	const { syncDockedPanelWidths } = useDockedPanelWidths();
 
-	React.useEffect(() => {
-		const widths = {
-			leftInsetPanelWidth,
-			leftOverlayPanelWidth,
-			rightInsetPanelWidth,
-		} satisfies DockedPanelWidthsUpdate;
+	useIsomorphicLayoutEffect(() => {
+		const widths: DockedPanelWidthsUpdate = {};
+
+		if (leftInsetPanelWidth !== undefined) {
+			widths.leftInsetPanelWidth = leftInsetPanelWidth;
+		}
+
+		if (leftOverlayPanelWidth !== undefined) {
+			widths.leftOverlayPanelWidth = leftOverlayPanelWidth;
+		}
+
+		if (rightInsetPanelWidth !== undefined) {
+			widths.rightInsetPanelWidth = rightInsetPanelWidth;
+		}
+
 		syncDockedPanelWidths(widths);
 
 		return () => {
