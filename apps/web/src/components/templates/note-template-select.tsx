@@ -104,12 +104,16 @@ export function NoteTemplateSelect({
 					const Icon = getTemplateIcon(template.slug);
 
 					return (
-						<SelectItem key={template.slug} value={template.slug}>
-							<span className="flex items-center gap-2">
+						<SelectItem
+							key={template.slug}
+							value={template.slug}
+							className="cursor-pointer"
+						>
+							<span className="flex cursor-pointer items-center gap-2">
 								{Icon ? (
 									<Icon className="size-4 text-muted-foreground" />
 								) : null}
-								<span>
+								<span className="cursor-pointer">
 									{template.slug === ENHANCED_NOTE_TEMPLATE_SLUG &&
 									currentSlug === null
 										? "Enhance"

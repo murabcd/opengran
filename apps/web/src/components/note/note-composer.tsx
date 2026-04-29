@@ -2328,6 +2328,19 @@ function ChatInlinePopoverFooter({
 	speechControls: React.ReactNode;
 	textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
+	const shouldShowRecipeControls = !activateInlineOnFocus;
+	const shouldShowSelectedRecipe = shouldShowRecipeControls && selectedRecipe;
+	const recipePickerPlaceholder = (
+		<InputGroupButton
+			aria-hidden="true"
+			tabIndex={-1}
+			variant="outline"
+			size="icon-sm"
+			className="pointer-events-none invisible rounded-full"
+		>
+			<ListMinus className="size-3.5" />
+		</InputGroupButton>
+	);
 	const recipePicker = (
 		<Popover open={recipePopoverOpen} onOpenChange={onRecipePopoverOpenChange}>
 			<Tooltip>
@@ -2364,10 +2377,13 @@ function ChatInlinePopoverFooter({
 										<CommandItem
 											key={recipe.slug}
 											value={`${recipe.slug} ${recipe.name}`}
+											className="cursor-pointer"
 											onSelect={() => onRecipeSelect(recipe.slug)}
 										>
 											<Icon />
-											<span className="truncate">{recipe.name}</span>
+											<span className="cursor-pointer truncate">
+												{recipe.name}
+											</span>
 										</CommandItem>
 									);
 								})}
@@ -2388,8 +2404,8 @@ function ChatInlinePopoverFooter({
 					isSidebarCompact && "px-3.5",
 				)}
 			>
-				{recipePicker}
-				{selectedRecipe ? (
+				{shouldShowRecipeControls ? recipePicker : recipePickerPlaceholder}
+				{shouldShowSelectedRecipe ? (
 					<InputGroupButton
 						size="sm"
 						variant="secondary"
