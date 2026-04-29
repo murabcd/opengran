@@ -1,6 +1,7 @@
 "use node";
 
 import { v } from "convex/values";
+import { api } from "./_generated/api";
 import { action } from "./_generated/server";
 import {
 	fetchGoogleJsonWithRetry,
@@ -211,9 +212,11 @@ const buildDriveSources = (
 };
 
 export const listAvailableSources = action({
-	args: {},
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
 	returns: v.array(googleToolSourceValidator),
-	handler: async (ctx) => {
+	handler: async (ctx, args) => {
 		const authContext = await getGoogleAuthContext(ctx);
 		const tokens = await getGoogleAccessToken(authContext);
 
@@ -221,9 +224,19 @@ export const listAvailableSources = action({
 			return [];
 		}
 
+		const preferences: {
+			showGoogleCalendar: boolean;
+			showGoogleDrive: boolean;
+			showYandexCalendar: boolean;
+		} = await ctx.runQuery(api.calendarPreferences.get, {
+			workspaceId: args.workspaceId,
+		});
 		const sources = [];
 
-		if (tokens.scopes.includes(GOOGLE_CALENDAR_SCOPE)) {
+		if (
+			preferences.showGoogleCalendar &&
+			tokens.scopes.includes(GOOGLE_CALENDAR_SCOPE)
+		) {
 			sources.push({
 				id: GOOGLE_CALENDAR_SOURCE_ID,
 				title: "Google Calendar",
@@ -232,7 +245,7 @@ export const listAvailableSources = action({
 			});
 		}
 
-		if (tokens.scopes.includes(GOOGLE_DRIVE_SCOPE)) {
+		if (preferences.showGoogleDrive && tokens.scopes.includes(GOOGLE_DRIVE_SCOPE)) {
 			sources.push({
 				id: GOOGLE_DRIVE_SOURCE_ID,
 				title: "Google Drive",

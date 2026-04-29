@@ -123,6 +123,7 @@ type UpcomingEventsFetchResult = {
 
 type CalendarVisibilityPreferences = {
 	showGoogleCalendar: boolean;
+	showGoogleDrive: boolean;
 	showYandexCalendar: boolean;
 };
 
@@ -614,7 +615,6 @@ const toCalendarToolResponse = ({
 
 export const listGoogleCalendarEventsForTool = action({
 	args: {
-		workspaceId: v.id("workspaces"),
 		limit: v.optional(v.number()),
 		meetingsOnly: v.optional(v.boolean()),
 	},
@@ -629,8 +629,6 @@ export const listGoogleCalendarEventsForTool = action({
 			timeMax: new Date(timeMax).toISOString(),
 		});
 
-		void args.workspaceId;
-
 		return toCalendarToolResponse({
 			connection: "Google Calendar",
 			events: dedupeUpcomingEvents(result.events),
@@ -642,7 +640,6 @@ export const listGoogleCalendarEventsForTool = action({
 
 export const searchGoogleCalendarEventsForTool = action({
 	args: {
-		workspaceId: v.id("workspaces"),
 		query: v.string(),
 		limit: v.optional(v.number()),
 		meetingsOnly: v.optional(v.boolean()),
@@ -657,8 +654,6 @@ export const searchGoogleCalendarEventsForTool = action({
 			timeMin: new Date(timeMin).toISOString(),
 			timeMax: new Date(timeMax).toISOString(),
 		});
-
-		void args.workspaceId;
 
 		return toCalendarToolResponse({
 			connection: "Google Calendar",

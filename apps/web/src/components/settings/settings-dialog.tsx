@@ -267,6 +267,7 @@ type CalendarSettingsAction =
 
 type CalendarVisibilityPreferences = {
 	showGoogleCalendar: boolean;
+	showGoogleDrive: boolean;
 	showYandexCalendar: boolean;
 };
 
@@ -1204,6 +1205,7 @@ function useCalendarSettingsController() {
 			{ workspaceId: args.workspaceId },
 			{
 				showGoogleCalendar: args.showGoogleCalendar,
+				showGoogleDrive: args.showGoogleDrive,
 				showYandexCalendar: args.showYandexCalendar,
 			},
 		);
@@ -1223,6 +1225,7 @@ function useCalendarSettingsController() {
 
 	const calendarVisibility: CalendarVisibilityPreferences = {
 		showGoogleCalendar: calendarPreferences?.showGoogleCalendar ?? false,
+		showGoogleDrive: calendarPreferences?.showGoogleDrive ?? false,
 		showYandexCalendar: calendarPreferences?.showYandexCalendar ?? false,
 	};
 	const googleAccount = getGoogleLinkedAccount(accounts);
@@ -1244,6 +1247,7 @@ function useCalendarSettingsController() {
 			workspaceId: activeWorkspaceId,
 			showGoogleCalendar:
 				provider === "google" ? true : calendarVisibility.showGoogleCalendar,
+			showGoogleDrive: calendarVisibility.showGoogleDrive,
 			showYandexCalendar:
 				provider === "yandex" ? true : calendarVisibility.showYandexCalendar,
 		});
@@ -1352,6 +1356,7 @@ function useCalendarSettingsController() {
 			onCheckedChange: (checked) => {
 				void handleCalendarVisibilityChange({
 					showGoogleCalendar: checked,
+					showGoogleDrive: calendarVisibility.showGoogleDrive,
 					showYandexCalendar: calendarVisibility.showYandexCalendar,
 				});
 			},
@@ -1374,6 +1379,7 @@ function useCalendarSettingsController() {
 			onCheckedChange: (checked) => {
 				void handleCalendarVisibilityChange({
 					showGoogleCalendar: calendarVisibility.showGoogleCalendar,
+					showGoogleDrive: calendarVisibility.showGoogleDrive,
 					showYandexCalendar: checked,
 				});
 			},
@@ -1817,6 +1823,11 @@ function useConnectionsSettingsController() {
 		api.appConnections.getYandexCalendar,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
+	const calendarPreferences = useQuery(
+		api.calendarPreferences.get,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
+	const updateCalendarPreferences = useMutation(api.calendarPreferences.update);
 	const jiraConnectionResult = useQuery(
 		api.appConnections.getJira,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
@@ -1896,6 +1907,10 @@ function useConnectionsSettingsController() {
 		googleAccount,
 		GOOGLE_DRIVE_SCOPE,
 	);
+	const googleCalendarEnabledForWorkspace =
+		calendarPreferences?.showGoogleCalendar ?? false;
+	const googleDriveEnabledForWorkspace =
+		calendarPreferences?.showGoogleDrive ?? false;
 	const yandexCalendarDialog = useYandexCalendarConnectionDialog({
 		activeWorkspaceId,
 		defaultEmail: session?.user?.email,
@@ -2216,10 +2231,12 @@ function useConnectionsSettingsController() {
 	const isNotionFormValid = notionFormState.token.trim().length > 0;
 
 	const connectGoogleTool = async ({
+		enableForWorkspace,
 		scopes,
 		onStateChange,
 		successMessage,
 	}: {
+		enableForWorkspace: "calendar" | "drive";
 		scopes: readonly string[];
 		onStateChange: (value: boolean) => void;
 		successMessage: string;
@@ -2227,6 +2244,24 @@ function useConnectionsSettingsController() {
 		onStateChange(true);
 
 		try {
+			const enableGoogleToolForWorkspace = async () => {
+				if (!activeWorkspaceId) {
+					return;
+				}
+
+				await updateCalendarPreferences({
+					workspaceId: activeWorkspaceId,
+					showGoogleCalendar:
+						enableForWorkspace === "calendar"
+							? true
+							: googleCalendarEnabledForWorkspace,
+					showGoogleDrive:
+						enableForWorkspace === "drive"
+							? true
+							: googleDriveEnabledForWorkspace,
+					showYandexCalendar: calendarPreferences?.showYandexCalendar ?? false,
+				});
+			};
 			const callbackURL = window.openGranDesktop
 				? (await window.openGranDesktop.getAuthCallbackUrl()).url
 				: window.location.href;
@@ -2255,6 +2290,7 @@ function useConnectionsSettingsController() {
 
 			if (!url) {
 				if (linkedWithoutRedirect) {
+					await enableGoogleToolForWorkspace();
 					await loadAccounts();
 					toast.success(successMessage);
 					return;
@@ -2262,6 +2298,8 @@ function useConnectionsSettingsController() {
 
 				throw new Error("Google auth URL was not returned.");
 			}
+
+			await enableGoogleToolForWorkspace();
 
 			if (window.openGranDesktop) {
 				await window.openGranDesktop.openExternalUrl(url);
@@ -2283,11 +2321,11 @@ function useConnectionsSettingsController() {
 
 	const googleCalendarToolAction = getGoogleToolAction({
 		account: googleAccount,
-		hasScope: hasGoogleCalendarToolScope,
+		hasScope: hasGoogleCalendarToolScope && googleCalendarEnabledForWorkspace,
 	});
 	const googleDriveToolAction = getGoogleToolAction({
 		account: googleAccount,
-		hasScope: hasGoogleDriveToolScope,
+		hasScope: hasGoogleDriveToolScope && googleDriveEnabledForWorkspace,
 	});
 
 	const jiraWebhookUrl =
@@ -2312,6 +2350,7 @@ function useConnectionsSettingsController() {
 			) : null,
 			onButtonClick: () => {
 				void connectGoogleTool({
+					enableForWorkspace: "calendar",
 					scopes: GOOGLE_CALENDAR_SCOPES,
 					onStateChange: setIsConnectingGoogleCalendarTool,
 					successMessage: "Google Calendar connected",
@@ -2329,6 +2368,7 @@ function useConnectionsSettingsController() {
 			) : null,
 			onButtonClick: () => {
 				void connectGoogleTool({
+					enableForWorkspace: "drive",
 					scopes: GOOGLE_DRIVE_SCOPES,
 					onStateChange: setIsConnectingGoogleDriveTool,
 					successMessage: "Google Drive connected",

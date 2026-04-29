@@ -6,6 +6,7 @@ import { internalMutation, mutation, query } from "./_generated/server";
 
 const calendarPreferencesValidator = v.object({
 	showGoogleCalendar: v.boolean(),
+	showGoogleDrive: v.boolean(),
 	showYandexCalendar: v.boolean(),
 });
 
@@ -71,6 +72,7 @@ export const get = query({
 
 		return {
 			showGoogleCalendar: preferences?.showGoogleCalendar ?? false,
+			showGoogleDrive: preferences?.showGoogleDrive ?? false,
 			showYandexCalendar: preferences?.showYandexCalendar ?? false,
 		};
 	},
@@ -80,6 +82,7 @@ export const update = mutation({
 	args: {
 		workspaceId: v.id("workspaces"),
 		showGoogleCalendar: v.boolean(),
+		showGoogleDrive: v.boolean(),
 		showYandexCalendar: v.boolean(),
 	},
 	returns: calendarPreferencesValidator,
@@ -96,12 +99,14 @@ export const update = mutation({
 		if (existing) {
 			await ctx.db.patch(existing._id, {
 				showGoogleCalendar: args.showGoogleCalendar,
+				showGoogleDrive: args.showGoogleDrive,
 				showYandexCalendar: args.showYandexCalendar,
 				updatedAt: now,
 			});
 
 			return {
 				showGoogleCalendar: args.showGoogleCalendar,
+				showGoogleDrive: args.showGoogleDrive,
 				showYandexCalendar: args.showYandexCalendar,
 			};
 		}
@@ -110,6 +115,7 @@ export const update = mutation({
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,
 			showGoogleCalendar: args.showGoogleCalendar,
+			showGoogleDrive: args.showGoogleDrive,
 			showYandexCalendar: args.showYandexCalendar,
 			createdAt: now,
 			updatedAt: now,
@@ -117,6 +123,7 @@ export const update = mutation({
 
 		return {
 			showGoogleCalendar: args.showGoogleCalendar,
+			showGoogleDrive: args.showGoogleDrive,
 			showYandexCalendar: args.showYandexCalendar,
 		};
 	},

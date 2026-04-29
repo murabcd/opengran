@@ -31,7 +31,7 @@ export function useAppSources(
 			};
 		}
 
-		void listGoogleSources({})
+		void listGoogleSources({ workspaceId })
 			.then((sources) => {
 				if (!cancelled) {
 					setGoogleSources(sources);

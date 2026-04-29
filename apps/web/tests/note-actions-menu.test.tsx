@@ -407,7 +407,7 @@ describe("NoteActionsMenu", () => {
 		).toBeGreaterThan(0);
 	});
 
-	it("renders a gold filled star when the note is starred", async () => {
+	it("renders an unstar icon when the note is starred", async () => {
 		useQueryMock.mockImplementation((_query, args) =>
 			args && typeof args === "object" && "id" in args
 				? {
@@ -430,7 +430,7 @@ describe("NoteActionsMenu", () => {
 		});
 		const starIcon = container.querySelector("svg");
 
-		expect(button.className).toContain("text-warning-foreground");
-		expect(starIcon?.getAttribute("class")).toContain("fill-current");
+		expect(button.className).toContain("text-muted-foreground");
+		expect(starIcon?.getAttribute("class")).not.toContain("fill-current");
 	});
 });

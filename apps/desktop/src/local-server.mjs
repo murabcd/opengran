@@ -286,7 +286,7 @@ const getSelectedAppConnections = async ({
 	const sourceIds = getSelectedAppSourceIds({ selectedSourceIds });
 	const client = new ConvexHttpClient(getConvexUrl(), { auth: convexToken });
 	const googleSources = await client
-		.action(api.googleTools.listAvailableSources, {})
+		.action(api.googleTools.listAvailableSources, { workspaceId })
 		.catch(() => []);
 
 	if (allSelectedSourceIds.length === 0) {
@@ -782,7 +782,6 @@ const handleChatRequest = async (request, response) => {
 						await convexClient.action(
 							api.calendar.listGoogleCalendarEventsForTool,
 							{
-								workspaceId: resolvedWorkspaceId,
 								...(typeof limit === "number" ? { limit } : {}),
 								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
 							},
@@ -791,7 +790,6 @@ const handleChatRequest = async (request, response) => {
 						await convexClient.action(
 							api.calendar.searchGoogleCalendarEventsForTool,
 							{
-								workspaceId: resolvedWorkspaceId,
 								query: query ?? "",
 								...(typeof limit === "number" ? { limit } : {}),
 								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),

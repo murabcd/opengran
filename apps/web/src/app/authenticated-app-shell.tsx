@@ -406,7 +406,7 @@ const useAppShellState = ({
 	const calendarVisibilityKey = !resolvedActiveWorkspaceId
 		? "no-workspace"
 		: calendarPreferences
-			? `${calendarPreferences.showGoogleCalendar}:${calendarPreferences.showYandexCalendar}`
+			? `${calendarPreferences.showGoogleCalendar}:${calendarPreferences.showGoogleDrive}:${calendarPreferences.showYandexCalendar}`
 			: "loading";
 	const yandexCalendarConnectionKey = yandexCalendarConnection
 		? [

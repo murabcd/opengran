@@ -123,6 +123,7 @@ test("workspace removal clears scheduled Convex cleanup across notes, chats, tra
 			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
 			workspaceId,
 			showGoogleCalendar: true,
+			showGoogleDrive: false,
 			showYandexCalendar: false,
 			createdAt: now,
 			updatedAt: now,
