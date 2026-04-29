@@ -1098,7 +1098,7 @@ function ExpandedDiscussionThread({
 					<div className="pt-1 pb-3">
 						<button
 							type="button"
-							className="inline-flex h-auto w-fit cursor-pointer rounded-sm px-0 text-xs font-normal text-muted-foreground/75 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+							className="inline-flex h-auto w-fit cursor-pointer items-center gap-2 rounded-sm px-0 text-xs font-normal text-muted-foreground/75 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&>svg]:size-4 [&>svg]:shrink-0"
 							onClick={() =>
 								hiddenReplyCount > 0
 									? setVisibleReplyCount((current) =>
@@ -1110,7 +1110,8 @@ function ExpandedDiscussionThread({
 									: setVisibleReplyCount(initialVisibleReplyCount)
 							}
 						>
-							{historyToggleLabel}
+							<MoreHorizontal />
+							<span>{historyToggleLabel}</span>
 						</button>
 					</div>
 				) : null}
