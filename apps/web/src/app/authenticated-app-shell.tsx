@@ -66,7 +66,8 @@ import {
 	Pencil,
 	Plus,
 	Redo2,
-	SquarePen,
+	Star,
+	StarOff,
 	Trash2,
 	Undo2,
 } from "lucide-react";
@@ -94,6 +95,7 @@ import type {
 import { AutomationsPage } from "@/components/automations/automations-page";
 import { CreateAutomationDialog } from "@/components/automations/create-automation-dialog";
 import { ChatPage } from "@/components/chat/chat-page";
+import { optimisticPatchChat } from "@/components/chat/optimistic-patch-chat";
 import { optimisticRenameChat } from "@/components/chat/optimistic-rename-chat";
 import { readDesktopInboxPanelPinnedState } from "@/components/inbox/inbox-panel-state";
 import { AppShellInset } from "@/components/layout/app-shell-inset";
@@ -1443,6 +1445,7 @@ const useAppShellState = ({
 							: getSidebarViewTitle("home"),
 		chats,
 		chatComposerId,
+		currentChat,
 		currentChatId,
 		currentChatNoteId,
 		currentChatTitle,
@@ -1540,6 +1543,7 @@ type AppShellHeaderProps = {
 	onBreadcrumbSectionClick: () => void;
 	currentView: AppView;
 	currentChatId: string | null;
+	currentChat: Doc<"chats"> | null;
 	currentChatTitle: string;
 	currentChatNoteId: Id<"notes"> | null;
 	currentNoteId: Id<"notes"> | null;
@@ -1563,6 +1567,7 @@ function AppShellHeader({
 	onBreadcrumbSectionClick,
 	currentView,
 	currentChatId,
+	currentChat,
 	currentChatTitle,
 	currentChatNoteId,
 	currentNoteId,
@@ -1796,6 +1801,7 @@ function AppShellHeader({
 					currentNoteCommentsOpener={currentNoteCommentsOpener}
 					isDesktopMac={isDesktopMac}
 					currentChatId={currentChatId}
+					currentChat={currentChat}
 					onOpenChatTitleEditor={openBreadcrumbTitleEditor}
 					onCreateNote={onCreateNote}
 					onNoteTrashed={onNoteTrashed}
@@ -1930,6 +1936,7 @@ function AppShellHeaderActions({
 	currentNoteCommentsOpener,
 	isDesktopMac,
 	currentChatId,
+	currentChat,
 	onOpenChatTitleEditor,
 	onCreateNote,
 	onNoteTrashed,
@@ -1946,6 +1953,7 @@ function AppShellHeaderActions({
 	| "currentNoteCommentsOpener"
 	| "isDesktopMac"
 	| "currentChatId"
+	| "currentChat"
 	| "onCreateNote"
 	| "onNoteTrashed"
 	| "onChatTrashed"
@@ -1971,6 +1979,7 @@ function AppShellHeaderActions({
 		return (
 			<ChatHeaderActions
 				chatId={currentChatId}
+				chat={currentChat}
 				isDesktopMac={isDesktopMac}
 				onNewChat={onNewChat}
 				onRenameChat={onOpenChatTitleEditor}
@@ -2135,12 +2144,14 @@ function NoteHeaderActionsMenu({
 
 function ChatHeaderActions({
 	chatId,
+	chat,
 	isDesktopMac,
 	onNewChat,
 	onRenameChat,
 	onChatTrashed,
 }: {
 	chatId: string | null;
+	chat: Doc<"chats"> | null;
 	isDesktopMac: boolean;
 	onNewChat: () => void;
 	onRenameChat: () => void;
@@ -2148,8 +2159,44 @@ function ChatHeaderActions({
 }) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const [confirmTrashOpen, setConfirmTrashOpen] = React.useState(false);
+	const [isUpdatingStar, setIsUpdatingStar] = React.useState(false);
 	const [isMovingToTrash, setIsMovingToTrash] = React.useState(false);
+	const isStarred = chat?.isStarred ?? false;
+	const toggleStar = useMutation(api.chats.toggleStar).withOptimisticUpdate(
+		(localStore, args) => {
+			optimisticPatchChat(
+				localStore,
+				args.workspaceId,
+				args.chatId,
+				(currentChat) => ({
+					...currentChat,
+					isStarred: !(currentChat.isStarred ?? false),
+				}),
+				chat?.noteId,
+			);
+		},
+	);
 	const moveChatToTrash = useMutation(api.chats.moveToTrash);
+
+	const handleToggleStar = React.useCallback(() => {
+		if (!activeWorkspaceId || !chatId || isUpdatingStar) {
+			return;
+		}
+
+		setIsUpdatingStar(true);
+
+		void toggleStar({ workspaceId: activeWorkspaceId, chatId })
+			.then((result) => {
+				toast.success(result.isStarred ? "Chat starred" : "Chat unstarred");
+			})
+			.catch((error) => {
+				console.error("Failed to update chat star", error);
+				toast.error("Failed to update chat star");
+			})
+			.finally(() => {
+				setIsUpdatingStar(false);
+			});
+	}, [activeWorkspaceId, chatId, isUpdatingStar, toggleStar]);
 
 	const handleConfirmTrash = React.useCallback(() => {
 		if (!activeWorkspaceId || !chatId || isMovingToTrash) {
@@ -2206,7 +2253,7 @@ function ChatHeaderActions({
 						aria-label="New chat"
 						onClick={onNewChat}
 					>
-						<SquarePen className="size-4" />
+						<Plus className="size-4" />
 					</Button>
 				</TooltipTrigger>
 				<TooltipContent>New chat</TooltipContent>
@@ -2239,6 +2286,14 @@ function ChatHeaderActions({
 					>
 						<Pencil />
 						Rename
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						className="cursor-pointer"
+						disabled={!chatId || !activeWorkspaceId || isUpdatingStar}
+						onSelect={handleToggleStar}
+					>
+						{isStarred ? <StarOff /> : <Star />}
+						{isStarred ? "Unstar" : "Star"}
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
 					<DropdownMenuItem
@@ -2618,6 +2673,7 @@ export function AuthenticatedAppShell({
 						onBreadcrumbSectionClick={controller.handleBreadcrumbSectionClick}
 						currentView={controller.currentView}
 						currentChatId={controller.currentChatId}
+						currentChat={controller.currentChat}
 						currentChatTitle={controller.currentChatTitle}
 						currentChatNoteId={controller.currentChatNoteId}
 						currentNoteId={controller.currentNoteId}
