@@ -60,6 +60,7 @@ import {
 } from "convex/react";
 import {
 	ArrowDown,
+	Bookmark,
 	Copy,
 	MessageSquareText,
 	MoreHorizontal,
@@ -95,6 +96,7 @@ import type {
 import { AutomationsPage } from "@/components/automations/automations-page";
 import { CreateAutomationDialog } from "@/components/automations/create-automation-dialog";
 import { ChatPage } from "@/components/chat/chat-page";
+import { OPEN_CHAT_SUMMARY_EVENT } from "@/components/chat/chat-summary-sheet";
 import { optimisticPatchChat } from "@/components/chat/optimistic-patch-chat";
 import { optimisticRenameChat } from "@/components/chat/optimistic-rename-chat";
 import { readDesktopInboxPanelPinnedState } from "@/components/inbox/inbox-panel-state";
@@ -2257,6 +2259,22 @@ function ChatHeaderActions({
 					</Button>
 				</TooltipTrigger>
 				<TooltipContent>New chat</TooltipContent>
+			</Tooltip>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon-sm"
+						aria-label="Open summary"
+						onClick={() => {
+							window.dispatchEvent(new Event(OPEN_CHAT_SUMMARY_EVENT));
+						}}
+					>
+						<Bookmark className="size-4" />
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>Open summary</TooltipContent>
 			</Tooltip>
 			<DropdownMenu>
 				<Tooltip>

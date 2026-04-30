@@ -86,7 +86,10 @@ body {
 
 .shared-note-page-content .note-comment-anchor,
 .shared-note-page-content .note-comment-anchor:hover,
-.shared-note-page-content .note-comment-anchor[data-active-thread="true"] {
+.shared-note-page-content .note-comment-anchor[data-active-thread="true"],
+.summary-note-preview-content .note-comment-anchor,
+.summary-note-preview-content .note-comment-anchor:hover,
+.summary-note-preview-content .note-comment-anchor[data-active-thread="true"] {
 	border-bottom-color: transparent;
 	background: transparent;
 	cursor: text;

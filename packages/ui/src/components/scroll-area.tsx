@@ -5,15 +5,21 @@ import type * as React from "react";
 function ScrollArea({
 	className,
 	children,
+	reserveScrollbarGap = false,
 	viewportClassName,
 	viewportRef,
 	scrollbarOrientation = "vertical",
 	...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
+	reserveScrollbarGap?: boolean;
 	viewportClassName?: string;
 	viewportRef?: React.Ref<HTMLDivElement>;
 	scrollbarOrientation?: "vertical" | "horizontal" | "both" | "none";
 }) {
+	const reservesVerticalScrollbarGap =
+		reserveScrollbarGap &&
+		(scrollbarOrientation === "vertical" || scrollbarOrientation === "both");
+
 	if (scrollbarOrientation === "none") {
 		return (
 			<div
@@ -27,6 +33,7 @@ function ScrollArea({
 					className={cn(
 						"size-full overflow-auto rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1",
 						viewportClassName,
+						reservesVerticalScrollbarGap && "pr-2.5",
 					)}
 				>
 					{children}
@@ -47,6 +54,7 @@ function ScrollArea({
 				className={cn(
 					"size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1",
 					viewportClassName,
+					reservesVerticalScrollbarGap && "pr-2.5",
 				)}
 			>
 				{children}

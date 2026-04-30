@@ -341,6 +341,10 @@ function useSidebarShell() {
 	return context;
 }
 
+function useOptionalSidebarShell() {
+	return React.useContext(SidebarShellContext);
+}
+
 function useSidebarRight() {
 	const context = React.useContext(SidebarRightContext);
 	if (!context) {
@@ -359,6 +363,10 @@ function useDockedPanelWidths() {
 	}
 
 	return context;
+}
+
+function useOptionalDockedPanelWidths() {
+	return React.useContext(SidebarDockedPanelsContext);
 }
 
 function useSidebarProviderElement({
@@ -1396,6 +1404,8 @@ export {
 	SidebarSeparator,
 	SidebarTrigger,
 	useDockedPanelWidths,
+	useOptionalDockedPanelWidths,
+	useOptionalSidebarShell,
 	useSidebarRight,
 	useSidebarShell,
 };

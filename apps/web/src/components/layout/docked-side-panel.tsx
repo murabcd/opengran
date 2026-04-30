@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@workspace/ui/components/button";
-import { useDockedPanelWidths } from "@workspace/ui/components/sidebar";
+import { useOptionalDockedPanelWidths } from "@workspace/ui/components/sidebar";
 import {
 	Tooltip,
 	TooltipContent,
@@ -76,9 +76,13 @@ function useSyncDockedPanelWidths({
 	leftOverlayPanelWidth,
 	rightInsetPanelWidth,
 }: DockedPanelWidthsUpdate) {
-	const { syncDockedPanelWidths } = useDockedPanelWidths();
+	const dockedPanelWidths = useOptionalDockedPanelWidths();
 
 	useIsomorphicLayoutEffect(() => {
+		if (!dockedPanelWidths) {
+			return;
+		}
+
 		const widths: DockedPanelWidthsUpdate = {};
 
 		if (leftInsetPanelWidth !== undefined) {
@@ -93,16 +97,16 @@ function useSyncDockedPanelWidths({
 			widths.rightInsetPanelWidth = rightInsetPanelWidth;
 		}
 
-		syncDockedPanelWidths(widths);
+		dockedPanelWidths.syncDockedPanelWidths(widths);
 
 		return () => {
-			syncDockedPanelWidths(clearDockedPanelWidths(widths));
+			dockedPanelWidths.syncDockedPanelWidths(clearDockedPanelWidths(widths));
 		};
 	}, [
+		dockedPanelWidths,
 		leftInsetPanelWidth,
 		leftOverlayPanelWidth,
 		rightInsetPanelWidth,
-		syncDockedPanelWidths,
 	]);
 }
 

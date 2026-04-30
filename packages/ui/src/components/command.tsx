@@ -143,6 +143,7 @@ function CommandList({
 	return (
 		<ScrollArea
 			className={cn("max-h-72 min-w-0", className)}
+			reserveScrollbarGap
 			viewportClassName="max-h-[inherit] scroll-py-1 outline-none [&>div]:!block [&>div]:!min-w-0 [&>div]:!w-full"
 		>
 			<CommandPrimitive.List

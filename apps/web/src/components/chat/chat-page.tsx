@@ -18,6 +18,10 @@ import { useMutation, useQuery } from "convex/react";
 import { ArrowDown, FileText } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import {
+	ChatSummarySheet,
+	OPEN_CHAT_SUMMARY_EVENT,
+} from "@/components/chat/chat-summary-sheet";
 import { ChatMessages } from "@/components/chat/messages";
 import { COMPOSER_DOCK_WRAPPER_CLASS } from "@/components/layout/composer-dock";
 import { PageTitle } from "@/components/layout/page-title";
@@ -103,6 +107,7 @@ const useChatPageController = ({
 	const [mentions, setMentions] = React.useState<string[]>([]);
 	const [modelPopoverOpen, setModelPopoverOpen] = React.useState(false);
 	const [sourcesOpen, setSourcesOpen] = React.useState(false);
+	const [summaryOpen, setSummaryOpen] = React.useState(false);
 	const [sourceSearchTerm, setSourceSearchTerm] = React.useState("");
 	const [webSearchEnabled, setWebSearchEnabled] = React.useState(false);
 	const [appsEnabled, setAppsEnabled] = React.useState(true);
@@ -284,6 +289,8 @@ const useChatPageController = ({
 				title: getNoteDisplayTitle(note.title),
 				icon: FileText,
 				preview: note.searchableText.trim(),
+				content: note.content,
+				updatedAt: note.updatedAt,
 			})),
 		[notes],
 	);
@@ -293,6 +300,8 @@ const useChatPageController = ({
 				id: page.id,
 				title: page.title,
 				preview: page.preview,
+				content: page.content,
+				updatedAt: page.updatedAt,
 			})),
 		[contextPages],
 	);
@@ -545,10 +554,12 @@ const useChatPageController = ({
 		setSelectedModel,
 		setSourceSearchTerm,
 		setSourcesOpen,
+		setSummaryOpen,
 		stop,
 		shouldSearchDocuments,
 		sourceSearchTerm,
 		sourcesOpen,
+		summaryOpen,
 		webSearchEnabled,
 		workspaceSources,
 		appSources,
@@ -643,6 +654,17 @@ export function ChatPage({
 	);
 	const shouldShowActiveChatSurface =
 		controller.hasMessages || activeChatId === chatId;
+	React.useEffect(() => {
+		const handleOpenSummary = () => {
+			controller.setSummaryOpen((current) => !current);
+		};
+
+		window.addEventListener(OPEN_CHAT_SUMMARY_EVENT, handleOpenSummary);
+
+		return () => {
+			window.removeEventListener(OPEN_CHAT_SUMMARY_EVENT, handleOpenSummary);
+		};
+	}, [controller.setSummaryOpen]);
 	// Web chat uses a 4rem shell header, while the native mac shell keeps a
 	// taller md offset. Matching the shell height keeps short-chat docks flush.
 	const chatSurfaceMinHeightClass = isDesktopMac
@@ -814,6 +836,12 @@ export function ChatPage({
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
+			<ChatSummarySheet
+				open={controller.summaryOpen}
+				messages={controller.messages}
+				workspaceSources={controller.workspaceSources}
+				onOpenChange={controller.setSummaryOpen}
+			/>
 		</>
 	);
 }
