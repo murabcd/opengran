@@ -1,6 +1,6 @@
 import { cn } from "@workspace/ui/lib/utils";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
-import type * as React from "react";
+import * as React from "react";
 
 function ScrollArea({
 	className,
@@ -16,9 +16,64 @@ function ScrollArea({
 	viewportRef?: React.Ref<HTMLDivElement>;
 	scrollbarOrientation?: "vertical" | "horizontal" | "both" | "none";
 }) {
+	const [viewportElement, setViewportElement] =
+		React.useState<HTMLDivElement | null>(null);
+	const [hasVerticalOverflow, setHasVerticalOverflow] = React.useState(false);
 	const reservesVerticalScrollbarGap =
 		reserveScrollbarGap &&
+		hasVerticalOverflow &&
 		(scrollbarOrientation === "vertical" || scrollbarOrientation === "both");
+	const setViewportRefs = React.useCallback(
+		(element: HTMLDivElement | null) => {
+			setViewportElement(element);
+
+			if (typeof viewportRef === "function") {
+				viewportRef(element);
+			} else if (viewportRef) {
+				viewportRef.current = element;
+			}
+		},
+		[viewportRef],
+	);
+
+	React.useLayoutEffect(() => {
+		if (
+			!reserveScrollbarGap ||
+			(scrollbarOrientation !== "vertical" && scrollbarOrientation !== "both")
+		) {
+			setHasVerticalOverflow(false);
+			return;
+		}
+
+		if (!viewportElement) {
+			setHasVerticalOverflow(false);
+			return;
+		}
+
+		const updateOverflow = () => {
+			setHasVerticalOverflow(
+				viewportElement.scrollHeight > viewportElement.clientHeight,
+			);
+		};
+
+		updateOverflow();
+
+		const resizeObserver = new ResizeObserver(updateOverflow);
+		resizeObserver.observe(viewportElement);
+		if (viewportElement.firstElementChild) {
+			resizeObserver.observe(viewportElement.firstElementChild);
+		}
+		const mutationObserver = new MutationObserver(updateOverflow);
+		mutationObserver.observe(viewportElement, {
+			childList: true,
+			subtree: true,
+		});
+
+		return () => {
+			resizeObserver.disconnect();
+			mutationObserver.disconnect();
+		};
+	}, [reserveScrollbarGap, scrollbarOrientation, viewportElement]);
 
 	if (scrollbarOrientation === "none") {
 		return (
@@ -29,7 +84,7 @@ function ScrollArea({
 			>
 				<div
 					data-slot="scroll-area-viewport"
-					ref={viewportRef}
+					ref={setViewportRefs}
 					className={cn(
 						"size-full overflow-auto rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1",
 						viewportClassName,
@@ -50,7 +105,7 @@ function ScrollArea({
 		>
 			<ScrollAreaPrimitive.Viewport
 				data-slot="scroll-area-viewport"
-				ref={viewportRef}
+				ref={setViewportRefs}
 				className={cn(
 					"size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1",
 					viewportClassName,
