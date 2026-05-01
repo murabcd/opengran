@@ -1,4 +1,5 @@
 import * as React from "react";
+import { use } from "react";
 
 type Theme = "dark" | "light" | "system";
 type ResolvedTheme = "dark" | "light";
@@ -67,14 +68,18 @@ export function ThemeProvider({
 	disableTransitionOnChange = true,
 	...props
 }: ThemeProviderProps) {
-	const [theme, setThemeState] = React.useState<Theme>(() => {
-		const storedTheme = localStorage.getItem(storageKey);
-		if (isTheme(storedTheme)) {
-			return storedTheme;
-		}
+	const [theme, setThemeState] = React.useReducer(
+		(_current: Theme, next: Theme) => next,
+		defaultTheme,
+		(initialTheme) => {
+			const storedTheme = localStorage.getItem(storageKey);
+			if (isTheme(storedTheme)) {
+				return storedTheme;
+			}
 
-		return defaultTheme;
-	});
+			return initialTheme;
+		},
+	);
 
 	const setTheme = React.useCallback(
 		(nextTheme: Theme) => {
@@ -179,7 +184,7 @@ export function ThemeProvider({
 }
 
 export const useTheme = () => {
-	const context = React.useContext(ThemeProviderContext);
+	const context = use(ThemeProviderContext);
 
 	if (context === undefined) {
 		throw new Error("useTheme must be used within a ThemeProvider");

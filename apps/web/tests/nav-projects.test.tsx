@@ -83,7 +83,7 @@ vi.mock("@workspace/ui/components/dialog", async () => {
 			</DialogContext.Provider>
 		),
 		DialogContent: ({ children }: React.PropsWithChildren) => {
-			const { open } = React.useContext(DialogContext);
+			const { open } = React.use(DialogContext);
 			return open ? <div>{children}</div> : null;
 		},
 		DialogDescription: ({ children }: React.PropsWithChildren) => (
@@ -121,7 +121,7 @@ vi.mock("@workspace/ui/components/dropdown-menu", async () => {
 			</DropdownMenuContext.Provider>
 		),
 		DropdownMenuContent: ({ children }: React.PropsWithChildren) => {
-			const { open } = React.useContext(DropdownMenuContext);
+			const { open } = React.use(DropdownMenuContext);
 			return open ? <div>{children}</div> : null;
 		},
 		DropdownMenuItem: ({
@@ -134,7 +134,7 @@ vi.mock("@workspace/ui/components/dropdown-menu", async () => {
 				onSelect?: (event: Event) => void;
 			}
 		>) => {
-			const { onOpenChange } = React.useContext(DropdownMenuContext);
+			const { onOpenChange } = React.use(DropdownMenuContext);
 
 			return (
 				<button
@@ -158,7 +158,7 @@ vi.mock("@workspace/ui/components/dropdown-menu", async () => {
 			asChild: _asChild,
 			children,
 		}: React.PropsWithChildren<{ asChild?: boolean }>) => {
-			const { open, onOpenChange } = React.useContext(DropdownMenuContext);
+			const { open, onOpenChange } = React.use(DropdownMenuContext);
 			const child = React.Children.only(children);
 
 			if (!React.isValidElement(child)) {
@@ -203,7 +203,7 @@ vi.mock("@workspace/ui/components/popover", async () => {
 		),
 		PopoverAnchor: ({ children }: React.PropsWithChildren) => <>{children}</>,
 		PopoverContent: ({ children }: React.PropsWithChildren) => {
-			const { open } = React.useContext(PopoverContext);
+			const { open } = React.use(PopoverContext);
 			return open ? <div>{children}</div> : null;
 		},
 	};
@@ -538,11 +538,14 @@ describe("NavProjects", () => {
 });
 
 function getRenderedProjectNames() {
-	return screen
-		.getAllByRole("button")
-		.map((button) => button.textContent?.trim())
-		.filter(
-			(value): value is string =>
-				value === "Alpha" || value === "Beta" || value === "Gamma",
-		);
+	const projectNames: string[] = [];
+
+	for (const button of screen.getAllByRole("button")) {
+		const value = button.textContent?.trim();
+		if (value === "Alpha" || value === "Beta" || value === "Gamma") {
+			projectNames.push(value);
+		}
+	}
+
+	return projectNames;
 }

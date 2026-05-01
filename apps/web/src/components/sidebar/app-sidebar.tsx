@@ -10,6 +10,7 @@ import {
 import { useQuery } from "convex/react";
 import { FileText, MessageCircle } from "lucide-react";
 import * as React from "react";
+import type { AutomationListItem } from "@/components/automations/automation-types";
 import { InboxSheet } from "@/components/inbox/inbox-sheet";
 import { NavMain } from "@/components/nav/nav-main";
 import { NavNotes } from "@/components/nav/nav-notes";
@@ -64,6 +65,7 @@ type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
 	inboxOpen: boolean;
 	user: AppSidebarUser;
 	chats: Array<Doc<"chats">> | undefined;
+	automations: AutomationListItem[] | undefined;
 	notes: Array<Doc<"notes">> | undefined;
 	sharedNotes: Array<Doc<"notes">> | undefined;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
@@ -464,6 +466,7 @@ export function AppSidebar({
 	inboxOpen,
 	user,
 	chats,
+	automations,
 	notes,
 	sharedNotes,
 	onWorkspaceSelect,
@@ -533,6 +536,7 @@ export function AppSidebar({
 				<AppSidebarContentSection
 					activeWorkspaceId={activeWorkspaceId}
 					chats={chats}
+					automations={automations}
 					currentChatId={currentChatId}
 					currentChatTitle={currentChatTitle}
 					currentNoteId={currentNoteId}
@@ -689,6 +693,7 @@ const AppSidebarHeaderSection = React.memo(function AppSidebarHeaderSection({
 const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 	activeWorkspaceId,
 	chats,
+	automations,
 	currentChatId,
 	currentChatTitle,
 	currentNoteId,
@@ -707,6 +712,7 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 }: {
 	activeWorkspaceId: Id<"workspaces"> | null;
 	chats: Array<Doc<"chats">> | undefined;
+	automations: AutomationListItem[] | undefined;
 	currentChatId: string | null;
 	currentChatTitle?: string;
 	currentNoteId: Id<"notes"> | null;
@@ -723,10 +729,16 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 	recordingNoteId: Id<"notes"> | null;
 	sharedNotes: Array<Doc<"notes">> | undefined;
 }) {
+	const automationChatIds = React.useMemo(
+		() => new Set((automations ?? []).map((automation) => automation.chatId)),
+		[automations],
+	);
+
 	return (
 		<SidebarContent>
 			<NavStarred
 				chats={chats}
+				automationChatIds={automationChatIds}
 				notes={notes}
 				currentChatId={currentView === "chat" ? currentChatId : null}
 				currentChatTitle={currentChatTitle}

@@ -6,7 +6,7 @@ import {
 	screen,
 	waitFor,
 } from "@testing-library/react";
-import * as React from "react";
+import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPOSER_OVERLAY_FOOTER_PADDING } from "../src/components/layout/composer-dock";
 import { ActiveWorkspaceProvider } from "../src/hooks/use-active-workspace";
@@ -220,14 +220,17 @@ vi.mock("@workspace/ui/components/sidebar", () => ({
 }));
 
 vi.mock("@workspace/ui/components/textarea", () => ({
-	Textarea: React.forwardRef<
-		HTMLTextAreaElement,
-		React.TextareaHTMLAttributes<HTMLTextAreaElement>
-	>(({ children, ...props }, ref) => (
+	Textarea: ({
+		children,
+		ref,
+		...props
+	}: React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
+		ref?: React.Ref<HTMLTextAreaElement>;
+	}) => (
 		<textarea ref={ref} {...props}>
 			{children}
 		</textarea>
-	)),
+	),
 }));
 
 vi.mock("@workspace/ui/components/tooltip", () => {
@@ -2941,12 +2944,12 @@ describe("NoteComposer", () => {
 			})[0],
 		);
 
-		const inlineExpand = await screen.findByRole("button", {
-			name: "Expand speech controls",
-		});
-		const consentText = await screen.findByText(
-			"Always get consent when transcribing others.",
-		);
+		const [inlineExpand, consentText] = await Promise.all([
+			screen.findByRole("button", {
+				name: "Expand speech controls",
+			}),
+			screen.findByText("Always get consent when transcribing others."),
+		]);
 		const controlsGroup = inlineExpand.closest("div");
 		const leadingArea = controlsGroup?.parentElement;
 		const footerSurface = leadingArea?.parentElement;

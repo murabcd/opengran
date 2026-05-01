@@ -39,7 +39,7 @@ vi.mock("@workspace/ui/components/dialog", async () => {
 			</DialogContext.Provider>
 		),
 		DialogContent: ({ children }: React.PropsWithChildren) => {
-			const { open } = React.useContext(DialogContext);
+			const { open } = React.use(DialogContext);
 			return open ? <div>{children}</div> : null;
 		},
 		DialogDescription: ({ children }: React.PropsWithChildren) => (
@@ -77,7 +77,7 @@ vi.mock("@workspace/ui/components/dropdown-menu", async () => {
 			</DropdownMenuContext.Provider>
 		),
 		DropdownMenuContent: ({ children }: React.PropsWithChildren) => {
-			const { open } = React.useContext(DropdownMenuContext);
+			const { open } = React.use(DropdownMenuContext);
 			return open ? <div>{children}</div> : null;
 		},
 		DropdownMenuItem: ({
@@ -106,7 +106,7 @@ vi.mock("@workspace/ui/components/dropdown-menu", async () => {
 			asChild: _asChild,
 			children,
 		}: React.PropsWithChildren<{ asChild?: boolean }>) => {
-			const { onOpenChange } = React.useContext(DropdownMenuContext);
+			const { onOpenChange } = React.use(DropdownMenuContext);
 			const child = React.Children.only(children);
 
 			if (!React.isValidElement(child)) {

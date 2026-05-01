@@ -680,7 +680,10 @@ function ProjectSidebarItem({
 	const renameInputRef = React.useRef<HTMLInputElement>(null);
 	const preventMenuCloseAutoFocusRef = React.useRef(false);
 	const ignoreInitialRenameInteractOutsideRef = React.useRef(false);
-	const [isRenaming, setIsRenaming] = React.useState(false);
+	const [isRenaming, setIsRenaming] = React.useReducer(
+		(_current: boolean, next: boolean) => next,
+		false,
+	);
 	const [isRemoving, setIsRemoving] = React.useState(false);
 	const renameValue = state.renameOpen ? state.renameValue : project.name;
 	const renameProject = useMutation(api.projects.rename).withOptimisticUpdate(
@@ -1264,7 +1267,7 @@ const toNormalizedProjectKey = (value: string) =>
 	normalizeProjectName(value).toLowerCase();
 
 function sortProjectsByNormalizedName(projects: Array<Doc<"projects">>) {
-	return [...projects].sort((left, right) => {
+	return projects.slice().sort((left, right) => {
 		const normalizedComparison = left.normalizedName.localeCompare(
 			right.normalizedName,
 		);
@@ -1280,7 +1283,7 @@ function sortProjectEntries(
 	entries: Array<ProjectWithNotes>,
 	sortBy: ProjectListSort,
 ) {
-	return [...entries].sort((left, right) => {
+	return entries.slice().sort((left, right) => {
 		if (sortBy === "created") {
 			return compareProjectsByTimestamp(
 				left.project.createdAt,

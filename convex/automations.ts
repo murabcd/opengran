@@ -646,6 +646,7 @@ export const create = mutation({
 		scheduledAt: v.number(),
 		timezone: v.optional(v.string()),
 		target: automationTargetValidator,
+		chatId: v.optional(v.string()),
 	},
 	returns: automationListItemValidator,
 	handler: async (ctx, args) => {
@@ -661,6 +662,43 @@ export const create = mutation({
 		const now = Date.now();
 		const prompt = normalizePrompt(args.prompt);
 		const appSources = normalizeAppSources(args.appSources);
+		const chatId = args.chatId
+			? clampWhitespace(args.chatId)
+			: createAutomationChatId();
+		if (args.chatId) {
+			const chat = await ctx.db
+				.query("chats")
+				.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_chatId", (q) =>
+					q
+						.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+						.eq("workspaceId", args.workspaceId)
+						.eq("chatId", chatId),
+				)
+				.unique();
+
+			if (!chat || chat.isArchived) {
+				throw new ConvexError({
+					code: "CHAT_NOT_FOUND",
+					message: "Chat not found.",
+				});
+			}
+		}
+		const existingAutomation = await ctx.db
+			.query("automations")
+			.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_chatId", (q) =>
+				q
+					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+					.eq("workspaceId", args.workspaceId)
+					.eq("chatId", chatId),
+			)
+			.unique();
+
+		if (existingAutomation) {
+			throw new ConvexError({
+				code: "AUTOMATION_CHAT_ALREADY_EXISTS",
+				message: "This chat already has an automation.",
+			});
+		}
 		const nextRunAt = getNextRunAt({
 			from: now,
 			scheduledAt: args.scheduledAt,
@@ -681,7 +719,7 @@ export const create = mutation({
 			targetProjectId: target.targetProjectId,
 			targetNoteIds: target.targetNoteIds,
 			targetLabel: target.targetLabel,
-			chatId: createAutomationChatId(),
+			chatId,
 			isPaused: false,
 			nextRunAt,
 			lastRunAt: undefined,

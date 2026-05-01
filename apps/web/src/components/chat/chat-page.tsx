@@ -18,6 +18,7 @@ import { useMutation, useQuery } from "convex/react";
 import { ArrowDown, FileText } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import type { AutomationListItem } from "@/components/automations/automation-types";
 import {
 	ChatSummarySheet,
 	OPEN_CHAT_SUMMARY_EVENT,
@@ -59,6 +60,8 @@ type ChatPageProps = {
 		title: string,
 		content: string,
 	) => Promise<"created" | undefined> | "created" | undefined;
+	automations?: AutomationListItem[];
+	onAddAutomation?: (chatId: string) => void;
 };
 
 const getLatestUserMessageText = (messages: UIMessage[]) => {
@@ -578,6 +581,29 @@ const useChatPageController = ({
 		onRemoveMention: (pageId: string) => {
 			setMentions((current) => current.filter((id) => id !== pageId));
 		},
+		onAddSource: (sourceId: string) => {
+			setSelectedSourceIds((current) => {
+				if (current.includes(sourceId)) {
+					return current;
+				}
+
+				if (sourceId.startsWith("workspace:")) {
+					return current.filter((id) => id.startsWith("app:")).concat(sourceId);
+				}
+
+				return [
+					...current.filter((id) => !id.startsWith("workspace:")),
+					sourceId,
+				];
+			});
+		},
+		onRemoveAutoAddedSource: (sourceId: string) => {
+			setSelectedSourceIds((current) =>
+				current.includes(sourceId)
+					? current.filter((id) => id !== sourceId)
+					: current,
+			);
+		},
 		onToggleSource: (sourceId: string) => {
 			setSelectedSourceIds((current) => {
 				if (sourceId.startsWith("workspace:")) {
@@ -619,6 +645,8 @@ export function ChatPage({
 	isDesktopMac,
 	onOpenConnectionsSettings,
 	onCreateNoteFromResponse,
+	automations,
+	onAddAutomation,
 }: ChatPageProps) {
 	const controller = useChatPageController({
 		chatId,
@@ -654,6 +682,16 @@ export function ChatPage({
 	);
 	const shouldShowActiveChatSurface =
 		controller.hasMessages || activeChatId === chatId;
+	const automationChatIds = React.useMemo(
+		() => new Set((automations ?? []).map((automation) => automation.chatId)),
+		[automations],
+	);
+	const currentAutomation = React.useMemo(
+		() =>
+			(automations ?? []).find((automation) => automation.chatId === chatId) ??
+			null,
+		[automations, chatId],
+	);
 	React.useEffect(() => {
 		const handleOpenSummary = () => {
 			controller.setSummaryOpen((current) => !current);
@@ -797,6 +835,8 @@ export function ChatPage({
 											onOpenChat={onOpenChat}
 											onPrefetchChat={onPrefetchChat}
 											onMoveToTrash={controller.setConfirmTrashChatId}
+											automationChatIds={automationChatIds}
+											onAddAutomation={onAddAutomation}
 										/>
 									</div>
 								</div>
@@ -839,7 +879,12 @@ export function ChatPage({
 			<ChatSummarySheet
 				open={controller.summaryOpen}
 				messages={controller.messages}
+				automation={currentAutomation}
+				chatTitle={controller.currentChatTitle}
+				desktopSafeTop={isDesktopMac}
 				workspaceSources={controller.workspaceSources}
+				onAddSource={controller.onAddSource}
+				onRemoveAutoAddedSource={controller.onRemoveAutoAddedSource}
 				onOpenChange={controller.setSummaryOpen}
 			/>
 		</>

@@ -103,18 +103,22 @@ function useResizeHandle({
 			return;
 		}
 
-		const previousUserSelect = document.body.style.userSelect;
-		const previousCursor = document.body.style.cursor;
+		const previousBodyStyle = document.body.getAttribute("style");
 		const previousPanelResizingState =
 			document.documentElement.dataset.panelResizing;
 
-		document.body.style.userSelect = "none";
-		document.body.style.cursor = cursor;
+		document.body.setAttribute(
+			"style",
+			`${previousBodyStyle ?? ""}; user-select: none; cursor: ${cursor};`,
+		);
 		document.documentElement.dataset.panelResizing = "true";
 
 		return () => {
-			document.body.style.userSelect = previousUserSelect;
-			document.body.style.cursor = previousCursor;
+			if (previousBodyStyle === null) {
+				document.body.removeAttribute("style");
+			} else {
+				document.body.setAttribute("style", previousBodyStyle);
+			}
 			if (previousPanelResizingState === undefined) {
 				delete document.documentElement.dataset.panelResizing;
 				return;

@@ -672,13 +672,15 @@ export function NoteActionsMenu({
 							preventMenuCloseAutoFocusRef={preventMenuCloseAutoFocusRef}
 							note={note}
 							projects={projects}
-							isUpdatingShare={isUpdatingShare}
-							isUpdatingProject={isUpdatingProject}
+							status={{
+								isUpdatingShare,
+								isUpdatingProject,
+								isUpdatingStar,
+								showRename,
+							}}
 							onSetVisibility={handleSetVisibility}
 							onSetProject={handleSetProject}
-							showRename={showRename}
 							onStartRename={handleStartRename}
-							isUpdatingStar={isUpdatingStar}
 							onToggleStar={handleToggleStar}
 							onCopyLink={handleCopyLink}
 							onConfirmTrash={handleConfirmTrashOpen}
@@ -722,13 +724,15 @@ export function NoteActionsMenu({
 							preventMenuCloseAutoFocusRef={preventMenuCloseAutoFocusRef}
 							note={note}
 							projects={projects}
-							isUpdatingShare={isUpdatingShare}
-							isUpdatingProject={isUpdatingProject}
+							status={{
+								isUpdatingShare,
+								isUpdatingProject,
+								isUpdatingStar,
+								showRename,
+							}}
 							onSetVisibility={handleSetVisibility}
 							onSetProject={handleSetProject}
-							showRename={showRename}
 							onStartRename={handleStartRename}
-							isUpdatingStar={isUpdatingStar}
 							onToggleStar={handleToggleStar}
 							onCopyLink={handleCopyLink}
 							onConfirmTrash={handleConfirmTrashOpen}
@@ -1007,13 +1011,10 @@ function NoteActionsDropdownContent({
 	preventMenuCloseAutoFocusRef,
 	note,
 	projects,
-	isUpdatingShare,
-	isUpdatingProject,
+	status,
 	onSetVisibility,
 	onSetProject,
-	showRename,
 	onStartRename,
-	isUpdatingStar,
 	onToggleStar,
 	onCopyLink,
 	onConfirmTrash,
@@ -1025,17 +1026,22 @@ function NoteActionsDropdownContent({
 	preventMenuCloseAutoFocusRef: React.MutableRefObject<boolean>;
 	note: Doc<"notes"> | null | undefined;
 	projects: Array<Doc<"projects">> | undefined;
-	isUpdatingShare: boolean;
-	isUpdatingProject: boolean;
+	status: {
+		isUpdatingShare: boolean;
+		isUpdatingProject: boolean;
+		isUpdatingStar: boolean;
+		showRename: boolean;
+	};
 	onSetVisibility: (visibility: NoteVisibility) => Promise<void>;
 	onSetProject: (projectId: Id<"projects"> | null) => Promise<void>;
-	showRename: boolean;
 	onStartRename: () => void;
-	isUpdatingStar: boolean;
 	onToggleStar: () => Promise<void>;
 	onCopyLink: () => Promise<void>;
 	onConfirmTrash: () => void;
 }) {
+	const { isUpdatingShare, isUpdatingProject, isUpdatingStar, showRename } =
+		status;
+
 	return (
 		<DropdownMenuContent
 			align={align}

@@ -599,12 +599,14 @@ function MainApp() {
 		return (
 			<DesktopPermissionsOnboardingScreen
 				error={controller.desktopPermissionsError}
-				isDesktopMac={controller.isDesktopMac}
 				activePermissionId={controller.activeDesktopPermissionId}
-				isRefreshing={controller.isRefreshingDesktopPermissions}
-				isSubmitting={controller.isCompletingDesktopPermissions}
 				permissions={controller.desktopPermissionRows}
-				canContinue={controller.areDesktopPermissionsReady}
+				status={{
+					isDesktopMac: controller.isDesktopMac,
+					isRefreshing: controller.isRefreshingDesktopPermissions,
+					isSubmitting: controller.isCompletingDesktopPermissions,
+					canContinue: controller.areDesktopPermissionsReady,
+				}}
 				onContinue={controller.handleCompleteDesktopPermissions}
 				onOpenSettings={controller.handleOpenDesktopPermissionSettings}
 				onRequestPermission={controller.handleRequestDesktopPermission}
@@ -616,18 +618,22 @@ function MainApp() {
 		<AppGate
 			sharedNoteShareId={controller.sharedNoteShareId}
 			sharedNote={controller.sharedNote}
-			isSessionPending={controller.isSessionPending}
+			authState={{
+				isSessionPending: controller.isSessionPending,
+				isConvexAuthenticated: controller.isConvexAuthenticated,
+				isAuthenticating: controller.isAuthenticating,
+				isDesktopMac: controller.isDesktopMac,
+			}}
 			session={controller.session}
-			isConvexAuthenticated={controller.isConvexAuthenticated}
 			authError={controller.authError}
-			isAuthenticating={controller.isAuthenticating}
 			authenticatingProvider={controller.authenticatingProvider}
-			isDesktopMac={controller.isDesktopMac}
 			onGitHubSignIn={controller.handleGitHubSignIn}
 			onGoogleSignIn={controller.handleGoogleSignIn}
 			workspaces={controller.workspaces}
 			onboardingStatus={controller.onboardingStatus}
-			isCreatingWorkspace={controller.isCreatingWorkspace}
+			workspaceState={{
+				isCreatingWorkspace: controller.isCreatingWorkspace,
+			}}
 			onContinueFromWelcomeCelebration={
 				controller.handleContinueFromWelcomeCelebration
 			}
@@ -635,17 +641,20 @@ function MainApp() {
 			workspaceName={controller.workspaceName}
 			onWorkspaceNameChange={controller.setWorkspaceName}
 			onCreateWorkspace={controller.handleCreateWorkspace}
-			shouldLoadDesktopPermissions={controller.shouldLoadDesktopPermissions}
 			desktopPermissionsStatus={controller.desktopPermissionsStatus}
-			shouldShowDesktopPermissionsScreen={
-				controller.shouldShowDesktopPermissionsScreen
-			}
+			desktopPermissionState={{
+				shouldLoadDesktopPermissions: controller.shouldLoadDesktopPermissions,
+				shouldShowDesktopPermissionsScreen:
+					controller.shouldShowDesktopPermissionsScreen,
+				isRefreshingDesktopPermissions:
+					controller.isRefreshingDesktopPermissions,
+				isCompletingDesktopPermissions:
+					controller.isCompletingDesktopPermissions,
+				areDesktopPermissionsReady: controller.areDesktopPermissionsReady,
+			}}
 			desktopPermissionsError={controller.desktopPermissionsError}
 			activeDesktopPermissionId={controller.activeDesktopPermissionId}
-			isRefreshingDesktopPermissions={controller.isRefreshingDesktopPermissions}
-			isCompletingDesktopPermissions={controller.isCompletingDesktopPermissions}
 			desktopPermissionRows={controller.desktopPermissionRows}
-			areDesktopPermissionsReady={controller.areDesktopPermissionsReady}
 			onCompleteDesktopPermissions={controller.handleCompleteDesktopPermissions}
 			onOpenDesktopPermissionSettings={
 				controller.handleOpenDesktopPermissionSettings
@@ -663,32 +672,25 @@ function App() {
 function AppGate({
 	sharedNoteShareId,
 	sharedNote,
-	isSessionPending,
+	authState,
 	session,
-	isConvexAuthenticated,
 	authError,
-	isAuthenticating,
 	authenticatingProvider,
-	isDesktopMac,
 	onGitHubSignIn,
 	onGoogleSignIn,
 	workspaces,
 	onboardingStatus,
-	isCreatingWorkspace,
+	workspaceState,
 	onContinueFromWelcomeCelebration,
 	workspaceError,
 	workspaceName,
 	onWorkspaceNameChange,
 	onCreateWorkspace,
-	shouldLoadDesktopPermissions,
 	desktopPermissionsStatus,
-	shouldShowDesktopPermissionsScreen,
+	desktopPermissionState,
 	desktopPermissionsError,
 	activeDesktopPermissionId,
-	isRefreshingDesktopPermissions,
-	isCompletingDesktopPermissions,
 	desktopPermissionRows,
-	areDesktopPermissionsReady,
 	onCompleteDesktopPermissions,
 	onOpenDesktopPermissionSettings,
 	onRequestDesktopPermission,
@@ -696,13 +698,15 @@ function AppGate({
 }: {
 	sharedNoteShareId: string | null;
 	sharedNote: Doc<"notes"> | null | undefined;
-	isSessionPending: boolean;
+	authState: {
+		isSessionPending: boolean;
+		isConvexAuthenticated: boolean;
+		isAuthenticating: boolean;
+		isDesktopMac: boolean;
+	};
 	session: AuthSession | null | undefined;
-	isConvexAuthenticated: boolean;
 	authError: string | null;
-	isAuthenticating: boolean;
 	authenticatingProvider: SocialAuthProvider | null;
-	isDesktopMac: boolean;
 	onGitHubSignIn: () => void;
 	onGoogleSignIn: () => void;
 	workspaces: Array<WorkspaceRecord> | undefined;
@@ -713,26 +717,44 @@ function AppGate({
 		  }
 		| null
 		| undefined;
-	isCreatingWorkspace: boolean;
+	workspaceState: {
+		isCreatingWorkspace: boolean;
+	};
 	onContinueFromWelcomeCelebration: () => void;
 	workspaceError: string | null;
 	workspaceName: string;
 	onWorkspaceNameChange: (value: string) => void;
 	onCreateWorkspace: () => void;
-	shouldLoadDesktopPermissions: boolean;
 	desktopPermissionsStatus: DesktopPermissionsStatus | null;
-	shouldShowDesktopPermissionsScreen: boolean;
+	desktopPermissionState: {
+		shouldLoadDesktopPermissions: boolean;
+		shouldShowDesktopPermissionsScreen: boolean;
+		isRefreshingDesktopPermissions: boolean;
+		isCompletingDesktopPermissions: boolean;
+		areDesktopPermissionsReady: boolean;
+	};
 	desktopPermissionsError: string | null;
 	activeDesktopPermissionId: DesktopPermissionId | null;
-	isRefreshingDesktopPermissions: boolean;
-	isCompletingDesktopPermissions: boolean;
 	desktopPermissionRows: DesktopPermissionRow[];
-	areDesktopPermissionsReady: boolean;
 	onCompleteDesktopPermissions: () => void;
 	onOpenDesktopPermissionSettings: (permissionId: DesktopPermissionId) => void;
 	onRequestDesktopPermission: (permissionId: DesktopPermissionId) => void;
 	onOpenOwnedSharedNote: (noteId: Id<"notes">) => void;
 }) {
+	const {
+		isSessionPending,
+		isConvexAuthenticated,
+		isAuthenticating,
+		isDesktopMac,
+	} = authState;
+	const { isCreatingWorkspace } = workspaceState;
+	const {
+		shouldLoadDesktopPermissions,
+		shouldShowDesktopPermissionsScreen,
+		isRefreshingDesktopPermissions,
+		isCompletingDesktopPermissions,
+		areDesktopPermissionsReady,
+	} = desktopPermissionState;
 	if (sharedNoteShareId) {
 		return (
 			<ScrollArea className="h-svh" viewportClassName="overscroll-contain">
@@ -793,12 +815,14 @@ function AppGate({
 		return (
 			<DesktopPermissionsOnboardingScreen
 				error={desktopPermissionsError}
-				isDesktopMac={isDesktopMac}
 				activePermissionId={activeDesktopPermissionId}
-				isRefreshing={isRefreshingDesktopPermissions}
-				isSubmitting={isCompletingDesktopPermissions}
 				permissions={desktopPermissionRows}
-				canContinue={areDesktopPermissionsReady}
+				status={{
+					isDesktopMac,
+					isRefreshing: isRefreshingDesktopPermissions,
+					isSubmitting: isCompletingDesktopPermissions,
+					canContinue: areDesktopPermissionsReady,
+				}}
 				onContinue={onCompleteDesktopPermissions}
 				onOpenSettings={onOpenDesktopPermissionSettings}
 				onRequestPermission={onRequestDesktopPermission}
@@ -906,11 +930,11 @@ function WelcomeCelebrationScreen({
 		let timeoutId: number | undefined;
 
 		const launchFireworks = async () => {
-			const { default: confetti } = await import("canvas-confetti");
-
 			if (isCancelled) {
 				return;
 			}
+
+			const { default: confetti } = await import("canvas-confetti");
 
 			const fire = confetti.create(canvas, {
 				resize: true,
@@ -964,10 +988,12 @@ function WelcomeCelebrationScreen({
 				timeoutId = window.setTimeout(burst, 260 + Math.random() * 180);
 			};
 
-			burst();
-			cleanupFireworks = () => {
-				fire.reset();
-			};
+			if (!isCancelled) {
+				burst();
+				cleanupFireworks = () => {
+					fire.reset();
+				};
+			}
 		};
 
 		void launchFireworks();
@@ -1055,27 +1081,28 @@ const getDesktopPermissionStateLabel = (permission: DesktopPermissionRow) => {
 
 function DesktopPermissionsOnboardingScreen({
 	error,
-	isDesktopMac,
 	activePermissionId,
-	isRefreshing,
-	isSubmitting,
 	permissions,
-	canContinue,
+	status,
 	onContinue,
 	onOpenSettings,
 	onRequestPermission,
 }: {
 	error: string | null;
-	isDesktopMac: boolean;
 	activePermissionId: DesktopPermissionId | null;
-	isRefreshing: boolean;
-	isSubmitting: boolean;
 	permissions: DesktopPermissionRow[];
-	canContinue: boolean;
+	status: {
+		isDesktopMac: boolean;
+		isRefreshing: boolean;
+		isSubmitting: boolean;
+		canContinue: boolean;
+	};
 	onContinue: () => void;
 	onOpenSettings: (permissionId: DesktopPermissionId) => void;
 	onRequestPermission: (permissionId: DesktopPermissionId) => void;
 }) {
+	const { isDesktopMac, isRefreshing, isSubmitting, canContinue } = status;
+
 	if (permissions.length === 0) {
 		return null;
 	}

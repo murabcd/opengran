@@ -23,14 +23,12 @@ export function MeetingWidgetScreen() {
 
 	React.useEffect(() => {
 		document.title = "OpenGran meeting widget";
-		document.documentElement.style.background = "transparent";
-		document.body.style.background = "transparent";
-		document.body.style.margin = "0";
+		document.documentElement.setAttribute("style", "background: transparent;");
+		document.body.setAttribute("style", "background: transparent; margin: 0;");
 
 		return () => {
-			document.documentElement.style.background = "";
-			document.body.style.background = "";
-			document.body.style.margin = "";
+			document.documentElement.removeAttribute("style");
+			document.body.removeAttribute("style");
 		};
 	}, []);
 

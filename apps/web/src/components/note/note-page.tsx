@@ -195,20 +195,19 @@ const areTableOfContentsEqual = (
 	currentAnchors: TableOfContentData,
 	nextAnchors: TableOfContentData,
 ) => {
-	if (currentAnchors.length !== nextAnchors.length) {
-		return false;
-	}
-
-	return currentAnchors.every((anchor, index) => {
-		const nextAnchor = nextAnchors[index];
-		return (
-			nextAnchor !== undefined &&
-			anchor.id === nextAnchor.id &&
-			anchor.textContent === nextAnchor.textContent &&
-			anchor.originalLevel === nextAnchor.originalLevel &&
-			anchor.isActive === nextAnchor.isActive
-		);
-	});
+	return (
+		currentAnchors.length === nextAnchors.length &&
+		currentAnchors.every((anchor, index) => {
+			const nextAnchor = nextAnchors[index];
+			return (
+				nextAnchor !== undefined &&
+				anchor.id === nextAnchor.id &&
+				anchor.textContent === nextAnchor.textContent &&
+				anchor.originalLevel === nextAnchor.originalLevel &&
+				anchor.isActive === nextAnchor.isActive
+			);
+		})
+	);
 };
 
 export type NoteEditorActions = {
@@ -659,8 +658,9 @@ const useNotePageController = ({
 			return;
 		}
 
-		element.style.height = "auto";
-		element.style.height = `${element.scrollHeight}px`;
+		element.style.cssText += "height: auto;";
+		const nextHeight = element.scrollHeight;
+		element.style.height = `${nextHeight}px`;
 	}, [title]);
 
 	const copyText = React.useCallback(async () => {
@@ -957,24 +957,26 @@ const useNotePageController = ({
 					responseError = payload.error ?? "Failed to apply template.";
 				};
 
-				while (true) {
+				const readResponseChunk = async (): Promise<void> => {
 					const { done, value } = await reader.read();
 					bufferedResponse += decoder.decode(value ?? new Uint8Array(), {
 						stream: !done,
 					});
 
-					let lineBreakIndex = bufferedResponse.indexOf("\n");
-					while (lineBreakIndex >= 0) {
-						const nextLine = bufferedResponse.slice(0, lineBreakIndex);
-						bufferedResponse = bufferedResponse.slice(lineBreakIndex + 1);
+					const lines = bufferedResponse.split("\n");
+					bufferedResponse = lines.pop() ?? "";
+					for (const nextLine of lines) {
 						handleEvent(nextLine);
-						lineBreakIndex = bufferedResponse.indexOf("\n");
 					}
 
 					if (done) {
-						break;
+						return;
 					}
-				}
+
+					await readResponseChunk();
+				};
+
+				await readResponseChunk();
 
 				if (bufferedResponse.trim()) {
 					handleEvent(bufferedResponse);
@@ -1398,21 +1400,30 @@ function useNotePageCommentPanel({
 			pendingCommentSelection: null,
 		});
 	}, [noteId]);
+	const syncCommentThreadSelectionFromLocationRef = React.useRef(
+		syncCommentThreadSelectionFromLocation,
+	);
+
+	React.useEffect(() => {
+		syncCommentThreadSelectionFromLocationRef.current =
+			syncCommentThreadSelectionFromLocation;
+	}, [syncCommentThreadSelectionFromLocation]);
 
 	React.useEffect(() => {
 		syncCommentThreadSelectionFromLocation();
 	}, [syncCommentThreadSelectionFromLocation]);
 
 	React.useEffect(() => {
-		window.addEventListener("popstate", syncCommentThreadSelectionFromLocation);
+		const handlePopState = () => {
+			syncCommentThreadSelectionFromLocationRef.current();
+		};
+
+		window.addEventListener("popstate", handlePopState);
 
 		return () => {
-			window.removeEventListener(
-				"popstate",
-				syncCommentThreadSelectionFromLocation,
-			);
+			window.removeEventListener("popstate", handlePopState);
 		};
-	}, [syncCommentThreadSelectionFromLocation]);
+	}, []);
 
 	return {
 		activeCommentThreadId,

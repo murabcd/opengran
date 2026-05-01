@@ -107,6 +107,11 @@ const INITIAL_SEARCH_FILTERS_STATE: SearchFiltersState = {
 	sourceSearchValue: "",
 };
 
+const searchDateRangeFormatter = new Intl.DateTimeFormat(undefined, {
+	month: "short",
+	day: "numeric",
+});
+
 const reduceSearchFiltersState = (
 	state: SearchFiltersState,
 	patch: Partial<SearchFiltersState>,
@@ -210,6 +215,8 @@ function SearchCommandFilters({
 	setState: React.ActionDispatch<[patch: Partial<SearchFiltersState>]>;
 	hideFilters: () => void;
 }) {
+	const [defaultCalendarMonth] = React.useState(() => new Date());
+
 	return (
 		<>
 			<div className="flex items-start gap-1 px-1 pt-1">
@@ -407,7 +414,7 @@ function SearchCommandFilters({
 								<Calendar
 									mode="range"
 									selected={dateRange}
-									defaultMonth={dateRange?.from ?? new Date()}
+									defaultMonth={dateRange?.from ?? defaultCalendarMonth}
 									classNames={{
 										root: "w-full",
 										today:
@@ -805,16 +812,11 @@ function formatDateRange(range: DateRange) {
 		return "Date";
 	}
 
-	const formatter = new Intl.DateTimeFormat(undefined, {
-		month: "short",
-		day: "numeric",
-	});
-
 	if (!range.to) {
-		return formatter.format(range.from);
+		return searchDateRangeFormatter.format(range.from);
 	}
 
-	return `${formatter.format(range.from)} - ${formatter.format(range.to)}`;
+	return `${searchDateRangeFormatter.format(range.from)} - ${searchDateRangeFormatter.format(range.to)}`;
 }
 
 function startOfDay(date: Date) {

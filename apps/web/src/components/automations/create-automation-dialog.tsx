@@ -54,15 +54,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { useQuery } from "convex/react";
-import {
-	AtSign,
-	Box,
-	Clock,
-	FileText,
-	FolderClosed,
-	Grid3x3,
-	X,
-} from "lucide-react";
+import { AtSign, Clock, FileText, Grid3x3, Link2, X } from "lucide-react";
 import * as React from "react";
 import {
 	AUTOMATION_SCHEDULE_PERIODS,
@@ -81,7 +73,7 @@ import {
 } from "@/lib/chat-source-display";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import { api } from "../../../../../convex/_generated/api";
-import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 
 const AUTOMATION_PICKER_TRIGGER_CLASS_NAME =
 	"group/automation-picker min-w-0 max-w-[180px] justify-start overflow-hidden rounded-full font-normal text-muted-foreground";
@@ -91,6 +83,7 @@ type CreateAutomationDialogProps = {
 	onOpenChange: (open: boolean) => void;
 	onCreateAutomation: (automation: AutomationDraft) => void | Promise<void>;
 	initialAutomation?: AutomationDraft | null;
+	initialTitle?: string;
 };
 
 type AutomationNoteSource = {
@@ -146,7 +139,6 @@ const formatTimeInputValue = (value: Date) => {
 };
 
 type AutomationDialogState = {
-	projectPickerOpen: boolean;
 	schedulePickerOpen: boolean;
 	modelPickerOpen: boolean;
 	appSourcesPickerOpen: boolean;
@@ -168,7 +160,6 @@ type AutomationDialogStateUpdate =
 	| ((currentState: AutomationDialogState) => Partial<AutomationDialogState>);
 
 const createEmptyAutomationDialogState = (): AutomationDialogState => ({
-	projectPickerOpen: false,
 	schedulePickerOpen: false,
 	modelPickerOpen: false,
 	appSourcesPickerOpen: false,
@@ -187,11 +178,15 @@ const createEmptyAutomationDialogState = (): AutomationDialogState => ({
 
 const createAutomationDialogState = (
 	initialAutomation: AutomationDraft | null,
+	initialTitle = "",
 ): AutomationDialogState => {
 	const emptyState = createEmptyAutomationDialogState();
 
 	if (!initialAutomation) {
-		return emptyState;
+		return {
+			...emptyState,
+			title: initialTitle.trim(),
+		};
 	}
 
 	return {
@@ -228,13 +223,10 @@ function useCreateAutomationDialogElement({
 	onOpenChange,
 	onCreateAutomation,
 	initialAutomation = null,
+	initialTitle = "",
 }: CreateAutomationDialogProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const promptTextareaRef = React.useRef<HTMLTextAreaElement | null>(null);
-	const projects = useQuery(
-		api.projects.list,
-		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
-	);
 	const notes = useQuery(
 		api.notes.list,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
@@ -252,10 +244,9 @@ function useCreateAutomationDialogElement({
 	const [dialogState, updateDialogState] = React.useReducer(
 		automationDialogStateReducer,
 		null,
-		() => createAutomationDialogState(initialAutomation),
+		() => createAutomationDialogState(initialAutomation, initialTitle),
 	);
 	const {
-		projectPickerOpen,
 		schedulePickerOpen,
 		modelPickerOpen,
 		appSourcesPickerOpen,
@@ -301,25 +292,12 @@ function useCreateAutomationDialogElement({
 	);
 	React.useEffect(() => {
 		updateDialogState(
-			createAutomationDialogState(open ? initialAutomation : null),
+			createAutomationDialogState(
+				open ? initialAutomation : null,
+				initialTitle,
+			),
 		);
-	}, [initialAutomation, open]);
-
-	React.useEffect(() => {
-		if (projects === undefined) {
-			return;
-		}
-
-		if (target?.kind !== "project") {
-			return;
-		}
-
-		if (projects?.some((project) => project._id === target.projectId)) {
-			return;
-		}
-
-		updateDialogState({ target: null });
-	}, [projects, target]);
+	}, [initialAutomation, initialTitle, open]);
 
 	React.useEffect(() => {
 		updateDialogState((currentState) => {
@@ -351,7 +329,6 @@ function useCreateAutomationDialogElement({
 
 	const closeAutomationPickers = React.useCallback(() => {
 		updateDialogState({
-			projectPickerOpen: false,
 			schedulePickerOpen: false,
 			modelPickerOpen: false,
 			appSourcesPickerOpen: false,
@@ -377,17 +354,6 @@ function useCreateAutomationDialogElement({
 			}
 
 			updateDialogState({ appSourcesPickerOpen: nextOpen });
-		},
-		[closeAutomationPickers],
-	);
-
-	const handleProjectPickerOpenChange = React.useCallback(
-		(nextOpen: boolean) => {
-			if (nextOpen) {
-				closeAutomationPickers();
-			}
-
-			updateDialogState({ projectPickerOpen: nextOpen });
 		},
 		[closeAutomationPickers],
 	);
@@ -650,18 +616,6 @@ function useCreateAutomationDialogElement({
 									selectedSourceIds={selectedConnectedAppIds}
 									onToggleSource={handleConnectedAppToggle}
 								/>
-								<ProjectPicker
-									open={projectPickerOpen}
-									onOpenChange={handleProjectPickerOpenChange}
-									projects={projects ?? []}
-									target={target?.kind === "project" ? target : null}
-									onTargetSelect={(nextTarget) => {
-										updateDialogState({
-											selectedNoteIds: [],
-											target: nextTarget,
-										});
-									}}
-								/>
 								<SchedulePicker
 									open={schedulePickerOpen}
 									onOpenChange={handleSchedulePickerOpenChange}
@@ -726,8 +680,8 @@ function AppSourcesPicker({
 		selectedSourceIds.length === 1 && selectedSource
 			? getAppSourceLabel(selectedSource.provider)
 			: selectedSourceIds.length > 1
-				? `${selectedSourceIds.length} apps`
-				: "Apps";
+				? `${selectedSourceIds.length} connections`
+				: "Connections";
 
 	return (
 		<DropdownMenu open={open} onOpenChange={onOpenChange}>
@@ -739,7 +693,7 @@ function AppSourcesPicker({
 					className={cn(AUTOMATION_PICKER_TRIGGER_CLASS_NAME)}
 				>
 					<span className="flex min-w-0 flex-1 items-center gap-2">
-						<Box className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
+						<Link2 className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
 						<span className="min-w-0 truncate">{label}</span>
 					</span>
 				</InputGroupButton>
@@ -747,7 +701,7 @@ function AppSourcesPicker({
 			<DropdownMenuContent side="top" align="start" className="w-64">
 				<DropdownMenuGroup>
 					<DropdownMenuLabel className="text-xs text-muted-foreground">
-						Apps
+						Tools
 					</DropdownMenuLabel>
 					{sources.length > 0 ? (
 						sources.map((source, index) => {
@@ -992,102 +946,6 @@ function ModelPicker({
 				</DropdownMenuGroup>
 			</DropdownMenuContent>
 		</DropdownMenu>
-	);
-}
-
-function ProjectPicker({
-	open,
-	onOpenChange,
-	projects,
-	target,
-	onTargetSelect,
-}: {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	projects: Array<Doc<"projects">>;
-	target: AutomationTarget | null;
-	onTargetSelect: (target: AutomationTarget) => void;
-}) {
-	return (
-		<Popover open={open} onOpenChange={onOpenChange}>
-			<PopoverTrigger asChild>
-				<InputGroupButton
-					type="button"
-					variant="ghost"
-					size="sm"
-					className={cn(AUTOMATION_PICKER_TRIGGER_CLASS_NAME)}
-				>
-					<span className="flex min-w-0 flex-1 items-center gap-2">
-						<FolderClosed className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
-						<span className="min-w-0 truncate">
-							{target?.label ?? "Project"}
-						</span>
-					</span>
-				</InputGroupButton>
-			</PopoverTrigger>
-			<PopoverContent
-				align="start"
-				sideOffset={6}
-				className="w-64 gap-0 border-input/30 p-0 [&_[data-slot=scroll-area]]:w-full [&_[data-slot=scroll-area-viewport]]:w-full [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:w-full [&_[data-slot=scroll-area-viewport]>div]:min-w-0 [&_[data-slot=command-list]]:w-full [&_[data-slot=command-list]]:min-w-0"
-			>
-				<Command className="bg-popover p-1">
-					<CommandInput className="pl-2" placeholder="Search projects" />
-					<CommandList className="max-h-64">
-						<CommandEmpty>No projects found.</CommandEmpty>
-						<CommandGroup className="p-1 [&>[cmdk-group-items]]:flex [&>[cmdk-group-items]]:flex-col [&>[cmdk-group-items]]:gap-1">
-							{projects.map((project) => (
-								<ProjectPickerItem
-									key={project._id}
-									icon={FolderClosed}
-									label={project.name}
-									selected={
-										target?.kind === "project" &&
-										target.projectId === project._id
-									}
-									onSelect={() => {
-										onTargetSelect({
-											kind: "project",
-											label: project.name,
-											projectId: project._id,
-										});
-										onOpenChange(false);
-									}}
-								/>
-							))}
-						</CommandGroup>
-					</CommandList>
-				</Command>
-			</PopoverContent>
-		</Popover>
-	);
-}
-
-function ProjectPickerItem({
-	icon,
-	label,
-	selected,
-	onSelect,
-}: {
-	icon: React.ComponentType<{ className?: string }>;
-	label: string;
-	selected: boolean;
-	onSelect: () => void;
-}) {
-	const Icon = icon;
-
-	return (
-		<CommandItem
-			value={label}
-			onSelect={onSelect}
-			data-checked={selected}
-			className={cn(
-				"h-8 w-full cursor-pointer gap-2 overflow-hidden rounded-lg p-2 text-left text-sm ring-sidebar-ring transition-[background-color,color] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 data-selected:bg-sidebar-accent data-selected:text-sidebar-accent-foreground",
-				selected && "bg-sidebar-accent text-sidebar-accent-foreground",
-			)}
-		>
-			<Icon className="size-4 shrink-0 text-muted-foreground group-hover/command-item:text-sidebar-accent-foreground group-data-[selected=true]/command-item:text-sidebar-accent-foreground" />
-			<div className="min-w-0 flex-1 truncate">{label}</div>
-		</CommandItem>
 	);
 }
 

@@ -212,8 +212,7 @@ export function ChatComposer({
 	onOpenConnectionsSettings,
 }: ChatComposerProps) {
 	const promptRef = React.useRef<HTMLTextAreaElement | null>(null);
-	const [noteMentionRange, setNoteMentionRange] =
-		React.useState<NoteMentionRange | null>(null);
+	const noteMentionRangeRef = React.useRef<NoteMentionRange | null>(null);
 	const filteredWorkspaceSources = filterWorkspaceSources(
 		workspaceSources,
 		sourceSearchTerm,
@@ -233,6 +232,18 @@ export function ChatComposer({
 			}),
 		[contextPages, mentions],
 	);
+	const selectedWorkspaceSourceChips = React.useMemo(
+		() =>
+			selectedSourceIds.flatMap((sourceId) => {
+				if (sourceId.startsWith("app:") || sourceId.startsWith("workspace:")) {
+					return [];
+				}
+
+				const source = workspaceSources.find((item) => item.id === sourceId);
+				return source ? [source] : [];
+			}),
+		[selectedSourceIds, workspaceSources],
+	);
 	const showTopAddon = true;
 	useChatComposerPromptFocus({
 		promptRef,
@@ -248,7 +259,7 @@ export function ChatComposer({
 			);
 
 			onDraftChange(nextDraft);
-			setNoteMentionRange(mentionRange);
+			noteMentionRangeRef.current = mentionRange;
 
 			if (mentionRange) {
 				onDocumentSearchTermChange(mentionRange.query);
@@ -259,6 +270,7 @@ export function ChatComposer({
 	);
 	const handleAddMention = React.useCallback(
 		(pageId: string) => {
+			const noteMentionRange = noteMentionRangeRef.current;
 			onAddMention(pageId);
 
 			if (noteMentionRange) {
@@ -275,9 +287,9 @@ export function ChatComposer({
 				});
 			}
 
-			setNoteMentionRange(null);
+			noteMentionRangeRef.current = null;
 		},
-		[draft, noteMentionRange, onAddMention, onDraftChange],
+		[draft, onAddMention, onDraftChange],
 	);
 
 	return (
@@ -299,7 +311,9 @@ export function ChatComposer({
 					<ChatComposerTopAddon
 						useCompactLayout={useCompactLayout}
 						mentionedPages={mentionedPages}
+						selectedWorkspaceSources={selectedWorkspaceSourceChips}
 						onRemoveMention={onRemoveMention}
+						onRemoveSelectedSource={onToggleSource}
 						mentionPicker={
 							<MentionPicker
 								open={mentionPopoverOpen}
@@ -565,12 +579,16 @@ function ChatComposerTopAccessory({
 function ChatComposerTopAddon({
 	useCompactLayout,
 	mentionedPages,
+	selectedWorkspaceSources,
 	onRemoveMention,
+	onRemoveSelectedSource,
 	mentionPicker,
 }: {
 	useCompactLayout: boolean;
 	mentionedPages: ContextPage[];
+	selectedWorkspaceSources: WorkspaceSource[];
 	onRemoveMention: (pageId: string) => void;
+	onRemoveSelectedSource: (sourceId: string) => void;
 	mentionPicker: React.ReactNode;
 }) {
 	return (
@@ -583,6 +601,12 @@ function ChatComposerTopAddon({
 				<ChatComposerMentionChips
 					mentionedPages={mentionedPages}
 					onRemoveMention={onRemoveMention}
+				/>
+			) : null}
+			{selectedWorkspaceSources.length > 0 ? (
+				<ChatComposerSelectedSourceChips
+					selectedWorkspaceSources={selectedWorkspaceSources}
+					onRemoveSelectedSource={onRemoveSelectedSource}
 				/>
 			) : null}
 		</InputGroupAddon>
@@ -609,6 +633,32 @@ function ChatComposerMentionChips({
 					<document.icon />
 					<span className="min-w-0 truncate">{document.title}</span>
 					<X className="opacity-0 transition-opacity group-hover/note-mention-chip:opacity-100 group-focus-visible/note-mention-chip:opacity-100" />
+				</InputGroupButton>
+			))}
+		</div>
+	);
+}
+
+function ChatComposerSelectedSourceChips({
+	selectedWorkspaceSources,
+	onRemoveSelectedSource,
+}: {
+	selectedWorkspaceSources: WorkspaceSource[];
+	onRemoveSelectedSource: (sourceId: string) => void;
+}) {
+	return (
+		<div className="no-scrollbar -m-1.5 flex gap-1 overflow-y-auto p-1.5">
+			{selectedWorkspaceSources.map((source) => (
+				<InputGroupButton
+					key={source.id}
+					size="sm"
+					variant="secondary"
+					className="group/source-chip max-w-48 rounded-full pl-2!"
+					onClick={() => onRemoveSelectedSource(source.id)}
+				>
+					<FileText />
+					<span className="min-w-0 truncate">{source.title}</span>
+					<X className="opacity-0 transition-opacity group-hover/source-chip:opacity-100 group-focus-visible/source-chip:opacity-100" />
 				</InputGroupButton>
 			))}
 		</div>
@@ -788,7 +838,12 @@ function ScopePicker({
 				</TooltipTrigger>
 				<TooltipContent>Select scope</TooltipContent>
 			</Tooltip>
-			<DropdownMenuContent side="top" align="start" sideOffset={4}>
+			<DropdownMenuContent
+				side="top"
+				align="start"
+				sideOffset={4}
+				className="w-72"
+			>
 				<DropdownMenuGroup>
 					<DropdownMenuItem
 						asChild
@@ -812,7 +867,7 @@ function ScopePicker({
 						onSelect={(event) => event.preventDefault()}
 					>
 						<label htmlFor="apps">
-							<Grid3x3 /> Apps and integrations
+							<Grid3x3 /> Tools and integrations
 							<Switch
 								id="apps"
 								className="ml-auto"
@@ -890,7 +945,7 @@ function ScopePicker({
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem onClick={onOpenConnectionsSettings}>
-						<Plus /> Connect apps
+						<Plus /> Connect tools
 					</DropdownMenuItem>
 				</DropdownMenuGroup>
 			</DropdownMenuContent>

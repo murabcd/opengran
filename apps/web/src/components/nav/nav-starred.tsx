@@ -5,7 +5,7 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from "@workspace/ui/components/sidebar";
-import { FileText, MessageCircle, MoreHorizontal } from "lucide-react";
+import { Clock, FileText, MessageCircle, MoreHorizontal } from "lucide-react";
 import * as React from "react";
 import { ChatActionsMenu } from "@/components/chat/chat-actions-menu";
 import { SidebarCollapsibleGroup } from "@/components/nav/sidebar-collapsible-group";
@@ -35,6 +35,7 @@ const getChatDisplayTitle = (title?: string) => {
 
 export function NavStarred({
 	chats,
+	automationChatIds,
 	notes,
 	currentChatId,
 	currentChatTitle,
@@ -48,6 +49,7 @@ export function NavStarred({
 	onNoteTrashed,
 }: {
 	chats: Array<Doc<"chats">> | undefined;
+	automationChatIds?: ReadonlySet<string>;
 	notes: Array<Doc<"notes">> | undefined;
 	currentChatId: string | null;
 	currentChatTitle?: string;
@@ -60,28 +62,33 @@ export function NavStarred({
 	onNoteTitleChange?: (title: string) => void;
 	onNoteTrashed?: (noteId: Id<"notes">) => void;
 }) {
-	const starredItems = React.useMemo<StarredItem[]>(
-		() =>
-			[
-				...(notes ?? [])
-					.filter((note) => note.isStarred)
-					.map((note) => ({
-						kind: "note" as const,
-						id: note._id,
-						updatedAt: note.updatedAt,
-						note,
-					})),
-				...(chats ?? [])
-					.filter((chat) => chat.isStarred ?? false)
-					.map((chat) => ({
-						kind: "chat" as const,
-						id: getChatId(chat),
-						updatedAt: chat.updatedAt,
-						chat,
-					})),
-			].sort((left, right) => right.updatedAt - left.updatedAt),
-		[chats, notes],
-	);
+	const starredItems = React.useMemo<StarredItem[]>(() => {
+		const nextItems: StarredItem[] = [];
+
+		for (const note of notes ?? []) {
+			if (note.isStarred) {
+				nextItems.push({
+					kind: "note" as const,
+					id: note._id,
+					updatedAt: note.updatedAt,
+					note,
+				});
+			}
+		}
+
+		for (const chat of chats ?? []) {
+			if (chat.isStarred ?? false) {
+				nextItems.push({
+					kind: "chat" as const,
+					id: getChatId(chat),
+					updatedAt: chat.updatedAt,
+					chat,
+				});
+			}
+		}
+
+		return nextItems.sort((left, right) => right.updatedAt - left.updatedAt);
+	}, [chats, notes]);
 
 	if (starredItems.length === 0) {
 		return null;
@@ -157,10 +164,11 @@ export function NavStarred({
 							? currentChatTitle
 							: chat.title;
 					const displayTitle = getChatDisplayTitle(title);
+					const hasAutomation = automationChatIds?.has(chatId) ?? false;
 
 					return (
 						<SidebarMenuItem key={`chat:${chat._id}`}>
-							<ChatActionsMenu chat={chat}>
+							<ChatActionsMenu chat={chat} hasAutomation={hasAutomation}>
 								<SidebarMenuAction
 									className="cursor-pointer opacity-0 pointer-events-none transition-opacity group-hover/menu-item:opacity-100 group-hover/menu-item:pointer-events-auto"
 									aria-label={`Open actions for ${displayTitle}`}
@@ -174,6 +182,12 @@ export function NavStarred({
 							>
 								<MessageCircle />
 								<span>{displayTitle}</span>
+								{hasAutomation ? (
+									<Clock
+										className="ml-auto size-4 shrink-0 text-muted-foreground"
+										aria-label="Automation set"
+									/>
+								) : null}
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 					);

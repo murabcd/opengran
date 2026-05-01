@@ -60,7 +60,7 @@ import {
 } from "convex/react";
 import {
 	ArrowDown,
-	Bookmark,
+	Clock,
 	Copy,
 	MessageSquareText,
 	MoreHorizontal,
@@ -71,6 +71,7 @@ import {
 	StarOff,
 	Trash2,
 	Undo2,
+	Workflow,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -224,6 +225,9 @@ const useAppShellState = ({
 	const [automationDialogOpen, setAutomationDialogOpen] = React.useState(false);
 	const [editingAutomationId, setEditingAutomationId] =
 		React.useState<Id<"automations"> | null>(null);
+	const [automationChatId, setAutomationChatId] = React.useState<string | null>(
+		null,
+	);
 	const [isSigningOut, startSignOut] = React.useTransition();
 	const [activeWorkspaceId, setActiveWorkspaceId] =
 		React.useState<Id<"workspaces"> | null>(() => workspaces[0]?._id ?? null);
@@ -375,6 +379,7 @@ const useAppShellState = ({
 			setSettingsOpen(input.settingsOpen);
 			setAutomationDialogOpen(false);
 			setEditingAutomationId(null);
+			setAutomationChatId(null);
 		},
 		[],
 	);
@@ -829,12 +834,20 @@ const useAppShellState = ({
 				: null,
 		[automations, editingAutomationId],
 	);
+	const automationChatIds = React.useMemo(
+		() => new Set((automations ?? []).map((automation) => automation.chatId)),
+		[automations],
+	);
+	const currentChatHasAutomation = currentChatId
+		? automationChatIds.has(currentChatId)
+		: false;
 
 	const handleAutomationDialogOpenChange = React.useCallback(
 		(open: boolean) => {
 			setAutomationDialogOpen(open);
 			if (!open) {
 				setEditingAutomationId(null);
+				setAutomationChatId(null);
 			}
 		},
 		[],
@@ -842,11 +855,32 @@ const useAppShellState = ({
 
 	const handleCreateAutomationOpen = React.useCallback(() => {
 		setEditingAutomationId(null);
+		setAutomationChatId(null);
 		setAutomationDialogOpen(true);
 	}, []);
 
+	const handleCreateChatAutomationOpen = React.useCallback(
+		(chatId: string) => {
+			const existingAutomation = (automations ?? []).find(
+				(automation) => automation.chatId === chatId,
+			);
+
+			if (existingAutomation) {
+				setAutomationChatId(null);
+				setEditingAutomationId(existingAutomation.id);
+			} else {
+				setEditingAutomationId(null);
+				setAutomationChatId(chatId);
+			}
+
+			setAutomationDialogOpen(true);
+		},
+		[automations],
+	);
+
 	const handleEditAutomationOpen = React.useCallback(
 		(automationId: Id<"automations">) => {
+			setAutomationChatId(null);
 			setEditingAutomationId(automationId);
 			setAutomationDialogOpen(true);
 		},
@@ -891,6 +925,7 @@ const useAppShellState = ({
 				} else {
 					await createAutomation({
 						workspaceId: resolvedActiveWorkspaceId,
+						chatId: automationChatId ?? undefined,
 						...input,
 					});
 					toast.success("Automation created");
@@ -898,6 +933,7 @@ const useAppShellState = ({
 
 				setAutomationDialogOpen(false);
 				setEditingAutomationId(null);
+				setAutomationChatId(null);
 			} catch (error) {
 				console.error("Failed to save automation", error);
 				toast.error("Failed to save automation");
@@ -905,6 +941,7 @@ const useAppShellState = ({
 		},
 		[
 			createAutomation,
+			automationChatId,
 			editingAutomationId,
 			resolvedActiveWorkspaceId,
 			updateAutomation,
@@ -1415,6 +1452,9 @@ const useAppShellState = ({
 	const currentChat =
 		chats?.find((chat) => getChatId(chat) === currentChatId) ?? null;
 	const currentChatTitle = currentChat?.title || "Chat";
+	const automationChatTitle = automationChatId
+		? (chats?.find((chat) => getChatId(chat) === automationChatId)?.title ?? "")
+		: "";
 	const currentChatNoteId = currentChat?.noteId ?? null;
 	const isSharedNote =
 		resolvedCurrentView === "note" &&
@@ -1487,6 +1527,7 @@ const useAppShellState = ({
 		handleCreateNote,
 		handleCreateNoteFromChatResponse,
 		handleCreateAutomationOpen,
+		handleCreateChatAutomationOpen,
 		handleEditAutomationOpen,
 		handleOpenAutomation,
 		handleInboxOpenChange,
@@ -1510,6 +1551,8 @@ const useAppShellState = ({
 		isInitialChatMessagesLoading,
 		automationDialogOpen,
 		automations,
+		automationChatTitle,
+		currentChatHasAutomation,
 		editingAutomation,
 		isDesktopMac,
 		isLoadingUpcomingCalendarEvents,
@@ -1548,6 +1591,7 @@ type AppShellHeaderProps = {
 	currentChat: Doc<"chats"> | null;
 	currentChatTitle: string;
 	currentChatNoteId: Id<"notes"> | null;
+	currentChatHasAutomation: boolean;
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle: string;
 	currentNoteTemplateSlug: string | null;
@@ -1559,6 +1603,7 @@ type AppShellHeaderProps = {
 	onChatTrashed: (chatId: string) => void;
 	onNewChat: () => void;
 	onNewAutomation: () => void;
+	onNewChatAutomation: (chatId: string) => void;
 };
 
 function AppShellHeader({
@@ -1572,6 +1617,7 @@ function AppShellHeader({
 	currentChat,
 	currentChatTitle,
 	currentChatNoteId,
+	currentChatHasAutomation,
 	currentNoteId,
 	currentNoteTitle,
 	currentNoteTemplateSlug,
@@ -1583,6 +1629,7 @@ function AppShellHeader({
 	onChatTrashed,
 	onNewChat,
 	onNewAutomation,
+	onNewChatAutomation,
 }: AppShellHeaderProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const { state: sidebarState } = useSidebarShell();
@@ -1597,7 +1644,10 @@ function AppShellHeader({
 	const breadcrumbRenameSavedTitleRef = React.useRef(currentEditableTitle);
 	const [titleEditOpen, setTitleEditOpen] = React.useState(false);
 	const [titleValue, setTitleValue] = React.useState("");
-	const [isRenamingTitle, setIsRenamingTitle] = React.useState(false);
+	const [isRenamingTitle, setIsRenamingTitle] = React.useReducer(
+		(_current: boolean, next: boolean) => next,
+		false,
+	);
 	const renameNote = useMutation(api.notes.rename).withOptimisticUpdate(
 		(localStore, args) => {
 			optimisticRenameNote(localStore, args.workspaceId, args.id, args.title);
@@ -1786,6 +1836,14 @@ function AppShellHeader({
 						}
 						setTitleValue(breadcrumbRenameInitialTitleRef.current);
 					}}
+					showAutomationIcon={
+						currentView === "chat" && currentChatHasAutomation
+					}
+					onAutomationIconClick={
+						currentView === "chat" && currentChatId
+							? () => onNewChatAutomation(currentChatId)
+							: undefined
+					}
 				/>
 			</div>
 			<div
@@ -1804,12 +1862,14 @@ function AppShellHeader({
 					isDesktopMac={isDesktopMac}
 					currentChatId={currentChatId}
 					currentChat={currentChat}
+					currentChatHasAutomation={currentChatHasAutomation}
 					onOpenChatTitleEditor={openBreadcrumbTitleEditor}
 					onCreateNote={onCreateNote}
 					onNoteTrashed={onNoteTrashed}
 					onChatTrashed={onChatTrashed}
 					onNewChat={onNewChat}
 					onNewAutomation={onNewAutomation}
+					onNewChatAutomation={onNewChatAutomation}
 				/>
 			</div>
 		</header>
@@ -1831,6 +1891,8 @@ function AppShellBreadcrumbs({
 	onTitleValueChange,
 	onCommitTitleRename,
 	onCancelTitleRename,
+	showAutomationIcon,
+	onAutomationIconClick,
 }: {
 	breadcrumbSectionLabel: string;
 	breadcrumbDetailLabel: string | null;
@@ -1846,7 +1908,26 @@ function AppShellBreadcrumbs({
 	onTitleValueChange: (value: string) => void;
 	onCommitTitleRename: () => void;
 	onCancelTitleRename: () => void;
+	showAutomationIcon?: boolean;
+	onAutomationIconClick?: () => void;
 }) {
+	const automationIconButton = showAutomationIcon ? (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<button
+					type="button"
+					data-app-region={isDesktopMac ? "no-drag" : undefined}
+					className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-hidden transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+					aria-label="Edit automation"
+					onClick={onAutomationIconClick}
+				>
+					<Clock className="size-4" />
+				</button>
+			</TooltipTrigger>
+			<TooltipContent>Edit automation</TooltipContent>
+		</Tooltip>
+	) : null;
+
 	return (
 		<Breadcrumb className="min-w-0 flex-1">
 			<BreadcrumbList className="min-w-0 flex-nowrap overflow-hidden">
@@ -1867,52 +1948,58 @@ function AppShellBreadcrumbs({
 						<BreadcrumbSeparator className="hidden shrink-0 md:block" />
 						<BreadcrumbItem className="min-w-0 flex-1 overflow-hidden">
 							{canRenameCurrentItem ? (
-								<Popover
-									open={titleEditOpen}
-									onOpenChange={onTitleEditOpenChange}
-								>
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<PopoverAnchor asChild>
-												<button
-													type="button"
-													aria-current="page"
-													data-app-region={isDesktopMac ? "no-drag" : undefined}
-													className="line-clamp-1 -mx-1 -my-0.5 cursor-pointer rounded px-1 py-0.5 text-left"
-													onClick={onOpenTitleEditor}
-												>
-													<BreadcrumbPage className="block truncate">
-														{breadcrumbDetailLabel}
-													</BreadcrumbPage>
-												</button>
-											</PopoverAnchor>
-										</TooltipTrigger>
-										<TooltipContent>
-											{`Rename ${renameItemLabel}`}
-										</TooltipContent>
-									</Tooltip>
-									<PopoverContent
-										align="start"
-										side="bottom"
-										sideOffset={6}
-										className="w-[340px] rounded-lg border-sidebar-border/70 bg-sidebar p-1.5 shadow-2xl ring-1 ring-border/60"
+								<div className="flex min-w-0 items-center gap-2">
+									<Popover
+										open={titleEditOpen}
+										onOpenChange={onTitleEditOpenChange}
 									>
-										<div className="flex items-center gap-2">
-											<NoteTitleEditInput
-												focusOnMount
-												commitOnBlur={false}
-												placeholder={titleEditPlaceholder}
-												value={titleValue}
-												onValueChange={onTitleValueChange}
-												onCommit={onCommitTitleRename}
-												onCancel={onCancelTitleRename}
-											/>
-										</div>
-									</PopoverContent>
-								</Popover>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<PopoverAnchor asChild>
+													<button
+														type="button"
+														aria-current="page"
+														data-app-region={
+															isDesktopMac ? "no-drag" : undefined
+														}
+														className="line-clamp-1 -mx-1 -my-0.5 min-w-0 cursor-pointer rounded px-1 py-0.5 text-left"
+														onClick={onOpenTitleEditor}
+													>
+														<BreadcrumbPage className="block truncate">
+															{breadcrumbDetailLabel}
+														</BreadcrumbPage>
+													</button>
+												</PopoverAnchor>
+											</TooltipTrigger>
+											<TooltipContent>
+												{`Rename ${renameItemLabel}`}
+											</TooltipContent>
+										</Tooltip>
+										<PopoverContent
+											align="start"
+											side="bottom"
+											sideOffset={6}
+											className="w-[340px] rounded-lg border-sidebar-border/70 bg-sidebar p-1.5 shadow-2xl ring-1 ring-border/60"
+										>
+											<div className="flex items-center gap-2">
+												<NoteTitleEditInput
+													focusOnMount
+													commitOnBlur={false}
+													placeholder={titleEditPlaceholder}
+													value={titleValue}
+													onValueChange={onTitleValueChange}
+													onCommit={onCommitTitleRename}
+													onCancel={onCancelTitleRename}
+												/>
+											</div>
+										</PopoverContent>
+									</Popover>
+									{automationIconButton}
+								</div>
 							) : (
-								<BreadcrumbPage className="block truncate">
-									{breadcrumbDetailLabel}
+								<BreadcrumbPage className="flex min-w-0 items-center gap-2">
+									<span className="truncate">{breadcrumbDetailLabel}</span>
+									{automationIconButton}
 								</BreadcrumbPage>
 							)}
 						</BreadcrumbItem>
@@ -1939,12 +2026,14 @@ function AppShellHeaderActions({
 	isDesktopMac,
 	currentChatId,
 	currentChat,
+	currentChatHasAutomation,
 	onOpenChatTitleEditor,
 	onCreateNote,
 	onNoteTrashed,
 	onChatTrashed,
 	onNewChat,
 	onNewAutomation,
+	onNewChatAutomation,
 }: Pick<
 	AppShellHeaderProps,
 	| "currentView"
@@ -1956,11 +2045,13 @@ function AppShellHeaderActions({
 	| "isDesktopMac"
 	| "currentChatId"
 	| "currentChat"
+	| "currentChatHasAutomation"
 	| "onCreateNote"
 	| "onNoteTrashed"
 	| "onChatTrashed"
 	| "onNewChat"
 	| "onNewAutomation"
+	| "onNewChatAutomation"
 > & {
 	onOpenChatTitleEditor: () => void;
 }) {
@@ -1982,10 +2073,12 @@ function AppShellHeaderActions({
 			<ChatHeaderActions
 				chatId={currentChatId}
 				chat={currentChat}
+				hasAutomation={currentChatHasAutomation}
 				isDesktopMac={isDesktopMac}
 				onNewChat={onNewChat}
 				onRenameChat={onOpenChatTitleEditor}
 				onChatTrashed={onChatTrashed}
+				onAddAutomation={onNewChatAutomation}
 			/>
 		);
 	}
@@ -2151,6 +2244,8 @@ function ChatHeaderActions({
 	onNewChat,
 	onRenameChat,
 	onChatTrashed,
+	onAddAutomation,
+	hasAutomation,
 }: {
 	chatId: string | null;
 	chat: Doc<"chats"> | null;
@@ -2158,6 +2253,8 @@ function ChatHeaderActions({
 	onNewChat: () => void;
 	onRenameChat: () => void;
 	onChatTrashed: (chatId: string) => void;
+	onAddAutomation: (chatId: string) => void;
+	hasAutomation: boolean;
 }) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const [confirmTrashOpen, setConfirmTrashOpen] = React.useState(false);
@@ -2271,7 +2368,7 @@ function ChatHeaderActions({
 							window.dispatchEvent(new Event(OPEN_CHAT_SUMMARY_EVENT));
 						}}
 					>
-						<Bookmark className="size-4" />
+						<Workflow className="size-4" />
 					</Button>
 				</TooltipTrigger>
 				<TooltipContent>Open summary</TooltipContent>
@@ -2312,6 +2409,18 @@ function ChatHeaderActions({
 					>
 						{isStarred ? <StarOff /> : <Star />}
 						{isStarred ? "Unstar" : "Star"}
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						className="cursor-pointer"
+						disabled={!chatId || !activeWorkspaceId}
+						onSelect={() => {
+							if (chatId) {
+								onAddAutomation(chatId);
+							}
+						}}
+					>
+						<Clock />
+						{hasAutomation ? "Edit automation" : "Add automation"}
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
 					<DropdownMenuItem
@@ -2393,6 +2502,7 @@ const AppShellContent = React.memo(function AppShellContent({
 	shouldStopNoteCaptureWhenMeetingEnds,
 	onGoHome,
 	onCreateAutomation,
+	onCreateChatAutomation,
 	automations,
 	onEditAutomation,
 	onOpenAutomation,
@@ -2449,6 +2559,7 @@ const AppShellContent = React.memo(function AppShellContent({
 	shouldStopNoteCaptureWhenMeetingEnds: boolean;
 	onGoHome: () => void;
 	onCreateAutomation: () => void;
+	onCreateChatAutomation: (chatId: string) => void;
 	automations: AutomationListItem[] | undefined;
 	onEditAutomation: (automationId: Id<"automations">) => void;
 	onOpenAutomation: (automation: AutomationListItem) => void;
@@ -2588,6 +2699,8 @@ const AppShellContent = React.memo(function AppShellContent({
 			isDesktopMac={isDesktopMac}
 			onOpenConnectionsSettings={onOpenConnectionsSettings}
 			onCreateNoteFromResponse={onCreateNoteFromChatResponse}
+			automations={automations}
+			onAddAutomation={onCreateChatAutomation}
 		/>
 	);
 });
@@ -2659,6 +2772,7 @@ export function AuthenticatedAppShell({
 					inboxOpen={controller.inboxOpen}
 					user={controller.user}
 					chats={controller.chats}
+					automations={controller.automations}
 					notes={controller.notes}
 					sharedNotes={controller.sharedNotes}
 					onWorkspaceSelect={controller.setActiveWorkspaceId}
@@ -2694,6 +2808,7 @@ export function AuthenticatedAppShell({
 						currentChat={controller.currentChat}
 						currentChatTitle={controller.currentChatTitle}
 						currentChatNoteId={controller.currentChatNoteId}
+						currentChatHasAutomation={controller.currentChatHasAutomation}
 						currentNoteId={controller.currentNoteId}
 						currentNoteTitle={controller.currentNoteTitle}
 						currentNoteTemplateSlug={controller.currentNoteTemplateSlug}
@@ -2705,6 +2820,7 @@ export function AuthenticatedAppShell({
 						onChatTrashed={controller.handleChatRemoved}
 						onNewChat={controller.handleNewChat}
 						onNewAutomation={controller.handleCreateAutomationOpen}
+						onNewChatAutomation={controller.handleCreateChatAutomationOpen}
 					/>
 					<AppShellContent
 						isDesktopMac={controller.isDesktopMac}
@@ -2757,6 +2873,7 @@ export function AuthenticatedAppShell({
 						}
 						onGoHome={handleGoHome}
 						onCreateAutomation={controller.handleCreateAutomationOpen}
+						onCreateChatAutomation={controller.handleCreateChatAutomationOpen}
 						automations={controller.automations}
 						onEditAutomation={controller.handleEditAutomationOpen}
 						onOpenAutomation={controller.handleOpenAutomation}
@@ -2770,6 +2887,7 @@ export function AuthenticatedAppShell({
 					onOpenChange={controller.handleAutomationDialogOpenChange}
 					onCreateAutomation={controller.handleAutomationSave}
 					initialAutomation={controller.editingAutomation}
+					initialTitle={controller.automationChatTitle}
 				/>
 			</SidebarProvider>
 		</ActiveWorkspaceProvider>

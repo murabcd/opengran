@@ -47,6 +47,9 @@ const formatNoteCreatedTime = (note: Doc<"notes">) =>
 		new Date(note.createdAt || note._creationTime),
 	);
 
+const getNoteCreatedDateTime = (note: Doc<"notes">) =>
+	new Date(note.createdAt || note._creationTime).toISOString();
+
 export function HomeView({
 	currentDate,
 	currentDayOfMonth,
@@ -90,10 +93,15 @@ export function HomeView({
 	) => Promise<void> | void;
 	onOpenCalendarSettings: () => void;
 }) {
-	const visibleUpcomingEvents = upcomingCalendarEvents
-		.filter((event) => event.isMeeting)
-		.filter((event) => isUpcomingEventToday(event, currentDate))
-		.slice(0, 5);
+	const visibleUpcomingEvents = [];
+	for (const event of upcomingCalendarEvents) {
+		if (event.isMeeting && isUpcomingEventToday(event, currentDate)) {
+			visibleUpcomingEvents.push(event);
+			if (visibleUpcomingEvents.length === 5) {
+				break;
+			}
+		}
+	}
 	const shouldShowUpcomingCalendarSkeleton =
 		isLoadingUpcomingCalendarEvents &&
 		upcomingCalendarStatus === "idle" &&
@@ -528,7 +536,7 @@ function NotesList({
 													<span className="truncate">{authorDisplayName}</span>
 													<span aria-hidden="true">·</span>
 													<time
-														dateTime={new Date(note.createdAt).toISOString()}
+														dateTime={getNoteCreatedDateTime(note)}
 														className="shrink-0 tabular-nums"
 													>
 														{createdTime}

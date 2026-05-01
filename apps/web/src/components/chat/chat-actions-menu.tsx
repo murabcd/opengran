@@ -25,7 +25,7 @@ import {
 } from "@workspace/ui/components/dropdown-menu";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation } from "convex/react";
-import { Pencil, Star, StarOff, Trash2 } from "lucide-react";
+import { Clock, Pencil, Star, StarOff, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { NoteTitleEditInput } from "@/components/note/note-title-edit-input";
@@ -41,6 +41,8 @@ type ChatActionsMenuProps = {
 	chat: Doc<"chats">;
 	children: React.ReactNode;
 	onMoveToTrash?: (chatId: string) => void;
+	onAddAutomation?: (chatId: string) => void;
+	hasAutomation?: boolean;
 	showMoveToTrash?: boolean;
 };
 
@@ -82,6 +84,8 @@ export function ChatActionsMenu({
 	chat,
 	children,
 	onMoveToTrash,
+	onAddAutomation,
+	hasAutomation = false,
 	showMoveToTrash = true,
 }: ChatActionsMenuProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
@@ -260,46 +264,27 @@ export function ChatActionsMenu({
 				onOpenChange={(open) => updateMenuState({ menuOpen: open })}
 			>
 				<DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-				<DropdownMenuContent align="end">
-					<DropdownMenuItem
-						className="cursor-pointer"
-						disabled={!activeWorkspaceId}
-						onSelect={handleStartRename}
-					>
-						<Pencil />
-						Rename
-					</DropdownMenuItem>
-					<DropdownMenuItem
-						className="cursor-pointer"
-						disabled={!activeWorkspaceId || isUpdatingStar}
-						onSelect={() => {
-							updateMenuState({ menuOpen: false });
-							void handleToggleStar();
-						}}
-					>
-						{isStarred ? <StarOff /> : <Star />}
-						{isStarred ? "Unstar" : "Star"}
-					</DropdownMenuItem>
-					{showMoveToTrash ? (
-						<>
-							<DropdownMenuSeparator />
-							<DropdownMenuItem
-								variant="destructive"
-								className="cursor-pointer"
-								disabled={isMovingToTrash || !activeWorkspaceId}
-								onSelect={() => {
-									updateMenuState({
-										menuOpen: false,
-										confirmTrashOpen: true,
-									});
-								}}
-							>
-								<Trash2 />
-								Move to trash
-							</DropdownMenuItem>
-						</>
-					) : null}
-				</DropdownMenuContent>
+				<ChatActionsDropdownContent
+					chatId={storedChatId}
+					status={{
+						hasAutomation,
+						isMovingToTrash,
+						isStarred,
+						isUpdatingStar,
+						canUpdate: Boolean(activeWorkspaceId),
+						showMoveToTrash,
+					}}
+					onAddAutomation={onAddAutomation}
+					onStartRename={handleStartRename}
+					onToggleStar={handleToggleStar}
+					onOpenTrashConfirm={() =>
+						updateMenuState({
+							menuOpen: false,
+							confirmTrashOpen: true,
+						})
+					}
+					onCloseMenu={() => updateMenuState({ menuOpen: false })}
+				/>
 			</DropdownMenu>
 			<Dialog open={renameOpen} onOpenChange={handleRenameOpenChange}>
 				<DialogContent>
@@ -375,5 +360,90 @@ export function ChatActionsMenu({
 				</AlertDialogContent>
 			</AlertDialog>
 		</>
+	);
+}
+
+function ChatActionsDropdownContent({
+	chatId,
+	status,
+	onAddAutomation,
+	onStartRename,
+	onToggleStar,
+	onOpenTrashConfirm,
+	onCloseMenu,
+}: {
+	chatId: string;
+	status: {
+		hasAutomation: boolean;
+		isMovingToTrash: boolean;
+		isStarred: boolean;
+		isUpdatingStar: boolean;
+		canUpdate: boolean;
+		showMoveToTrash: boolean;
+	};
+	onAddAutomation: ((chatId: string) => void) | undefined;
+	onStartRename: () => void;
+	onToggleStar: () => Promise<void>;
+	onOpenTrashConfirm: () => void;
+	onCloseMenu: () => void;
+}) {
+	const {
+		hasAutomation,
+		isMovingToTrash,
+		isStarred,
+		isUpdatingStar,
+		canUpdate,
+		showMoveToTrash,
+	} = status;
+
+	return (
+		<DropdownMenuContent align="end">
+			<DropdownMenuItem
+				className="cursor-pointer"
+				disabled={!canUpdate}
+				onSelect={onStartRename}
+			>
+				<Pencil />
+				Rename
+			</DropdownMenuItem>
+			<DropdownMenuItem
+				className="cursor-pointer"
+				disabled={!canUpdate || isUpdatingStar}
+				onSelect={() => {
+					onCloseMenu();
+					void onToggleStar();
+				}}
+			>
+				{isStarred ? <StarOff /> : <Star />}
+				{isStarred ? "Unstar" : "Star"}
+			</DropdownMenuItem>
+			{onAddAutomation ? (
+				<DropdownMenuItem
+					className="cursor-pointer"
+					disabled={!canUpdate}
+					onSelect={() => {
+						onCloseMenu();
+						onAddAutomation(chatId);
+					}}
+				>
+					<Clock />
+					{hasAutomation ? "Edit automation" : "Add automation"}
+				</DropdownMenuItem>
+			) : null}
+			{showMoveToTrash ? (
+				<>
+					<DropdownMenuSeparator />
+					<DropdownMenuItem
+						variant="destructive"
+						className="cursor-pointer"
+						disabled={isMovingToTrash || !canUpdate}
+						onSelect={onOpenTrashConfirm}
+					>
+						<Trash2 />
+						Move to trash
+					</DropdownMenuItem>
+				</>
+			) : null}
+		</DropdownMenuContent>
 	);
 }

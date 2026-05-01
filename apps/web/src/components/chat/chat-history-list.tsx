@@ -7,7 +7,7 @@ import {
 } from "@workspace/ui/components/empty";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
-import { MessageCircle, MoreHorizontal } from "lucide-react";
+import { Clock, MessageCircle, MoreHorizontal } from "lucide-react";
 import * as React from "react";
 import { getChatId } from "@/lib/chat";
 import {
@@ -24,6 +24,8 @@ type ChatHistoryListProps = {
 	onOpenChat: (chatId: string) => void;
 	onPrefetchChat: (chatId: string) => void;
 	onMoveToTrash: (chatId: string) => void;
+	automationChatIds?: ReadonlySet<string>;
+	onAddAutomation?: (chatId: string) => void;
 };
 
 const chatActivityTimeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -41,6 +43,8 @@ export function ChatHistoryList({
 	onOpenChat,
 	onPrefetchChat,
 	onMoveToTrash,
+	automationChatIds,
+	onAddAutomation,
 }: ChatHistoryListProps) {
 	const starredChats = React.useMemo(
 		() => chats.filter((chat) => chat.isStarred ?? false),
@@ -79,6 +83,10 @@ export function ChatHistoryList({
 										onOpenChat={onOpenChat}
 										onPrefetchChat={onPrefetchChat}
 										onMoveToTrash={onMoveToTrash}
+										hasAutomation={
+											automationChatIds?.has(getChatId(chat)) ?? false
+										}
+										onAddAutomation={onAddAutomation}
 									/>
 								))}
 							</div>
@@ -104,6 +112,10 @@ export function ChatHistoryList({
 												onOpenChat={onOpenChat}
 												onPrefetchChat={onPrefetchChat}
 												onMoveToTrash={onMoveToTrash}
+												hasAutomation={
+													automationChatIds?.has(getChatId(chat)) ?? false
+												}
+												onAddAutomation={onAddAutomation}
 											/>
 										);
 									})}
@@ -135,19 +147,23 @@ function ChatHistoryItem({
 	onOpenChat,
 	onPrefetchChat,
 	onMoveToTrash,
+	hasAutomation,
+	onAddAutomation,
 }: {
 	chat: Doc<"chats">;
 	activeChatId: string | null;
 	onOpenChat: (chatId: string) => void;
 	onPrefetchChat: (chatId: string) => void;
 	onMoveToTrash: (chatId: string) => void;
+	hasAutomation: boolean;
+	onAddAutomation?: (chatId: string) => void;
 }) {
 	const storedChatId = getChatId(chat);
 	const preview = chat.authorName?.trim() || "Unknown user";
 	const activityTime = getChatActivityTime(chat);
-	const formattedActivityTime = chatActivityTimeFormatter.format(
-		new Date(activityTime),
-	);
+	const activityDate = new Date(activityTime);
+	const formattedActivityTime = chatActivityTimeFormatter.format(activityDate);
+	const activityDateTime = activityDate.toISOString();
 
 	return (
 		<div
@@ -174,16 +190,24 @@ function ChatHistoryItem({
 					<div className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
 						<span className="truncate">{preview}</span>
 						<span aria-hidden="true">·</span>
-						<time
-							dateTime={new Date(activityTime).toISOString()}
-							className="shrink-0 tabular-nums"
-						>
+						<time dateTime={activityDateTime} className="shrink-0 tabular-nums">
 							{formattedActivityTime}
 						</time>
 					</div>
 				</div>
 			</button>
-			<ChatActionsMenu chat={chat} onMoveToTrash={onMoveToTrash}>
+			{hasAutomation ? (
+				<Clock
+					className="mr-1 size-4 shrink-0 text-muted-foreground"
+					aria-label="Automation set"
+				/>
+			) : null}
+			<ChatActionsMenu
+				chat={chat}
+				hasAutomation={hasAutomation}
+				onAddAutomation={onAddAutomation}
+				onMoveToTrash={onMoveToTrash}
+			>
 				<button
 					type="button"
 					data-chat-actions

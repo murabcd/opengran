@@ -1,6 +1,6 @@
 import { cn } from "@workspace/ui/lib/utils";
 import type * as React from "react";
-import { useState } from "react";
+import { useReducer } from "react";
 
 function Avatar({ className, ...props }: React.ComponentProps<"span">) {
 	return (
@@ -21,7 +21,10 @@ function AvatarImage({
 	src,
 	...props
 }: React.ComponentProps<"img">) {
-	const [hasError, setHasError] = useState(false);
+	const [hasError, setHasError] = useReducer(
+		(_current: boolean, next: boolean) => next,
+		false,
+	);
 
 	if (!src || hasError) {
 		return null;

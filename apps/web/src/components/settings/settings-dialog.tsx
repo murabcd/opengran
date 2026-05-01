@@ -640,7 +640,10 @@ export function SettingsDialog({
 	initialPage = "Profile",
 	onPageChange,
 }: SettingsDialogProps) {
-	const [selectedPage, setSelectedPage] = useState<SettingsPage | null>(null);
+	const [selectedPage, setSelectedPage] = useReducer(
+		(_current: SettingsPage | null, next: SettingsPage | null) => next,
+		null,
+	);
 	const { data: session } = authClient.useSession();
 	const isDesktopApp =
 		typeof window !== "undefined" && Boolean(window.openGranDesktop);
@@ -3056,11 +3059,24 @@ function WorkspaceSettings({
 		api.workspaces.generateIconUploadUrl,
 	);
 	const updateWorkspace = useMutation(api.workspaces.update);
-	const [formState, setFormState] = useState<WorkspaceFormState>(() =>
-		getWorkspaceFormState(workspace),
+	const [formState, setFormState] = useReducer(
+		(
+			current: WorkspaceFormState,
+			next:
+				| WorkspaceFormState
+				| ((current: WorkspaceFormState) => WorkspaceFormState),
+		) => (typeof next === "function" ? next(current) : next),
+		workspace,
+		getWorkspaceFormState,
 	);
-	const [isSaving, setIsSaving] = useState(false);
-	const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+	const [isSaving, setIsSaving] = useReducer(
+		(_current: boolean, next: boolean) => next,
+		false,
+	);
+	const [isUploadingIcon, setIsUploadingIcon] = useReducer(
+		(_current: boolean, next: boolean) => next,
+		false,
+	);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const { name, iconStorageId, iconPreviewUrl } = formState;
 
@@ -3288,7 +3304,13 @@ function DataControlsSettings({
 	onClose: () => void;
 }) {
 	const activeWorkspaceId = useActiveWorkspaceId();
-	const [state, setState] = useState<DataControlsState>(
+	const [state, setState] = useReducer(
+		(
+			current: DataControlsState,
+			next:
+				| DataControlsState
+				| ((current: DataControlsState) => DataControlsState),
+		) => (typeof next === "function" ? next(current) : next),
 		initialDataControlsState,
 	);
 	const removeAllNotes = useMutation(api.notes.removeAll);
@@ -3296,7 +3318,10 @@ function DataControlsSettings({
 	const removeWorkspace = useMutation(api.workspaces.remove);
 	const [showDeleteWorkspaceDialog, setShowDeleteWorkspaceDialog] =
 		useState(false);
-	const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
+	const [isDeletingWorkspace, setIsDeletingWorkspace] = useReducer(
+		(_current: boolean, next: boolean) => next,
+		false,
+	);
 	const {
 		showDeleteAccountDialog,
 		isDeletingAccount,

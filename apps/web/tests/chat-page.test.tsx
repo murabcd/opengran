@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { getFunctionName } from "convex/server";
-import * as React from "react";
+import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPOSER_DOCK_SURFACE_BOTTOM_OFFSET } from "../src/components/layout/composer-dock";
 import { ActiveWorkspaceProvider } from "../src/hooks/use-active-workspace";
@@ -322,10 +322,12 @@ vi.mock("@workspace/ui/components/input-group", () => ({
 			{children}
 		</button>
 	),
-	InputGroupTextarea: React.forwardRef<
-		HTMLTextAreaElement,
-		React.TextareaHTMLAttributes<HTMLTextAreaElement>
-	>((props, ref) => <textarea ref={ref} {...props} />),
+	InputGroupTextarea: ({
+		ref,
+		...props
+	}: React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
+		ref?: React.Ref<HTMLTextAreaElement>;
+	}) => <textarea ref={ref} {...props} />,
 }));
 
 vi.mock("@workspace/ui/components/popover", () => ({

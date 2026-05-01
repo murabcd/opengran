@@ -31,6 +31,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { PanelLeftIcon } from "lucide-react";
 import { Slot } from "radix-ui";
 import * as React from "react";
+import { use } from "react";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_RIGHT_COOKIE_NAME = "sidebar_right_state";
@@ -333,7 +334,7 @@ const SidebarDockedPanelsContext =
 	React.createContext<SidebarDockedPanelsContextProps | null>(null);
 
 function useSidebarShell() {
-	const context = React.useContext(SidebarShellContext);
+	const context = use(SidebarShellContext);
 	if (!context) {
 		throw new Error("useSidebarShell must be used within a SidebarProvider.");
 	}
@@ -342,11 +343,11 @@ function useSidebarShell() {
 }
 
 function useOptionalSidebarShell() {
-	return React.useContext(SidebarShellContext);
+	return use(SidebarShellContext);
 }
 
 function useSidebarRight() {
-	const context = React.useContext(SidebarRightContext);
+	const context = use(SidebarRightContext);
 	if (!context) {
 		throw new Error("useSidebarRight must be used within a SidebarProvider.");
 	}
@@ -355,7 +356,7 @@ function useSidebarRight() {
 }
 
 function useDockedPanelWidths() {
-	const context = React.useContext(SidebarDockedPanelsContext);
+	const context = use(SidebarDockedPanelsContext);
 	if (!context) {
 		throw new Error(
 			"useDockedPanelWidths must be used within a SidebarProvider.",
@@ -366,7 +367,7 @@ function useDockedPanelWidths() {
 }
 
 function useOptionalDockedPanelWidths() {
-	return React.useContext(SidebarDockedPanelsContext);
+	return use(SidebarDockedPanelsContext);
 }
 
 function useSidebarProviderElement({
@@ -889,7 +890,7 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
 	const { toggleRightSidebar } = useSidebarRight();
 	const buttonRef = React.useRef<HTMLButtonElement>(null);
 
-	const handleClick = () => {
+	const toggleNearestSidebar = () => {
 		const sidebarElement = buttonRef.current?.closest("[data-side]");
 		const side = sidebarElement?.getAttribute("data-side");
 
@@ -908,7 +909,7 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
 			data-slot="sidebar-rail"
 			aria-label="Toggle Sidebar"
 			tabIndex={-1}
-			onClick={handleClick}
+			onClick={toggleNearestSidebar}
 			title="Toggle Sidebar"
 			className={cn(
 				"absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2",

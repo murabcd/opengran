@@ -681,8 +681,9 @@ const useNoteComposerController = ({
 			return;
 		}
 
-		textareaRef.current.style.height = "auto";
-		textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+		textareaRef.current.style.cssText += "height: auto;";
+		const nextHeight = textareaRef.current.scrollHeight;
+		textareaRef.current.style.height = `${nextHeight}px`;
 	}, []);
 
 	const getInlinePanelMaxHeight = React.useCallback(() => {
@@ -2225,13 +2226,15 @@ export function NoteChatHeader({
 	);
 }
 
-const InlinePopoverFooterContainer = React.forwardRef<
-	HTMLDivElement,
-	{
-		className?: string;
-		children: React.ReactNode;
-	}
->(function InlinePopoverFooterContainer({ className, children }, ref) {
+function InlinePopoverFooterContainer({
+	className,
+	children,
+	ref,
+}: {
+	className?: string;
+	children: React.ReactNode;
+	ref?: React.Ref<HTMLDivElement>;
+}) {
 	return (
 		<div
 			ref={ref}
@@ -2241,7 +2244,7 @@ const InlinePopoverFooterContainer = React.forwardRef<
 			{children}
 		</div>
 	);
-});
+}
 
 function useInlineFooterHeight() {
 	const footerRef = React.useRef<HTMLDivElement>(null);
@@ -2286,17 +2289,13 @@ function useInlineFooterHeight() {
 }
 
 function ChatInlinePopoverFooter({
-	activateInlineOnFocus = false,
 	composerPlaceholder,
 	handleComposerFocus,
 	handleComposerPointerDown,
 	handleKeyDown,
-	isRecipeLoading,
 	handleTextareaChange,
-	canSendMessage,
-	isChatLoading,
 	onStop,
-	isSidebarCompact = false,
+	status,
 	message,
 	onRecipePopoverOpenChange,
 	onRecipeRemove,
@@ -2307,17 +2306,19 @@ function ChatInlinePopoverFooter({
 	speechControls,
 	textareaRef,
 }: {
-	activateInlineOnFocus?: boolean;
 	composerPlaceholder: string;
 	handleComposerFocus: () => void;
 	handleComposerPointerDown: () => void;
 	handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-	isRecipeLoading: boolean;
 	handleTextareaChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
-	canSendMessage: boolean;
-	isChatLoading: boolean;
 	onStop: () => void;
-	isSidebarCompact?: boolean;
+	status: {
+		activateInlineOnFocus: boolean;
+		isRecipeLoading: boolean;
+		canSendMessage: boolean;
+		isChatLoading: boolean;
+		isSidebarCompact: boolean;
+	};
 	message: string;
 	onRecipePopoverOpenChange: (open: boolean) => void;
 	onRecipeRemove: () => void;
@@ -2328,6 +2329,13 @@ function ChatInlinePopoverFooter({
 	speechControls: React.ReactNode;
 	textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
+	const {
+		activateInlineOnFocus,
+		isRecipeLoading,
+		canSendMessage,
+		isChatLoading,
+		isSidebarCompact,
+	} = status;
 	const shouldShowRecipeControls = !activateInlineOnFocus;
 	const shouldShowSelectedRecipe = shouldShowRecipeControls && selectedRecipe;
 	const recipePickerPlaceholder = (
@@ -2625,17 +2633,19 @@ function ChatComposerForm({
 				</div>
 			) : null}
 			<ChatInlinePopoverFooter
-				activateInlineOnFocus={activateInlineOnFocus}
 				composerPlaceholder={controller.composerPlaceholder}
 				handleComposerFocus={controller.handleComposerFocus}
 				handleComposerPointerDown={controller.handleComposerPointerDown}
 				handleKeyDown={controller.handleKeyDown}
-				isRecipeLoading={controller.isRecipeLoading}
 				handleTextareaChange={controller.handleTextareaChange}
-				canSendMessage={controller.canSendMessage}
-				isChatLoading={controller.isChatLoading}
 				onStop={controller.stop}
-				isSidebarCompact={controller.isSidebarPresentation}
+				status={{
+					activateInlineOnFocus,
+					isRecipeLoading: controller.isRecipeLoading,
+					canSendMessage: controller.canSendMessage,
+					isChatLoading: controller.isChatLoading,
+					isSidebarCompact: controller.isSidebarPresentation,
+				}}
 				message={controller.message}
 				onRecipePopoverOpenChange={controller.setRecipePopoverOpen}
 				onRecipeRemove={() => controller.setSelectedRecipeSlug(null)}
@@ -3150,7 +3160,9 @@ function NoteTranscriptPanel({
 	const [
 		fullyRenderedTranscriptEntryCount,
 		setFullyRenderedTranscriptEntryCount,
-	] = React.useState(() =>
+	] = React.useReducer(
+		(current: number, next: number | ((current: number) => number)) =>
+			typeof next === "function" ? next(current) : next,
 		transcriptEntryCount > TRANSCRIPT_PROGRESSIVE_RENDER_THRESHOLD
 			? Math.min(transcriptEntryCount, TRANSCRIPT_INITIAL_WINDOW_SIZE)
 			: transcriptEntryCount,

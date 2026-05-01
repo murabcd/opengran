@@ -1038,7 +1038,9 @@ function ExpandedDiscussionThread({
 		INITIAL_VISIBLE_THREAD_COMMENTS,
 		replyComments.length,
 	);
-	const [visibleReplyCount, setVisibleReplyCount] = React.useState(
+	const [visibleReplyCount, setVisibleReplyCount] = React.useReducer(
+		(current: number, next: number | ((current: number) => number)) =>
+			typeof next === "function" ? next(current) : next,
 		initialVisibleReplyCount,
 	);
 	const hiddenReplyCount = Math.max(

@@ -32,7 +32,10 @@ export function NoteTemplateSelect({
 		api.templates.list,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
-	const [isApplyingTemplate, setIsApplyingTemplate] = React.useState(false);
+	const [isApplyingTemplate, setIsApplyingTemplate] = React.useReducer(
+		(_current: boolean, next: boolean) => next,
+		false,
+	);
 	const templates = React.useMemo(
 		() => getSelectableNoteTemplates(templateData),
 		[templateData],

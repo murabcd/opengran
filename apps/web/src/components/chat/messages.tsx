@@ -31,11 +31,6 @@ import {
 } from "@/lib/chat-message";
 import { collectMessageSources } from "@/lib/chat-sources";
 
-export {
-	collectMessageSources,
-	type ToolSource,
-} from "@/lib/chat-sources";
-
 export function ChatMessages({
 	messages,
 	error,

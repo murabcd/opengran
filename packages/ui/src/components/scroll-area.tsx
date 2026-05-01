@@ -16,16 +16,30 @@ function ScrollArea({
 	viewportRef?: React.Ref<HTMLDivElement>;
 	scrollbarOrientation?: "vertical" | "horizontal" | "both" | "none";
 }) {
-	const [viewportElement, setViewportElement] =
-		React.useState<HTMLDivElement | null>(null);
-	const [hasVerticalOverflow, setHasVerticalOverflow] = React.useState(false);
+	const [scrollState, updateScrollState] = React.useReducer(
+		(
+			current: {
+				viewportElement: HTMLDivElement | null;
+				hasVerticalOverflow: boolean;
+			},
+			next: Partial<{
+				viewportElement: HTMLDivElement | null;
+				hasVerticalOverflow: boolean;
+			}>,
+		) => ({ ...current, ...next }),
+		{
+			viewportElement: null,
+			hasVerticalOverflow: false,
+		},
+	);
+	const { viewportElement, hasVerticalOverflow } = scrollState;
 	const reservesVerticalScrollbarGap =
 		reserveScrollbarGap &&
 		hasVerticalOverflow &&
 		(scrollbarOrientation === "vertical" || scrollbarOrientation === "both");
 	const setViewportRefs = React.useCallback(
 		(element: HTMLDivElement | null) => {
-			setViewportElement(element);
+			updateScrollState({ viewportElement: element });
 
 			if (typeof viewportRef === "function") {
 				viewportRef(element);
@@ -41,19 +55,20 @@ function ScrollArea({
 			!reserveScrollbarGap ||
 			(scrollbarOrientation !== "vertical" && scrollbarOrientation !== "both")
 		) {
-			setHasVerticalOverflow(false);
+			updateScrollState({ hasVerticalOverflow: false });
 			return;
 		}
 
 		if (!viewportElement) {
-			setHasVerticalOverflow(false);
+			updateScrollState({ hasVerticalOverflow: false });
 			return;
 		}
 
 		const updateOverflow = () => {
-			setHasVerticalOverflow(
-				viewportElement.scrollHeight > viewportElement.clientHeight,
-			);
+			updateScrollState({
+				hasVerticalOverflow:
+					viewportElement.scrollHeight > viewportElement.clientHeight,
+			});
 		};
 
 		updateOverflow();

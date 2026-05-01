@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const useQueryMock = vi.fn();
 const useSidebarShellMock = vi.fn();
 const useTranscriptionSessionMock = vi.fn();
+const TEST_NOW = new Date("2026-05-01T12:00:00.000Z").getTime();
 
 vi.mock("convex/react", () => ({
 	useQuery: useQueryMock,
@@ -227,7 +228,7 @@ describe("AppSidebar mobile interactions", () => {
 						chatId: "chat-1",
 						preview: "Preview",
 						title: "First chat",
-						updatedAt: Date.now(),
+						updatedAt: TEST_NOW,
 					} as never,
 				]}
 				currentChatId="chat-1"
@@ -238,7 +239,7 @@ describe("AppSidebar mobile interactions", () => {
 						title: "First note",
 						searchableText: "",
 						projectId: null,
-						updatedAt: Date.now(),
+						updatedAt: TEST_NOW,
 					} as never,
 				]}
 				sharedNotes={[]}

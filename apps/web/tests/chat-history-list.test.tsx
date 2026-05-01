@@ -5,7 +5,7 @@ import {
 	screen,
 	waitFor,
 } from "@testing-library/react";
-import * as React from "react";
+import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const renameChatMock = vi.fn();
@@ -14,6 +14,11 @@ const moveChatToTrashMock = vi.fn();
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
 const useMutationMock = vi.fn();
+const TEST_NOW = new Date("2026-05-01T12:00:00.000Z").getTime();
+const testTimeFormatter = new Intl.DateTimeFormat(undefined, {
+	hour: "numeric",
+	minute: "2-digit",
+});
 
 vi.mock("@workspace/ui/components/dropdown-menu", async () => {
 	const React = await import("react");
@@ -38,7 +43,7 @@ vi.mock("@workspace/ui/components/dropdown-menu", async () => {
 			</DropdownMenuContext.Provider>
 		),
 		DropdownMenuContent: ({ children }: React.PropsWithChildren) => {
-			const { open } = React.useContext(DropdownMenuContext);
+			const { open } = React.use(DropdownMenuContext);
 			return open ? <div>{children}</div> : null;
 		},
 		DropdownMenuItem: ({
@@ -65,7 +70,7 @@ vi.mock("@workspace/ui/components/dropdown-menu", async () => {
 			asChild: _asChild,
 			children,
 		}: React.PropsWithChildren<{ asChild?: boolean }>) => {
-			const { onOpenChange } = React.useContext(DropdownMenuContext);
+			const { onOpenChange } = React.use(DropdownMenuContext);
 			const child = React.Children.only(children);
 
 			if (!React.isValidElement(child)) {
@@ -103,7 +108,7 @@ vi.mock("@workspace/ui/components/dialog", async () => {
 			</DialogContext.Provider>
 		),
 		DialogContent: ({ children }: React.PropsWithChildren) => {
-			const { open } = React.useContext(DialogContext);
+			const { open } = React.use(DialogContext);
 			return open ? <div>{children}</div> : null;
 		},
 		DialogDescription: ({ children }: React.PropsWithChildren) => (
@@ -133,10 +138,12 @@ vi.mock("@workspace/ui/components/skeleton", () => ({
 }));
 
 vi.mock("@workspace/ui/components/input", () => ({
-	Input: React.forwardRef<
-		HTMLInputElement,
-		React.InputHTMLAttributes<HTMLInputElement>
-	>((props, ref) => <input ref={ref} {...props} />),
+	Input: ({
+		ref,
+		...props
+	}: React.InputHTMLAttributes<HTMLInputElement> & {
+		ref?: React.Ref<HTMLInputElement>;
+	}) => <input ref={ref} {...props} />,
 }));
 
 vi.mock("@workspace/ui/components/button", () => ({
@@ -235,11 +242,11 @@ describe("ChatHistoryList", () => {
 				chats={[
 					{
 						_id: "chat-1",
-						_creationTime: Date.now(),
+						_creationTime: TEST_NOW,
 						authorName: "Murad",
-						createdAt: Date.now(),
+						createdAt: TEST_NOW,
 						title: "New chat",
-						updatedAt: Date.now(),
+						updatedAt: TEST_NOW,
 					} as never,
 				]}
 				isChatsLoading={false}
@@ -281,13 +288,13 @@ describe("ChatHistoryList", () => {
 				chats={[
 					{
 						_id: "chat-1",
-						_creationTime: Date.now(),
+						_creationTime: TEST_NOW,
 						authorName: "Murad",
-						createdAt: Date.now(),
+						createdAt: TEST_NOW,
 						chatId: "chat-1",
 						noteId: undefined,
 						title: "Old chat title",
-						updatedAt: Date.now(),
+						updatedAt: TEST_NOW,
 					} as never,
 				]}
 				isChatsLoading={false}
@@ -330,14 +337,14 @@ describe("ChatHistoryList", () => {
 				chats={[
 					{
 						_id: "chat-1",
-						_creationTime: Date.now(),
+						_creationTime: TEST_NOW,
 						authorName: "Murad",
-						createdAt: Date.now(),
+						createdAt: TEST_NOW,
 						chatId: "chat-1",
 						noteId: undefined,
 						isStarred: false,
 						title: "Star me",
-						updatedAt: Date.now(),
+						updatedAt: TEST_NOW,
 					} as never,
 				]}
 				isChatsLoading={false}
@@ -366,7 +373,7 @@ describe("ChatHistoryList", () => {
 		const { ChatHistoryList } = await import(
 			"../src/components/chat/chat-history-list"
 		);
-		const now = Date.now();
+		const now = TEST_NOW;
 
 		render(
 			<ChatHistoryList
@@ -421,10 +428,7 @@ describe("ChatHistoryList", () => {
 		);
 		const createdAt = new Date("2026-04-25T12:50:54.000Z").getTime();
 		const lastMessageAt = new Date("2026-04-26T06:00:09.000Z").getTime();
-		const expectedTime = new Intl.DateTimeFormat(undefined, {
-			hour: "numeric",
-			minute: "2-digit",
-		}).format(new Date(lastMessageAt));
+		const expectedTime = testTimeFormatter.format(new Date(lastMessageAt));
 
 		render(
 			<ChatHistoryList
@@ -466,13 +470,13 @@ describe("ChatHistoryList", () => {
 				chats={[
 					{
 						_id: "chat-1",
-						_creationTime: Date.now(),
+						_creationTime: TEST_NOW,
 						authorName: "Murad",
-						createdAt: Date.now(),
+						createdAt: TEST_NOW,
 						chatId: "chat-1",
 						noteId: undefined,
 						title: "Warm chat",
-						updatedAt: Date.now(),
+						updatedAt: TEST_NOW,
 					} as never,
 				]}
 				isChatsLoading={false}

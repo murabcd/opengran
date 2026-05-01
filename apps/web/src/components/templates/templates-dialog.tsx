@@ -77,6 +77,7 @@ type TemplateDraft = {
 		prompt: string;
 	}>;
 };
+type TemplateSectionDraft = TemplateDraft["sections"][number];
 
 type TemplatesDialogProps = {
 	open: boolean;
@@ -111,6 +112,29 @@ const toTemplateDrafts = (
 		})),
 	}));
 
+const areTemplateSectionsEqual = (
+	left: TemplateSectionDraft[],
+	right: TemplateSectionDraft[],
+) => {
+	if (left.length !== right.length) {
+		return false;
+	}
+
+	for (const [index, section] of left.entries()) {
+		const otherSection = right[index];
+		if (
+			!otherSection ||
+			section.id !== otherSection.id ||
+			section.title !== otherSection.title ||
+			section.prompt !== otherSection.prompt
+		) {
+			return false;
+		}
+	}
+
+	return true;
+};
+
 const areTemplateDraftsEqual = (
 	left: TemplateDraft[],
 	right: TemplateDraft[],
@@ -124,17 +148,7 @@ const areTemplateDraftsEqual = (
 			template.slug === otherTemplate.slug &&
 			template.name === otherTemplate.name &&
 			template.meetingContext === otherTemplate.meetingContext &&
-			template.sections.length === otherTemplate.sections.length &&
-			template.sections.every((section, sectionIndex) => {
-				const otherSection = otherTemplate.sections[sectionIndex];
-
-				return (
-					otherSection &&
-					section.id === otherSection.id &&
-					section.title === otherSection.title &&
-					section.prompt === otherSection.prompt
-				);
-			})
+			areTemplateSectionsEqual(template.sections, otherTemplate.sections)
 		);
 	});
 

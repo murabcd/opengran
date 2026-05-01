@@ -16,10 +16,7 @@ export function ShimmerText({
 	duration = 2,
 	spread = 2,
 }: ShimmerTextProps) {
-	const content =
-		typeof children === "string" || typeof children === "number"
-			? String(children)
-			: "";
+	const content = String(children ?? "");
 	const dynamicSpread = Math.max(content.length * spread, 24);
 
 	return (

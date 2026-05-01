@@ -50,6 +50,8 @@ import {
 	X,
 } from "lucide-react";
 import * as React from "react";
+import type { AutomationListItem } from "@/components/automations/automation-types";
+import { getAutomationSchedulePeriodLabel } from "@/components/automations/automation-utils";
 import {
 	DESKTOP_DOCKED_PANEL_DEFAULT_WIDTH,
 	DESKTOP_DOCKED_PANEL_MAX_WIDTH,
@@ -70,6 +72,7 @@ import {
 	type SearchCommandItem,
 } from "@/components/search/search-command";
 import { collectMessageSources, type ToolSource } from "@/lib/chat-sources";
+import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import {
 	createNoteEditorExtensions,
 	parseStoredNoteContent,
@@ -161,12 +164,22 @@ const collectChatSources = (messages: UIMessage[]): ToolSource[] => {
 export function ChatSummarySheet({
 	open,
 	messages,
+	automation,
+	chatTitle,
+	desktopSafeTop = false,
 	workspaceSources,
+	onAddSource,
+	onRemoveAutoAddedSource,
 	onOpenChange,
 }: {
 	open: boolean;
 	messages: UIMessage[];
+	automation?: AutomationListItem | null;
+	chatTitle: string;
+	desktopSafeTop?: boolean;
 	workspaceSources: SummaryWorkspaceSource[];
+	onAddSource?: (sourceId: string) => void;
+	onRemoveAutoAddedSource?: (sourceId: string) => void;
 	onOpenChange: (open: boolean) => void;
 }) {
 	const sidebarShell = useOptionalSidebarShell();
@@ -210,8 +223,13 @@ export function ChatSummarySheet({
 		<ChatSummaryPanel
 			isMobile={isMobile}
 			isPinned={isPinned}
+			automation={automation}
+			chatTitle={chatTitle}
+			desktopSafeTop={desktopSafeTop}
 			sources={sources}
 			workspaceSources={workspaceSources}
+			onAddSource={onAddSource}
+			onRemoveAutoAddedSource={onRemoveAutoAddedSource}
 			onTogglePinned={togglePinned}
 		/>
 	);
@@ -251,6 +269,7 @@ export function ChatSummarySheet({
 			isPinned={isPinned}
 			panelWidth={panelWidth}
 			dismissLeadingOffset={`${leftSidebarReservedWidth}px`}
+			desktopSafeTop={desktopSafeTop}
 			onOpenChange={onOpenChange}
 			panelName="chat summary"
 			resizeLabel="Resize chat summary panel"
@@ -266,19 +285,30 @@ export function ChatSummarySheet({
 function ChatSummaryPanel({
 	isMobile,
 	isPinned,
+	automation,
+	chatTitle,
+	desktopSafeTop,
 	sources,
 	workspaceSources,
+	onAddSource,
+	onRemoveAutoAddedSource,
 	onTogglePinned,
 }: {
 	isMobile: boolean;
 	isPinned: boolean;
+	automation?: AutomationListItem | null;
+	chatTitle: string;
+	desktopSafeTop: boolean;
 	sources: ToolSource[];
 	workspaceSources: SummaryWorkspaceSource[];
+	onAddSource?: (sourceId: string) => void;
+	onRemoveAutoAddedSource?: (sourceId: string) => void;
 	onTogglePinned: () => void;
 }) {
 	const [tabs, setTabs] = React.useState<SummaryTab[]>([SUMMARY_TAB]);
 	const [activeTabId, setActiveTabId] = React.useState(SUMMARY_TAB.id);
 	const [fileSearchOpen, setFileSearchOpen] = React.useState(false);
+	const autoAddedSourceIdsRef = React.useRef(new Set<string>());
 	const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? SUMMARY_TAB;
 	const fileSearchItems = React.useMemo<SearchCommandItem[]>(
 		() =>
@@ -300,6 +330,15 @@ function ChatSummaryPanel({
 	}, []);
 	const closeTab = React.useCallback(
 		(tabId: string) => {
+			const tabToClose = tabs.find((tab) => tab.id === tabId);
+			if (
+				tabToClose?.kind === "file" &&
+				autoAddedSourceIdsRef.current.has(tabToClose.sourceId)
+			) {
+				autoAddedSourceIdsRef.current.delete(tabToClose.sourceId);
+				onRemoveAutoAddedSource?.(tabToClose.sourceId);
+			}
+
 			setTabs((current) => {
 				const nextTabs = current.filter((tab) => tab.id !== tabId);
 
@@ -310,19 +349,52 @@ function ChatSummaryPanel({
 				return nextTabs.length > 0 ? nextTabs : [SUMMARY_TAB];
 			});
 		},
-		[activeTabId],
+		[activeTabId, onRemoveAutoAddedSource, tabs],
 	);
+	React.useEffect(() => {
+		if (!automation) {
+			return;
+		}
+
+		setTabs((current) =>
+			current.some((tab) => tab.kind === "automation")
+				? current
+				: [
+						...current,
+						{
+							id: "automation",
+							kind: "automation",
+							title: "Automation",
+						},
+					],
+		);
+	}, [automation]);
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
-			<div className="flex h-14 shrink-0 items-center justify-between px-4">
+			<div
+				className={cn(
+					"flex shrink-0 items-center justify-between",
+					!isMobile && desktopSafeTop ? "h-10 px-2" : "h-16 px-4",
+				)}
+			>
 				<SummaryTabRail
 					tabs={tabs}
 					activeTabId={activeTabId}
+					className={
+						!isMobile && desktopSafeTop
+							? DESKTOP_MAIN_HEADER_CONTENT_CLASS
+							: undefined
+					}
 					onSelectTab={setActiveTabId}
 					onCloseTab={closeTab}
 				/>
-				<div className="flex items-center gap-1">
+				<div
+					className={cn(
+						"flex items-center gap-1",
+						!isMobile && desktopSafeTop && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+					)}
+				>
 					<SummaryAddPopover
 						showAutomation={!tabs.some((tab) => tab.kind === "automation")}
 						onOpenFileSearch={() => {
@@ -366,10 +438,17 @@ function ChatSummaryPanel({
 							preview: source.preview,
 							content: source.content,
 						});
+						autoAddedSourceIdsRef.current.add(source.id);
+						onAddSource?.(source.id);
 					}}
 				/>
 			) : null}
-			<SummaryTabContent activeTab={activeTab} sources={sources} />
+			<SummaryTabContent
+				activeTab={activeTab}
+				automation={automation}
+				chatTitle={chatTitle}
+				sources={sources}
+			/>
 		</div>
 	);
 }
@@ -377,16 +456,23 @@ function ChatSummaryPanel({
 function SummaryTabRail({
 	tabs,
 	activeTabId,
+	className,
 	onSelectTab,
 	onCloseTab,
 }: {
 	tabs: SummaryTab[];
 	activeTabId: string;
+	className?: string;
 	onSelectTab: (tabId: string) => void;
 	onCloseTab: (tabId: string) => void;
 }) {
 	return (
-		<div className="no-scrollbar min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
+		<div
+			className={cn(
+				"no-scrollbar min-w-0 flex-1 overflow-x-auto overflow-y-hidden",
+				className,
+			)}
+		>
 			<div className="flex min-w-max items-center gap-1 pr-2">
 				{tabs.map((tab) => {
 					const isActive = tab.id === activeTabId;
@@ -405,7 +491,7 @@ function SummaryTabRail({
 						>
 							<button
 								type="button"
-								className="min-w-0 flex-1 truncate text-left"
+								className="min-w-0 flex-1 cursor-pointer truncate text-left"
 								onClick={() => onSelectTab(tab.id)}
 							>
 								{tab.title}
@@ -414,7 +500,7 @@ function SummaryTabRail({
 								<button
 									type="button"
 									aria-label={`Close ${tab.title}`}
-									className="flex size-4 shrink-0 items-center justify-center rounded-sm opacity-0 transition-opacity group-hover/tab:opacity-100"
+									className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm opacity-0 transition-opacity group-hover/tab:opacity-100"
 									onClick={() => {
 										onCloseTab(tab.id);
 									}}
@@ -462,6 +548,7 @@ function SummaryAddPopover({
 						<CommandGroup>
 							<CommandItem
 								value="open-file"
+								className="cursor-pointer"
 								onSelect={() => {
 									handleOpenChange(false);
 									onOpenFileSearch();
@@ -473,6 +560,7 @@ function SummaryAddPopover({
 							{showAutomation ? (
 								<CommandItem
 									value="automation"
+									className="cursor-pointer"
 									onSelect={() => {
 										onAddAutomation();
 										handleOpenChange(false);
@@ -492,13 +580,19 @@ function SummaryAddPopover({
 
 function SummaryTabContent({
 	activeTab,
+	automation,
+	chatTitle,
 	sources,
 }: {
 	activeTab: SummaryTab;
+	automation?: AutomationListItem | null;
+	chatTitle: string;
 	sources: ToolSource[];
 }) {
 	if (activeTab.kind === "automation") {
-		return (
+		return automation ? (
+			<AutomationSummaryContent automation={automation} chatTitle={chatTitle} />
+		) : (
 			<div className="min-h-0 flex-1 p-4">
 				<Empty className="h-full border-0">
 					<EmptyHeader>
@@ -506,10 +600,7 @@ function SummaryTabContent({
 							<Clock3 />
 						</EmptyMedia>
 						<EmptyTitle>Automation unavailable</EmptyTitle>
-						<EmptyDescription>
-							This automation may have been deleted or is no longer available on
-							this machine
-						</EmptyDescription>
+						<EmptyDescription>There are no automations yet.</EmptyDescription>
 					</EmptyHeader>
 				</Empty>
 			</div>
@@ -524,7 +615,7 @@ function SummaryTabContent({
 				viewportClassName="overflow-x-hidden [&>div]:!block [&>div]:!min-w-0 [&>div]:!w-full"
 			>
 				<div className="summary-note-preview-content flex flex-col gap-4 px-5 py-4">
-					<div className="flex items-center gap-2 text-xl font-medium leading-tight tracking-tight">
+					<div className="flex items-center gap-2 text-lg font-medium leading-tight tracking-tight">
 						<span className="min-w-0 truncate">{activeTab.title}</span>
 					</div>
 					{activeTab.preview ? (
@@ -543,6 +634,155 @@ function SummaryTabContent({
 	}
 
 	return <SummaryDefaultContent sources={sources} />;
+}
+
+const automationDateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+	day: "numeric",
+	hour: "numeric",
+	minute: "2-digit",
+	month: "short",
+	year: "numeric",
+});
+
+const automationRelativeDayFormatter = new Intl.RelativeTimeFormat(undefined, {
+	numeric: "auto",
+});
+
+const automationTimeFormatter = new Intl.DateTimeFormat(undefined, {
+	hour: "numeric",
+	minute: "2-digit",
+});
+
+function formatAutomationTimestamp(value: number | null) {
+	if (!value) {
+		return "Never";
+	}
+
+	return automationDateTimeFormatter.format(new Date(value));
+}
+
+function formatAutomationNextRun(value: number | null) {
+	if (!value) {
+		return "Not scheduled";
+	}
+
+	const now = new Date();
+	const date = new Date(value);
+	const startOfToday = new Date(
+		now.getFullYear(),
+		now.getMonth(),
+		now.getDate(),
+	).getTime();
+	const startOfRunDay = new Date(
+		date.getFullYear(),
+		date.getMonth(),
+		date.getDate(),
+	).getTime();
+	const dayDiff = Math.round((startOfRunDay - startOfToday) / 86_400_000);
+	const dayLabel = automationRelativeDayFormatter.format(dayDiff, "day");
+	const timeLabel = automationTimeFormatter.format(date);
+
+	return `${dayLabel.charAt(0).toUpperCase()}${dayLabel.slice(1)} at ${timeLabel}`;
+}
+
+function AutomationSummaryContent({
+	automation,
+	chatTitle,
+}: {
+	automation: AutomationListItem;
+	chatTitle: string;
+}) {
+	return (
+		<ScrollArea
+			className="min-h-0 flex-1"
+			reserveScrollbarGap
+			viewportClassName="overflow-x-hidden [&>div]:!block [&>div]:!min-w-0 [&>div]:!w-full"
+		>
+			<div className="flex flex-col gap-5 px-3 py-4">
+				<div className="flex items-start gap-3 rounded-lg p-2">
+					<div className="min-w-0 flex-1">
+						<h2 className="truncate text-sm font-medium text-foreground">
+							{automation.title}
+						</h2>
+						<p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+							{automation.prompt}
+						</p>
+					</div>
+				</div>
+
+				<AutomationSummarySection title="Status">
+					<AutomationSummaryRow
+						label="Status"
+						value={
+							<span className="inline-flex min-w-0 items-center gap-2">
+								<span
+									className={cn(
+										"size-2 rounded-full",
+										automation.isPaused
+											? "bg-muted-foreground"
+											: "bg-emerald-500",
+									)}
+								/>
+								{automation.isPaused ? "Paused" : "Active"}
+							</span>
+						}
+					/>
+					<AutomationSummaryRow
+						label="Next run"
+						value={formatAutomationNextRun(automation.nextRunAt)}
+					/>
+					<AutomationSummaryRow
+						label="Last ran"
+						value={formatAutomationTimestamp(automation.lastRunAt)}
+					/>
+				</AutomationSummarySection>
+
+				<AutomationSummarySection title="Details">
+					<AutomationSummaryRow
+						label="Chat"
+						value={chatTitle.trim() || "New chat"}
+					/>
+					<AutomationSummaryRow
+						label="Interval"
+						value={getAutomationSchedulePeriodLabel(automation)}
+					/>
+				</AutomationSummarySection>
+			</div>
+		</ScrollArea>
+	);
+}
+
+function AutomationSummarySection({
+	children,
+	defaultOpen = true,
+	title,
+}: {
+	children: React.ReactNode;
+	defaultOpen?: boolean;
+	title: string;
+}) {
+	return (
+		<SummarySection defaultOpen={defaultOpen} title={title}>
+			<div className="space-y-0.5">{children}</div>
+		</SummarySection>
+	);
+}
+
+function AutomationSummaryRow({
+	label,
+	value,
+}: {
+	label: string;
+	value: React.ReactNode;
+}) {
+	return (
+		<div className="grid min-h-8 grid-cols-[minmax(5.5rem,0.8fr)_minmax(0,1fr)] items-center gap-3 rounded-md px-2 py-1.5 text-sm">
+			<div className="truncate text-muted-foreground">{label}</div>
+			<div className="min-w-0 justify-self-end truncate text-right text-muted-foreground">
+				{value}
+			</div>
+		</div>
+	);
 }
 
 function ReadOnlyNoteContent({
