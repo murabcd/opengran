@@ -2435,7 +2435,7 @@ function ChatHeaderActions({
 						onSelect={() => setConfirmTrashOpen(true)}
 					>
 						<Trash2 />
-						Delete
+						Move to trash
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>

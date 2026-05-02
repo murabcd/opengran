@@ -673,7 +673,9 @@ describe("ChatMessages", () => {
 		);
 
 		await user.click(screen.getByRole("button", { name: "Delete" }));
+		expect(onDeleteMessage).not.toHaveBeenCalled();
 
+		await user.click(screen.getByRole("button", { name: "Delete" }));
 		expect(onDeleteMessage).toHaveBeenCalledWith("user-delete");
 	});
 

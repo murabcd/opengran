@@ -14,6 +14,7 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
 import {
+	Check,
 	Copy,
 	Paperclip,
 	PenLine,
@@ -68,9 +69,24 @@ export function ChatMessages({
 	onRegenerateMessage?: (messageId: string) => void;
 }) {
 	const lastMessage = messages[messages.length - 1];
+	const [messageIdPendingDelete, setMessageIdPendingDelete] = React.useState<
+		string | null
+	>(null);
 	const showLoadingIndicator =
 		isLoading &&
 		(lastMessage === undefined || lastMessage.role !== "assistant");
+	const handleDeleteClick = React.useCallback(
+		(messageId: string) => {
+			if (messageIdPendingDelete === messageId) {
+				onDeleteMessage?.(messageId);
+				setMessageIdPendingDelete(null);
+				return;
+			}
+
+			setMessageIdPendingDelete(messageId);
+		},
+		[messageIdPendingDelete, onDeleteMessage],
+	);
 
 	return (
 		<div className="space-y-4 pb-9">
@@ -270,19 +286,41 @@ export function ChatMessages({
 									) : null}
 									<Tooltip>
 										<TooltipTrigger asChild>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon-sm"
-												className="size-7 text-muted-foreground hover:text-foreground"
-												aria-label="Delete"
-												disabled={!onDeleteMessage}
-												onClick={() => onDeleteMessage?.(message.id)}
-											>
-												<Trash2 className="size-3.5" />
-											</Button>
+											{(() => {
+												const isPendingDelete =
+													messageIdPendingDelete === message.id;
+
+												return (
+													<Button
+														type="button"
+														variant="ghost"
+														size="icon-sm"
+														className={cn(
+															"size-7 text-muted-foreground hover:text-foreground",
+															isPendingDelete &&
+																"text-destructive hover:bg-destructive/10 hover:text-destructive dark:text-red-500",
+														)}
+														aria-label="Delete"
+														disabled={!onDeleteMessage}
+														onClick={() => handleDeleteClick(message.id)}
+														onMouseLeave={() => {
+															if (isPendingDelete) {
+																setMessageIdPendingDelete(null);
+															}
+														}}
+													>
+														{isPendingDelete ? (
+															<Check className="size-3.5" />
+														) : (
+															<Trash2 className="size-3.5" />
+														)}
+													</Button>
+												);
+											})()}
 										</TooltipTrigger>
-										<TooltipContent>Delete</TooltipContent>
+										{messageIdPendingDelete === message.id ? null : (
+											<TooltipContent>Delete</TooltipContent>
+										)}
 									</Tooltip>
 								</div>
 							) : null}
