@@ -2,7 +2,7 @@ import { Button } from "@workspace/ui/components/button";
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
 import { useState } from "react";
-import { Streamdown } from "streamdown";
+import { MarkdownStream } from "@/components/chat/markdown-stream";
 
 const COLLAPSIBLE_MESSAGE_CHARACTER_THRESHOLD = 900;
 const COLLAPSIBLE_MESSAGE_LINE_THRESHOLD = 12;
@@ -51,15 +51,13 @@ export function CollapsibleMessageContent({
 
 	if (!isCollapsible) {
 		return (
-			<Streamdown
+			<MarkdownStream
 				className={streamdownClassName}
 				isAnimating={isAnimating}
-				caret="block"
-				controls={false}
 				mode={resolvedMode}
 			>
 				{text}
-			</Streamdown>
+			</MarkdownStream>
 		);
 	}
 
@@ -71,15 +69,13 @@ export function CollapsibleMessageContent({
 					isExpanded ? "max-h-[999rem]" : "max-h-80",
 				)}
 			>
-				<Streamdown
+				<MarkdownStream
 					className={streamdownClassName}
 					isAnimating={isAnimating}
-					caret="block"
-					controls={false}
 					mode={resolvedMode}
 				>
 					{text}
-				</Streamdown>
+				</MarkdownStream>
 			</div>
 			<div className="flex justify-end">
 				<Button

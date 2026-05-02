@@ -12,8 +12,8 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useMutation } from "convex/react";
 import * as React from "react";
 import { toast } from "sonner";
-import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
+import { MarkdownStream } from "@/components/chat/markdown-stream";
 import { COMPOSER_DOCK_WRAPPER_CLASS } from "@/components/layout/composer-dock";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import {
@@ -1555,14 +1555,13 @@ const NotePageEditorPane = React.memo(function NotePageEditorPane({
 								) : null}
 								{templateApplyState.isRunning ? (
 									templateApplyState.streamedMarkdown.trim().length > 0 ? (
-										<Streamdown
+										<MarkdownStream
 											className="note-streamdown min-h-[320px] text-base text-foreground"
-											controls={false}
-											caret="block"
 											isAnimating
+											mode="streaming"
 										>
 											{templateApplyState.streamedMarkdown}
-										</Streamdown>
+										</MarkdownStream>
 									) : (
 										<div className="min-h-[320px] text-base text-muted-foreground">
 											<ShimmerText>Thinking</ShimmerText>
