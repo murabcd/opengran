@@ -14,7 +14,7 @@ const moveChatToTrashMock = vi.fn();
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
 const useMutationMock = vi.fn();
-const TEST_NOW = new Date("2026-05-01T12:00:00.000Z").getTime();
+const TEST_NOW = Date.now();
 const testTimeFormatter = new Intl.DateTimeFormat(undefined, {
 	hour: "numeric",
 	minute: "2-digit",

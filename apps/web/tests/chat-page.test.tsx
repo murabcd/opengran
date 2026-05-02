@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { getFunctionName } from "convex/server";
 import type * as React from "react";
@@ -12,6 +12,7 @@ const regenerateMock = vi.fn();
 const stopMock = vi.fn();
 const toastSuccessMock = vi.fn();
 const truncateFromMessageMock = vi.fn();
+const moveChatToTrashMock = vi.fn();
 const useChatMock = vi.fn();
 const useQueryMock = vi.fn();
 const useActionMock = vi.fn();
@@ -66,18 +67,22 @@ const getChatPageQueryFixture = (query: unknown, args: unknown) => {
 };
 
 const mockChatPageMutations = () => {
-	let mutationCallCount = 0;
+	useMutationMock.mockImplementation((mutation) => {
+		const functionName = getFunctionName(mutation);
 
-	useMutationMock.mockImplementation(() => {
-		mutationCallCount += 1;
+		if (functionName === "chats:truncateFromMessage") {
+			return truncateFromMessageMock;
+		}
 
-		if (mutationCallCount % 2 === 1) {
+		if (functionName === "chats:moveToTrash") {
 			return {
-				withOptimisticUpdate: vi.fn(() => vi.fn()),
+				withOptimisticUpdate: vi.fn(() => moveChatToTrashMock),
 			};
 		}
 
-		return truncateFromMessageMock;
+		return {
+			withOptimisticUpdate: vi.fn(() => vi.fn()),
+		};
 	});
 };
 
@@ -376,8 +381,10 @@ describe("ChatPage", () => {
 		regenerateMock.mockReset();
 		toastSuccessMock.mockReset();
 		truncateFromMessageMock.mockReset();
+		moveChatToTrashMock.mockReset();
 		scrollToBottomMock.mockReset();
 		truncateFromMessageMock.mockResolvedValue(undefined);
+		moveChatToTrashMock.mockResolvedValue(null);
 		useQueryMock.mockReset();
 		useActionMock.mockReset();
 		useMutationMock.mockReset();
@@ -434,6 +441,60 @@ describe("ChatPage", () => {
 			screen.getByPlaceholderText("Ask, search, or make anything..."),
 		);
 		priorFocus.remove();
+	});
+
+	it("does not reopen trash confirmation after moving a history chat to trash", async () => {
+		const user = userEvent.setup();
+		const { ChatPage } = await import("../src/components/chat/chat-page");
+		const onChatRemoved = vi.fn();
+
+		render(
+			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
+				<ChatPage
+					chatId="composer-1"
+					initialMessages={[]}
+					onChatPersisted={vi.fn()}
+					chats={[
+						{
+							_id: "chat-1",
+							_creationTime: Date.now(),
+							authorName: "Murad",
+							chatId: "chat-1",
+							createdAt: Date.now(),
+							title: "Meeting recap",
+							updatedAt: Date.now(),
+						} as never,
+					]}
+					isChatsLoading={false}
+					activeChatId={null}
+					onOpenChat={vi.fn()}
+					onPrefetchChat={vi.fn()}
+					onChatRemoved={onChatRemoved}
+					onOpenConnectionsSettings={vi.fn()}
+					activeWorkspace={null}
+				/>
+			</ActiveWorkspaceProvider>,
+		);
+
+		await user.click(
+			screen.getByRole("button", { name: "Open actions for Meeting recap" }),
+		);
+		await user.click(screen.getByRole("button", { name: "Move to trash" }));
+		expect(screen.getByText("Move chat to trash?")).toBeTruthy();
+
+		const confirmButtons = screen.getAllByRole("button", {
+			name: "Move to trash",
+		});
+		await user.click(confirmButtons.at(-1) as HTMLElement);
+
+		await waitFor(() => {
+			expect(moveChatToTrashMock).toHaveBeenCalledWith({
+				workspaceId: "workspace-1",
+				chatId: "chat-1",
+			});
+			expect(onChatRemoved).toHaveBeenCalledWith("chat-1");
+			expect(screen.queryByText("Move chat to trash?")).toBeNull();
+		});
 	});
 
 	it("shows thinking while an automation run is still generating", async () => {

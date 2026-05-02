@@ -1,14 +1,4 @@
 import { useChat } from "@ai-sdk/react";
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@workspace/ui/components/alert-dialog";
 import { Button } from "@workspace/ui/components/button";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { cn } from "@workspace/ui/lib/utils";
@@ -92,16 +82,10 @@ const useChatPageController = ({
 	initialMessages,
 	onChatPersisted,
 	chats,
-	onChatRemoved,
 	activeWorkspace,
 }: Pick<
 	ChatPageProps,
-	| "chatId"
-	| "initialMessages"
-	| "onChatPersisted"
-	| "chats"
-	| "onChatRemoved"
-	| "activeWorkspace"
+	"chatId" | "initialMessages" | "onChatPersisted" | "chats" | "activeWorkspace"
 >) => {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const [draft, setDraft] = React.useState("");
@@ -109,9 +93,6 @@ const useChatPageController = ({
 		[],
 	);
 	useRevokeAttachmentObjectUrls(attachedFiles);
-	const [confirmTrashChatId, setConfirmTrashChatId] = React.useState<
-		string | null
-	>(null);
 	const [selectedModel, setSelectedModel] = React.useState(
 		defaultChatModel ?? chatModels[0],
 	);
@@ -128,7 +109,6 @@ const useChatPageController = ({
 		null,
 	);
 	const [isPreparingRequest, setIsPreparingRequest] = React.useState(false);
-	const [isMovingChatToTrash, setIsMovingChatToTrash] = React.useState(false);
 	const [selectedSourceIds, setSelectedSourceIds] = React.useState<string[]>(
 		[],
 	);
@@ -144,34 +124,6 @@ const useChatPageController = ({
 		void activeWorkspaceId;
 		setSelectedSourceIds([]);
 	}, [activeWorkspaceId]);
-	const moveChatToTrash = useMutation(
-		api.chats.moveToTrash,
-	).withOptimisticUpdate((localStore, args) => {
-		const currentChats = localStore.getQuery(api.chats.list, {
-			workspaceId: args.workspaceId,
-		});
-
-		if (currentChats !== undefined) {
-			localStore.setQuery(
-				api.chats.list,
-				{ workspaceId: args.workspaceId },
-				currentChats.filter((chat) => getChatId(chat) !== args.chatId),
-			);
-		}
-
-		const currentMessages = localStore.getQuery(api.chats.getMessages, {
-			workspaceId: args.workspaceId,
-			chatId: args.chatId,
-		});
-
-		if (currentMessages !== undefined) {
-			localStore.setQuery(
-				api.chats.getMessages,
-				{ workspaceId: args.workspaceId, chatId: args.chatId },
-				[],
-			);
-		}
-	});
 	const truncateFromMessage = useMutation(api.chats.truncateFromMessage);
 	const storedMessages = useQuery(
 		api.chats.getMessages,
@@ -406,35 +358,6 @@ const useChatPageController = ({
 		[handleSubmit],
 	);
 
-	const handleMoveChatToTrash = React.useCallback(() => {
-		if (!confirmTrashChatId || !activeWorkspaceId || isMovingChatToTrash) {
-			return;
-		}
-
-		setIsMovingChatToTrash(true);
-
-		void moveChatToTrash({
-			workspaceId: activeWorkspaceId,
-			chatId: confirmTrashChatId,
-		})
-			.then(() => {
-				onChatRemoved(confirmTrashChatId);
-				setConfirmTrashChatId(null);
-			})
-			.catch((error) => {
-				console.error("Failed to move chat to trash", error);
-			})
-			.finally(() => {
-				setIsMovingChatToTrash(false);
-			});
-	}, [
-		activeWorkspaceId,
-		confirmTrashChatId,
-		isMovingChatToTrash,
-		moveChatToTrash,
-		onChatRemoved,
-	]);
-
 	const handleWebSearchEnabledChange = React.useCallback((enabled: boolean) => {
 		setWebSearchEnabled((current) => {
 			if (current === enabled) {
@@ -546,7 +469,6 @@ const useChatPageController = ({
 
 	return {
 		appsEnabled,
-		confirmTrashChatId,
 		contextPages,
 		currentChatTitle: currentChat?.title ?? "",
 		draft,
@@ -556,12 +478,10 @@ const useChatPageController = ({
 		attachedFiles,
 		setAttachedFiles,
 		handleDraftKeyDown,
-		handleMoveChatToTrash,
 		handleSubmit,
 		handleWebSearchEnabledChange,
 		hasMessages,
 		isLoading,
-		isMovingChatToTrash,
 		isNotesLoading,
 		mentionPopoverOpen,
 		mentionableDocuments,
@@ -571,7 +491,6 @@ const useChatPageController = ({
 		selectedSourceIds,
 		workspaceSourceId,
 		setAppsEnabled,
-		setConfirmTrashChatId,
 		setDocumentSearchTerm,
 		setDraft,
 		setMentionPopoverOpen,
@@ -676,7 +595,6 @@ export function ChatPage({
 		initialMessages,
 		onChatPersisted,
 		chats,
-		onChatRemoved,
 		activeWorkspace,
 	});
 	const {
@@ -859,7 +777,7 @@ export function ChatPage({
 											activeChatId={activeChatId}
 											onOpenChat={onOpenChat}
 											onPrefetchChat={onPrefetchChat}
-											onMoveToTrash={controller.setConfirmTrashChatId}
+											onMoveToTrash={onChatRemoved}
 											automationChatIds={automationChatIds}
 											onAddAutomation={onAddAutomation}
 										/>
@@ -870,37 +788,6 @@ export function ChatPage({
 					</div>
 				</div>
 			</ScrollArea>
-
-			<AlertDialog
-				open={controller.confirmTrashChatId !== null}
-				onOpenChange={(open) => {
-					if (!open) {
-						controller.setConfirmTrashChatId(null);
-					}
-				}}
-			>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Move chat to trash?</AlertDialogTitle>
-						<AlertDialogDescription>
-							This removes the chat from the list. You can restore it later from
-							Trash.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<AlertDialogFooter>
-						<AlertDialogCancel disabled={controller.isMovingChatToTrash}>
-							Cancel
-						</AlertDialogCancel>
-						<AlertDialogAction
-							className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
-							onClick={controller.handleMoveChatToTrash}
-							disabled={controller.isMovingChatToTrash}
-						>
-							{controller.isMovingChatToTrash ? "Moving..." : "Move to trash"}
-						</AlertDialogAction>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
 			<ChatSummarySheet
 				open={controller.summaryOpen}
 				messages={controller.messages}
