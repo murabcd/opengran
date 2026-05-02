@@ -6,6 +6,7 @@ import {
 	generateText,
 	Output,
 	smoothStream,
+	stepCountIs,
 	streamText,
 	type UIMessage,
 	validateUIMessages,
@@ -22,6 +23,7 @@ import {
 	CHAT_TITLE_MODEL_ID,
 	NOTE_GENERATION_MODEL_ID,
 } from "../packages/ai/src/models.mjs";
+import { buildConnectedAppTools } from "../packages/ai/src/app-tools.mjs";
 import {
 	parseTemplateStreamToStructuredNote,
 	validateTemplateStream,
@@ -48,6 +50,7 @@ type ChatRequestBody = {
 	messages?: UIMessage[];
 	model?: string;
 	webSearchEnabled?: boolean;
+	appsEnabled?: boolean;
 	mentions?: string[];
 	selectedSourceIds?: string[];
 	convexToken?: string | null;
@@ -86,6 +89,7 @@ const MAX_CHAT_TITLE_LENGTH = 80;
 const MAX_NOTE_CONTEXT_LENGTH = 16_000;
 const APP_SOURCE_PREFIX = "app:";
 const WORKSPACE_SOURCE_PREFIX = "workspace:";
+const PROJECT_SOURCE_PREFIX = "project:";
 const chatModels = CHAT_SERVER_MODELS;
 const fallbackChatModel = chatModels[0];
 const generateMessageId = createIdGenerator({
@@ -152,7 +156,8 @@ const getReferencedNoteIds = ({
 		...((selectedSourceIds ?? []).filter(
 			(value) =>
 				!value.startsWith(APP_SOURCE_PREFIX) &&
-				!value.startsWith(WORKSPACE_SOURCE_PREFIX),
+				!value.startsWith(WORKSPACE_SOURCE_PREFIX) &&
+				!value.startsWith(PROJECT_SOURCE_PREFIX),
 		) as string[]),
 	]
 		.filter(
@@ -160,6 +165,23 @@ const getReferencedNoteIds = ({
 				Boolean(value) && values.indexOf(value) === index,
 		)
 		.map((value) => value as Id<"notes">);
+
+const getSelectedAppSourceIds = (selectedSourceIds: string[] | undefined) =>
+	(selectedSourceIds ?? []).filter((value) =>
+		value.startsWith(APP_SOURCE_PREFIX),
+	);
+
+const getSelectedProjectIds = ({
+	selectedSourceIds,
+}: Pick<ChatRequestBody, "selectedSourceIds">): Id<"projects">[] =>
+	(selectedSourceIds ?? [])
+		.filter((value) => value.startsWith(PROJECT_SOURCE_PREFIX))
+		.map((value) => value.slice(PROJECT_SOURCE_PREFIX.length))
+		.filter(
+			(value, index, values): value is string =>
+				Boolean(value) && values.indexOf(value) === index,
+		)
+		.map((value) => value as Id<"projects">);
 
 const hasWorkspaceSourceSelected = ({
 	selectedSourceIds,
@@ -288,8 +310,10 @@ const getNotesContext = async ({
 	}
 
 	const noteIds = getReferencedNoteIds({ mentions, selectedSourceIds });
+	const projectIds = getSelectedProjectIds({ selectedSourceIds });
 	const shouldUseWorkspaceScope =
 		noteIds.length === 0 &&
+		projectIds.length === 0 &&
 		((selectedSourceIds ?? []).length === 0 ||
 			hasWorkspaceSourceSelected({ selectedSourceIds }));
 	const notes =
@@ -298,6 +322,11 @@ const getNotesContext = async ({
 					workspaceId: workspaceId as Id<"workspaces">,
 					ids: noteIds,
 				})
+			: projectIds.length > 0
+				? await client.query(api.notes.getProjectChatContext, {
+						workspaceId: workspaceId as Id<"workspaces">,
+						projectIds,
+					})
 			: shouldUseWorkspaceScope
 				? await client.query(api.notes.getWorkspaceChatContext, {
 						workspaceId: workspaceId as Id<"workspaces">,
@@ -479,6 +508,7 @@ export const handleChatRequest = async (request: Request) => {
 		model,
 		workspaceId,
 		webSearchEnabled = false,
+		appsEnabled = true,
 		mentions,
 		selectedSourceIds,
 		convexToken,
@@ -592,6 +622,41 @@ export const handleChatRequest = async (request: Request) => {
 		workspaceId,
 	});
 	const recipeContext = getRecipeContext(selectedRecipe);
+	const appSourceIds = getSelectedAppSourceIds(selectedSourceIds);
+	const appConnections =
+		convexClient && resolvedWorkspaceId && appsEnabled
+			? selectedSourceIds?.length === 0
+				? await convexClient
+						.query(api.appConnections.getAllForChat, {
+							workspaceId: resolvedWorkspaceId,
+						})
+						.catch(() => [])
+				: appSourceIds.length > 0
+					? await convexClient
+							.query(api.appConnections.getSelectedForChat, {
+								workspaceId: resolvedWorkspaceId,
+								sourceIds: appSourceIds,
+							})
+							.catch(() => [])
+					: []
+			: [];
+	const appTools = appsEnabled
+		? await buildConnectedAppTools(appConnections)
+		: {};
+	const tools = {
+		...(webSearchEnabled
+			? {
+					web_search: openai.tools.webSearch({
+						searchContextSize: "medium",
+						userLocation: {
+							type: "approximate" as const,
+							country: "US" as const,
+						},
+					}),
+				}
+			: {}),
+		...appTools,
+	};
 
 	const userProfileContext =
 		convexClient &&
@@ -609,17 +674,8 @@ export const handleChatRequest = async (request: Request) => {
 		model: openai(selectedModel.model),
 		system: systemPrompt,
 		messages: await convertToModelMessages(chatMessages),
-		tools: webSearchEnabled
-			? {
-					web_search: openai.tools.webSearch({
-						searchContextSize: "medium",
-						userLocation: {
-							type: "approximate",
-							country: "US",
-						},
-					}),
-				}
-			: undefined,
+		tools: Object.keys(tools).length > 0 ? tools : undefined,
+		stopWhen: Object.keys(tools).length > 0 ? stepCountIs(5) : undefined,
 	});
 
 	return result.toUIMessageStreamResponse({

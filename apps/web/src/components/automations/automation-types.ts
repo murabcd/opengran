@@ -26,7 +26,7 @@ export type AutomationTarget =
 export type AutomationAppSource = {
 	id: string;
 	label: string;
-	provider: ChatAppSourceProvider;
+	provider: ChatAppSourceProvider | "project";
 };
 
 export type AutomationDraft = {
@@ -35,6 +35,8 @@ export type AutomationDraft = {
 	model: string;
 	authorName?: string;
 	appSources: AutomationAppSource[];
+	webSearchEnabled: boolean;
+	appsEnabled: boolean;
 	schedulePeriod: AutomationSchedulePeriod;
 	scheduledAt: number;
 	timezone: string;

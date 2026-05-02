@@ -23,6 +23,10 @@ import {
 	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuSub,
+	DropdownMenuSubContent,
+	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field";
@@ -47,6 +51,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@workspace/ui/components/select";
+import { Switch } from "@workspace/ui/components/switch";
 import {
 	Tooltip,
 	TooltipContent,
@@ -54,7 +59,17 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { useQuery } from "convex/react";
-import { AtSign, Clock, FileText, Grid3x3, Workflow, X } from "lucide-react";
+import {
+	AtSign,
+	Check,
+	CirclePlus,
+	Clock,
+	FileText,
+	Folder,
+	Globe,
+	LayoutGrid,
+	X,
+} from "lucide-react";
 import * as React from "react";
 import {
 	AUTOMATION_SCHEDULE_PERIODS,
@@ -77,6 +92,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 
 const AUTOMATION_PICKER_TRIGGER_CLASS_NAME =
 	"group/automation-picker min-w-0 max-w-[180px] justify-start overflow-hidden rounded-full font-normal text-muted-foreground";
+const PROJECT_SOURCE_PREFIX = "project:";
 
 type CreateAutomationDialogProps = {
 	open: boolean;
@@ -151,6 +167,8 @@ type AutomationDialogState = {
 	schedulePeriod: AutomationSchedulePeriod;
 	scheduledAt: Date;
 	target: AutomationTarget | null;
+	webSearchEnabled: boolean;
+	appsEnabled: boolean;
 	selectedConnectedAppIds: string[];
 	selectedNoteIds: Array<Id<"notes">>;
 };
@@ -172,6 +190,8 @@ const createEmptyAutomationDialogState = (): AutomationDialogState => ({
 	schedulePeriod: "daily",
 	scheduledAt: createInitialScheduledAt(),
 	target: null,
+	webSearchEnabled: false,
+	appsEnabled: true,
 	selectedConnectedAppIds: [],
 	selectedNoteIds: [],
 });
@@ -196,6 +216,8 @@ const createAutomationDialogState = (
 		selectedModel: findChatModel(initialAutomation.model) ?? defaultChatModel,
 		schedulePeriod: initialAutomation.schedulePeriod,
 		scheduledAt: new Date(initialAutomation.scheduledAt),
+		webSearchEnabled: initialAutomation.webSearchEnabled,
+		appsEnabled: initialAutomation.appsEnabled,
 		target:
 			initialAutomation.target.kind === "project"
 				? initialAutomation.target
@@ -231,7 +253,19 @@ function useCreateAutomationDialogElement({
 		api.notes.list,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
+	const projects = useQuery(
+		api.projects.list,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const connectedAppSources = useAppSources(activeWorkspaceId);
+	const projectSources = React.useMemo(
+		() =>
+			(projects ?? []).map((project) => ({
+				id: `${PROJECT_SOURCE_PREFIX}${project._id}`,
+				title: project.name,
+			})),
+		[projects],
+	);
 	const noteSources = React.useMemo<AutomationNoteSource[]>(
 		() =>
 			(notes ?? []).map((note) => ({
@@ -259,6 +293,8 @@ function useCreateAutomationDialogElement({
 		schedulePeriod,
 		scheduledAt,
 		target,
+		webSearchEnabled,
+		appsEnabled,
 		selectedConnectedAppIds,
 		selectedNoteIds,
 	} = dialogState;
@@ -278,17 +314,31 @@ function useCreateAutomationDialogElement({
 				const source = connectedAppSources.find(
 					(appSource) => appSource.id === sourceId,
 				);
-				return source
+				if (source) {
+					return [
+						{
+							id: source.id,
+							label: getAppSourceLabel(source.provider),
+							provider: source.provider,
+						},
+					];
+				}
+
+				const project = projectSources.find(
+					(projectSource) => projectSource.id === sourceId,
+				);
+
+				return project
 					? [
 							{
-								id: source.id,
-								label: getAppSourceLabel(source.provider),
-								provider: source.provider,
+								id: project.id,
+								label: project.title,
+								provider: "project" as const,
 							},
 						]
 					: [];
 			}),
-		[connectedAppSources, selectedConnectedAppIds],
+		[connectedAppSources, projectSources, selectedConnectedAppIds],
 	);
 	React.useEffect(() => {
 		updateDialogState(
@@ -301,18 +351,32 @@ function useCreateAutomationDialogElement({
 
 	React.useEffect(() => {
 		updateDialogState((currentState) => {
-			const availableIds = new Set(
+			const availableAppIds = new Set(
 				connectedAppSources.map((source) => source.id),
 			);
-			const nextIds = currentState.selectedConnectedAppIds.filter((sourceId) =>
-				availableIds.has(sourceId),
+			const availableProjectIds = new Set(
+				projectSources.map((source) => source.id),
+			);
+			const nextIds = currentState.selectedConnectedAppIds.filter(
+				(sourceId) => {
+					if (
+						sourceId.startsWith(PROJECT_SOURCE_PREFIX) &&
+						projects === undefined
+					) {
+						return true;
+					}
+
+					return (
+						availableAppIds.has(sourceId) || availableProjectIds.has(sourceId)
+					);
+				},
 			);
 
 			return nextIds.length === currentState.selectedConnectedAppIds.length
 				? {}
 				: { selectedConnectedAppIds: nextIds };
 		});
-	}, [connectedAppSources]);
+	}, [connectedAppSources, projectSources, projects]);
 
 	React.useEffect(() => {
 		updateDialogState((currentState) => {
@@ -507,6 +571,8 @@ function useCreateAutomationDialogElement({
 			title: trimmedTitle || trimmedPrompt,
 			prompt: trimmedPrompt,
 			model: selectedModel.model,
+			webSearchEnabled,
+			appsEnabled,
 			appSources: selectedConnectedAppSources,
 			schedulePeriod,
 			scheduledAt: scheduledAt.getTime(),
@@ -524,6 +590,8 @@ function useCreateAutomationDialogElement({
 		selectedNoteSources,
 		target,
 		title,
+		webSearchEnabled,
+		appsEnabled,
 	]);
 
 	const scheduleLabel = getAutomationSchedulePeriodLabel({
@@ -614,6 +682,19 @@ function useCreateAutomationDialogElement({
 									onOpenChange={handleAppSourcesPickerOpenChange}
 									sources={connectedAppSources}
 									selectedSourceIds={selectedConnectedAppIds}
+									noteSearchTerm={noteSearchTerm}
+									onNoteSearchTermChange={(value) =>
+										updateDialogState({ noteSearchTerm: value })
+									}
+									projectSources={projectSources}
+									webSearchEnabled={webSearchEnabled}
+									onWebSearchEnabledChange={(value) =>
+										updateDialogState({ webSearchEnabled: value })
+									}
+									appsEnabled={appsEnabled}
+									onAppsEnabledChange={(value) =>
+										updateDialogState({ appsEnabled: value })
+									}
 									onToggleSource={handleConnectedAppToggle}
 								/>
 								<SchedulePicker
@@ -661,12 +742,26 @@ function AppSourcesPicker({
 	onOpenChange,
 	sources,
 	selectedSourceIds,
+	noteSearchTerm,
+	onNoteSearchTermChange,
+	projectSources,
+	webSearchEnabled,
+	onWebSearchEnabledChange,
+	appsEnabled,
+	onAppsEnabledChange,
 	onToggleSource,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	sources: AppSource[];
 	selectedSourceIds: string[];
+	noteSearchTerm: string;
+	onNoteSearchTermChange: (value: string) => void;
+	projectSources: AutomationProjectSource[];
+	webSearchEnabled: boolean;
+	onWebSearchEnabledChange: (value: boolean) => void;
+	appsEnabled: boolean;
+	onAppsEnabledChange: (value: boolean) => void;
 	onToggleSource: (sourceId: string) => void;
 }) {
 	const keepPickerOpen = React.useCallback((event: Event) => {
@@ -676,12 +771,18 @@ function AppSourcesPicker({
 		selectedSourceIds.length === 1
 			? sources.find((source) => source.id === selectedSourceIds[0])
 			: null;
+	const selectedProjectSource =
+		selectedSourceIds.length === 1
+			? projectSources.find((source) => source.id === selectedSourceIds[0])
+			: null;
 	const label =
 		selectedSourceIds.length === 1 && selectedSource
 			? getAppSourceLabel(selectedSource.provider)
-			: selectedSourceIds.length > 1
-				? `${selectedSourceIds.length} connections`
-				: "Connections";
+			: selectedSourceIds.length === 1 && selectedProjectSource
+				? selectedProjectSource.title
+				: selectedSourceIds.length > 1
+					? `${selectedSourceIds.length} sources`
+					: "All sources";
 
 	return (
 		<DropdownMenu open={open} onOpenChange={onOpenChange}>
@@ -693,16 +794,69 @@ function AppSourcesPicker({
 					className={cn(AUTOMATION_PICKER_TRIGGER_CLASS_NAME)}
 				>
 					<span className="flex min-w-0 flex-1 items-center gap-2">
-						<Workflow className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
+						<Globe className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
 						<span className="min-w-0 truncate">{label}</span>
 					</span>
 				</InputGroupButton>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent side="top" align="start" className="w-64">
 				<DropdownMenuGroup>
-					<DropdownMenuLabel className="text-xs text-muted-foreground">
-						Tools
-					</DropdownMenuLabel>
+					<DropdownMenuItem
+						asChild
+						onSelect={(event) => event.preventDefault()}
+					>
+						<label htmlFor="automation-web-search">
+							<Globe className="text-foreground" /> Web search
+							<Switch
+								id="automation-web-search"
+								className="ml-auto"
+								checked={webSearchEnabled}
+								onCheckedChange={onWebSearchEnabledChange}
+							/>
+						</label>
+					</DropdownMenuItem>
+				</DropdownMenuGroup>
+				<DropdownMenuSeparator />
+				<DropdownMenuGroup>
+					<DropdownMenuItem
+						asChild
+						onSelect={(event) => event.preventDefault()}
+					>
+						<label htmlFor="automation-apps">
+							<LayoutGrid aria-hidden="true" className="text-foreground" />
+							<span aria-hidden="true">Tools and integrations</span>
+							<span className="sr-only">Apps and integrations</span>
+							<Switch
+								id="automation-apps"
+								className="ml-auto"
+								checked={appsEnabled}
+								onCheckedChange={onAppsEnabledChange}
+							/>
+						</label>
+					</DropdownMenuItem>
+					<DropdownMenuCheckboxItem
+						checked={selectedSourceIds.length === 0}
+						className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
+						onSelect={keepPickerOpen}
+						onCheckedChange={(checked) => {
+							if (!checked) {
+								return;
+							}
+
+							for (const sourceId of selectedSourceIds) {
+								onToggleSource(sourceId);
+							}
+						}}
+					>
+						<CirclePlus /> All sources I can access
+					</DropdownMenuCheckboxItem>
+					<AutomationProjectScopeMenu
+						projectSources={projectSources}
+						projectSearchTerm={noteSearchTerm}
+						onProjectSearchTermChange={onNoteSearchTermChange}
+						selectedSourceIds={selectedSourceIds}
+						onToggleProject={onToggleSource}
+					/>
 					{sources.length > 0 ? (
 						sources.map((source, index) => {
 							const selected = selectedSourceIds.includes(source.id);
@@ -731,6 +885,84 @@ function AppSourcesPicker({
 				</DropdownMenuGroup>
 			</DropdownMenuContent>
 		</DropdownMenu>
+	);
+}
+
+type AutomationProjectSource = {
+	id: string;
+	title: string;
+};
+
+function AutomationProjectScopeMenu({
+	projectSources,
+	projectSearchTerm,
+	onProjectSearchTermChange,
+	selectedSourceIds,
+	onToggleProject,
+}: {
+	projectSources: AutomationProjectSource[];
+	projectSearchTerm: string;
+	onProjectSearchTermChange: (value: string) => void;
+	selectedSourceIds: string[];
+	onToggleProject: (sourceId: string) => void;
+}) {
+	const filteredProjects = React.useMemo(() => {
+		const query = projectSearchTerm.trim().toLowerCase();
+
+		if (!query) {
+			return projectSources;
+		}
+
+		return projectSources.filter((project) =>
+			project.title.toLowerCase().includes(query),
+		);
+	}, [projectSearchTerm, projectSources]);
+
+	return (
+		<DropdownMenuSub>
+			<DropdownMenuSubTrigger className="pl-2">
+				<Folder className="size-4 text-foreground" />
+				Projects
+			</DropdownMenuSubTrigger>
+			<DropdownMenuSubContent className="w-72 border-input/30 p-0">
+				<Command>
+					<div>
+						<CommandInput
+							placeholder="Select a project"
+							value={projectSearchTerm}
+							onValueChange={onProjectSearchTermChange}
+						/>
+					</div>
+					<CommandList>
+						<CommandEmpty>No projects found.</CommandEmpty>
+						<CommandGroup heading="Projects">
+							{filteredProjects.map((project) => {
+								const selected = selectedSourceIds.includes(project.id);
+
+								return (
+									<CommandItem
+										key={project.id}
+										value={`${project.id} ${project.title}`}
+										onSelect={() => onToggleProject(project.id)}
+										className="relative w-full cursor-pointer gap-2 pr-8"
+									>
+										<Folder className="size-4 text-foreground" />
+										<div className="min-w-0 flex-1">
+											<div className="truncate">{project.title}</div>
+										</div>
+										{selected ? (
+											<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
+												<Check className="size-4" />
+											</span>
+										) : null}
+									</CommandItem>
+								);
+							})}
+						</CommandGroup>
+					</CommandList>
+				</Command>
+			</DropdownMenuSubContent>
+		</DropdownMenuSub>
 	);
 }
 
@@ -771,9 +1003,9 @@ function NotePicker({
 				<TooltipTrigger asChild>
 					<PopoverTrigger asChild>
 						<InputGroupButton
-							variant="outline"
+							variant="ghost"
 							size="icon-sm"
-							className="rounded-full text-muted-foreground hover:text-foreground"
+							className="rounded-full bg-transparent text-muted-foreground transition-transform hover:bg-muted hover:text-foreground"
 						>
 							<AtSign />
 							<span className="sr-only">Mention a note</span>
@@ -893,7 +1125,7 @@ function ConnectedAppIcon({ provider }: { provider: ChatAppSourceProvider }) {
 		return <Icons.planeLogo className="size-4" />;
 	}
 
-	return <Grid3x3 className="size-4" />;
+	return <LayoutGrid className="size-4" />;
 }
 
 function ModelPicker({

@@ -28,6 +28,7 @@ const automationAppSourceProviderValidator = v.union(
 	v.literal("jira"),
 	v.literal("posthog"),
 	v.literal("notion"),
+	v.literal("project"),
 );
 
 const automationAppSourceValidator = v.object({
@@ -46,7 +47,8 @@ type AutomationAppSource = {
 		| "yandex-tracker"
 		| "jira"
 		| "posthog"
-		| "notion";
+		| "notion"
+		| "project";
 };
 
 const automationListItemValidator = v.object({
@@ -55,6 +57,8 @@ const automationListItemValidator = v.object({
 	prompt: v.string(),
 	model: v.string(),
 	authorName: v.optional(v.string()),
+	webSearchEnabled: v.boolean(),
+	appsEnabled: v.boolean(),
 	appSources: v.array(automationAppSourceValidator),
 	schedulePeriod: automationSchedulePeriodValidator,
 	scheduledAt: v.number(),
@@ -92,6 +96,8 @@ const automationRunStartValidator = v.union(
 		model: v.string(),
 		chatId: v.string(),
 		targetLabel: v.string(),
+		webSearchEnabled: v.boolean(),
+		appsEnabled: v.boolean(),
 		appSources: v.array(automationAppSourceValidator),
 		scheduledFor: v.number(),
 		reason: automationRunReasonValidator,
@@ -124,6 +130,7 @@ const MAX_DUE_AUTOMATIONS = 50;
 const MAX_CONTEXT_NOTES = 8;
 const MAX_CONTEXT_NOTE_LENGTH = 2_000;
 const MAX_APP_SOURCES = 8;
+const PROJECT_SOURCE_PREFIX = "project:";
 const STALE_SCHEDULED_FUNCTION_MS = 2 * 60 * 1000;
 const DELETE_RUNS_BATCH_SIZE = 50;
 const MAX_TARGET_NOTES = MAX_CONTEXT_NOTES;
@@ -375,6 +382,20 @@ const normalizeModel = (model: string | undefined) => {
 const normalizeTimezone = (timezone: string | undefined) =>
 	clampWhitespace(timezone ?? "") || "UTC";
 
+const parseProjectSourceId = (
+	ctx: MutationCtx,
+	sourceId: string,
+): Id<"projects"> | null => {
+	if (!sourceId.startsWith(PROJECT_SOURCE_PREFIX)) {
+		return null;
+	}
+
+	return ctx.db.normalizeId(
+		"projects",
+		sourceId.slice(PROJECT_SOURCE_PREFIX.length),
+	);
+};
+
 const createAutomationChatId = () =>
 	`automation-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -498,6 +519,8 @@ const toListItem = (automation: Doc<"automations">) => ({
 	prompt: automation.prompt,
 	model: normalizeModel(automation.model),
 	authorName: automation.authorName,
+	webSearchEnabled: automation.webSearchEnabled ?? false,
+	appsEnabled: automation.appsEnabled ?? true,
 	appSources: automation.appSources ?? [],
 	schedulePeriod: automation.schedulePeriod,
 	scheduledAt: automation.scheduledAt,
@@ -547,21 +570,43 @@ const getRecentContextNotes = async (
 		}));
 	}
 
-	if (!automation.targetProjectId) {
+	const selectedProjectIds = (automation.appSources ?? []).flatMap((source) => {
+		if (source.provider !== "project") {
+			return [];
+		}
+
+		const projectId = parseProjectSourceId(ctx, source.id);
+		return projectId ? [projectId] : [];
+	});
+	const projectIds = [
+		...(automation.targetProjectId ? [automation.targetProjectId] : []),
+		...selectedProjectIds,
+	].filter((projectId, index, projectIds) => projectIds.indexOf(projectId) === index);
+
+	if (projectIds.length === 0) {
 		return [];
 	}
 
-	const notes = await ctx.db
-		.query("notes")
-		.withIndex("by_owner_ws_project_arch_upd", (q) =>
-			q
-				.eq("ownerTokenIdentifier", automation.ownerTokenIdentifier)
-				.eq("workspaceId", automation.workspaceId)
-				.eq("projectId", automation.targetProjectId)
-				.eq("isArchived", false),
+	const notes = (
+		await Promise.all(
+			projectIds.map((projectId) =>
+				ctx.db
+					.query("notes")
+					.withIndex("by_owner_ws_project_arch_upd", (q) =>
+						q
+							.eq("ownerTokenIdentifier", automation.ownerTokenIdentifier)
+							.eq("workspaceId", automation.workspaceId)
+							.eq("projectId", projectId)
+							.eq("isArchived", false),
+					)
+					.order("desc")
+					.take(MAX_CONTEXT_NOTES),
+			),
 		)
-		.order("desc")
-		.take(MAX_CONTEXT_NOTES);
+	)
+		.flat()
+		.sort((first, second) => second.updatedAt - first.updatedAt)
+		.slice(0, MAX_CONTEXT_NOTES);
 
 	return notes.map((note) => ({
 		title: note.title,
@@ -641,6 +686,8 @@ export const create = mutation({
 		title: v.string(),
 		prompt: v.string(),
 		model: v.optional(v.string()),
+		webSearchEnabled: v.optional(v.boolean()),
+		appsEnabled: v.optional(v.boolean()),
 		appSources: v.optional(v.array(automationAppSourceValidator)),
 		schedulePeriod: automationSchedulePeriodValidator,
 		scheduledAt: v.number(),
@@ -711,6 +758,8 @@ export const create = mutation({
 			title: normalizeTitle(args.title, prompt),
 			prompt,
 			model: normalizeModel(args.model),
+			webSearchEnabled: args.webSearchEnabled ?? false,
+			appsEnabled: args.appsEnabled ?? true,
 			appSources,
 			schedulePeriod: args.schedulePeriod,
 			scheduledAt: args.scheduledAt,
@@ -755,6 +804,8 @@ export const update = mutation({
 		title: v.string(),
 		prompt: v.string(),
 		model: v.optional(v.string()),
+		webSearchEnabled: v.optional(v.boolean()),
+		appsEnabled: v.optional(v.boolean()),
 		appSources: v.optional(v.array(automationAppSourceValidator)),
 		schedulePeriod: automationSchedulePeriodValidator,
 		scheduledAt: v.number(),
@@ -795,6 +846,8 @@ export const update = mutation({
 			title: normalizeTitle(args.title, prompt),
 			prompt,
 			model: normalizeModel(args.model),
+			webSearchEnabled: args.webSearchEnabled ?? false,
+			appsEnabled: args.appsEnabled ?? true,
 			appSources,
 			schedulePeriod: args.schedulePeriod,
 			scheduledAt: args.scheduledAt,
@@ -982,6 +1035,8 @@ export const beginRun = internalMutation({
 			model: normalizeModel(automation.model),
 			chatId: automation.chatId,
 			targetLabel: automation.targetLabel,
+			webSearchEnabled: automation.webSearchEnabled ?? false,
+			appsEnabled: automation.appsEnabled ?? true,
 			appSources: automation.appSources ?? [],
 			scheduledFor: args.scheduledFor,
 			reason: args.reason,

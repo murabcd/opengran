@@ -1,9 +1,4 @@
 import {
-	Avatar,
-	AvatarFallback,
-	AvatarImage,
-} from "@workspace/ui/components/avatar";
-import {
 	Command,
 	CommandEmpty,
 	CommandGroup,
@@ -32,7 +27,6 @@ import {
 	InputGroupTextarea,
 } from "@workspace/ui/components/input-group";
 import { Kbd } from "@workspace/ui/components/kbd";
-import { OpenGranMark } from "@workspace/ui/components/open-gran-mark";
 import {
 	Popover,
 	PopoverContent,
@@ -50,9 +44,9 @@ import {
 	AtSign,
 	Check,
 	CirclePlus,
-	FileText,
+	Folder,
 	Globe,
-	Grid3x3,
+	LayoutGrid,
 	type LucideIcon,
 	Plus,
 	Square,
@@ -66,13 +60,11 @@ import {
 	hasUploadingAttachments,
 } from "@/components/ai-elements/file-attachment-controls";
 import { chatModels } from "@/lib/ai/models";
-import { getAvatarSrc } from "@/lib/avatar";
 import {
 	type ChatAppSourceProvider,
 	getAppSourceLabel,
 	getSelectedScopeLabel,
 } from "@/lib/chat-source-display";
-import type { WorkspaceRecord } from "@/lib/workspaces";
 
 type ContextPage = {
 	id: string;
@@ -81,10 +73,9 @@ type ContextPage = {
 	preview: string;
 };
 
-type WorkspaceSource = {
+type ProjectSource = {
 	id: string;
 	title: string;
-	preview: string;
 };
 
 type AppSource = {
@@ -163,12 +154,10 @@ type ChatComposerProps = {
 	onWebSearchEnabledChange: (value: boolean) => void;
 	appsEnabled: boolean;
 	onAppsEnabledChange: (value: boolean) => void;
-	sourceSearchTerm: string;
-	onSourceSearchTermChange: (value: string) => void;
+	projectSearchTerm: string;
+	onProjectSearchTermChange: (value: string) => void;
 	selectedSourceIds: string[];
-	workspaceSources: WorkspaceSource[];
-	workspaceSourceId: string | null;
-	activeWorkspace: WorkspaceRecord | null;
+	projectSources: ProjectSource[];
 	appSources: AppSource[];
 	onToggleSource: (sourceId: string) => void;
 	onClearSelectedSources: () => void;
@@ -210,12 +199,10 @@ export function ChatComposer({
 	onWebSearchEnabledChange,
 	appsEnabled,
 	onAppsEnabledChange,
-	sourceSearchTerm,
-	onSourceSearchTermChange,
+	projectSearchTerm,
+	onProjectSearchTermChange,
 	selectedSourceIds,
-	workspaceSources,
-	workspaceSourceId,
-	activeWorkspace,
+	projectSources,
 	appSources,
 	onToggleSource,
 	onClearSelectedSources,
@@ -223,15 +210,9 @@ export function ChatComposer({
 }: ChatComposerProps) {
 	const promptRef = React.useRef<HTMLTextAreaElement | null>(null);
 	const noteMentionRangeRef = React.useRef<NoteMentionRange | null>(null);
-	const filteredWorkspaceSources = filterWorkspaceSources(
-		workspaceSources,
-		sourceSearchTerm,
-	);
 	const scopesLabel = getSelectedScopeLabel({
 		selectedSourceIds,
-		workspaceSourceId,
-		workspaceLabel: activeWorkspace?.name ?? null,
-		workspaceSources,
+		projectSources,
 		appSources,
 	});
 	const mentionedPages = React.useMemo(
@@ -241,18 +222,6 @@ export function ChatComposer({
 				return document ? [document] : [];
 			}),
 		[contextPages, mentions],
-	);
-	const selectedWorkspaceSourceChips = React.useMemo(
-		() =>
-			selectedSourceIds.flatMap((sourceId) => {
-				if (sourceId.startsWith("app:") || sourceId.startsWith("workspace:")) {
-					return [];
-				}
-
-				const source = workspaceSources.find((item) => item.id === sourceId);
-				return source ? [source] : [];
-			}),
-		[selectedSourceIds, workspaceSources],
 	);
 	const showTopAddon = true;
 	useChatComposerPromptFocus({
@@ -354,10 +323,8 @@ export function ChatComposer({
 					<ChatComposerTopAddon
 						useCompactLayout={useCompactLayout}
 						mentionedPages={mentionedPages}
-						selectedWorkspaceSources={selectedWorkspaceSourceChips}
 						attachedFiles={attachedFiles}
 						onRemoveMention={onRemoveMention}
-						onRemoveSelectedSource={onToggleSource}
 						onRemoveAttachedFile={(index) =>
 							onAttachedFilesChange(
 								attachedFiles.filter((_, fileIndex) => fileIndex !== index),
@@ -417,13 +384,10 @@ export function ChatComposer({
 							appsEnabled={appsEnabled}
 							onAppsEnabledChange={onAppsEnabledChange}
 							selectedSourceIds={selectedSourceIds}
-							sourceSearchTerm={sourceSearchTerm}
-							onSourceSearchTermChange={onSourceSearchTermChange}
-							filteredWorkspaceSources={filteredWorkspaceSources}
-							workspaceSourceId={workspaceSourceId}
-							activeWorkspace={activeWorkspace}
+							projectSearchTerm={projectSearchTerm}
+							onProjectSearchTermChange={onProjectSearchTermChange}
+							projectSources={projectSources}
 							appSources={appSources}
-							isNotesLoading={isNotesLoading}
 							onToggleSource={onToggleSource}
 							onClearSelectedSources={onClearSelectedSources}
 							onOpenConnectionsSettings={onOpenConnectionsSettings}
@@ -631,19 +595,15 @@ function ChatComposerTopAccessory({
 function ChatComposerTopAddon({
 	useCompactLayout,
 	mentionedPages,
-	selectedWorkspaceSources,
 	attachedFiles,
 	onRemoveMention,
-	onRemoveSelectedSource,
 	onRemoveAttachedFile,
 	mentionPicker,
 }: {
 	useCompactLayout: boolean;
 	mentionedPages: ContextPage[];
-	selectedWorkspaceSources: WorkspaceSource[];
 	attachedFiles: ChatAttachment[];
 	onRemoveMention: (pageId: string) => void;
-	onRemoveSelectedSource: (sourceId: string) => void;
 	onRemoveAttachedFile: (index: number) => void;
 	mentionPicker: React.ReactNode;
 }) {
@@ -657,12 +617,6 @@ function ChatComposerTopAddon({
 				<ChatComposerMentionChips
 					mentionedPages={mentionedPages}
 					onRemoveMention={onRemoveMention}
-				/>
-			) : null}
-			{selectedWorkspaceSources.length > 0 ? (
-				<ChatComposerSelectedSourceChips
-					selectedWorkspaceSources={selectedWorkspaceSources}
-					onRemoveSelectedSource={onRemoveSelectedSource}
 				/>
 			) : null}
 			<FileAttachmentChips
@@ -693,32 +647,6 @@ function ChatComposerMentionChips({
 					<document.icon />
 					<span className="min-w-0 truncate">{document.title}</span>
 					<X className="opacity-0 transition-opacity group-hover/note-mention-chip:opacity-100 group-focus-visible/note-mention-chip:opacity-100" />
-				</InputGroupButton>
-			))}
-		</div>
-	);
-}
-
-function ChatComposerSelectedSourceChips({
-	selectedWorkspaceSources,
-	onRemoveSelectedSource,
-}: {
-	selectedWorkspaceSources: WorkspaceSource[];
-	onRemoveSelectedSource: (sourceId: string) => void;
-}) {
-	return (
-		<div className="no-scrollbar -m-1.5 flex gap-1 overflow-y-auto p-1.5">
-			{selectedWorkspaceSources.map((source) => (
-				<InputGroupButton
-					key={source.id}
-					size="sm"
-					variant="secondary"
-					className="group/source-chip max-w-48 rounded-full pl-2!"
-					onClick={() => onRemoveSelectedSource(source.id)}
-				>
-					<FileText />
-					<span className="min-w-0 truncate">{source.title}</span>
-					<X className="opacity-0 transition-opacity group-hover/source-chip:opacity-100 group-focus-visible/source-chip:opacity-100" />
 				</InputGroupButton>
 			))}
 		</div>
@@ -871,13 +799,10 @@ function ScopePicker({
 	appsEnabled,
 	onAppsEnabledChange,
 	selectedSourceIds,
-	sourceSearchTerm,
-	onSourceSearchTermChange,
-	filteredWorkspaceSources,
-	workspaceSourceId,
-	activeWorkspace,
+	projectSearchTerm,
+	onProjectSearchTermChange,
+	projectSources,
 	appSources,
-	isNotesLoading,
 	onToggleSource,
 	onClearSelectedSources,
 	onOpenConnectionsSettings,
@@ -890,13 +815,10 @@ function ScopePicker({
 	appsEnabled: boolean;
 	onAppsEnabledChange: (value: boolean) => void;
 	selectedSourceIds: string[];
-	sourceSearchTerm: string;
-	onSourceSearchTermChange: (value: string) => void;
-	filteredWorkspaceSources: WorkspaceSource[];
-	workspaceSourceId: string | null;
-	activeWorkspace: WorkspaceRecord | null;
+	projectSearchTerm: string;
+	onProjectSearchTermChange: (value: string) => void;
+	projectSources: ProjectSource[];
 	appSources: AppSource[];
-	isNotesLoading: boolean;
 	onToggleSource: (sourceId: string) => void;
 	onClearSelectedSources: () => void;
 	onOpenConnectionsSettings: () => void;
@@ -904,16 +826,6 @@ function ScopePicker({
 	const keepScopePickerOpen = React.useCallback((event: Event) => {
 		event.preventDefault();
 	}, []);
-	const workspaceSourceSelected = workspaceSourceId
-		? selectedSourceIds.includes(workspaceSourceId)
-		: false;
-	const selectedWorkspaceNoteCount = selectedSourceIds.filter(
-		(sourceId) =>
-			!sourceId.startsWith("app:") && !sourceId.startsWith("workspace:"),
-	).length;
-	const hasWorkspaceScopes =
-		workspaceSourceSelected || selectedWorkspaceNoteCount > 0;
-	const isSearchingWorkspaceNotes = sourceSearchTerm.trim().length > 0;
 
 	return (
 		<DropdownMenu open={open} onOpenChange={onOpenChange}>
@@ -943,7 +855,7 @@ function ScopePicker({
 						onSelect={(event) => event.preventDefault()}
 					>
 						<label htmlFor="web-search">
-							<Globe /> Web search
+							<Globe className="text-foreground" /> Web search
 							<Switch
 								id="web-search"
 								className="ml-auto"
@@ -963,7 +875,7 @@ function ScopePicker({
 						onSelect={(event) => event.preventDefault()}
 					>
 						<label htmlFor="apps">
-							<Grid3x3 aria-hidden="true" />
+							<LayoutGrid aria-hidden="true" className="text-foreground" />
 							<span aria-hidden="true">Tools and integrations</span>
 							<span className="sr-only">Apps and integrations</span>
 							<Switch
@@ -986,19 +898,12 @@ function ScopePicker({
 					>
 						<CirclePlus /> All sources I can access
 					</DropdownMenuCheckboxItem>
-					<WorkspaceScopeMenu
-						hasWorkspaceScopes={hasWorkspaceScopes}
-						workspaceSourceId={workspaceSourceId}
-						onToggleSource={onToggleSource}
-						activeWorkspace={activeWorkspace}
-						selectedWorkspaceNoteCount={selectedWorkspaceNoteCount}
-						workspaceSourceSelected={workspaceSourceSelected}
-						sourceSearchTerm={sourceSearchTerm}
-						onSourceSearchTermChange={onSourceSearchTermChange}
-						isSearchingWorkspaceNotes={isSearchingWorkspaceNotes}
-						isNotesLoading={isNotesLoading}
-						filteredWorkspaceSources={filteredWorkspaceSources}
+					<ProjectScopeMenu
+						projectSources={projectSources}
+						projectSearchTerm={projectSearchTerm}
+						onProjectSearchTermChange={onProjectSearchTermChange}
 						selectedSourceIds={selectedSourceIds}
+						onToggleSource={onToggleSource}
 					/>
 					{appSources.map((source, index) => {
 						const selected = selectedSourceIds.includes(source.id);
@@ -1029,7 +934,7 @@ function ScopePicker({
 								) : source.provider === "posthog" ? (
 									<Icons.planeLogo className="size-4" />
 								) : (
-									<Grid3x3 className="size-4" />
+									<LayoutGrid className="size-4" />
 								)}
 								<div className="min-w-0">
 									<div className="truncate">
@@ -1056,186 +961,69 @@ function ScopePicker({
 	);
 }
 
-function WorkspaceScopeMenu({
-	hasWorkspaceScopes,
-	workspaceSourceId,
-	onToggleSource,
-	activeWorkspace,
-	selectedWorkspaceNoteCount,
-	workspaceSourceSelected,
-	sourceSearchTerm,
-	onSourceSearchTermChange,
-	isSearchingWorkspaceNotes,
-	isNotesLoading,
-	filteredWorkspaceSources,
+function ProjectScopeMenu({
+	projectSources,
+	projectSearchTerm,
+	onProjectSearchTermChange,
 	selectedSourceIds,
+	onToggleSource,
 }: {
-	hasWorkspaceScopes: boolean;
-	workspaceSourceId: string | null;
-	onToggleSource: (sourceId: string) => void;
-	activeWorkspace: WorkspaceRecord | null;
-	selectedWorkspaceNoteCount: number;
-	workspaceSourceSelected: boolean;
-	sourceSearchTerm: string;
-	onSourceSearchTermChange: (value: string) => void;
-	isSearchingWorkspaceNotes: boolean;
-	isNotesLoading: boolean;
-	filteredWorkspaceSources: WorkspaceSource[];
+	projectSources: ProjectSource[];
+	projectSearchTerm: string;
+	onProjectSearchTermChange: (value: string) => void;
 	selectedSourceIds: string[];
+	onToggleSource: (sourceId: string) => void;
 }) {
-	const activeWorkspaceAvatarSrc = activeWorkspace
-		? (activeWorkspace.iconUrl ??
-			getAvatarSrc({
-				name: activeWorkspace.name,
-			}))
-		: null;
-	const activeWorkspaceInitials = activeWorkspace
-		? activeWorkspace.name
-				.split(" ")
-				.map((part) => part[0])
-				.join("")
-				.slice(0, 2)
-				.toUpperCase()
-		: "WG";
+	const filteredProjects = filterProjectSources(
+		projectSources,
+		projectSearchTerm,
+	);
 
 	return (
 		<DropdownMenuSub>
-			<DropdownMenuSubTrigger
-				className={hasWorkspaceScopes ? "[&>svg:last-child]:ml-2!" : ""}
-				onClick={() => {
-					if (workspaceSourceId) {
-						onToggleSource(workspaceSourceId);
-					}
-				}}
-			>
-				<WorkspaceScopeAvatar
-					activeWorkspace={activeWorkspace}
-					activeWorkspaceAvatarSrc={activeWorkspaceAvatarSrc}
-					activeWorkspaceInitials={activeWorkspaceInitials}
-				/>
-				{activeWorkspace?.name ?? "Workspace"}
-				{hasWorkspaceScopes ? (
-					<span className="ml-auto flex items-center gap-2">
-						{!workspaceSourceSelected ? (
-							<span className="text-xs text-muted-foreground tabular-nums">
-								{selectedWorkspaceNoteCount === 1
-									? "1 source"
-									: `${selectedWorkspaceNoteCount} sources`}
-							</span>
-						) : null}
-						<Check className="size-4 text-muted-foreground" />
-					</span>
-				) : null}
+			<DropdownMenuSubTrigger>
+				<Folder className="size-4 text-foreground" />
+				Projects
 			</DropdownMenuSubTrigger>
 			<DropdownMenuSubContent className="w-72 border-input/30 p-0">
 				<Command>
 					<div>
 						<CommandInput
-							placeholder="Select a note"
-							value={sourceSearchTerm}
-							onValueChange={onSourceSearchTermChange}
+							placeholder="Select a project"
+							value={projectSearchTerm}
+							onValueChange={onProjectSearchTermChange}
 						/>
 					</div>
 					<CommandList>
-						<CommandGroup>
-							<CommandItem
-								value={activeWorkspace?.name ?? "workspace"}
-								onSelect={() => {
-									if (workspaceSourceId) {
-										onToggleSource(workspaceSourceId);
-									}
-								}}
-								className="relative w-full gap-2 pr-8"
-							>
-								<WorkspaceScopeAvatar
-									activeWorkspace={activeWorkspace}
-									activeWorkspaceAvatarSrc={activeWorkspaceAvatarSrc}
-									activeWorkspaceInitials={activeWorkspaceInitials}
-								/>
-								<div className="min-w-0 flex-1">
-									<div className="truncate">
-										{activeWorkspace?.name ?? "Workspace"}
-									</div>
-								</div>
-								{workspaceSourceSelected ? (
-									<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
-										<Check className="size-4" />
-									</span>
-								) : null}
-							</CommandItem>
-						</CommandGroup>
-						{isSearchingWorkspaceNotes && isNotesLoading ? (
-							<CommandGroup heading="Notes">
-								<ChatNoteListSkeleton />
-							</CommandGroup>
-						) : null}
-						{isSearchingWorkspaceNotes ? (
-							<CommandEmpty>No notes found.</CommandEmpty>
-						) : (
-							<div className="px-3 py-2 text-xs text-muted-foreground">
-								Type to find notes in this workspace.
-							</div>
-						)}
-						{isSearchingWorkspaceNotes ? (
-							<CommandGroup heading="Notes">
-								{filteredWorkspaceSources.map((source) => {
-									const selected = selectedSourceIds.includes(source.id);
+						<CommandEmpty>No projects found.</CommandEmpty>
+						<CommandGroup heading="Projects">
+							{filteredProjects.map((project) => {
+								const selected = selectedSourceIds.includes(project.id);
 
-									return (
-										<CommandItem
-											key={source.id}
-											value={`${source.id} ${source.title}`}
-											onSelect={() => onToggleSource(source.id)}
-											className="relative w-full gap-2 pr-8"
-										>
-											<FileText className="size-4" />
-											<div className="min-w-0 flex-1">
-												<div className="truncate">{source.title}</div>
-											</div>
-											{selected ? (
-												<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
-													<Check className="size-4" />
-												</span>
-											) : null}
-										</CommandItem>
-									);
-								})}
-							</CommandGroup>
-						) : null}
+								return (
+									<CommandItem
+										key={project.id}
+										value={`${project.id} ${project.title}`}
+										onSelect={() => onToggleSource(project.id)}
+										className="relative w-full cursor-pointer gap-2 pr-8"
+									>
+										<Folder className="size-4 text-foreground" />
+										<div className="min-w-0 flex-1">
+											<div className="truncate">{project.title}</div>
+										</div>
+										{selected ? (
+											<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">
+												<Check className="size-4" />
+											</span>
+										) : null}
+									</CommandItem>
+								);
+							})}
+						</CommandGroup>
 					</CommandList>
 				</Command>
 			</DropdownMenuSubContent>
 		</DropdownMenuSub>
-	);
-}
-
-function WorkspaceScopeAvatar({
-	activeWorkspace,
-	activeWorkspaceAvatarSrc,
-	activeWorkspaceInitials,
-}: {
-	activeWorkspace: WorkspaceRecord | null;
-	activeWorkspaceAvatarSrc: string | null;
-	activeWorkspaceInitials: string;
-}) {
-	if (!activeWorkspace) {
-		return (
-			<span className="flex size-4 items-center justify-center text-muted-foreground">
-				<OpenGranMark className="size-4" />
-			</span>
-		);
-	}
-
-	return (
-		<Avatar className="size-4 rounded-sm">
-			<AvatarImage
-				src={activeWorkspaceAvatarSrc ?? undefined}
-				alt={activeWorkspace.name}
-			/>
-			<AvatarFallback className="rounded-sm text-[8px]">
-				{activeWorkspaceInitials}
-			</AvatarFallback>
-		</Avatar>
 	);
 }
 
@@ -1255,20 +1043,17 @@ function ChatNoteListSkeleton() {
 	);
 }
 
-const filterWorkspaceSources = (
-	workspaceSources: WorkspaceSource[],
+const filterProjectSources = (
+	projectSources: ProjectSource[],
 	query: string,
 ) => {
 	const normalizedQuery = query.trim().toLowerCase();
 
 	if (!normalizedQuery) {
-		return workspaceSources;
+		return projectSources;
 	}
 
-	return workspaceSources.filter((source) =>
-		[source.title, source.preview]
-			.join(" ")
-			.toLowerCase()
-			.includes(normalizedQuery),
+	return projectSources.filter((source) =>
+		source.title.toLowerCase().includes(normalizedQuery),
 	);
 };

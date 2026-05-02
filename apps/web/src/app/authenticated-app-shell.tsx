@@ -908,6 +908,8 @@ const useAppShellState = ({
 				title: automation.title,
 				prompt: automation.prompt,
 				model: automation.model,
+				webSearchEnabled: automation.webSearchEnabled,
+				appsEnabled: automation.appsEnabled,
 				appSources: automation.appSources,
 				schedulePeriod: automation.schedulePeriod,
 				scheduledAt: automation.scheduledAt,

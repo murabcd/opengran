@@ -102,7 +102,7 @@ const useChatPageController = ({
 	const [modelPopoverOpen, setModelPopoverOpen] = React.useState(false);
 	const [sourcesOpen, setSourcesOpen] = React.useState(false);
 	const [summaryOpen, setSummaryOpen] = React.useState(false);
-	const [sourceSearchTerm, setSourceSearchTerm] = React.useState("");
+	const [projectSearchTerm, setProjectSearchTerm] = React.useState("");
 	const [webSearchEnabled, setWebSearchEnabled] = React.useState(false);
 	const [appsEnabled, setAppsEnabled] = React.useState(true);
 	const [editingMessageId, setEditingMessageId] = React.useState<string | null>(
@@ -112,9 +112,6 @@ const useChatPageController = ({
 	const [selectedSourceIds, setSelectedSourceIds] = React.useState<string[]>(
 		[],
 	);
-	const workspaceSourceId = activeWorkspaceId
-		? `workspace:${activeWorkspaceId}`
-		: null;
 	const notes = useQuery(
 		api.notes.list,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
@@ -291,6 +288,14 @@ const useChatPageController = ({
 			})),
 		[contextPages, projectNameById],
 	);
+	const projectSources = React.useMemo(
+		() =>
+			searchProjects.map((project) => ({
+				id: `project:${project.id}`,
+				title: project.name,
+			})),
+		[searchProjects],
+	);
 	const shouldSearchDocuments = documentSearchTerm.trim().length > 0;
 	const mentionableDocuments = React.useMemo(() => {
 		const query = documentSearchTerm.trim().toLowerCase();
@@ -380,14 +385,7 @@ const useChatPageController = ({
 	);
 
 	const handleWebSearchEnabledChange = React.useCallback((enabled: boolean) => {
-		setWebSearchEnabled((current) => {
-			if (current === enabled) {
-				return current;
-			}
-
-			toast.success(enabled ? "Web search enabled" : "Web search disabled");
-			return enabled;
-		});
+		setWebSearchEnabled(enabled);
 	}, []);
 
 	const handleEditMessage = React.useCallback(
@@ -511,7 +509,6 @@ const useChatPageController = ({
 		selectedModel,
 		selectedSourceIds,
 		searchProjects,
-		workspaceSourceId,
 		setAppsEnabled,
 		setDocumentSearchTerm,
 		setDraft,
@@ -519,16 +516,17 @@ const useChatPageController = ({
 		setMentions,
 		setModelPopoverOpen,
 		setSelectedModel,
-		setSourceSearchTerm,
+		setProjectSearchTerm,
 		setSourcesOpen,
 		setSummaryOpen,
 		stop,
 		shouldSearchDocuments,
-		sourceSearchTerm,
+		projectSearchTerm,
 		sourcesOpen,
 		summaryOpen,
 		webSearchEnabled,
 		workspaceSources,
+		projectSources,
 		appSources,
 		documentSearchTerm,
 		editingMessageId,
@@ -551,14 +549,7 @@ const useChatPageController = ({
 					return current;
 				}
 
-				if (sourceId.startsWith("workspace:")) {
-					return current.filter((id) => id.startsWith("app:")).concat(sourceId);
-				}
-
-				return [
-					...current.filter((id) => !id.startsWith("workspace:")),
-					sourceId,
-				];
+				return [...current, sourceId];
 			});
 		},
 		onRemoveAutoAddedSource: (sourceId: string) => {
@@ -570,24 +561,21 @@ const useChatPageController = ({
 		},
 		onToggleSource: (sourceId: string) => {
 			setSelectedSourceIds((current) => {
-				if (sourceId.startsWith("workspace:")) {
+				if (sourceId.startsWith("project:")) {
 					return current.includes(sourceId)
 						? current.filter((id) => id !== sourceId)
-						: current.filter((id) => id.startsWith("app:")).concat(sourceId);
+						: [...current, sourceId];
 				}
 
 				if (sourceId.startsWith("app:")) {
 					return current.includes(sourceId)
 						? current.filter((id) => id !== sourceId)
-						: [
-								...current.filter((id) => !id.startsWith("workspace:")),
-								sourceId,
-							];
+						: [...current, sourceId];
 				}
 
 				return current.includes(sourceId)
 					? current.filter((id) => id !== sourceId)
-					: [...current.filter((id) => !id.startsWith("workspace:")), sourceId];
+					: [...current, sourceId];
 			});
 		},
 		onEditMessage: handleEditMessage,
@@ -722,12 +710,10 @@ export function ChatPage({
 			onWebSearchEnabledChange={controller.handleWebSearchEnabledChange}
 			appsEnabled={controller.appsEnabled}
 			onAppsEnabledChange={controller.setAppsEnabled}
-			sourceSearchTerm={controller.sourceSearchTerm}
-			onSourceSearchTermChange={controller.setSourceSearchTerm}
+			projectSearchTerm={controller.projectSearchTerm}
+			onProjectSearchTermChange={controller.setProjectSearchTerm}
 			selectedSourceIds={controller.selectedSourceIds}
-			workspaceSources={controller.workspaceSources}
-			workspaceSourceId={controller.workspaceSourceId}
-			activeWorkspace={controller.activeWorkspace}
+			projectSources={controller.projectSources}
 			appSources={controller.appSources}
 			onToggleSource={controller.onToggleSource}
 			onClearSelectedSources={controller.handleClearSelectedSources}

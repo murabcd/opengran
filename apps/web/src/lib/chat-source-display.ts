@@ -7,7 +7,7 @@ export type ChatAppSourceProvider =
 	| "yandex-calendar"
 	| "yandex-tracker";
 
-type WorkspaceSourceLike = {
+type ProjectSourceLike = {
 	id: string;
 	title: string;
 };
@@ -32,15 +32,11 @@ export const getAppSourceLabel = (provider: ChatAppSourceProvider) =>
 
 export const getSelectedScopeLabel = ({
 	selectedSourceIds,
-	workspaceSourceId,
-	workspaceLabel,
-	workspaceSources,
+	projectSources,
 	appSources,
 }: {
 	selectedSourceIds: string[];
-	workspaceSourceId: string | null;
-	workspaceLabel: string | null;
-	workspaceSources: WorkspaceSourceLike[];
+	projectSources: ProjectSourceLike[];
 	appSources: AppSourceLike[];
 }) => {
 	if (selectedSourceIds.length === 0) {
@@ -53,19 +49,15 @@ export const getSelectedScopeLabel = ({
 
 	const [selectedSourceId] = selectedSourceIds;
 
-	if (selectedSourceId && selectedSourceId === workspaceSourceId) {
-		return workspaceLabel?.trim() || "Workspace";
-	}
-
 	const appSource = appSources.find((source) => source.id === selectedSourceId);
 
 	if (appSource) {
 		return getAppSourceLabel(appSource.provider);
 	}
 
-	const workspaceSource = workspaceSources.find(
+	const projectSource = projectSources.find(
 		(source) => source.id === selectedSourceId,
 	);
 
-	return workspaceSource?.title ?? "1 source";
+	return projectSource?.title ?? "1 source";
 };

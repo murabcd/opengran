@@ -106,6 +106,7 @@ const yandexCalendarChatToolConnectionValidator = v.object({
 	provider: yandexCalendarProviderValidator,
 	displayName: v.string(),
 	email: v.string(),
+	password: v.string(),
 	serverAddress: v.string(),
 	calendarHomePath: v.string(),
 });
@@ -232,6 +233,7 @@ type ChatToolConnection =
 			provider: "yandex-calendar";
 			displayName: string;
 			email: string;
+			password: string;
 			serverAddress: string;
 			calendarHomePath: string;
 	  }
@@ -490,6 +492,7 @@ const toChatToolConnection = (
 	if (
 		connection.provider === "yandex-calendar" &&
 		connection.email &&
+		connection.password &&
 		connection.serverAddress &&
 		connection.calendarHomePath
 	) {
@@ -498,6 +501,7 @@ const toChatToolConnection = (
 			provider: "yandex-calendar",
 			displayName: connection.displayName,
 			email: connection.email,
+			password: connection.password,
 			serverAddress: connection.serverAddress,
 			calendarHomePath: connection.calendarHomePath,
 		};
@@ -955,6 +959,77 @@ export const getAllForChat = query({
 				toChatToolConnection(
 					connection,
 					identity.tokenIdentifier,
+					args.workspaceId,
+				),
+			)
+			.filter((connection): connection is ChatToolConnection =>
+				Boolean(connection),
+			);
+	},
+});
+
+export const getSelectedForChatInternal = internalQuery({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		sourceIds: v.array(v.string()),
+	},
+	returns: v.array(chatToolConnectionValidator),
+	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
+		const normalizedIds = args.sourceIds
+			.map((sourceId) => normalizeConnectionId(ctx, sourceId))
+			.filter(
+				(id, index, values): id is Id<"appConnections"> =>
+					Boolean(id) && values.indexOf(id) === index,
+			);
+
+		if (normalizedIds.length === 0) {
+			return [];
+		}
+
+		const connections = await Promise.all(
+			normalizedIds.map((id) => ctx.db.get(id)),
+		);
+
+		return connections
+			.map((connection) =>
+				toChatToolConnection(
+					connection,
+					args.ownerTokenIdentifier,
+					args.workspaceId,
+				),
+			)
+			.filter((connection): connection is ChatToolConnection =>
+				Boolean(connection),
+			);
+	},
+});
+
+export const getAllForChatInternal = internalQuery({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+	},
+	returns: v.array(chatToolConnectionValidator),
+	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
+		const connections = await ctx.db
+			.query("appConnections")
+			.withIndex(
+				"by_ownerTokenIdentifier_and_workspaceId_and_status_and_updatedAt",
+				(q) =>
+					q
+						.eq("ownerTokenIdentifier", args.ownerTokenIdentifier)
+						.eq("workspaceId", args.workspaceId)
+						.eq("status", "connected"),
+			)
+			.order("desc")
+			.take(20);
+
+		return connections
+			.map((connection) =>
+				toChatToolConnection(
+					connection,
+					args.ownerTokenIdentifier,
 					args.workspaceId,
 				),
 			)

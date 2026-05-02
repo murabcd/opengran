@@ -33,6 +33,7 @@ const automationAppSourceProviderValidator = v.union(
 	appConnectionProviderValidator,
 	v.literal("google-calendar"),
 	v.literal("google-drive"),
+	v.literal("project"),
 );
 
 const appConnectionStatusValidator = v.union(
@@ -427,6 +428,8 @@ export default defineSchema({
 		title: v.string(),
 		prompt: v.string(),
 		model: v.optional(v.string()),
+		webSearchEnabled: v.optional(v.boolean()),
+		appsEnabled: v.optional(v.boolean()),
 		appSources: v.optional(v.array(
 			v.object({
 				id: v.string(),

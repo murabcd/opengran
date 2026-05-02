@@ -34,7 +34,6 @@ import {
 	Pause,
 	Pencil,
 	Play,
-	Plus,
 	Trash2,
 } from "lucide-react";
 import * as React from "react";
@@ -115,7 +114,6 @@ export function AutomationsPage({
 							</EmptyHeader>
 							<EmptyContent>
 								<Button type="button" onClick={onCreateAutomation}>
-									<Plus data-icon="inline-start" />
 									New automation
 								</Button>
 							</EmptyContent>
