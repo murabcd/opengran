@@ -730,17 +730,17 @@ export function ChatPage({
 				viewportClassName="overscroll-contain"
 				viewportRef={controller.hasMessages ? containerRef : undefined}
 			>
-				<div className="flex min-h-0 flex-1 justify-center px-4 md:px-6">
+				<div className="box-border flex w-full max-w-full min-w-0 flex-1 justify-center px-4 md:px-6">
 					<div
 						className={cn(
-							"flex min-h-0 w-full max-w-5xl flex-1 flex-col",
+							"flex min-h-0 w-full min-w-0 max-w-5xl flex-1 flex-col",
 							isDesktopMac ? "pt-2 md:pt-4" : "pt-0",
 						)}
 					>
 						{shouldShowActiveChatSurface ? (
 							<div
 								className={cn(
-									"relative mx-auto flex w-full max-w-xl flex-1 flex-col",
+									"relative mx-auto flex w-full min-w-0 max-w-full flex-1 flex-col md:max-w-xl",
 									chatSurfaceMinHeightClass,
 								)}
 							>
@@ -758,7 +758,7 @@ export function ChatPage({
 
 								<div className="sticky bottom-0 z-10 mt-auto h-0">
 									<div className={COMPOSER_DOCK_WRAPPER_CLASS}>
-										<div className="pointer-events-auto relative mx-auto w-full max-w-xl">
+										<div className="pointer-events-auto relative mx-auto w-[calc(100%-2rem)] min-w-0 max-w-full md:w-full md:max-w-xl">
 											{composer}
 										</div>
 									</div>
@@ -767,7 +767,7 @@ export function ChatPage({
 						) : (
 							<div
 								className={cn(
-									"mx-auto flex w-full max-w-xl flex-1 flex-col",
+									"mx-auto flex w-full min-w-0 max-w-full flex-1 flex-col md:max-w-xl",
 									chatSurfaceMinHeightClass,
 								)}
 							>

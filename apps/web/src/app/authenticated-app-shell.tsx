@@ -1634,7 +1634,7 @@ function AppShellHeader({
 	onNewChatAutomation,
 }: AppShellHeaderProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
-	const { state: sidebarState } = useSidebarShell();
+	const { isMobile, state: sidebarState } = useSidebarShell();
 	const { leftInsetPanelWidth, leftOverlayPanelWidth } = useDockedPanelWidths();
 	const currentEditableTitle =
 		currentView === "note"
@@ -1786,6 +1786,8 @@ function AppShellHeader({
 				className={cn(
 					"relative z-10 flex min-w-0 flex-1 items-center gap-2 pr-4",
 					isDesktopMac && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+					isDesktopMac && isMobile && DESKTOP_MAIN_HEADER_LEADING_CLASS,
+					isDesktopMac && isMobile && "mt-1",
 					isDesktopMac &&
 						sidebarState === "collapsed" &&
 						DESKTOP_MAIN_HEADER_LEADING_CLASS,
@@ -1852,6 +1854,7 @@ function AppShellHeader({
 				className={cn(
 					"relative z-10 ml-auto shrink-0",
 					isDesktopMac && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+					isDesktopMac && isMobile && "mt-1",
 				)}
 			>
 				<AppShellHeaderActions
@@ -2592,7 +2595,7 @@ const AppShellContent = React.memo(function AppShellContent({
 		return (
 			<ScrollArea
 				className="min-h-0 flex-1"
-				viewportClassName="overscroll-contain"
+				viewportClassName="overscroll-contain overflow-x-hidden [&>div]:!block [&>div]:!min-w-0 [&>div]:!w-full [&>div]:!max-w-full"
 			>
 				<HomeView
 					currentDate={currentDate}
@@ -2621,7 +2624,7 @@ const AppShellContent = React.memo(function AppShellContent({
 		return (
 			<ScrollArea
 				className="min-h-0 flex-1"
-				viewportClassName="overscroll-contain"
+				viewportClassName="overscroll-contain overflow-x-hidden [&>div]:!block [&>div]:!min-w-0 [&>div]:!w-full [&>div]:!max-w-full"
 			>
 				<SharedView
 					sharedNotes={sharedNotes}

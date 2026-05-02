@@ -171,13 +171,15 @@ const NOTE_CHAT_PANEL_DOCK_OFFSET =
 const NOTE_CHAT_INLINE_PANEL_DOCK_OFFSET = COMPOSER_OVERLAY_FOOTER_PADDING;
 const INLINE_POPOVER_FOOTER_CONTAINER_CLASS = "px-6 pt-2 pb-4";
 const NOTE_COMPOSER_FOOTER_SURFACE_CLASS =
-	"min-h-[96px] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30";
-const NOTE_COMPOSER_FOOTER_TOP_ROW_CLASS = "gap-1 px-4 pb-0 pt-2.5";
+	"min-h-[96px] max-w-full overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30";
+const NOTE_COMPOSER_FOOTER_TOP_ROW_CLASS =
+	"min-w-0 flex-wrap gap-1 px-4 pb-0 pt-2.5";
 const NOTE_COMPOSER_FOOTER_BODY_CLASS =
 	"min-h-[40px] max-h-52 overflow-y-auto pt-2 pb-0 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0";
 const NOTE_COMPOSER_FOOTER_BODY_SPACER_CLASS =
 	"min-h-[40px] w-full shrink-0 px-4 pt-2 pb-0";
-const NOTE_COMPOSER_FOOTER_BOTTOM_ROW_CLASS = "gap-1 px-4 pb-2.5";
+const NOTE_COMPOSER_FOOTER_BOTTOM_ROW_CLASS =
+	"min-w-0 flex-wrap gap-1 px-4 pb-2.5";
 const INLINE_POPOVER_FOOTER_DEFAULT_HEIGHT = 120;
 const INLINE_POPOVER_DEFAULT_HEIGHT = 384;
 const INLINE_POPOVER_HEIGHT_STORAGE_KEY_PREFIX =
@@ -2126,6 +2128,7 @@ export function NoteChatHeader({
 			<PanelRight className="size-4" />
 		);
 	const isDesktopSidebarHeader = sidebarCompact && !isMobile;
+	const isMobileSidebarHeader = sidebarCompact && isMobile;
 
 	return (
 		<CardHeader
@@ -2144,9 +2147,11 @@ export function NoteChatHeader({
 			<div
 				className={cn(
 					"flex min-w-0 flex-1 items-center gap-2",
-					isDesktopSidebarHeader &&
-						desktopSafeTop &&
-						DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+					(isDesktopSidebarHeader || isMobileSidebarHeader) &&
+						desktopSafeTop && [
+							DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+							isMobileSidebarHeader && "mt-1",
+						],
 				)}
 			>
 				<Select value={currentChatId} onValueChange={onSelectChat}>
@@ -2228,9 +2233,11 @@ export function NoteChatHeader({
 				className={cn(
 					"flex items-center gap-1",
 					sidebarCompact ? "-mr-1" : "-mr-2",
-					isDesktopSidebarHeader &&
-						desktopSafeTop &&
-						DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+					(isDesktopSidebarHeader || isMobileSidebarHeader) &&
+						desktopSafeTop && [
+							DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+							isMobileSidebarHeader && "mt-1",
+						],
 				)}
 			>
 				<Tooltip>
@@ -2967,7 +2974,9 @@ function NoteComposerChatPanelContent({
 			controller={controller}
 			formClassName={
 				controller.isSidebarPresentation
-					? "-mx-[2px] w-[calc(100%+4px)]"
+					? controller.isMobile
+						? "w-full max-w-full min-w-0"
+						: "-mx-[2px] w-[calc(100%+4px)]"
 					: undefined
 			}
 			speechControls={null}
@@ -3470,7 +3479,7 @@ function NoteComposerDock({
 			<ChatComposerForm
 				activateInlineOnFocus
 				controller={controller}
-				formClassName="group/composer w-full"
+				formClassName="group/composer mx-auto w-[calc(100%-2rem)] max-w-full min-w-0 md:w-full"
 				speechControls={<NoteComposerSpeechControls controller={controller} />}
 			/>
 		</div>

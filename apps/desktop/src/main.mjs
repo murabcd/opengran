@@ -107,8 +107,8 @@ const transcriptionDebugLogPath = join(
 );
 let hasLoggedDesktopTurnDebugSessionHeader = false;
 const minimumWindowSize = {
-	width: 390,
-	height: 640,
+	width: 420,
+	height: 700,
 };
 const defaultWindowSize = {
 	width: 1200,

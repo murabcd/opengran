@@ -135,10 +135,6 @@ const SUMMARY_TAB: SummaryTab = {
 	kind: "summary",
 	title: "Summary",
 };
-type SummaryShortcutAction = {
-	id: number;
-	kind: "open-note" | "automation";
-};
 
 const readDesktopChatSummaryPanelPinnedState = () => {
 	if (typeof window === "undefined") {
@@ -230,8 +226,6 @@ export function ChatSummarySheet({
 	const [isPinned, setIsPinned] = React.useState(
 		readDesktopChatSummaryPanelPinnedState,
 	);
-	const [shortcutAction, setShortcutAction] =
-		React.useState<SummaryShortcutAction | null>(null);
 	const { handleResizeKeyDown, handleResizeStart, isResizing, panelWidth } =
 		useResizableSidePanel({
 			isMobile,
@@ -259,37 +253,6 @@ export function ChatSummarySheet({
 			return nextPinned;
 		});
 	}, []);
-	React.useEffect(() => {
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (
-				event.defaultPrevented ||
-				!(event.metaKey || event.ctrlKey) ||
-				event.altKey ||
-				event.shiftKey ||
-				isEditableShortcutTarget(event.target)
-			) {
-				return;
-			}
-
-			const key = event.key.toLowerCase();
-			if (key !== "p" && key !== "t") {
-				return;
-			}
-
-			event.preventDefault();
-			if (key === "t") {
-				onOpenChange(true);
-			}
-			setShortcutAction({
-				id: Date.now(),
-				kind: key === "p" ? "open-note" : "automation",
-			});
-		};
-
-		window.addEventListener("keydown", handleKeyDown);
-		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [onOpenChange]);
-
 	useDockedPanelInset({
 		side: "right",
 		isMobile,
@@ -309,7 +272,6 @@ export function ChatSummarySheet({
 			sources={sources}
 			workspaceSources={workspaceSources}
 			workspaceProjects={workspaceProjects}
-			shortcutAction={shortcutAction}
 			onAddSource={onAddSource}
 			onRemoveAutoAddedSource={onRemoveAutoAddedSource}
 			onOpenSummary={() => onOpenChange(true)}
@@ -375,7 +337,6 @@ function ChatSummaryPanel({
 	sources,
 	workspaceSources,
 	workspaceProjects,
-	shortcutAction,
 	onAddSource,
 	onRemoveAutoAddedSource,
 	onOpenSummary,
@@ -390,7 +351,6 @@ function ChatSummaryPanel({
 	sources: ToolSource[];
 	workspaceSources: SummaryWorkspaceSource[];
 	workspaceProjects: SearchCommandProject[];
-	shortcutAction: SummaryShortcutAction | null;
 	onAddSource?: (sourceId: string) => void;
 	onRemoveAutoAddedSource?: (sourceId: string) => void;
 	onOpenSummary: () => void;
@@ -431,6 +391,36 @@ function ChatSummaryPanel({
 			title: "Automation",
 		});
 	}, [addTab]);
+	React.useEffect(() => {
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (
+				event.defaultPrevented ||
+				!(event.metaKey || event.ctrlKey) ||
+				event.altKey ||
+				event.shiftKey ||
+				isEditableShortcutTarget(event.target)
+			) {
+				return;
+			}
+
+			const key = event.key.toLowerCase();
+			if (key !== "p" && key !== "t") {
+				return;
+			}
+
+			event.preventDefault();
+			if (key === "p") {
+				openFileSearch();
+				return;
+			}
+
+			onOpenSummary();
+			openAutomationTab();
+		};
+
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [onOpenSummary, openAutomationTab, openFileSearch]);
 	const closeTab = React.useCallback(
 		(tabId: string) => {
 			const tabToClose = tabs.find((tab) => tab.id === tabId);
@@ -472,19 +462,6 @@ function ChatSummaryPanel({
 					],
 		);
 	}, [automation]);
-	React.useEffect(() => {
-		if (!shortcutAction) {
-			return;
-		}
-
-		if (shortcutAction.kind === "open-note") {
-			openFileSearch();
-			return;
-		}
-
-		openAutomationTab();
-	}, [openAutomationTab, openFileSearch, shortcutAction]);
-
 	return (
 		<div className="flex h-full min-h-0 flex-col">
 			<div
@@ -496,11 +473,10 @@ function ChatSummaryPanel({
 				<SummaryTabRail
 					tabs={tabs}
 					activeTabId={activeTabId}
-					className={
-						!isMobile && desktopSafeTop
-							? DESKTOP_MAIN_HEADER_CONTENT_CLASS
-							: undefined
-					}
+					className={cn(
+						desktopSafeTop && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+						isMobile && desktopSafeTop && "mt-1",
+					)}
 					onSelectTab={setActiveTabId}
 					onCloseTab={closeTab}
 				/>
@@ -508,6 +484,7 @@ function ChatSummaryPanel({
 					className={cn(
 						"flex items-center gap-1",
 						!isMobile && desktopSafeTop && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+						isMobile && desktopSafeTop && "mt-1",
 					)}
 				>
 					<SummaryAddPopover

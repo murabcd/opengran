@@ -403,7 +403,15 @@ function InboxPaneHeader({
 			)}
 		>
 			{isMobile ? (
-				<SheetTitle className="text-sm font-medium">Inbox</SheetTitle>
+				<SheetTitle
+					className={cn(
+						"text-sm font-medium",
+						desktopSafeTop && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+						desktopSafeTop && "mt-1",
+					)}
+				>
+					Inbox
+				</SheetTitle>
 			) : (
 				<Breadcrumb
 					className={
@@ -421,6 +429,7 @@ function InboxPaneHeader({
 				className={cn(
 					"flex items-center gap-0.5",
 					desktopSafeTop && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+					desktopSafeTop && isMobile && "mt-1",
 				)}
 			>
 				<DropdownMenu

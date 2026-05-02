@@ -310,7 +310,7 @@ function useCreateAutomationDialogElement({
 	);
 	const selectedConnectedAppSources = React.useMemo<AutomationAppSource[]>(
 		() =>
-			selectedConnectedAppIds.flatMap((sourceId) => {
+			selectedConnectedAppIds.flatMap((sourceId): AutomationAppSource[] => {
 				const source = connectedAppSources.find(
 					(appSource) => appSource.id === sourceId,
 				);

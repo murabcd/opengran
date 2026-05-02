@@ -12,4 +12,4 @@ export type PostHogToolConnection = {
 
 export declare function buildPostHogTools(
 	connection: PostHogToolConnection,
-): Promise<ToolSet>;
+): ToolSet;

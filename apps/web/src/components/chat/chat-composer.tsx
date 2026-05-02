@@ -306,7 +306,7 @@ export function ChatComposer({
 
 	return (
 		<div
-			className={`relative mx-auto w-full max-w-xl ${useCompactLayout ? "mt-auto" : ""}`}
+			className={`relative mx-auto w-full max-w-full min-w-0 md:max-w-xl ${useCompactLayout ? "mt-auto" : ""}`}
 		>
 			<label htmlFor="chat-prompt" className="sr-only">
 				Prompt
@@ -317,7 +317,7 @@ export function ChatComposer({
 				topAccessory={topAccessory}
 			/>
 			<InputGroup
-				className={`${useCompactLayout ? "min-h-[96px]" : "min-h-[148px]"} max-h-[32rem] overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30`}
+				className={`${useCompactLayout ? "min-h-[96px]" : "min-h-[148px]"} max-h-[32rem] max-w-full overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 dark:bg-input/30 dark:has-disabled:bg-input/30`}
 			>
 				{showTopAddon ? (
 					<ChatComposerTopAddon
@@ -677,7 +677,7 @@ function ChatComposerFooter({
 	return (
 		<InputGroupAddon
 			align="block-end"
-			className={`gap-1 px-4 ${useCompactLayout ? "pb-2.5" : "pb-4"}`}
+			className={`min-w-0 flex-wrap gap-1 px-4 ${useCompactLayout ? "pb-2.5" : "pb-4"}`}
 		>
 			<FileAttachmentButton
 				disabled={isLoading}

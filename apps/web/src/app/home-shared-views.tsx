@@ -129,16 +129,16 @@ export function HomeView({
 	);
 
 	return (
-		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
+		<div className="box-border flex w-full max-w-full min-w-0 justify-center px-4 pb-6 md:px-6">
 			<div
 				className={cn(
-					"flex w-full max-w-5xl flex-col gap-6",
+					"flex w-full min-w-0 max-w-5xl flex-col gap-6",
 					isDesktopMac ? "pt-2 md:pt-4" : "pt-0",
 				)}
 			>
-				<section className="mx-auto w-full max-w-xl space-y-6">
+				<section className="mx-auto w-full min-w-0 space-y-6 md:max-w-xl">
 					<PageTitle isDesktopMac={isDesktopMac}>Coming up</PageTitle>
-					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
+					<Card className="max-w-full overflow-hidden rounded-lg border-border py-0 shadow-sm">
 						<CardContent className="p-0">
 							<div className="grid min-h-[152px] md:grid-cols-[184px_minmax(0,1fr)]">
 								<div className="flex items-start border-b border-border/60 px-5 py-4 md:border-b-0 md:border-r">
@@ -280,7 +280,7 @@ export function HomeView({
 					</Card>
 				</section>
 
-				<section className="flex justify-center py-8">
+				<section className="flex min-w-0 justify-center py-8">
 					{notes === undefined ? (
 						<HomeNotesSkeleton />
 					) : notes.length > 0 ? (
@@ -293,7 +293,7 @@ export function HomeView({
 							onNoteTrashed={onNoteTrashed}
 						/>
 					) : (
-						<Empty className="max-w-xl">
+						<Empty className="md:max-w-xl">
 							<EmptyHeader>
 								<EmptyMedia variant="icon">
 									<FileText className="size-4" />
@@ -332,16 +332,16 @@ export function SharedView({
 	onNoteTrashed: (noteId: Id<"notes">) => void;
 }) {
 	return (
-		<div className="flex flex-1 justify-center px-4 pb-6 md:px-6">
+		<div className="box-border flex w-full max-w-full min-w-0 justify-center px-4 pb-6 md:px-6">
 			<div
 				className={cn(
-					"flex w-full max-w-5xl flex-col gap-6",
+					"flex w-full min-w-0 max-w-5xl flex-col gap-6",
 					isDesktopMac ? "pt-2 md:pt-4" : "pt-0",
 				)}
 			>
-				<section className="mx-auto w-full max-w-xl space-y-6">
+				<section className="mx-auto w-full min-w-0 space-y-6 md:max-w-xl">
 					<PageTitle isDesktopMac={isDesktopMac}>Shared with others</PageTitle>
-					<Card className="overflow-hidden rounded-lg border-border py-0 shadow-sm">
+					<Card className="max-w-full overflow-hidden rounded-lg border-border py-0 shadow-sm">
 						<CardContent
 							aria-busy={sharedNotes === undefined}
 							className="flex items-start justify-between gap-4 p-5"
@@ -356,9 +356,9 @@ export function SharedView({
 						</CardContent>
 					</Card>
 				</section>
-				<section className="flex justify-center py-4">
+				<section className="flex min-w-0 justify-center py-4">
 					{sharedNotes === undefined ? null : sharedNotes.length > 0 ? (
-						<div className="w-full max-w-xl">
+						<div className="w-full md:max-w-xl">
 							<SharedNotesList
 								notes={sharedNotes}
 								activeNoteId={currentNoteId}
@@ -369,7 +369,7 @@ export function SharedView({
 							/>
 						</div>
 					) : (
-						<Empty className="max-w-xl">
+						<Empty className="md:max-w-xl">
 							<EmptyHeader>
 								<EmptyMedia variant="icon">
 									<FileText className="size-4" />
@@ -389,7 +389,7 @@ export function SharedView({
 
 function HomeNotesSkeleton() {
 	return (
-		<div className="w-full max-w-xl space-y-3">
+		<div className="w-full space-y-3 md:max-w-xl">
 			<div className="flex h-6 shrink-0 items-center rounded-md px-2 text-xs font-medium text-foreground/70">
 				Today
 			</div>
@@ -487,7 +487,7 @@ function NotesList({
 	}));
 
 	return (
-		<div className="w-full max-w-xl space-y-1">
+		<div className="w-full space-y-1 md:max-w-xl">
 			{sections.map((section) => {
 				if (section.notes.length === 0) {
 					return null;

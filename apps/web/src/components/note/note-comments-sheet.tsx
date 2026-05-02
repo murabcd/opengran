@@ -1355,7 +1355,15 @@ function CommentsSheetPanel({
 				)}
 			>
 				{isMobile ? (
-					<h2 className="truncate text-sm font-medium">All discussions</h2>
+					<h2
+						className={cn(
+							"truncate text-sm font-medium",
+							desktopSafeTop && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+							desktopSafeTop && "mt-1",
+						)}
+					>
+						All discussions
+					</h2>
 				) : (
 					<Breadcrumb
 						className={
@@ -1373,6 +1381,7 @@ function CommentsSheetPanel({
 					className={cn(
 						"flex items-center gap-0.5",
 						desktopSafeTop && DESKTOP_MAIN_HEADER_CONTENT_CLASS,
+						desktopSafeTop && isMobile && "mt-1",
 					)}
 				>
 					<DropdownMenu open={filtersOpen} onOpenChange={setFiltersOpen}>
