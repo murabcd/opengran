@@ -193,6 +193,44 @@ test("truncating from an edited message removes that branch of the chat", async 
 	expect(messages).toHaveLength(0);
 });
 
+test("removing a chat skips malformed legacy attachment storage ids", async () => {
+	const { asOwner, workspaceId } = await createWorkspace();
+
+	await asOwner.mutation(api.chats.saveMessage, {
+		workspaceId,
+		chatId: "chat-with-legacy-attachment",
+		preview: "Legacy attachment",
+		message: {
+			id: "msg-legacy-attachment",
+			role: "user",
+			partsJson: JSON.stringify([
+				{
+					type: "file",
+					mediaType: "text/plain",
+					filename: "legacy.txt",
+					url: "https://example.convex.site/api/storage/not-valid",
+				},
+			]),
+			text: "Legacy attachment",
+			createdAt: 2_000,
+		},
+	});
+
+	await expect(
+		asOwner.mutation(api.chats.remove, {
+			workspaceId,
+			chatId: "chat-with-legacy-attachment",
+		}),
+	).resolves.toBeNull();
+
+	const session = await asOwner.query(api.chats.getSession, {
+		workspaceId,
+		chatId: "chat-with-legacy-attachment",
+	});
+
+	expect(session).toBeNull();
+});
+
 test("message snapshots return only replay fields", async () => {
 	const { asOwner, workspaceId } = await createWorkspace();
 

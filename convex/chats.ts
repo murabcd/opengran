@@ -273,6 +273,19 @@ const getMessageAttachmentStorageIds = (
 	}
 };
 
+const getExistingStorageMetadata = async (
+	ctx: MutationCtx,
+	storageId: string,
+) => {
+	const normalizedStorageId = ctx.db.system.normalizeId("_storage", storageId);
+
+	if (!normalizedStorageId) {
+		return null;
+	}
+
+	return await ctx.db.system.get(normalizedStorageId);
+};
+
 const deleteChatMessageAttachments = async (
 	ctx: MutationCtx,
 	messages: Doc<"chatMessages">[],
@@ -283,10 +296,10 @@ const deleteChatMessageAttachments = async (
 
 	await Promise.all(
 		Array.from(storageIds, async (storageId) => {
-			const metadata = await ctx.db.system.get(storageId);
+			const metadata = await getExistingStorageMetadata(ctx, storageId);
 
 			if (metadata) {
-				await ctx.storage.delete(storageId);
+				await ctx.storage.delete(metadata._id);
 			}
 		}),
 	);
