@@ -1,4 +1,12 @@
 import {
+	getDesktopAuthCallbackUrl,
+	getDesktopPreferences,
+	isDesktopRuntime,
+	openDesktopExternalUrl,
+	setDesktopLaunchAtLogin,
+} from "@workspace/platform/desktop";
+import type { DesktopPreferences } from "@workspace/platform/desktop-bridge";
+import {
 	AlertDialog,
 	AlertDialogAction,
 	AlertDialogCancel,
@@ -95,13 +103,6 @@ import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { useLinkedAccounts } from "@/hooks/use-linked-accounts";
 import { authClient } from "@/lib/auth-client";
 import { getAvatarSrc } from "@/lib/avatar";
-import {
-	getDesktopAuthCallbackUrl,
-	getDesktopPreferences,
-	isDesktopRuntime,
-	openDesktopExternalUrl,
-	setDesktopLaunchAtLogin,
-} from "@/lib/desktop-platform";
 import {
 	GOOGLE_CALENDAR_SCOPE,
 	GOOGLE_CALENDAR_SCOPES,

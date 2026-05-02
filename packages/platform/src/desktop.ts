@@ -1,4 +1,12 @@
-export type DesktopBridge = NonNullable<Window["openGranDesktop"]>;
+import type {
+	DesktopMeetingDetectionState,
+	DesktopNavigation,
+	DesktopPermissionId,
+	DesktopPlatform,
+	OpenGranDesktopBridge,
+} from "./desktop-bridge";
+
+export type DesktopBridge = OpenGranDesktopBridge;
 
 export const getDesktopBridge = (): DesktopBridge | null => {
 	if (typeof window === "undefined") {

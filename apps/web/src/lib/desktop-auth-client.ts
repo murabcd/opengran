@@ -1,5 +1,5 @@
+import { getDesktopBridge } from "@workspace/platform/desktop";
 import * as React from "react";
-import { getDesktopBridge } from "@/lib/desktop-platform";
 
 type DesktopSessionData = {
 	user: Record<string, unknown> & {

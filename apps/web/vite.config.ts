@@ -8,6 +8,9 @@ import { openGranChatPlugin } from "./server/chat-plugin";
 
 const srcDir = fileURLToPath(new URL("./src", import.meta.url));
 const workspaceRoot = fileURLToPath(new URL("../../", import.meta.url));
+const platformSrcDir = fileURLToPath(
+	new URL("../../packages/platform/src", import.meta.url),
+);
 const envFileName =
 	process.env.OPENGRAN_ENV_MODE?.trim() === "production"
 		? ".env"
@@ -137,6 +140,7 @@ export default defineConfig(() => {
 		resolve: {
 			alias: {
 				"@": path.resolve(srcDir),
+				"@workspace/platform": path.resolve(platformSrcDir),
 			},
 		},
 		test: {

@@ -4,6 +4,7 @@ import type {
 	TableOfContentDataItem,
 } from "@tiptap/extension-table-of-contents";
 import { Tiptap, useEditor } from "@tiptap/react";
+import { saveDesktopTextFile } from "@workspace/platform/desktop";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { useIsMobile } from "@workspace/ui/hooks/use-mobile";
 import { isPanelLayoutActive } from "@workspace/ui/lib/panel-layout-activity";
@@ -15,7 +16,6 @@ import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
 import { COMPOSER_DOCK_WRAPPER_CLASS } from "@/components/layout/composer-dock";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
-import { saveDesktopTextFile } from "@/lib/desktop-platform";
 import {
 	createNoteEditorExtensions,
 	EMPTY_DOCUMENT,

@@ -1,4 +1,5 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import type { DesktopMeetingDetectionState } from "@workspace/platform/desktop-bridge";
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TranscriptionControllerState } from "../src/lib/transcription-controller";

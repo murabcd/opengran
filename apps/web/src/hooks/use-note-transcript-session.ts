@@ -1,11 +1,11 @@
+import {
+	isDesktopRuntime,
+	onDesktopMeetingDetectionState,
+} from "@workspace/platform/desktop";
 import * as React from "react";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { useTranscriptSessionRepository } from "@/hooks/use-transcript-session-repository";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
-import {
-	isDesktopRuntime,
-	onDesktopMeetingDetectionState,
-} from "@/lib/desktop-platform";
 import {
 	createEmptyLiveTranscriptState,
 	createLiveTranscriptEntries,

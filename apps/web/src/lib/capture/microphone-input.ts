@@ -1,5 +1,5 @@
+import { isDesktopPlatform } from "@workspace/platform/desktop";
 import { createDesktopMicrophoneInputStream } from "@/lib/capture/desktop-microphone";
-import { isDesktopPlatform } from "@/lib/desktop-platform";
 
 const createBrowserMicrophoneInputStream = async () =>
 	await navigator.mediaDevices.getUserMedia({

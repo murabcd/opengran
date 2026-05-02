@@ -1,3 +1,4 @@
+import { openDesktopExternalUrl } from "@workspace/platform/desktop";
 import { Button } from "@workspace/ui/components/button";
 import { Card, CardContent } from "@workspace/ui/components/card";
 import {
@@ -21,7 +22,6 @@ import {
 } from "@/app/location";
 import { PageTitle } from "@/components/layout/page-title";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
-import { openDesktopExternalUrl } from "@/lib/desktop-platform";
 import {
 	groupItemsByRelativeDate,
 	RELATIVE_DATE_GROUP_SECTIONS,

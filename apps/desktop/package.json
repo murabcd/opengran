@@ -21,7 +21,7 @@
     "check": "biome check src scripts package.json",
     "check:fix": "biome check --write src scripts package.json",
     "format": "biome format --write src scripts package.json",
-    "test": "node scripts/check-syntax.mjs",
+    "test": "node --test tests/*.test.cjs && node scripts/check-syntax.mjs",
     "typecheck": "node scripts/check-syntax.mjs"
   },
   "dependencies": {

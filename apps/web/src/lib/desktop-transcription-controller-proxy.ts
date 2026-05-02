@@ -1,4 +1,4 @@
-import { getDesktopBridge } from "@/lib/desktop-platform";
+import { getDesktopBridge } from "@workspace/platform/desktop";
 import type { TranscriptionControllerOptions } from "@/lib/transcription-controller";
 import type {
 	TranscriptionSessionEvent,

@@ -1,4 +1,11 @@
 import {
+	getDesktopMeta,
+	isDesktopRuntime,
+	onDesktopNavigate,
+	setDesktopActiveWorkspaceId,
+	setDesktopActiveWorkspaceNotificationPreferences,
+} from "@workspace/platform/desktop";
+import {
 	AlertDialog,
 	AlertDialogAction,
 	AlertDialogCancel,
@@ -130,13 +137,6 @@ import {
 	DESKTOP_MAIN_HEADER_CONTENT_CLASS,
 	DESKTOP_MAIN_HEADER_LEADING_CLASS,
 } from "@/lib/desktop-chrome";
-import {
-	getDesktopMeta,
-	isDesktopRuntime,
-	onDesktopNavigate,
-	setDesktopActiveWorkspaceId,
-	setDesktopActiveWorkspaceNotificationPreferences,
-} from "@/lib/desktop-platform";
 import { getSidebarViewTitle } from "@/lib/navigation";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { WorkspaceRecord } from "@/lib/workspaces";

@@ -1,4 +1,8 @@
 import {
+	isDesktopRuntime,
+	openDesktopExternalUrl,
+} from "@workspace/platform/desktop";
+import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
@@ -32,10 +36,6 @@ import * as React from "react";
 import { toast } from "sonner";
 import { ShortcutHint } from "@/components/sidebar/shortcut-hint";
 import { getAvatarSrc } from "@/lib/avatar";
-import {
-	isDesktopRuntime,
-	openDesktopExternalUrl,
-} from "@/lib/desktop-platform";
 import { resolveLatestDesktopDownloadUrl } from "@/lib/desktop-release";
 
 export function NavUser({

@@ -32,6 +32,7 @@ for (const file of [
 	"local-server.mjs",
 	"main.mjs",
 	"network.mjs",
+	"preload-api.cjs",
 	"preload.cjs",
 	"runtime-config.mjs",
 ]) {

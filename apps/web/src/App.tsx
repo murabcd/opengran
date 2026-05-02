@@ -1,3 +1,17 @@
+import {
+	getDesktopAuthCallbackUrl,
+	getDesktopMeta,
+	getDesktopPermissionsStatus,
+	isDesktopRuntime,
+	openDesktopPermissionSettings,
+	requestDesktopPermission,
+} from "@workspace/platform/desktop";
+import type {
+	DesktopPermissionId,
+	DesktopPermissionState,
+	DesktopPermissionsStatus,
+	DesktopPlatform,
+} from "@workspace/platform/desktop-bridge";
 import { Button } from "@workspace/ui/components/button";
 import {
 	Card,
@@ -35,14 +49,6 @@ import { SharedNotePage } from "@/components/note/shared-note-page";
 import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { DESKTOP_AUTH_SAFE_TOP_CLASS } from "@/lib/desktop-chrome";
-import {
-	getDesktopAuthCallbackUrl,
-	getDesktopMeta,
-	getDesktopPermissionsStatus,
-	isDesktopRuntime,
-	openDesktopPermissionSettings,
-	requestDesktopPermission,
-} from "@/lib/desktop-platform";
 import {
 	getSuggestedWorkspaceName,
 	type WorkspaceRecord,

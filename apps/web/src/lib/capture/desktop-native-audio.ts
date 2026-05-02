@@ -1,4 +1,4 @@
-import { getRequiredDesktopBridge } from "@/lib/desktop-platform";
+import { getRequiredDesktopBridge } from "@workspace/platform/desktop";
 
 type DesktopNativeAudioSource = "microphone" | "systemAudio";
 

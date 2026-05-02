@@ -1,4 +1,4 @@
-import { getDesktopBridge } from "@/lib/desktop-platform";
+import { getDesktopBridge } from "@workspace/platform/desktop";
 
 export type NoteVisibility = "private" | "public";
 

@@ -1,4 +1,5 @@
-import { getDesktopBridge } from "@/lib/desktop-platform";
+import { getDesktopBridge } from "@workspace/platform/desktop";
+import type { DesktopPermissionsStatus } from "@workspace/platform/desktop-bridge";
 import {
 	createSystemAudioCaptureStatus,
 	type SystemAudioCaptureSourceMode,

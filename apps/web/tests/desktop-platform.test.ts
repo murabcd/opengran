@@ -1,4 +1,3 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	getDesktopAuthCallbackUrl,
 	getDesktopBridge,
@@ -8,7 +7,9 @@ import {
 	openDesktopExternalUrl,
 	requestDesktopPermission,
 	saveDesktopTextFile,
-} from "@/lib/desktop-platform";
+} from "@workspace/platform/desktop";
+import type { DesktopMeetingDetectionState } from "@workspace/platform/desktop-bridge";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const originalDesktopBridge = window.openGranDesktop;
 

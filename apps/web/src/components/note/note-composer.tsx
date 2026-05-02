@@ -1,4 +1,8 @@
 import { useChat } from "@ai-sdk/react";
+import {
+	canOpenDesktopSoundSettings,
+	openDesktopSoundSettings,
+} from "@workspace/platform/desktop";
 import { Button } from "@workspace/ui/components/button";
 import { Card, CardContent, CardHeader } from "@workspace/ui/components/card";
 import {
@@ -129,10 +133,6 @@ import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
 import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
-import {
-	canOpenDesktopSoundSettings,
-	openDesktopSoundSettings,
-} from "@/lib/desktop-platform";
 import { ENHANCED_NOTE_TEMPLATE_SLUG } from "@/lib/note-templates";
 import {
 	getRecipeIcon,

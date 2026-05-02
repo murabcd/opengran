@@ -1,9 +1,3 @@
-import { Button } from "@workspace/ui/components/button";
-import { Card, CardContent } from "@workspace/ui/components/card";
-import { Separator } from "@workspace/ui/components/separator";
-import { cn } from "@workspace/ui/lib/utils";
-import { X } from "lucide-react";
-import * as React from "react";
 import {
 	dismissDesktopDetectedMeetingWidget,
 	getDesktopMeetingDetectionState,
@@ -11,7 +5,14 @@ import {
 	onDesktopMeetingDetectionState,
 	reportDesktopMeetingWidgetSize,
 	startDesktopDetectedMeetingNote,
-} from "@/lib/desktop-platform";
+} from "@workspace/platform/desktop";
+import type { DesktopMeetingDetectionState } from "@workspace/platform/desktop-bridge";
+import { Button } from "@workspace/ui/components/button";
+import { Card, CardContent } from "@workspace/ui/components/card";
+import { Separator } from "@workspace/ui/components/separator";
+import { cn } from "@workspace/ui/lib/utils";
+import { X } from "lucide-react";
+import * as React from "react";
 
 const widgetTitleByStatus: Record<
 	DesktopMeetingDetectionState["status"],

@@ -1,5 +1,6 @@
 "use client";
 
+import { openDesktopExternalUrl } from "@workspace/platform/desktop";
 import {
 	Avatar,
 	AvatarFallback,
@@ -84,7 +85,6 @@ import { useDesktopPanelPin } from "@/components/layout/use-desktop-panel-pin";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { getAvatarSrc } from "@/lib/avatar";
 import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
-import { openDesktopExternalUrl } from "@/lib/desktop-platform";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 

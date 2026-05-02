@@ -87,6 +87,7 @@
         "@tiptap/pm": "3.21.0",
         "@tiptap/react": "3.21.0",
         "@tiptap/starter-kit": "3.21.0",
+        "@workspace/platform": "workspace:*",
         "@workspace/ui": "workspace:*",
         "ai": "^6.0.116",
         "canvas-confetti": "^1.9.4",
@@ -109,6 +110,13 @@
         "typescript": "~5.9.3",
         "vite": "^7.3.1",
         "vitest": "^3.2.4",
+      },
+    },
+    "packages/platform": {
+      "name": "@workspace/platform",
+      "version": "0.0.0",
+      "devDependencies": {
+        "typescript": "~5.9.3",
       },
     },
     "packages/ui": {
@@ -969,6 +977,8 @@
     "@vitest/spy": ["@vitest/spy@3.2.4", "", { "dependencies": { "tinyspy": "^4.0.3" } }, "sha512-vAfasCOe6AIK70iP5UD11Ac4siNUNJ9i/9PZ3NKx07sG6sUxeag1LWdNrMWeKKYBLlzuK+Gn65Yd5nyL6ds+nw=="],
 
     "@vitest/utils": ["@vitest/utils@3.2.4", "", { "dependencies": { "@vitest/pretty-format": "3.2.4", "loupe": "^3.1.4", "tinyrainbow": "^2.0.0" } }, "sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA=="],
+
+    "@workspace/platform": ["@workspace/platform@workspace:packages/platform"],
 
     "@workspace/ui": ["@workspace/ui@workspace:packages/ui"],
 
