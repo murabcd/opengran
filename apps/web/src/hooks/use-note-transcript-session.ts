@@ -3,6 +3,10 @@ import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { useTranscriptSessionRepository } from "@/hooks/use-transcript-session-repository";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
 import {
+	isDesktopRuntime,
+	onDesktopMeetingDetectionState,
+} from "@/lib/desktop-platform";
+import {
 	createEmptyLiveTranscriptState,
 	createLiveTranscriptEntries,
 	createSystemAudioCaptureStatus,
@@ -374,21 +378,17 @@ export const useNoteTranscriptSession = ({
 	React.useEffect(() => {
 		// Latch meeting-controlled auto-stop for the active capture even after
 		// the route/query state is cleaned up post-start.
-		if (
-			stopTranscriptionWhenMeetingEnds &&
-			typeof window !== "undefined" &&
-			window.openGranDesktop
-		) {
+		if (stopTranscriptionWhenMeetingEnds && isDesktopRuntime()) {
 			shouldStopWhenMeetingEndsRef.current = true;
 		}
 	}, [stopTranscriptionWhenMeetingEnds]);
 
 	React.useEffect(() => {
-		if (typeof window === "undefined" || !window.openGranDesktop) {
+		if (!isDesktopRuntime()) {
 			return;
 		}
 
-		return window.openGranDesktop.onMeetingDetectionState((state) => {
+		return onDesktopMeetingDetectionState((state) => {
 			if (state.hasBrowserMeetingSignal) {
 				hasSeenBrowserMeetingSignalRef.current = true;
 				shouldStopWhenMeetingEndsRef.current = true;

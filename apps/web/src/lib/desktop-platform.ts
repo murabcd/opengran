@@ -164,6 +164,10 @@ export const onDesktopNavigate = (
 	listener: (navigation: DesktopNavigation) => void,
 ) => getDesktopBridge()?.onNavigate?.(listener) ?? undefined;
 
+export const onDesktopMeetingDetectionState = (
+	listener: (state: DesktopMeetingDetectionState) => void,
+) => getDesktopBridge()?.onMeetingDetectionState?.(listener) ?? undefined;
+
 export const canOpenDesktopSoundSettings = () =>
 	Boolean(getDesktopBridge()?.openSoundSettings);
 
