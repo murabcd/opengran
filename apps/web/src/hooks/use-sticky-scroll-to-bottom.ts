@@ -8,6 +8,7 @@ export function useStickyScrollToBottom() {
 	const [isAtBottom, setIsAtBottom] = React.useState(true);
 	const isAtBottomRef = React.useRef(true);
 	const isUserScrollingRef = React.useRef(false);
+	const previousScrollHeightRef = React.useRef(0);
 	const containerRef = React.useCallback((node: HTMLDivElement | null) => {
 		containerElementRef.current = node;
 		setContainer(node);
@@ -80,8 +81,19 @@ export function useStickyScrollToBottom() {
 			return;
 		}
 
+		previousScrollHeightRef.current = container.scrollHeight;
+
 		const scrollIfNeeded = () => {
+			const nextScrollHeight = container.scrollHeight;
+
 			if (!isAtBottomRef.current || isUserScrollingRef.current) {
+				const delta = nextScrollHeight - previousScrollHeightRef.current;
+
+				if (delta > 0 && previousScrollHeightRef.current > 0) {
+					container.scrollTop += delta;
+				}
+
+				previousScrollHeightRef.current = nextScrollHeight;
 				return;
 			}
 
@@ -92,6 +104,7 @@ export function useStickyScrollToBottom() {
 				}
 
 				viewport.scrollTop = viewport.scrollHeight;
+				previousScrollHeightRef.current = viewport.scrollHeight;
 				setIsAtBottom(true);
 				isAtBottomRef.current = true;
 			});

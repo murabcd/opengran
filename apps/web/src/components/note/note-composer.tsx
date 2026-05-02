@@ -131,6 +131,10 @@ import {
 } from "@/lib/chat-message";
 import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
+import {
+	getLastAssistantHasRenderableContent,
+	groupMessagesIntoTurns,
+} from "@/lib/chat-turns";
 import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
 import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import { ENHANCED_NOTE_TEMPLATE_SLUG } from "@/lib/note-templates";
@@ -1857,6 +1861,21 @@ function NoteChatMessages({
 	onEditMessage?: (messageId: string, text: string) => void;
 	onRegenerateMessage?: (messageId: string) => void;
 }) {
+	const turns = React.useMemo(
+		() => groupMessagesIntoTurns(chatMessages),
+		[chatMessages],
+	);
+	const lastMessage = chatMessages[chatMessages.length - 1];
+	const showAssistantBreathingSpace =
+		isChatLoading ||
+		(lastMessage?.role === "assistant" &&
+			getLastAssistantHasRenderableContent(
+				chatMessages,
+				(message) =>
+					getChatText(message).length > 0 ||
+					extractFileParts(message).length > 0,
+			));
+
 	return (
 		<ScrollArea
 			className="min-h-0 flex-1"
@@ -1866,218 +1885,244 @@ function NoteChatMessages({
 			)}
 			viewportRef={chatViewportRef}
 		>
-			{chatMessages.map((chatMessage) => {
-				const text = getChatText(chatMessage);
-				const fileParts = extractFileParts(chatMessage);
-				const metadata = getChatMessageMetadata(chatMessage);
-				const selectedRecipe = metadata?.recipe ?? null;
-				const displayText = metadata?.recipeOnly ? "" : text;
-				const isStreamingAssistantMessage =
-					isChatLoading &&
-					chatMessage.role === "assistant" &&
-					chatMessage.id === chatMessages[chatMessages.length - 1]?.id;
-
-				if (
-					!displayText &&
-					fileParts.length === 0 &&
-					!selectedRecipe &&
-					!isStreamingAssistantMessage
-				) {
-					return null;
-				}
+			{turns.map((turn, turnIndex) => {
+				const turnMessages = [
+					...(turn.userMessage ? [turn.userMessage] : []),
+					...turn.assistantMessages,
+				];
+				const turnKey = turn.userMessage?.id ?? `assistant-turn-${turnIndex}`;
 
 				return (
-					<div
-						key={chatMessage.id}
-						className={cn(
-							"group/message flex w-full",
-							getChatMessageJustifyClass(chatMessage.role),
-						)}
-					>
-						<div
-							className={cn(
-								"flex flex-col gap-2",
-								chatMessage.role === "user" ? "items-end" : "items-start",
-								CHAT_MESSAGE_MAX_WIDTH_CLASS,
-							)}
-						>
-							{selectedRecipe ? (
-								<ChatRecipeReceipt
-									isUserMessage={chatMessage.role === "user"}
-									recipe={selectedRecipe}
-								/>
-							) : null}
-							<ChatMessageFileAttachments files={fileParts} />
-							{isStreamingAssistantMessage || displayText ? (
-								<div
-									className={cn(
-										chatMessage.role === "user"
-											? USER_CHAT_BUBBLE_CLASS
-											: ASSISTANT_CHAT_CONTENT_CLASS,
-										isStreamingAssistantMessage &&
-											!displayText &&
-											"text-muted-foreground",
-									)}
-								>
-									{isStreamingAssistantMessage && !displayText ? (
-										<div className="text-sm text-muted-foreground">
-											<ShimmerText>Thinking</ShimmerText>
-										</div>
-									) : displayText ? (
-										<CollapsibleMessageContent
-											role={chatMessage.role}
-											text={displayText}
-											isAnimating={isStreamingAssistantMessage}
-											streamdownClassName={cn(
-												chatMessage.role === "assistant" && "note-streamdown",
-											)}
-											mode={
-												isStreamingAssistantMessage ? "streaming" : "static"
-											}
-										/>
-									) : null}
-								</div>
-							) : null}
-							{chatMessage.role === "assistant" && displayText ? (
-								<div
-									className={cn(
-										"flex items-center gap-1",
-										CHAT_ACTIONS_VISIBILITY_CLASS,
-									)}
-								>
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon-sm"
-												className="size-7 text-muted-foreground hover:text-foreground"
-												aria-label="Regenerate"
-												disabled={!onRegenerateMessage}
-												onClick={() => onRegenerateMessage?.(chatMessage.id)}
-											>
-												<RotateCcw className="size-3.5" />
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent>Regenerate</TooltipContent>
-									</Tooltip>
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon-sm"
-												className="size-7 text-muted-foreground hover:text-foreground"
-												aria-label="Copy"
-												onClick={() => {
-													void navigator.clipboard
-														.writeText(displayText)
-														.then(() => toast.success("Copied"))
-														.catch(() => toast.error("Failed to copy"));
-												}}
-											>
-												<Copy className="size-3.5" />
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent>Copy</TooltipContent>
-									</Tooltip>
+					<div key={turnKey} className="flex flex-col gap-3">
+						{turnMessages.map((chatMessage) => {
+							const text = getChatText(chatMessage);
+							const fileParts = extractFileParts(chatMessage);
+							const metadata = getChatMessageMetadata(chatMessage);
+							const selectedRecipe = metadata?.recipe ?? null;
+							const displayText = metadata?.recipeOnly ? "" : text;
+							const isStreamingAssistantMessage =
+								isChatLoading &&
+								chatMessage.role === "assistant" &&
+								chatMessage.id === lastMessage?.id;
 
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon-sm"
-												className="size-7 text-muted-foreground hover:text-foreground"
-												disabled={disableAddToNote}
-												aria-label="Add to note"
-												onClick={() => {
-													if (!onAddMessageToNote) {
-														return;
-													}
+							if (
+								!displayText &&
+								fileParts.length === 0 &&
+								!selectedRecipe &&
+								!isStreamingAssistantMessage
+							) {
+								return null;
+							}
 
-													void Promise.resolve(
-														onAddMessageToNote(displayText),
-													).catch(() => toast.error("Failed to add"));
-												}}
-											>
-												<Plus className="size-3.5" />
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent>Add to note</TooltipContent>
-									</Tooltip>
-								</div>
-							) : chatMessage.role === "user" &&
-								(displayText || selectedRecipe) ? (
+							return (
 								<div
+									key={chatMessage.id}
 									className={cn(
-										"flex justify-end gap-1",
-										CHAT_ACTIONS_VISIBILITY_CLASS,
+										"group/message flex w-full",
+										getChatMessageJustifyClass(chatMessage.role),
 									)}
 								>
-									{displayText ? (
-										<>
-											<Tooltip>
-												<TooltipTrigger asChild>
-													<Button
-														type="button"
-														variant="ghost"
-														size="icon-sm"
-														className="size-7 text-muted-foreground hover:text-foreground"
-														aria-label="Edit"
-														onClick={() =>
-															onEditMessage?.(chatMessage.id, displayText)
+									<div
+										className={cn(
+											"flex flex-col gap-2",
+											chatMessage.role === "user" ? "items-end" : "items-start",
+											CHAT_MESSAGE_MAX_WIDTH_CLASS,
+										)}
+									>
+										{selectedRecipe ? (
+											<ChatRecipeReceipt
+												isUserMessage={chatMessage.role === "user"}
+												recipe={selectedRecipe}
+											/>
+										) : null}
+										<ChatMessageFileAttachments files={fileParts} />
+										{isStreamingAssistantMessage || displayText ? (
+											<div
+												className={cn(
+													chatMessage.role === "user"
+														? USER_CHAT_BUBBLE_CLASS
+														: ASSISTANT_CHAT_CONTENT_CLASS,
+													isStreamingAssistantMessage &&
+														!displayText &&
+														"text-muted-foreground",
+												)}
+											>
+												{isStreamingAssistantMessage && !displayText ? (
+													<div className="text-sm text-muted-foreground">
+														<ShimmerText>Thinking</ShimmerText>
+													</div>
+												) : displayText ? (
+													<CollapsibleMessageContent
+														role={chatMessage.role}
+														text={displayText}
+														isAnimating={isStreamingAssistantMessage}
+														streamdownClassName={cn(
+															chatMessage.role === "assistant" &&
+																"note-streamdown",
+														)}
+														mode={
+															isStreamingAssistantMessage
+																? "streaming"
+																: "static"
 														}
-													>
-														<PenLine className="size-3.5" />
-													</Button>
-												</TooltipTrigger>
-												<TooltipContent>Edit</TooltipContent>
-											</Tooltip>
-											<Tooltip>
-												<TooltipTrigger asChild>
-													<Button
-														type="button"
-														variant="ghost"
-														size="icon-sm"
-														className="size-7 text-muted-foreground hover:text-foreground"
-														aria-label="Copy"
-														onClick={() => {
-															void navigator.clipboard
-																.writeText(displayText)
-																.then(() => toast.success("Copied"))
-																.catch(() => toast.error("Failed to copy"));
-														}}
-													>
-														<Copy className="size-3.5" />
-													</Button>
-												</TooltipTrigger>
-												<TooltipContent>Copy</TooltipContent>
-											</Tooltip>
-										</>
-									) : null}
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon-sm"
-												className="size-7 text-muted-foreground hover:text-foreground"
-												aria-label="Delete"
-												disabled={!onDeleteMessage}
-												onClick={() => onDeleteMessage?.(chatMessage.id)}
+													/>
+												) : null}
+											</div>
+										) : null}
+										{chatMessage.role === "assistant" && displayText ? (
+											<div
+												className={cn(
+													"flex items-center gap-1",
+													CHAT_ACTIONS_VISIBILITY_CLASS,
+												)}
 											>
-												<Trash2 className="size-3.5" />
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent>Delete</TooltipContent>
-									</Tooltip>
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<Button
+															type="button"
+															variant="ghost"
+															size="icon-sm"
+															className="size-7 text-muted-foreground hover:text-foreground"
+															aria-label="Regenerate"
+															disabled={!onRegenerateMessage}
+															onClick={() =>
+																onRegenerateMessage?.(chatMessage.id)
+															}
+														>
+															<RotateCcw className="size-3.5" />
+														</Button>
+													</TooltipTrigger>
+													<TooltipContent>Regenerate</TooltipContent>
+												</Tooltip>
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<Button
+															type="button"
+															variant="ghost"
+															size="icon-sm"
+															className="size-7 text-muted-foreground hover:text-foreground"
+															aria-label="Copy"
+															onClick={() => {
+																void navigator.clipboard
+																	.writeText(displayText)
+																	.then(() => toast.success("Copied"))
+																	.catch(() => toast.error("Failed to copy"));
+															}}
+														>
+															<Copy className="size-3.5" />
+														</Button>
+													</TooltipTrigger>
+													<TooltipContent>Copy</TooltipContent>
+												</Tooltip>
+
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<Button
+															type="button"
+															variant="ghost"
+															size="icon-sm"
+															className="size-7 text-muted-foreground hover:text-foreground"
+															disabled={disableAddToNote}
+															aria-label="Add to note"
+															onClick={() => {
+																if (!onAddMessageToNote) {
+																	return;
+																}
+
+																void Promise.resolve(
+																	onAddMessageToNote(displayText),
+																).catch(() => toast.error("Failed to add"));
+															}}
+														>
+															<Plus className="size-3.5" />
+														</Button>
+													</TooltipTrigger>
+													<TooltipContent>Add to note</TooltipContent>
+												</Tooltip>
+											</div>
+										) : chatMessage.role === "user" &&
+											(displayText || selectedRecipe) ? (
+											<div
+												className={cn(
+													"flex justify-end gap-1",
+													CHAT_ACTIONS_VISIBILITY_CLASS,
+												)}
+											>
+												{displayText ? (
+													<>
+														<Tooltip>
+															<TooltipTrigger asChild>
+																<Button
+																	type="button"
+																	variant="ghost"
+																	size="icon-sm"
+																	className="size-7 text-muted-foreground hover:text-foreground"
+																	aria-label="Edit"
+																	onClick={() =>
+																		onEditMessage?.(chatMessage.id, displayText)
+																	}
+																>
+																	<PenLine className="size-3.5" />
+																</Button>
+															</TooltipTrigger>
+															<TooltipContent>Edit</TooltipContent>
+														</Tooltip>
+														<Tooltip>
+															<TooltipTrigger asChild>
+																<Button
+																	type="button"
+																	variant="ghost"
+																	size="icon-sm"
+																	className="size-7 text-muted-foreground hover:text-foreground"
+																	aria-label="Copy"
+																	onClick={() => {
+																		void navigator.clipboard
+																			.writeText(displayText)
+																			.then(() => toast.success("Copied"))
+																			.catch(() =>
+																				toast.error("Failed to copy"),
+																			);
+																	}}
+																>
+																	<Copy className="size-3.5" />
+																</Button>
+															</TooltipTrigger>
+															<TooltipContent>Copy</TooltipContent>
+														</Tooltip>
+													</>
+												) : null}
+												<Tooltip>
+													<TooltipTrigger asChild>
+														<Button
+															type="button"
+															variant="ghost"
+															size="icon-sm"
+															className="size-7 text-muted-foreground hover:text-foreground"
+															aria-label="Delete"
+															disabled={!onDeleteMessage}
+															onClick={() => onDeleteMessage?.(chatMessage.id)}
+														>
+															<Trash2 className="size-3.5" />
+														</Button>
+													</TooltipTrigger>
+													<TooltipContent>Delete</TooltipContent>
+												</Tooltip>
+											</div>
+										) : null}
+									</div>
 								</div>
-							) : null}
-						</div>
+							);
+						})}
 					</div>
 				);
 			})}
+
+			{showAssistantBreathingSpace ? (
+				<div
+					aria-hidden="true"
+					className="min-h-[max(112px,20vh)] w-full shrink-0"
+				/>
+			) : null}
 
 			{chatError ? (
 				<p className="text-sm text-destructive">{chatError.message}</p>
