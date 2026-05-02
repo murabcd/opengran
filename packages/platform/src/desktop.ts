@@ -3,6 +3,7 @@ import type {
 	DesktopNavigation,
 	DesktopPermissionId,
 	DesktopPlatform,
+	DesktopThemeSource,
 	OpenGranDesktopBridge,
 } from "./desktop-bridge";
 
@@ -117,6 +118,18 @@ export const getDesktopPreferences = async () => {
 	}
 
 	return await bridge.getPreferences();
+};
+
+export const setDesktopNativeTheme = async (
+	themeSource: DesktopThemeSource,
+) => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.setNativeTheme) {
+		return null;
+	}
+
+	return await bridge.setNativeTheme(themeSource);
 };
 
 export const setDesktopLaunchAtLogin = async (enabled: boolean) => {

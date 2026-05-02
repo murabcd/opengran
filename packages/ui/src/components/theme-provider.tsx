@@ -3,15 +3,13 @@ import { use } from "react";
 
 type Theme = "dark" | "light" | "system";
 type ResolvedTheme = "dark" | "light";
-type DesktopThemeBridge = {
-	setNativeTheme?: (theme: Theme) => Promise<unknown>;
-};
 
 type ThemeProviderProps = {
 	children: React.ReactNode;
 	defaultTheme?: Theme;
 	storageKey?: string;
 	disableTransitionOnChange?: boolean;
+	onThemeChange?: (theme: Theme) => void;
 };
 
 type ThemeProviderState = {
@@ -66,6 +64,7 @@ export function ThemeProvider({
 	defaultTheme = "system",
 	storageKey = "theme",
 	disableTransitionOnChange = true,
+	onThemeChange,
 	...props
 }: ThemeProviderProps) {
 	const [theme, setThemeState] = React.useReducer(
@@ -128,20 +127,8 @@ export function ThemeProvider({
 	}, [theme, applyTheme]);
 
 	React.useEffect(() => {
-		const desktopBridge = (
-			window as typeof window & {
-				openGranDesktop?: DesktopThemeBridge;
-			}
-		).openGranDesktop;
-
-		if (!desktopBridge?.setNativeTheme) {
-			return;
-		}
-
-		void desktopBridge.setNativeTheme(theme).catch((error: unknown) => {
-			console.error("Failed to sync native desktop theme", error);
-		});
-	}, [theme]);
+		onThemeChange?.(theme);
+	}, [theme, onThemeChange]);
 
 	React.useEffect(() => {
 		const handleStorageChange = (event: StorageEvent) => {

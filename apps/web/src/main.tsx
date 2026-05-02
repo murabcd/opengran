@@ -3,6 +3,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import "./index.css";
+import { setDesktopNativeTheme } from "@workspace/platform/desktop";
+import type { DesktopThemeSource } from "@workspace/platform/desktop-bridge";
 import { Toaster } from "@workspace/ui/components/sonner";
 import { ThemeProvider } from "@workspace/ui/components/theme-provider";
 import App from "./App.tsx";
@@ -24,11 +26,17 @@ const isMeetingWidgetRoute = () =>
 	typeof window !== "undefined" &&
 	window.location.pathname === meetingWidgetPathname;
 
+const syncDesktopNativeTheme = (theme: DesktopThemeSource) => {
+	void setDesktopNativeTheme(theme).catch((error: unknown) => {
+		console.error("Failed to sync native desktop theme", error);
+	});
+};
+
 async function bootstrap() {
 	if (isMeetingWidgetRoute()) {
 		root.render(
 			<StrictMode>
-				<ThemeProvider>
+				<ThemeProvider onThemeChange={syncDesktopNativeTheme}>
 					<MeetingWidgetScreen />
 				</ThemeProvider>
 			</StrictMode>,
@@ -47,7 +55,7 @@ async function bootstrap() {
 	root.render(
 		<StrictMode>
 			<ConvexBetterAuthProvider client={convex} authClient={authClient}>
-				<ThemeProvider>
+				<ThemeProvider onThemeChange={syncDesktopNativeTheme}>
 					<App />
 					<Toaster />
 				</ThemeProvider>
