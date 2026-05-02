@@ -23,6 +23,16 @@ export const isDesktopRuntime = () => getDesktopBridge() !== null;
 export const isDesktopPlatform = (platform: DesktopPlatform) =>
 	getDesktopBridge()?.platform === platform;
 
+export const getDesktopMeta = async () => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.getMeta) {
+		return null;
+	}
+
+	return await bridge.getMeta();
+};
+
 export const supportsDesktopTranscriptionController = () => {
 	const bridge = getDesktopBridge();
 
@@ -54,6 +64,71 @@ export const openDesktopExternalUrl = async (url: string) => {
 
 	await bridge.openExternalUrl(url);
 	return true;
+};
+
+export const getDesktopAuthCallbackUrl = async (fallbackUrl: string) => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.getAuthCallbackUrl) {
+		return fallbackUrl;
+	}
+
+	return (await bridge.getAuthCallbackUrl()).url;
+};
+
+export const getDesktopPermissionsStatus = async () => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.getPermissionsStatus) {
+		return null;
+	}
+
+	return await bridge.getPermissionsStatus();
+};
+
+export const requestDesktopPermission = async (
+	permissionId: DesktopPermissionId,
+) => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.requestPermission) {
+		return null;
+	}
+
+	return await bridge.requestPermission(permissionId);
+};
+
+export const openDesktopPermissionSettings = async (
+	permissionId: DesktopPermissionId,
+) => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.openPermissionSettings) {
+		return false;
+	}
+
+	await bridge.openPermissionSettings(permissionId);
+	return true;
+};
+
+export const getDesktopPreferences = async () => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.getPreferences) {
+		return null;
+	}
+
+	return await bridge.getPreferences();
+};
+
+export const setDesktopLaunchAtLogin = async (enabled: boolean) => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.setLaunchAtLogin) {
+		return null;
+	}
+
+	return await bridge.setLaunchAtLogin(enabled);
 };
 
 export const canOpenDesktopSoundSettings = () =>

@@ -36,6 +36,14 @@ import { WorkspaceComposer } from "@/components/workspaces/workspace-composer";
 import { type AuthSession, authClient } from "@/lib/auth-client";
 import { DESKTOP_AUTH_SAFE_TOP_CLASS } from "@/lib/desktop-chrome";
 import {
+	getDesktopAuthCallbackUrl,
+	getDesktopMeta,
+	getDesktopPermissionsStatus,
+	isDesktopRuntime,
+	openDesktopPermissionSettings,
+	requestDesktopPermission,
+} from "@/lib/desktop-platform";
+import {
 	getSuggestedWorkspaceName,
 	type WorkspaceRecord,
 } from "@/lib/workspaces";
@@ -126,8 +134,7 @@ const useAppBootstrapState = () => {
 	const markDesktopPermissionsCompleted = useMutation(
 		api.onboarding.markDesktopPermissionsCompleted,
 	);
-	const isDesktopApp =
-		typeof window !== "undefined" && Boolean(window.openGranDesktop);
+	const isDesktopApp = isDesktopRuntime();
 
 	const applyDesktopMeta = React.useCallback((platform: DesktopPlatform) => {
 		setIsDesktopMac(platform === "darwin");
@@ -184,10 +191,11 @@ const useAppBootstrapState = () => {
 	);
 
 	React.useEffect(() => {
-		void window.openGranDesktop
-			?.getMeta()
+		void getDesktopMeta()
 			.then((meta) => {
-				applyDesktopMeta(meta.platform);
+				if (meta) {
+					applyDesktopMeta(meta.platform);
+				}
 			})
 			.catch(() => {
 				setIsDesktopMac(false);
@@ -234,12 +242,13 @@ const useAppBootstrapState = () => {
 	}, []);
 
 	const syncDesktopPermissions = React.useCallback(async () => {
-		if (!window.openGranDesktop) {
+		const status = await getDesktopPermissionsStatus();
+
+		if (!status) {
 			applyDesktopPermissionsStatus(null);
 			return null;
 		}
 
-		const status = await window.openGranDesktop.getPermissionsStatus();
 		applyDesktopPermissionsStatus(status);
 		return status;
 	}, [applyDesktopPermissionsStatus]);
@@ -256,15 +265,15 @@ const useAppBootstrapState = () => {
 
 			try {
 				setAuthError(null);
-				const callbackURL = window.openGranDesktop
-					? (await window.openGranDesktop.getAuthCallbackUrl()).url
-					: window.location.href;
+				const callbackURL = await getDesktopAuthCallbackUrl(
+					window.location.href,
+				);
 
 				await authClient.signIn.social({
 					provider,
 					callbackURL,
 					errorCallbackURL: callbackURL,
-					disableRedirect: Boolean(window.openGranDesktop),
+					disableRedirect: isDesktopRuntime(),
 				});
 			} catch (error) {
 				setAuthError(
@@ -400,12 +409,12 @@ const useAppBootstrapState = () => {
 				try {
 					setDesktopPermissionsError(null);
 
-					if (!window.openGranDesktop) {
+					const status = await requestDesktopPermission(permissionId);
+
+					if (!status) {
 						throw new Error("Desktop permissions are unavailable.");
 					}
 
-					const status =
-						await window.openGranDesktop.requestPermission(permissionId);
 					setDesktopPermissionsStatus(status);
 				} catch (error) {
 					setDesktopPermissionsError(
@@ -428,11 +437,10 @@ const useAppBootstrapState = () => {
 				try {
 					setDesktopPermissionsError(null);
 
-					if (!window.openGranDesktop) {
+					if (!(await openDesktopPermissionSettings(permissionId))) {
 						throw new Error("Desktop permissions are unavailable.");
 					}
 
-					await window.openGranDesktop.openPermissionSettings(permissionId);
 					await syncDesktopPermissions();
 				} catch (error) {
 					setDesktopPermissionsError(

@@ -96,6 +96,13 @@ import { useLinkedAccounts } from "@/hooks/use-linked-accounts";
 import { authClient } from "@/lib/auth-client";
 import { getAvatarSrc } from "@/lib/avatar";
 import {
+	getDesktopAuthCallbackUrl,
+	getDesktopPreferences,
+	isDesktopRuntime,
+	openDesktopExternalUrl,
+	setDesktopLaunchAtLogin,
+} from "@/lib/desktop-platform";
+import {
 	GOOGLE_CALENDAR_SCOPE,
 	GOOGLE_CALENDAR_SCOPES,
 	GOOGLE_DRIVE_SCOPE,
@@ -501,8 +508,7 @@ const initialNotionConnectionFormState: NotionConnectionFormState = {
 
 const getInitialPreferencesSettingsState = (): PreferencesSettingsState => ({
 	preferences: null,
-	isLoadingPreferences:
-		typeof window !== "undefined" && Boolean(window.openGranDesktop),
+	isLoadingPreferences: isDesktopRuntime(),
 	isSavingLaunchAtLogin: false,
 });
 
@@ -645,8 +651,7 @@ export function SettingsDialog({
 		null,
 	);
 	const { data: session } = authClient.useSession();
-	const isDesktopApp =
-		typeof window !== "undefined" && Boolean(window.openGranDesktop);
+	const isDesktopApp = isDesktopRuntime();
 	const activePage = selectedPage ?? initialPage;
 	const navItems = getSettingsNav(isDesktopApp);
 
@@ -1035,9 +1040,7 @@ function PreferencesSettings() {
 	const { preferences, isLoadingPreferences, isSavingLaunchAtLogin } = state;
 
 	useEffect(() => {
-		const desktopBridge = window.openGranDesktop;
-
-		if (!desktopBridge) {
+		if (!isDesktopRuntime()) {
 			return;
 		}
 
@@ -1045,9 +1048,13 @@ function PreferencesSettings() {
 
 		const loadPreferences = async () => {
 			try {
-				const nextPreferences = await desktopBridge.getPreferences();
+				const nextPreferences = await getDesktopPreferences();
 				if (!isCancelled) {
-					dispatch({ type: "loadSucceeded", value: nextPreferences });
+					if (nextPreferences) {
+						dispatch({ type: "loadSucceeded", value: nextPreferences });
+					} else {
+						dispatch({ type: "finishLoading" });
+					}
 				}
 			} catch (error) {
 				console.error("Failed to load desktop preferences", error);
@@ -1066,7 +1073,7 @@ function PreferencesSettings() {
 	}, []);
 
 	const handleLaunchAtLoginChange = async (checked: boolean) => {
-		if (!window.openGranDesktop) {
+		if (!isDesktopRuntime()) {
 			return;
 		}
 
@@ -1075,8 +1082,10 @@ function PreferencesSettings() {
 		dispatch({ type: "setLaunchAtLoginOptimistic", value: checked });
 
 		try {
-			const nextPreferences =
-				await window.openGranDesktop.setLaunchAtLogin(checked);
+			const nextPreferences = await setDesktopLaunchAtLogin(checked);
+			if (!nextPreferences) {
+				throw new Error("Desktop preferences are unavailable.");
+			}
 			dispatch({ type: "setPreferences", value: nextPreferences });
 		} catch (error) {
 			console.error("Failed to update launch at login preference", error);
@@ -1087,7 +1096,7 @@ function PreferencesSettings() {
 		}
 	};
 
-	if (!window.openGranDesktop) {
+	if (!isDesktopRuntime()) {
 		return (
 			<div className="py-4 text-sm text-muted-foreground">
 				Preferences are available in the desktop app.
@@ -1269,9 +1278,7 @@ function useCalendarSettingsController() {
 		dispatch({ type: "setIsConnectingGoogle", value: true });
 
 		try {
-			const callbackURL = window.openGranDesktop
-				? (await window.openGranDesktop.getAuthCallbackUrl()).url
-				: window.location.href;
+			const callbackURL = await getDesktopAuthCallbackUrl(window.location.href);
 			const result = await authClient.$fetch("/link-social", {
 				method: "POST",
 				throw: true,
@@ -1306,11 +1313,11 @@ function useCalendarSettingsController() {
 				throw new Error("Google calendar auth URL was not returned.");
 			}
 
-			if (window.openGranDesktop) {
-				await window.openGranDesktop.openExternalUrl(url);
-			} else {
-				window.location.assign(url);
+			if (await openDesktopExternalUrl(url)) {
+				return;
 			}
+
+			window.location.assign(url);
 		} catch (error) {
 			console.error("Failed to connect Google Calendar", error);
 			toast.error(
@@ -2265,9 +2272,7 @@ function useConnectionsSettingsController() {
 					showYandexCalendar: calendarPreferences?.showYandexCalendar ?? false,
 				});
 			};
-			const callbackURL = window.openGranDesktop
-				? (await window.openGranDesktop.getAuthCallbackUrl()).url
-				: window.location.href;
+			const callbackURL = await getDesktopAuthCallbackUrl(window.location.href);
 			const result = await authClient.$fetch("/link-social", {
 				method: "POST",
 				throw: true,
@@ -2304,8 +2309,7 @@ function useConnectionsSettingsController() {
 
 			await enableGoogleToolForWorkspace();
 
-			if (window.openGranDesktop) {
-				await window.openGranDesktop.openExternalUrl(url);
+			if (await openDesktopExternalUrl(url)) {
 				return;
 			}
 
@@ -2445,8 +2449,7 @@ function useConnectionsSettingsController() {
 			jiraConnection.baseUrl,
 		).toString();
 
-		if (window.openGranDesktop?.openExternalUrl) {
-			await window.openGranDesktop.openExternalUrl(url);
+		if (await openDesktopExternalUrl(url)) {
 			return;
 		}
 
