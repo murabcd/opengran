@@ -49,6 +49,10 @@ import {
 } from "@/lib/chat-message";
 import { collectMessageSources } from "@/lib/chat-sources";
 import {
+	formatChatMessageTimestamp,
+	getChatMessageTimestamp,
+} from "@/lib/chat-timestamp";
+import {
 	getLastAssistantHasRenderableContent,
 	groupMessagesIntoTurns,
 } from "@/lib/chat-turns";
@@ -144,6 +148,9 @@ export function ChatMessages({
 								message.role === "assistant" &&
 								message.id === lastMessage?.id;
 							const isEmpty = displayText.length === 0;
+							const timestamp = formatChatMessageTimestamp(
+								getChatMessageTimestamp(message),
+							);
 
 							if (
 								isEmpty &&
@@ -275,6 +282,11 @@ export function ChatMessages({
 													</TooltipTrigger>
 													<TooltipContent>Create note</TooltipContent>
 												</Tooltip>
+												{timestamp ? (
+													<span className="px-1 text-xs text-muted-foreground/70">
+														{timestamp}
+													</span>
+												) : null}
 											</div>
 										) : null}
 										{message.role === "user" && (!isEmpty || selectedRecipe) ? (
@@ -284,6 +296,11 @@ export function ChatMessages({
 													CHAT_ACTIONS_VISIBILITY_CLASS,
 												)}
 											>
+												{timestamp ? (
+													<span className="self-center px-1 text-xs text-muted-foreground/70">
+														{timestamp}
+													</span>
+												) : null}
 												{messageText ? (
 													<>
 														<Tooltip>

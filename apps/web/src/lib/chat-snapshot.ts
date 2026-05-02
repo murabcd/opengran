@@ -1,10 +1,15 @@
 import type { UIMessage } from "ai";
 
+type TimestampedUIMessage = UIMessage & {
+	createdAt?: Date | string | number;
+};
+
 export type StoredChatMessage = {
 	id: string;
 	role: "system" | "user" | "assistant";
 	partsJson: string;
 	metadataJson?: string;
+	createdAt?: number;
 };
 
 export const toStoredChatMessages = (
@@ -17,6 +22,7 @@ export const toStoredChatMessages = (
 			? (JSON.parse(message.metadataJson) as UIMessage["metadata"])
 			: undefined,
 		parts: JSON.parse(message.partsJson) as UIMessage["parts"],
+		createdAt: message.createdAt,
 	}));
 
 export const getUIMessageSeedKey = (messages: UIMessage[]) =>
@@ -26,6 +32,7 @@ export const getUIMessageSeedKey = (messages: UIMessage[]) =>
 				id: message.id,
 				role: message.role,
 				parts: message.parts,
+				createdAt: (message as TimestampedUIMessage).createdAt,
 			}),
 		)
 		.join("|");

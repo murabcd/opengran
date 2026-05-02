@@ -132,6 +132,10 @@ import {
 import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import {
+	formatChatMessageTimestamp,
+	getChatMessageTimestamp,
+} from "@/lib/chat-timestamp";
+import {
 	getLastAssistantHasRenderableContent,
 	groupMessagesIntoTurns,
 } from "@/lib/chat-turns";
@@ -1904,6 +1908,9 @@ function NoteChatMessages({
 								isChatLoading &&
 								chatMessage.role === "assistant" &&
 								chatMessage.id === lastMessage?.id;
+							const timestamp = formatChatMessageTimestamp(
+								getChatMessageTimestamp(chatMessage),
+							);
 
 							if (
 								!displayText &&
@@ -2039,6 +2046,11 @@ function NoteChatMessages({
 													</TooltipTrigger>
 													<TooltipContent>Add to note</TooltipContent>
 												</Tooltip>
+												{timestamp ? (
+													<span className="px-1 text-xs text-muted-foreground/70">
+														{timestamp}
+													</span>
+												) : null}
 											</div>
 										) : chatMessage.role === "user" &&
 											(displayText || selectedRecipe) ? (
@@ -2048,6 +2060,11 @@ function NoteChatMessages({
 													CHAT_ACTIONS_VISIBILITY_CLASS,
 												)}
 											>
+												{timestamp ? (
+													<span className="self-center px-1 text-xs text-muted-foreground/70">
+														{timestamp}
+													</span>
+												) : null}
 												{displayText ? (
 													<>
 														<Tooltip>

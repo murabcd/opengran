@@ -56,6 +56,7 @@ const storedUiMessageSnapshotFields = {
 	role: chatRoleValidator,
 	partsJson: v.string(),
 	metadataJson: v.optional(v.string()),
+	createdAt: v.number(),
 };
 
 const storedUiMessageSnapshotValidator = v.object(
@@ -65,7 +66,6 @@ const storedUiMessageSnapshotValidator = v.object(
 const storedUiMessageValidator = v.object({
 	...storedUiMessageSnapshotFields,
 	text: v.string(),
-	createdAt: v.number(),
 });
 
 const chatMessageInputValidator = v.object({
@@ -211,6 +211,7 @@ const toStoredUiMessageSnapshot = (message: Doc<"chatMessages">) => ({
 	role: message.role,
 	partsJson: message.partsJson,
 	metadataJson: message.metadataJson,
+	createdAt: message.createdAt,
 });
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

@@ -490,6 +490,7 @@ export const toStoredChatMessages = (
 		role: "system" | "user" | "assistant";
 		partsJson: string;
 		metadataJson?: string;
+		createdAt?: number;
 	}>,
 ): UIMessage[] =>
 	messages.map((message) => ({
@@ -499,4 +500,5 @@ export const toStoredChatMessages = (
 			? (JSON.parse(message.metadataJson) as UIMessage["metadata"])
 			: undefined,
 		parts: JSON.parse(message.partsJson) as UIMessage["parts"],
+		createdAt: message.createdAt,
 	}));
