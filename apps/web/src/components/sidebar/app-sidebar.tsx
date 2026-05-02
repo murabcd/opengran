@@ -879,6 +879,7 @@ const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 				onOpenChange={handleSearchOpenChange}
 				items={searchItems}
 				projects={searchProjects}
+				showKeyboardHintsFooter
 				onSelectItem={handleSearchSelectItem}
 			/>
 			<SettingsDialog

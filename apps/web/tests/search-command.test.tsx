@@ -1,12 +1,16 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { SearchCommand } from "../src/components/search/search-command";
 
 describe("SearchCommand source filters", () => {
 	beforeAll(() => {
 		window.HTMLElement.prototype.scrollIntoView = vi.fn();
+	});
+
+	afterEach(() => {
+		cleanup();
 	});
 
 	it("separates type filters from folders in the source popover", async () => {
@@ -57,5 +61,24 @@ describe("SearchCommand source filters", () => {
 		expect(screen.getByText("No projects found")).toBeDefined();
 		expect(screen.getByText("Types")).toBeDefined();
 		expect(screen.getByText("Projects")).toBeDefined();
+	});
+
+	it("shows keyboard hints when the footer is enabled", () => {
+		render(
+			<TooltipProvider>
+				<SearchCommand
+					open
+					onOpenChange={vi.fn()}
+					items={[]}
+					projects={[]}
+					showKeyboardHintsFooter
+					onSelectItem={vi.fn()}
+				/>
+			</TooltipProvider>,
+		);
+
+		expect(screen.getByText("navigate")).toBeDefined();
+		expect(screen.getByText("open")).toBeDefined();
+		expect(screen.getByText("close")).toBeDefined();
 	});
 });

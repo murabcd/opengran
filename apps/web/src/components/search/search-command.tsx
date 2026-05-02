@@ -92,6 +92,7 @@ interface SearchCommandProps {
 	groupByDate?: boolean;
 	showResultsOnEmptySearch?: boolean;
 	filterKinds?: SearchCommandKind[];
+	showKeyboardHintsFooter?: boolean;
 }
 
 type SearchFiltersState = {
@@ -494,6 +495,7 @@ export function SearchCommand({
 	groupByDate = true,
 	showResultsOnEmptySearch = true,
 	filterKinds = ["note", "chat"],
+	showKeyboardHintsFooter = false,
 }: SearchCommandProps) {
 	const {
 		sourceFilter,
@@ -641,12 +643,41 @@ export function SearchCommand({
 						)}
 					</CommandList>
 				) : (
-					<div className="flex h-12 items-center px-3 text-muted-foreground text-sm">
+					<div className="flex h-12 items-center px-3 text-muted-foreground text-xs">
 						Type to search for notes
 					</div>
 				)}
+				{showKeyboardHintsFooter ? <SearchCommandKeyboardHints /> : null}
 			</Command>
 		</CommandDialog>
+	);
+}
+
+function SearchCommandKeyboardHints() {
+	const kbdClassName =
+		"border border-border/60 bg-muted px-1.5 font-mono text-xs";
+
+	return (
+		<div className="flex h-11 items-center gap-5 px-4 text-muted-foreground text-xs">
+			<div className="flex items-center gap-2">
+				<Kbd aria-hidden="true" className={kbdClassName}>
+					↑↓
+				</Kbd>
+				<span>navigate</span>
+			</div>
+			<div className="flex items-center gap-2">
+				<Kbd aria-hidden="true" className={kbdClassName}>
+					↵
+				</Kbd>
+				<span>open</span>
+			</div>
+			<div className="flex items-center gap-2">
+				<Kbd aria-hidden="true" className={kbdClassName}>
+					Esc
+				</Kbd>
+				<span>close</span>
+			</div>
+		</div>
 	);
 }
 
