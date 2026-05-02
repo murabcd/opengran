@@ -89,6 +89,7 @@ const MAX_RETURNED_CHAT_MESSAGES = 200;
 const REMOVE_CHAT_MESSAGES_BATCH_SIZE = 100;
 const REMOVE_ALL_CHATS_BATCH_SIZE = 25;
 const NOTE_CHAT_BATCH_SIZE = 25;
+const CONVEX_STORAGE_PATH_SEGMENT = "/api/storage/";
 
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
@@ -212,6 +213,85 @@ const toStoredUiMessageSnapshot = (message: Doc<"chatMessages">) => ({
 	metadataJson: message.metadataJson,
 });
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null;
+
+const getStorageIdFromFilePart = (part: unknown): Id<"_storage"> | null => {
+	if (!isRecord(part) || part.type !== "file") {
+		return null;
+	}
+
+	const providerMetadata = part.providerMetadata;
+	if (isRecord(providerMetadata)) {
+		const opengranMetadata = providerMetadata.opengran;
+		if (
+			isRecord(opengranMetadata) &&
+			typeof opengranMetadata.storageId === "string"
+		) {
+			return opengranMetadata.storageId as Id<"_storage">;
+		}
+	}
+
+	if (typeof part.url !== "string") {
+		return null;
+	}
+
+	try {
+		const url = new URL(part.url);
+		const storagePathIndex = url.pathname.indexOf(CONVEX_STORAGE_PATH_SEGMENT);
+
+		if (storagePathIndex === -1) {
+			return null;
+		}
+
+		const storageId = url.pathname
+			.slice(storagePathIndex + CONVEX_STORAGE_PATH_SEGMENT.length)
+			.split("/")[0];
+
+		return storageId ? (storageId as Id<"_storage">) : null;
+	} catch {
+		return null;
+	}
+};
+
+const getMessageAttachmentStorageIds = (
+	message: Pick<Doc<"chatMessages">, "partsJson">,
+) => {
+	try {
+		const parts = JSON.parse(message.partsJson) as unknown;
+
+		if (!Array.isArray(parts)) {
+			return [];
+		}
+
+		return parts.flatMap((part) => {
+			const storageId = getStorageIdFromFilePart(part);
+			return storageId ? [storageId] : [];
+		});
+	} catch {
+		return [];
+	}
+};
+
+const deleteChatMessageAttachments = async (
+	ctx: MutationCtx,
+	messages: Doc<"chatMessages">[],
+) => {
+	const storageIds = new Set(
+		messages.flatMap((message) => getMessageAttachmentStorageIds(message)),
+	);
+
+	await Promise.all(
+		Array.from(storageIds, async (storageId) => {
+			const metadata = await ctx.db.system.get(storageId);
+
+			if (metadata) {
+				await ctx.storage.delete(storageId);
+			}
+		}),
+	);
+};
+
 const requireOwnedNoteId = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
@@ -258,6 +338,7 @@ const deleteChatMessageBatch = async (
 		.withIndex("by_chatId_and_createdAt", (q) => q.eq("chatId", chatId))
 		.take(REMOVE_CHAT_MESSAGES_BATCH_SIZE);
 
+	await deleteChatMessageAttachments(ctx, messages);
 	await Promise.all(messages.map((message) => ctx.db.delete(message._id)));
 
 	return {

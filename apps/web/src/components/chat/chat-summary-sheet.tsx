@@ -21,6 +21,11 @@ import {
 	EmptyTitle,
 } from "@workspace/ui/components/empty";
 import {
+	HoverCard,
+	HoverCardContent,
+	HoverCardTrigger,
+} from "@workspace/ui/components/hover-card";
+import {
 	Popover,
 	PopoverContent,
 	PopoverTrigger,
@@ -46,6 +51,7 @@ import {
 	ExternalLink,
 	FileText,
 	Globe,
+	Paperclip,
 	Plus,
 	X,
 } from "lucide-react";
@@ -71,6 +77,7 @@ import {
 	SearchCommand,
 	type SearchCommandItem,
 } from "@/components/search/search-command";
+import { extractFileParts } from "@/lib/chat-message";
 import { collectMessageSources, type ToolSource } from "@/lib/chat-sources";
 import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import {
@@ -93,6 +100,12 @@ type SummaryWorkspaceSource = {
 	preview?: string;
 	content?: string;
 	updatedAt?: number;
+};
+
+type SummaryArtifact = {
+	filename?: string;
+	mediaType: string;
+	url: string;
 };
 
 type SummaryTab =
@@ -161,6 +174,20 @@ const collectChatSources = (messages: UIMessage[]): ToolSource[] => {
 	});
 };
 
+const collectChatArtifacts = (messages: UIMessage[]): SummaryArtifact[] => {
+	const artifacts = messages.flatMap((message) => extractFileParts(message));
+	const seen = new Set<string>();
+
+	return artifacts.filter((artifact) => {
+		if (seen.has(artifact.url)) {
+			return false;
+		}
+
+		seen.add(artifact.url);
+		return true;
+	});
+};
+
 export function ChatSummarySheet({
 	open,
 	messages,
@@ -203,6 +230,10 @@ export function ChatSummarySheet({
 			? APP_SIDEBAR_COLLAPSED_WIDTH
 			: APP_SIDEBAR_EXPANDED_WIDTH;
 	const sources = React.useMemo(() => collectChatSources(messages), [messages]);
+	const artifacts = React.useMemo(
+		() => collectChatArtifacts(messages),
+		[messages],
+	);
 	const togglePinned = React.useCallback(() => {
 		setIsPinned((current) => {
 			const nextPinned = !current;
@@ -226,6 +257,7 @@ export function ChatSummarySheet({
 			automation={automation}
 			chatTitle={chatTitle}
 			desktopSafeTop={desktopSafeTop}
+			artifacts={artifacts}
 			sources={sources}
 			workspaceSources={workspaceSources}
 			onAddSource={onAddSource}
@@ -288,6 +320,7 @@ function ChatSummaryPanel({
 	automation,
 	chatTitle,
 	desktopSafeTop,
+	artifacts,
 	sources,
 	workspaceSources,
 	onAddSource,
@@ -299,6 +332,7 @@ function ChatSummaryPanel({
 	automation?: AutomationListItem | null;
 	chatTitle: string;
 	desktopSafeTop: boolean;
+	artifacts: SummaryArtifact[];
 	sources: ToolSource[];
 	workspaceSources: SummaryWorkspaceSource[];
 	onAddSource?: (sourceId: string) => void;
@@ -447,6 +481,7 @@ function ChatSummaryPanel({
 				activeTab={activeTab}
 				automation={automation}
 				chatTitle={chatTitle}
+				artifacts={artifacts}
 				sources={sources}
 			/>
 		</div>
@@ -582,11 +617,13 @@ function SummaryTabContent({
 	activeTab,
 	automation,
 	chatTitle,
+	artifacts,
 	sources,
 }: {
 	activeTab: SummaryTab;
 	automation?: AutomationListItem | null;
 	chatTitle: string;
+	artifacts: SummaryArtifact[];
 	sources: ToolSource[];
 }) {
 	if (activeTab.kind === "automation") {
@@ -633,7 +670,7 @@ function SummaryTabContent({
 		);
 	}
 
-	return <SummaryDefaultContent sources={sources} />;
+	return <SummaryDefaultContent artifacts={artifacts} sources={sources} />;
 }
 
 const automationDateTimeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -831,7 +868,13 @@ function ReadOnlyNoteContent({
 	);
 }
 
-function SummaryDefaultContent({ sources }: { sources: ToolSource[] }) {
+function SummaryDefaultContent({
+	artifacts,
+	sources,
+}: {
+	artifacts: SummaryArtifact[];
+	sources: ToolSource[];
+}) {
 	return (
 		<ScrollArea
 			className="min-h-0 flex-1"
@@ -840,9 +883,54 @@ function SummaryDefaultContent({ sources }: { sources: ToolSource[] }) {
 		>
 			<div className="flex flex-col gap-2 px-3 py-4">
 				<SummarySection title="Artifacts">
-					<p className="px-2 py-1.5 text-xs text-muted-foreground">
-						View and open files
-					</p>
+					{artifacts.length > 0 ? (
+						<div className="flex min-w-0 flex-col gap-0.5 overflow-hidden">
+							{artifacts.map((artifact) => (
+								<HoverCard key={artifact.url} openDelay={150}>
+									<HoverCardTrigger asChild>
+										<button
+											type="button"
+											title={artifact.filename || "Attached file"}
+											className={cn(
+												"group/artifact flex h-8 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-md px-2 text-sm text-muted-foreground transition-colors",
+												"hover:bg-accent/50 hover:text-foreground",
+											)}
+										>
+											<Paperclip className="size-3.5 shrink-0" />
+											<span className="min-w-0 flex-1 basis-0 truncate">
+												{artifact.filename || "Attached file"}
+											</span>
+										</button>
+									</HoverCardTrigger>
+									<HoverCardContent
+										align="start"
+										side="left"
+										className={
+											artifact.mediaType.startsWith("image/")
+												? "w-auto max-w-80 border-0 bg-transparent p-0 shadow-none ring-0"
+												: "w-64"
+										}
+									>
+										{artifact.mediaType.startsWith("image/") ? (
+											<img
+												src={artifact.url}
+												alt={artifact.filename || "Attached image"}
+												className="block max-h-80 max-w-80 rounded-lg object-contain shadow-md ring-1 ring-foreground/10"
+											/>
+										) : (
+											<div className="flex h-28 items-center justify-center bg-muted/40 text-muted-foreground">
+												<Paperclip className="size-6" />
+											</div>
+										)}
+									</HoverCardContent>
+								</HoverCard>
+							))}
+						</div>
+					) : (
+						<p className="px-2 py-1.5 text-xs text-muted-foreground">
+							View and open files
+						</p>
+					)}
 				</SummarySection>
 				<SummarySection title="Sources">
 					{sources.length > 0 ? (

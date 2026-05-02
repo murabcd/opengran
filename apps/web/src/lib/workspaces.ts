@@ -14,7 +14,7 @@ const workspaceRoleValues = [
 	"customer-facing",
 ] as const;
 
-export type WorkspaceRole = (typeof workspaceRoleValues)[number];
+type WorkspaceRole = (typeof workspaceRoleValues)[number];
 
 type WorkspaceRoleOption = {
 	value: WorkspaceRole;

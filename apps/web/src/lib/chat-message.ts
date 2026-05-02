@@ -17,6 +17,14 @@ export const extractTextParts = (message: UIMessage) =>
 			part.text.length > 0,
 	);
 
+export const extractFileParts = (message: UIMessage) =>
+	message.parts.filter(
+		(part): part is Extract<(typeof message.parts)[number], { type: "file" }> =>
+			part.type === "file" &&
+			typeof part.url === "string" &&
+			part.url.length > 0,
+	);
+
 export const getChatText = (message: UIMessage) =>
 	extractTextParts(message)
 		.map((part) => part.text)

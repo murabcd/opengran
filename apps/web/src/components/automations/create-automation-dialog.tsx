@@ -54,7 +54,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { useQuery } from "convex/react";
-import { AtSign, Clock, FileText, Grid3x3, Link2, X } from "lucide-react";
+import { AtSign, Clock, FileText, Grid3x3, Workflow, X } from "lucide-react";
 import * as React from "react";
 import {
 	AUTOMATION_SCHEDULE_PERIODS,
@@ -693,7 +693,7 @@ function AppSourcesPicker({
 					className={cn(AUTOMATION_PICKER_TRIGGER_CLASS_NAME)}
 				>
 					<span className="flex min-w-0 flex-1 items-center gap-2">
-						<Link2 className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
+						<Workflow className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
 						<span className="min-w-0 truncate">{label}</span>
 					</span>
 				</InputGroupButton>

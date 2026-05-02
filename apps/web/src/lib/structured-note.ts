@@ -1,13 +1,11 @@
 import type { JSONContent } from "@tiptap/core";
 
-export type StructuredNoteSection = {
-	title: string;
-	items: string[];
-};
-
 export type StructuredNoteBody = {
 	overview: string[];
-	sections: StructuredNoteSection[];
+	sections: Array<{
+		title: string;
+		items: string[];
+	}>;
 };
 
 export type StructuredNote = StructuredNoteBody & {

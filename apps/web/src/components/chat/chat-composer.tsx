@@ -59,6 +59,12 @@ import {
 	X,
 } from "lucide-react";
 import * as React from "react";
+import {
+	type ChatAttachment,
+	FileAttachmentButton,
+	FileAttachmentChips,
+	hasUploadingAttachments,
+} from "@/components/ai-elements/file-attachment-controls";
 import { chatModels } from "@/lib/ai/models";
 import { getAvatarSrc } from "@/lib/avatar";
 import {
@@ -132,6 +138,8 @@ type ChatComposerProps = {
 	onCancelEdit?: () => void;
 	onSubmit: () => void | Promise<void>;
 	onStop: () => void;
+	attachedFiles: ChatAttachment[];
+	onAttachedFilesChange: React.Dispatch<React.SetStateAction<ChatAttachment[]>>;
 	isLoading: boolean;
 	selectedModel: (typeof chatModels)[number];
 	modelPopoverOpen: boolean;
@@ -177,6 +185,8 @@ export function ChatComposer({
 	onCancelEdit,
 	onSubmit,
 	onStop,
+	attachedFiles,
+	onAttachedFilesChange,
 	isLoading,
 	selectedModel,
 	modelPopoverOpen,
@@ -268,6 +278,39 @@ export function ChatComposer({
 		},
 		[onDocumentSearchTermChange, onDraftChange, onMentionPopoverOpenChange],
 	);
+	const handlePromptKeyDown = React.useCallback(
+		(event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+			if (event.key === "@" || (event.shiftKey && event.code === "Digit2")) {
+				if (event.metaKey || event.ctrlKey || event.altKey) {
+					onDraftKeyDown(event);
+					return;
+				}
+
+				const selectionStart = event.currentTarget.selectionStart;
+				const selectionEnd = event.currentTarget.selectionEnd;
+				const nextDraft = `${event.currentTarget.value.slice(0, selectionStart)}@${event.currentTarget.value.slice(selectionEnd)}`;
+				const mentionRange = findNoteMentionRange(
+					nextDraft,
+					selectionStart + 1,
+				);
+
+				if (mentionRange) {
+					event.preventDefault();
+					noteMentionRangeRef.current = {
+						start: selectionStart,
+						end: selectionStart,
+						query: "",
+					};
+					onDocumentSearchTermChange("");
+					onMentionPopoverOpenChange(true);
+					return;
+				}
+			}
+
+			onDraftKeyDown(event);
+		},
+		[onDocumentSearchTermChange, onDraftKeyDown, onMentionPopoverOpenChange],
+	);
 	const handleAddMention = React.useCallback(
 		(pageId: string) => {
 			const noteMentionRange = noteMentionRangeRef.current;
@@ -312,8 +355,14 @@ export function ChatComposer({
 						useCompactLayout={useCompactLayout}
 						mentionedPages={mentionedPages}
 						selectedWorkspaceSources={selectedWorkspaceSourceChips}
+						attachedFiles={attachedFiles}
 						onRemoveMention={onRemoveMention}
 						onRemoveSelectedSource={onToggleSource}
+						onRemoveAttachedFile={(index) =>
+							onAttachedFilesChange(
+								attachedFiles.filter((_, fileIndex) => fileIndex !== index),
+							)
+						}
 						mentionPicker={
 							<MentionPicker
 								open={mentionPopoverOpen}
@@ -335,7 +384,7 @@ export function ChatComposer({
 					id="chat-prompt"
 					value={draft}
 					onChange={handleDraftChange}
-					onKeyDown={onDraftKeyDown}
+					onKeyDown={handlePromptKeyDown}
 					rows={useCompactLayout ? 1 : 3}
 					placeholder="Ask, search, or make anything..."
 					className={`${useCompactLayout ? "min-h-[40px] pt-2 pb-0" : "min-h-[64px] pt-2"} max-h-[24rem] overflow-y-auto px-4 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0`}
@@ -344,7 +393,9 @@ export function ChatComposer({
 				<ChatComposerFooter
 					useCompactLayout={useCompactLayout}
 					draft={draft}
+					attachedFiles={attachedFiles}
 					isLoading={isLoading}
+					onAttachedFilesChange={onAttachedFilesChange}
 					onSubmit={onSubmit}
 					onStop={onStop}
 					modelPicker={
@@ -478,9 +529,9 @@ function MentionPicker({
 				>
 					<PopoverTrigger asChild>
 						<InputGroupButton
-							variant="outline"
+							variant="ghost"
 							size="icon-sm"
-							className="rounded-full text-muted-foreground transition-transform hover:text-foreground"
+							className="rounded-full bg-transparent text-muted-foreground transition-transform hover:bg-muted hover:text-foreground"
 						>
 							<AtSign />
 							<span className="sr-only">Mention a page</span>
@@ -580,15 +631,19 @@ function ChatComposerTopAddon({
 	useCompactLayout,
 	mentionedPages,
 	selectedWorkspaceSources,
+	attachedFiles,
 	onRemoveMention,
 	onRemoveSelectedSource,
+	onRemoveAttachedFile,
 	mentionPicker,
 }: {
 	useCompactLayout: boolean;
 	mentionedPages: ContextPage[];
 	selectedWorkspaceSources: WorkspaceSource[];
+	attachedFiles: ChatAttachment[];
 	onRemoveMention: (pageId: string) => void;
 	onRemoveSelectedSource: (sourceId: string) => void;
+	onRemoveAttachedFile: (index: number) => void;
 	mentionPicker: React.ReactNode;
 }) {
 	return (
@@ -609,6 +664,10 @@ function ChatComposerTopAddon({
 					onRemoveSelectedSource={onRemoveSelectedSource}
 				/>
 			) : null}
+			<FileAttachmentChips
+				files={attachedFiles}
+				onRemove={onRemoveAttachedFile}
+			/>
 		</InputGroupAddon>
 	);
 }
@@ -668,7 +727,9 @@ function ChatComposerSelectedSourceChips({
 function ChatComposerFooter({
 	useCompactLayout,
 	draft,
+	attachedFiles,
 	isLoading,
+	onAttachedFilesChange,
 	onSubmit,
 	onStop,
 	modelPicker,
@@ -676,7 +737,9 @@ function ChatComposerFooter({
 }: {
 	useCompactLayout: boolean;
 	draft: string;
+	attachedFiles: ChatAttachment[];
 	isLoading: boolean;
+	onAttachedFilesChange: React.Dispatch<React.SetStateAction<ChatAttachment[]>>;
 	onSubmit: () => void | Promise<void>;
 	onStop: () => void;
 	modelPicker: React.ReactNode;
@@ -687,6 +750,31 @@ function ChatComposerFooter({
 			align="block-end"
 			className={`gap-1 px-4 ${useCompactLayout ? "pb-2.5" : "pb-4"}`}
 		>
+			<FileAttachmentButton
+				disabled={isLoading}
+				onFileUploadFailed={(id) =>
+					onAttachedFilesChange((files) =>
+						files.filter((file) => file.id !== id),
+					)
+				}
+				onFileUploaded={(id, uploadedFile) =>
+					onAttachedFilesChange((files) =>
+						files.map((file) =>
+							file.id === id
+								? {
+										...file,
+										localUrl: undefined,
+										uploadStatus: "ready",
+										url: uploadedFile.url,
+									}
+								: file,
+						),
+					)
+				}
+				onFilesAdded={(files) =>
+					onAttachedFilesChange((currentFiles) => [...currentFiles, ...files])
+				}
+			/>
 			{modelPicker}
 			{scopePicker}
 			<InputGroupButton
@@ -694,7 +782,11 @@ function ChatComposerFooter({
 				className="ml-auto rounded-full"
 				variant="default"
 				size="icon-sm"
-				disabled={!isLoading && !draft.trim()}
+				disabled={
+					!isLoading &&
+					((!draft.trim() && attachedFiles.length === 0) ||
+						hasUploadingAttachments(attachedFiles))
+				}
 				onClick={() => {
 					if (isLoading) {
 						onStop();
@@ -862,12 +954,17 @@ function ScopePicker({
 				</DropdownMenuGroup>
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
+					<label className="sr-only" htmlFor="apps">
+						Apps and integrations
+					</label>
 					<DropdownMenuItem
 						asChild
 						onSelect={(event) => event.preventDefault()}
 					>
 						<label htmlFor="apps">
-							<Grid3x3 /> Tools and integrations
+							<Grid3x3 aria-hidden="true" />
+							<span aria-hidden="true">Tools and integrations</span>
+							<span className="sr-only">Apps and integrations</span>
 							<Switch
 								id="apps"
 								className="ml-auto"
@@ -944,8 +1041,13 @@ function ScopePicker({
 				</DropdownMenuGroup>
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
-					<DropdownMenuItem onClick={onOpenConnectionsSettings}>
-						<Plus /> Connect tools
+					<DropdownMenuItem
+						aria-label="Connect apps"
+						onClick={onOpenConnectionsSettings}
+					>
+						<Plus aria-hidden="true" />
+						<span aria-hidden="true">Connect tools</span>
+						<span className="sr-only">Connect apps</span>
 					</DropdownMenuItem>
 				</DropdownMenuGroup>
 			</DropdownMenuContent>

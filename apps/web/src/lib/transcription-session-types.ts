@@ -8,23 +8,13 @@ import {
 	type TranscriptUtterance,
 } from "@/lib/transcript";
 
-export type TranscriptionControllerPhase =
-	| "idle"
-	| "starting"
-	| "listening"
-	| "reconnecting"
-	| "stopping"
-	| "failed";
-
-export type TranscriptionControllerErrorCode =
-	| "permission_denied"
-	| "device_unavailable"
-	| "connection_failed"
-	| "configuration_failed"
-	| "unknown";
-
 export type TranscriptionControllerError = {
-	code: TranscriptionControllerErrorCode;
+	code:
+		| "permission_denied"
+		| "device_unavailable"
+		| "connection_failed"
+		| "configuration_failed"
+		| "unknown";
 	message: string;
 };
 
@@ -35,7 +25,13 @@ export type TranscriptionControllerState = {
 	isConnecting: boolean;
 	isListening: boolean;
 	liveTranscript: LiveTranscriptState;
-	phase: TranscriptionControllerPhase;
+	phase:
+		| "idle"
+		| "starting"
+		| "listening"
+		| "reconnecting"
+		| "stopping"
+		| "failed";
 	recoveryStatus: TranscriptRecoveryStatus;
 	scopeKey: string | null;
 	systemAudioStatus: SystemAudioCaptureStatus;

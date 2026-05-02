@@ -1,12 +1,28 @@
 import { Button } from "@workspace/ui/components/button";
 import {
+	Dialog,
+	DialogClose,
+	DialogContent,
+	DialogDescription,
+	DialogTitle,
+} from "@workspace/ui/components/dialog";
+import {
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
-import { Copy, PenLine, Plus, RotateCcw, Trash2 } from "lucide-react";
+import {
+	Copy,
+	Paperclip,
+	PenLine,
+	Plus,
+	RotateCcw,
+	Trash2,
+	X,
+} from "lucide-react";
+import * as React from "react";
 import { toast } from "sonner";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
 import {
@@ -25,6 +41,7 @@ import {
 } from "@/components/chat/message-layout";
 import { ChatRecipeReceipt } from "@/components/chat/recipe-receipt";
 import {
+	extractFileParts,
 	extractTextParts,
 	getChatMessageMetadata,
 	getChatText,
@@ -59,6 +76,7 @@ export function ChatMessages({
 		<div className="space-y-4 pb-9">
 			{messages.map((message) => {
 				const textParts = extractTextParts(message);
+				const fileParts = extractFileParts(message);
 				const renderedText = textParts.map((part) => part.text).join("\n\n");
 				const metadata = getChatMessageMetadata(message);
 				const selectedRecipe = metadata?.recipe ?? null;
@@ -72,7 +90,12 @@ export function ChatMessages({
 					message.id === lastMessage?.id;
 				const isEmpty = displayText.length === 0;
 
-				if (isEmpty && !selectedRecipe && !isStreamingAssistantMessage) {
+				if (
+					isEmpty &&
+					fileParts.length === 0 &&
+					!selectedRecipe &&
+					!isStreamingAssistantMessage
+				) {
 					return null;
 				}
 
@@ -97,6 +120,7 @@ export function ChatMessages({
 									recipe={selectedRecipe}
 								/>
 							) : null}
+							<ChatMessageFileAttachments files={fileParts} />
 							{isStreamingAssistantMessage || displayText ? (
 								<div className="mt-2 flex flex-row items-start gap-2 first:mt-0">
 									<div
@@ -299,5 +323,97 @@ export function ChatMessages({
 				<p className="px-4 text-sm text-destructive">{error.message}</p>
 			) : null}
 		</div>
+	);
+}
+
+export function ChatMessageFileAttachments({
+	files,
+}: {
+	files: ReturnType<typeof extractFileParts>;
+}) {
+	const [previewImage, setPreviewImage] = React.useState<
+		ReturnType<typeof extractFileParts>[number] | null
+	>(null);
+
+	if (files.length === 0) {
+		return null;
+	}
+
+	return (
+		<>
+			<div className="mt-2 flex max-w-full flex-wrap gap-2 first:mt-0">
+				{files.map((file) =>
+					file.mediaType.startsWith("image/") ? (
+						<button
+							key={file.url}
+							type="button"
+							className="size-24 cursor-zoom-in overflow-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							onClick={() => setPreviewImage(file)}
+						>
+							<img
+								src={file.url}
+								alt={file.filename || "Attached image"}
+								className="size-full object-cover"
+							/>
+						</button>
+					) : (
+						<button
+							key={file.url}
+							type="button"
+							className="flex size-24 items-center justify-center rounded-md border border-border/50 bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+						>
+							<Paperclip className="size-5" />
+							<span className="sr-only">
+								{file.filename || "Attached file"}
+							</span>
+						</button>
+					),
+				)}
+			</div>
+			<Dialog
+				open={previewImage !== null}
+				onOpenChange={(open) => {
+					if (!open) {
+						setPreviewImage(null);
+					}
+				}}
+			>
+				<DialogContent
+					showCloseButton={false}
+					className="!top-0 !left-0 !flex !h-screen !w-screen !max-w-none !translate-x-0 !translate-y-0 items-center justify-center !rounded-none !border-0 !bg-transparent p-10 !shadow-none !ring-0 sm:!max-w-none"
+					onPointerDown={(event) => {
+						if (event.target === event.currentTarget) {
+							setPreviewImage(null);
+						}
+					}}
+				>
+					<DialogTitle className="sr-only">
+						{previewImage?.filename || "Attached image preview"}
+					</DialogTitle>
+					<DialogDescription className="sr-only">
+						Image attachment preview.
+					</DialogDescription>
+					<DialogClose asChild>
+						<Button
+							type="button"
+							variant="secondary"
+							size="icon"
+							className="fixed top-4 right-4 z-10 size-11 rounded-full"
+						>
+							<X className="size-6" />
+							<span className="sr-only">Close</span>
+						</Button>
+					</DialogClose>
+					{previewImage ? (
+						<img
+							src={previewImage.url}
+							alt={previewImage.filename || "Attached image"}
+							className="block max-h-[calc(100vh-8rem)] max-w-[calc(100vw-8rem)] rounded-lg object-contain"
+							onPointerDown={(event) => event.stopPropagation()}
+						/>
+					) : null}
+				</DialogContent>
+			</Dialog>
+		</>
 	);
 }

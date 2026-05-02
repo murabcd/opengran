@@ -82,11 +82,11 @@ import {
 	Database,
 	FolderKanban,
 	ImageUp,
-	Link2,
 	LoaderCircle,
 	Paintbrush,
 	SlidersHorizontal,
 	UserRound,
+	Workflow,
 } from "lucide-react";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -148,7 +148,7 @@ const settingsNav = [
 	{ name: "Notifications", icon: Bell },
 	{ name: "Workspace", icon: FolderKanban },
 	{ name: "Calendar", icon: CalendarDays },
-	{ name: "Connections", icon: Link2 },
+	{ name: "Connections", icon: Workflow },
 	{ name: "Data controls", icon: Database },
 ] as const;
 

@@ -69,9 +69,9 @@ import {
 	Redo2,
 	Star,
 	StarOff,
+	TextSearch,
 	Trash2,
 	Undo2,
-	Workflow,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -2368,7 +2368,7 @@ function ChatHeaderActions({
 							window.dispatchEvent(new Event(OPEN_CHAT_SUMMARY_EVENT));
 						}}
 					>
-						<Workflow className="size-4" />
+						<TextSearch className="size-4" />
 					</Button>
 				</TooltipTrigger>
 				<TooltipContent>Open summary</TooltipContent>

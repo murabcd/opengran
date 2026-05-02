@@ -18,6 +18,12 @@ import { useMutation, useQuery } from "convex/react";
 import { ArrowDown, FileText } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import {
+	type ChatAttachment,
+	getReadyFileParts,
+	hasUploadingAttachments,
+	useRevokeAttachmentObjectUrls,
+} from "@/components/ai-elements/file-attachment-controls";
 import type { AutomationListItem } from "@/components/automations/automation-types";
 import {
 	ChatSummarySheet,
@@ -99,6 +105,10 @@ const useChatPageController = ({
 >) => {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const [draft, setDraft] = React.useState("");
+	const [attachedFiles, setAttachedFiles] = React.useState<ChatAttachment[]>(
+		[],
+	);
+	useRevokeAttachmentObjectUrls(attachedFiles);
 	const [confirmTrashChatId, setConfirmTrashChatId] = React.useState<
 		string | null
 	>(null);
@@ -324,7 +334,11 @@ const useChatPageController = ({
 	const handleSubmit = React.useCallback(async () => {
 		const value = draft.trim();
 
-		if (!value || isLoading) {
+		if (
+			(!value && attachedFiles.length === 0) ||
+			hasUploadingAttachments(attachedFiles) ||
+			isLoading
+		) {
 			return;
 		}
 
@@ -333,12 +347,15 @@ const useChatPageController = ({
 		try {
 			const convexToken = await getCachedConvexToken();
 			onChatPersisted?.(chatId);
+			const readyFiles = getReadyFileParts(attachedFiles);
+			const filePayload = readyFiles.length > 0 ? { files: readyFiles } : {};
 			const nextOutgoingMessage = editingMessageId
 				? {
 						messageId: editingMessageId,
 						text: value,
+						...filePayload,
 					}
-				: { text: value };
+				: { text: value, ...filePayload };
 
 			void sendMessage(nextOutgoingMessage, {
 				body: {
@@ -353,12 +370,14 @@ const useChatPageController = ({
 			});
 			setEditingMessageId(null);
 			setDraft("");
+			setAttachedFiles([]);
 		} finally {
 			setIsPreparingRequest(false);
 		}
 	}, [
 		activeWorkspaceId,
 		appsEnabled,
+		attachedFiles,
 		chatId,
 		draft,
 		editingMessageId,
@@ -435,6 +454,7 @@ const useChatPageController = ({
 
 			setEditingMessageId(messageId);
 			setDraft(text);
+			setAttachedFiles([]);
 		},
 		[isLoading, stop],
 	);
@@ -442,6 +462,7 @@ const useChatPageController = ({
 	const handleCancelEdit = React.useCallback(() => {
 		setEditingMessageId(null);
 		setDraft("");
+		setAttachedFiles([]);
 	}, []);
 
 	const buildRequestBody = React.useCallback(async () => {
@@ -532,6 +553,8 @@ const useChatPageController = ({
 		error,
 		activeWorkspace,
 		handleClearSelectedSources: () => setSelectedSourceIds([]),
+		attachedFiles,
+		setAttachedFiles,
 		handleDraftKeyDown,
 		handleMoveChatToTrash,
 		handleSubmit,
@@ -730,6 +753,8 @@ export function ChatPage({
 			onDraftKeyDown={controller.handleDraftKeyDown}
 			onSubmit={controller.handleSubmit}
 			onStop={controller.stop}
+			attachedFiles={controller.attachedFiles}
+			onAttachedFilesChange={controller.setAttachedFiles}
 			isLoading={controller.isLoading}
 			selectedModel={controller.selectedModel}
 			modelPopoverOpen={controller.modelPopoverOpen}

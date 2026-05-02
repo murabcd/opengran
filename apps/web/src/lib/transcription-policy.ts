@@ -4,10 +4,8 @@ import {
 	type SystemAudioCaptureStatus,
 } from "@/lib/transcript";
 
-export type TranscriptionPlatform = "browser" | "desktop";
-
 export type TranscriptionPolicy = {
-	platform: TranscriptionPlatform;
+	platform: "browser" | "desktop";
 	systemAudioCapability: {
 		isSupported: boolean;
 		sourceMode: SystemAudioCaptureSourceMode;

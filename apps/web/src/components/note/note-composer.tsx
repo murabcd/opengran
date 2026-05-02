@@ -59,14 +59,14 @@ import { useConvex, useMutation, useQuery } from "convex/react";
 import {
 	ArrowDown,
 	ArrowUp,
+	AtSign,
 	AudioWaveform,
 	Check,
 	ChevronUp,
 	Copy,
-	ListMinus,
 	LoaderCircle,
 	Minus,
-	PanelBottomDashed,
+	PanelBottom,
 	PanelRight,
 	PanelRightDashed,
 	PenLine,
@@ -80,6 +80,14 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import {
+	type ChatAttachment,
+	FileAttachmentButton,
+	FileAttachmentChips,
+	getReadyFileParts,
+	hasUploadingAttachments,
+	useRevokeAttachmentObjectUrls,
+} from "@/components/ai-elements/file-attachment-controls";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
 import { CollapsibleMessageContent } from "@/components/chat/collapsible-message-content";
 import {
@@ -89,6 +97,7 @@ import {
 	getChatMessageJustifyClass,
 	USER_CHAT_BUBBLE_CLASS,
 } from "@/components/chat/message-layout";
+import { ChatMessageFileAttachments } from "@/components/chat/messages";
 import { ChatRecipeReceipt } from "@/components/chat/recipe-receipt";
 import {
 	COMPOSER_DOCK_BOTTOM_OFFSET,
@@ -111,7 +120,11 @@ import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
 import { getChatModel, NOTE_CHAT_MODEL_ID } from "@/lib/ai/models";
-import { getChatMessageMetadata, getChatText } from "@/lib/chat-message";
+import {
+	extractFileParts,
+	getChatMessageMetadata,
+	getChatText,
+} from "@/lib/chat-message";
 import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
@@ -291,6 +304,31 @@ const groupChatsForSelector = (chats: NoteChatSummary[]) => {
 	);
 };
 
+const findRecipeTriggerRange = (value: string, cursorPosition: number) => {
+	const textBeforeCursor = value.slice(0, cursorPosition);
+	const triggerStart = textBeforeCursor.lastIndexOf("@");
+
+	if (triggerStart === -1) {
+		return null;
+	}
+
+	const characterBeforeTrigger = value[triggerStart - 1];
+	if (characterBeforeTrigger && !/\s/.test(characterBeforeTrigger)) {
+		return null;
+	}
+
+	const triggerText = value.slice(triggerStart + 1, cursorPosition);
+	if (/\s/.test(triggerText)) {
+		return null;
+	}
+
+	return {
+		start: triggerStart,
+		end: cursorPosition,
+		query: triggerText,
+	};
+};
+
 const createDraftChatId = (): string => crypto.randomUUID();
 
 const resolveStateUpdate = <T,>(
@@ -396,6 +434,10 @@ const useNoteComposerController = ({
 	const [editingMessageId, setEditingMessageId] = React.useState<string | null>(
 		null,
 	);
+	const [attachedFiles, setAttachedFiles] = React.useState<ChatAttachment[]>(
+		[],
+	);
+	useRevokeAttachmentObjectUrls(attachedFiles);
 	const rootRef = React.useRef<HTMLDivElement>(null);
 	const inlinePanelRef = React.useRef<HTMLDivElement>(null);
 	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -980,7 +1022,8 @@ const useNoteComposerController = ({
 	);
 	const selectedRecipe =
 		recipes.find((recipe) => recipe.slug === selectedRecipeSlug) ?? null;
-	const canSendMessage = hasMessage || selectedRecipe !== null;
+	const canSendMessage =
+		hasMessage || selectedRecipe !== null || attachedFiles.length > 0;
 
 	const setRightSidebarOpen = React.useCallback(
 		(open: boolean) => {
@@ -1048,6 +1091,7 @@ const useNoteComposerController = ({
 		setMessages([]);
 		setEditingMessageId(null);
 		setMessage("");
+		setAttachedFiles([]);
 		setIsExpanded(false);
 		setPanelMode(null);
 		setSelectedRecipeSlug(null);
@@ -1214,7 +1258,11 @@ const useNoteComposerController = ({
 	const handleSend = React.useCallback(async () => {
 		const nextMessage = message.trim();
 
-		if ((!nextMessage && !selectedRecipe) || isChatLoading) {
+		if (
+			(!nextMessage && !selectedRecipe && attachedFiles.length === 0) ||
+			hasUploadingAttachments(attachedFiles) ||
+			isChatLoading
+		) {
 			return;
 		}
 
@@ -1248,19 +1296,23 @@ const useNoteComposerController = ({
 					}
 				: undefined;
 			const outgoingText = nextMessage || selectedRecipe?.name || "";
+			const readyFiles = getReadyFileParts(attachedFiles);
+			const filePayload = readyFiles.length > 0 ? { files: readyFiles } : {};
 			const nextOutgoingMessage = editingMessageId
 				? {
 						messageId: editingMessageId,
 						text: outgoingText,
 						metadata: recipeMetadata,
+						...filePayload,
 					}
-				: { text: outgoingText, metadata: recipeMetadata };
+				: { text: outgoingText, metadata: recipeMetadata, ...filePayload };
 
 			void sendMessage(nextOutgoingMessage, {
 				body: requestBody,
 			});
 			setEditingMessageId(null);
 			setMessage("");
+			setAttachedFiles([]);
 			setSelectedRecipeSlug(null);
 			setIsExpanded(false);
 			resetTextareaHeight();
@@ -1269,6 +1321,7 @@ const useNoteComposerController = ({
 		}
 	}, [
 		isChatLoading,
+		attachedFiles,
 		message,
 		openRightSidebar,
 		presentationMode,
@@ -1295,6 +1348,28 @@ const useNoteComposerController = ({
 	};
 
 	const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+		if (event.key === "@" || (event.shiftKey && event.code === "Digit2")) {
+			if (event.metaKey || event.ctrlKey || event.altKey) {
+				return;
+			}
+
+			const selectionStart = event.currentTarget.selectionStart;
+			const selectionEnd = event.currentTarget.selectionEnd;
+			const nextValue = `${event.currentTarget.value.slice(0, selectionStart)}@${event.currentTarget.value.slice(selectionEnd)}`;
+			const triggerRange = findRecipeTriggerRange(
+				nextValue,
+				selectionStart + 1,
+			);
+
+			if (!triggerRange) {
+				return;
+			}
+
+			event.preventDefault();
+			setRecipePopoverOpen(true);
+			return;
+		}
+
 		if (
 			event.key !== "Enter" ||
 			event.shiftKey ||
@@ -1328,6 +1403,7 @@ const useNoteComposerController = ({
 
 			setEditingMessageId(messageId);
 			setMessage(text);
+			setAttachedFiles([]);
 			setIsExpanded(text.length > 100 || text.includes("\n"));
 			resizeTextarea();
 			focusComposerInput();
@@ -1338,6 +1414,7 @@ const useNoteComposerController = ({
 	const handleCancelEdit = React.useCallback(() => {
 		setEditingMessageId(null);
 		setMessage("");
+		setAttachedFiles([]);
 		setIsExpanded(false);
 		resetTextareaHeight();
 		focusComposerInput();
@@ -1370,6 +1447,7 @@ const useNoteComposerController = ({
 			);
 			setEditingMessageId(null);
 			setMessage("");
+			setAttachedFiles([]);
 			setIsExpanded(false);
 			resetTextareaHeight();
 
@@ -1561,6 +1639,8 @@ const useNoteComposerController = ({
 		handleTextareaChange,
 		hasMessage,
 		canSendMessage,
+		attachedFiles,
+		setAttachedFiles,
 		isTranscriptViewportAtBottom:
 			transcriptSession.isTranscriptViewportAtBottom,
 		systemAudioStatus: transcriptSession.systemAudioStatus,
@@ -1654,22 +1734,25 @@ function NoteSpeechControls({
 			: undefined;
 
 	return (
-		<div className="flex items-center gap-1">
+		<div className="group/speech-controls flex items-center gap-1">
 			<SpeechInput
-				variant="outline"
+				variant="ghost"
 				size="icon-sm"
 				autoStartKey={autoStartKey}
 				disabled={!transcriptionLanguageReady}
 				lang={speechLanguage}
 				scopeKey={currentNoteScopeKey}
-				className="shrink-0 rounded-full border-input/50 !text-muted-foreground shadow-none hover:!text-foreground"
+				className="shrink-0 rounded-full bg-transparent !text-muted-foreground shadow-none hover:bg-muted hover:!text-foreground"
 			/>
 
 			<Button
 				type="button"
 				variant="ghost"
 				size="icon-sm"
-				className="shrink-0 rounded-full bg-transparent text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+				className={cn(
+					"shrink-0 rounded-full bg-transparent text-muted-foreground opacity-0 shadow-none transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover/speech-controls:opacity-100 group-focus-within/speech-controls:opacity-100",
+					isTranscriptOpen && "opacity-100",
+				)}
 				aria-label="Expand speech controls"
 				onClick={onToggleTranscript}
 			>
@@ -1780,6 +1863,7 @@ function NoteChatMessages({
 		>
 			{chatMessages.map((chatMessage) => {
 				const text = getChatText(chatMessage);
+				const fileParts = extractFileParts(chatMessage);
 				const metadata = getChatMessageMetadata(chatMessage);
 				const selectedRecipe = metadata?.recipe ?? null;
 				const displayText = metadata?.recipeOnly ? "" : text;
@@ -1788,7 +1872,12 @@ function NoteChatMessages({
 					chatMessage.role === "assistant" &&
 					chatMessage.id === chatMessages[chatMessages.length - 1]?.id;
 
-				if (!displayText && !selectedRecipe && !isStreamingAssistantMessage) {
+				if (
+					!displayText &&
+					fileParts.length === 0 &&
+					!selectedRecipe &&
+					!isStreamingAssistantMessage
+				) {
 					return null;
 				}
 
@@ -1813,6 +1902,7 @@ function NoteChatMessages({
 									recipe={selectedRecipe}
 								/>
 							) : null}
+							<ChatMessageFileAttachments files={fileParts} />
 							{isStreamingAssistantMessage || displayText ? (
 								<div
 									className={cn(
@@ -2026,7 +2116,7 @@ export function NoteChatHeader({
 }) {
 	const chatModeIcon =
 		presentationMode === "inline" ? (
-			<PanelBottomDashed className="size-4" />
+			<PanelBottom className="size-4" />
 		) : presentationMode === "floating" ? (
 			<PanelRightDashed className="size-4" />
 		) : (
@@ -2176,7 +2266,7 @@ export function NoteChatHeader({
 							onSelect={onSelectInlinePresentation}
 							className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2"
 						>
-							<PanelBottomDashed className="size-4 text-muted-foreground" />
+							<PanelBottom className="size-4 text-muted-foreground" />
 							<span>Inline</span>
 							{presentationMode === "inline" ? (
 								<Check className="size-4 text-muted-foreground" />
@@ -2297,6 +2387,8 @@ function ChatInlinePopoverFooter({
 	onStop,
 	status,
 	message,
+	attachedFiles,
+	onAttachedFilesChange,
 	onRecipePopoverOpenChange,
 	onRecipeRemove,
 	onRecipeSelect,
@@ -2320,6 +2412,8 @@ function ChatInlinePopoverFooter({
 		isSidebarCompact: boolean;
 	};
 	message: string;
+	attachedFiles: ChatAttachment[];
+	onAttachedFilesChange: React.Dispatch<React.SetStateAction<ChatAttachment[]>>;
 	onRecipePopoverOpenChange: (open: boolean) => void;
 	onRecipeRemove: () => void;
 	onRecipeSelect: (recipeSlug: RecipeSlug) => void;
@@ -2342,11 +2436,11 @@ function ChatInlinePopoverFooter({
 		<InputGroupButton
 			aria-hidden="true"
 			tabIndex={-1}
-			variant="outline"
+			variant="ghost"
 			size="icon-sm"
 			className="pointer-events-none invisible rounded-full"
 		>
-			<ListMinus className="size-3.5" />
+			<AtSign className="size-3.5" />
 		</InputGroupButton>
 	);
 	const recipePicker = (
@@ -2355,12 +2449,12 @@ function ChatInlinePopoverFooter({
 				<TooltipTrigger asChild>
 					<PopoverTrigger asChild>
 						<InputGroupButton
-							variant="outline"
+							variant="ghost"
 							size="icon-sm"
-							className="rounded-full text-muted-foreground hover:text-foreground"
+							className="rounded-full bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
 							disabled={isRecipeLoading}
 						>
-							<ListMinus className="size-3.5" />
+							<AtSign className="size-3.5" />
 						</InputGroupButton>
 					</PopoverTrigger>
 				</TooltipTrigger>
@@ -2428,6 +2522,14 @@ function ChatInlinePopoverFooter({
 						<X className="opacity-0 transition-opacity group-hover/recipe-chip:opacity-100 group-focus-visible/recipe-chip:opacity-100" />
 					</InputGroupButton>
 				) : null}
+				<FileAttachmentChips
+					files={attachedFiles}
+					onRemove={(index) =>
+						onAttachedFilesChange(
+							attachedFiles.filter((_, fileIndex) => fileIndex !== index),
+						)
+					}
+				/>
 			</InputGroupAddon>
 			<InputGroupTextarea
 				data-slot="input-group-control"
@@ -2453,6 +2555,36 @@ function ChatInlinePopoverFooter({
 					isSidebarCompact ? "pl-3.5 pr-2.5" : "px-4",
 				)}
 			>
+				{shouldShowRecipeControls ? (
+					<FileAttachmentButton
+						disabled={isChatLoading}
+						onFileUploadFailed={(id) =>
+							onAttachedFilesChange((files) =>
+								files.filter((file) => file.id !== id),
+							)
+						}
+						onFileUploaded={(id, uploadedFile) =>
+							onAttachedFilesChange((files) =>
+								files.map((file) =>
+									file.id === id
+										? {
+												...file,
+												localUrl: undefined,
+												uploadStatus: "ready",
+												url: uploadedFile.url,
+											}
+										: file,
+								),
+							)
+						}
+						onFilesAdded={(files) =>
+							onAttachedFilesChange((currentFiles) => [
+								...currentFiles,
+								...files,
+							])
+						}
+					/>
+				) : null}
 				{speechControls}
 				<InputGroupButton
 					type={isChatLoading ? "button" : "submit"}
@@ -2460,7 +2592,10 @@ function ChatInlinePopoverFooter({
 					size="icon-sm"
 					className="ml-auto rounded-full"
 					aria-label={isChatLoading ? "Stop streaming" : "Send message"}
-					disabled={!isChatLoading && !canSendMessage}
+					disabled={
+						!isChatLoading &&
+						(!canSendMessage || hasUploadingAttachments(attachedFiles))
+					}
 					onClick={isChatLoading ? onStop : undefined}
 				>
 					{isChatLoading ? (
@@ -2518,7 +2653,7 @@ function TranscriptInlinePopoverFooter({
 							size="sm"
 							className="pointer-events-none rounded-full border-0 bg-transparent px-2.5 text-xs text-transparent opacity-0 shadow-none"
 						>
-							<ListMinus className="size-3.5" />
+							<AtSign className="size-3.5" />
 						</InputGroupButton>
 					</InputGroupAddon>
 					<div
@@ -2647,6 +2782,8 @@ function ChatComposerForm({
 					isSidebarCompact: controller.isSidebarPresentation,
 				}}
 				message={controller.message}
+				attachedFiles={controller.attachedFiles}
+				onAttachedFilesChange={controller.setAttachedFiles}
 				onRecipePopoverOpenChange={controller.setRecipePopoverOpen}
 				onRecipeRemove={() => controller.setSelectedRecipeSlug(null)}
 				onRecipeSelect={(recipeSlug) => {
