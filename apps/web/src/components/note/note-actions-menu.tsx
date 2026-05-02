@@ -51,7 +51,7 @@ import {
 	Check,
 	CornerUpRight,
 	FileText,
-	FolderClosed,
+	Folder,
 	Globe,
 	Link2,
 	Lock,
@@ -984,7 +984,7 @@ function NoteProjectMoveSubmenu({
 												void onSetProject(project._id);
 											}}
 										>
-											<FolderClosed />
+											<Folder />
 											<span className="truncate">{project.name}</span>
 											{note?.projectId === project._id ? (
 												<span className="absolute right-2 top-1/2 flex size-4 -translate-y-1/2 items-center justify-center">

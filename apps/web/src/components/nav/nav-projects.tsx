@@ -58,7 +58,7 @@ import {
 	ChevronsUp,
 	Clock3,
 	FileText,
-	FolderClosed,
+	Folder,
 	FolderOpen,
 	LoaderCircle,
 	MoreHorizontal,
@@ -909,7 +909,7 @@ function ProjectSidebarRow({
 					>
 						<span className="relative size-4 shrink-0">
 							<span className="absolute inset-0 flex items-center justify-center transition-opacity opacity-100 group-hover/menu-button:opacity-0">
-								{isOpen ? <FolderOpen /> : <FolderClosed />}
+								{isOpen ? <FolderOpen /> : <Folder />}
 							</span>
 							<ChevronRight
 								className={

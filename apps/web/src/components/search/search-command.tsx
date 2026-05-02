@@ -31,7 +31,7 @@ import {
 	CalendarDays,
 	ChevronDown,
 	FileText,
-	FolderClosed,
+	Folder,
 	GalleryHorizontalEnd,
 	ListFilter,
 	type LucideIcon,
@@ -356,7 +356,7 @@ function SearchCommandFilters({
 												{matchingProjects.map((project) => (
 													<SearchSourceFilterOption
 														key={project.id}
-														icon={FolderClosed}
+														icon={Folder}
 														label={project.name}
 														selected={sourceFilter === project.id}
 														onSelect={() => {
@@ -749,7 +749,7 @@ function getSourceFilterIcon(
 		return option.icon;
 	}
 
-	return FolderClosed;
+	return Folder;
 }
 
 function matchesSourceFilter(
