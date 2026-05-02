@@ -12,6 +12,7 @@ import {
 	CommandGroup,
 	CommandItem,
 	CommandList,
+	CommandShortcut,
 } from "@workspace/ui/components/command";
 import {
 	Empty,
@@ -25,6 +26,7 @@ import {
 	HoverCardContent,
 	HoverCardTrigger,
 } from "@workspace/ui/components/hover-card";
+import { Kbd } from "@workspace/ui/components/kbd";
 import {
 	Popover,
 	PopoverContent,
@@ -133,6 +135,10 @@ const SUMMARY_TAB: SummaryTab = {
 	kind: "summary",
 	title: "Summary",
 };
+type SummaryShortcutAction = {
+	id: number;
+	kind: "open-note" | "automation";
+};
 
 const readDesktopChatSummaryPanelPinnedState = () => {
 	if (typeof window === "undefined") {
@@ -224,6 +230,8 @@ export function ChatSummarySheet({
 	const [isPinned, setIsPinned] = React.useState(
 		readDesktopChatSummaryPanelPinnedState,
 	);
+	const [shortcutAction, setShortcutAction] =
+		React.useState<SummaryShortcutAction | null>(null);
 	const { handleResizeKeyDown, handleResizeStart, isResizing, panelWidth } =
 		useResizableSidePanel({
 			isMobile,
@@ -251,6 +259,36 @@ export function ChatSummarySheet({
 			return nextPinned;
 		});
 	}, []);
+	React.useEffect(() => {
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (
+				event.defaultPrevented ||
+				!(event.metaKey || event.ctrlKey) ||
+				event.altKey ||
+				event.shiftKey ||
+				isEditableShortcutTarget(event.target)
+			) {
+				return;
+			}
+
+			const key = event.key.toLowerCase();
+			if (key !== "p" && key !== "t") {
+				return;
+			}
+
+			event.preventDefault();
+			if (key === "t") {
+				onOpenChange(true);
+			}
+			setShortcutAction({
+				id: Date.now(),
+				kind: key === "p" ? "open-note" : "automation",
+			});
+		};
+
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [onOpenChange]);
 
 	useDockedPanelInset({
 		side: "right",
@@ -271,8 +309,10 @@ export function ChatSummarySheet({
 			sources={sources}
 			workspaceSources={workspaceSources}
 			workspaceProjects={workspaceProjects}
+			shortcutAction={shortcutAction}
 			onAddSource={onAddSource}
 			onRemoveAutoAddedSource={onRemoveAutoAddedSource}
+			onOpenSummary={() => onOpenChange(true)}
 			onTogglePinned={togglePinned}
 		/>
 	);
@@ -335,8 +375,10 @@ function ChatSummaryPanel({
 	sources,
 	workspaceSources,
 	workspaceProjects,
+	shortcutAction,
 	onAddSource,
 	onRemoveAutoAddedSource,
+	onOpenSummary,
 	onTogglePinned,
 }: {
 	isMobile: boolean;
@@ -348,8 +390,10 @@ function ChatSummaryPanel({
 	sources: ToolSource[];
 	workspaceSources: SummaryWorkspaceSource[];
 	workspaceProjects: SearchCommandProject[];
+	shortcutAction: SummaryShortcutAction | null;
 	onAddSource?: (sourceId: string) => void;
 	onRemoveAutoAddedSource?: (sourceId: string) => void;
+	onOpenSummary: () => void;
 	onTogglePinned: () => void;
 }) {
 	const [tabs, setTabs] = React.useState<SummaryTab[]>([SUMMARY_TAB]);
@@ -377,6 +421,16 @@ function ChatSummaryPanel({
 		);
 		setActiveTabId(tab.id);
 	}, []);
+	const openFileSearch = React.useCallback(() => {
+		setFileSearchOpen(true);
+	}, []);
+	const openAutomationTab = React.useCallback(() => {
+		addTab({
+			id: "automation",
+			kind: "automation",
+			title: "Automation",
+		});
+	}, [addTab]);
 	const closeTab = React.useCallback(
 		(tabId: string) => {
 			const tabToClose = tabs.find((tab) => tab.id === tabId);
@@ -418,6 +472,18 @@ function ChatSummaryPanel({
 					],
 		);
 	}, [automation]);
+	React.useEffect(() => {
+		if (!shortcutAction) {
+			return;
+		}
+
+		if (shortcutAction.kind === "open-note") {
+			openFileSearch();
+			return;
+		}
+
+		openAutomationTab();
+	}, [openAutomationTab, openFileSearch, shortcutAction]);
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
@@ -446,16 +512,8 @@ function ChatSummaryPanel({
 				>
 					<SummaryAddPopover
 						showAutomation={!tabs.some((tab) => tab.kind === "automation")}
-						onOpenFileSearch={() => {
-							setFileSearchOpen(true);
-						}}
-						onAddAutomation={() =>
-							addTab({
-								id: "automation",
-								kind: "automation",
-								title: "Automation",
-							})
-						}
+						onOpenFileSearch={openFileSearch}
+						onAddAutomation={openAutomationTab}
 					/>
 					{isMobile ? null : (
 						<DockedPanelPinButton
@@ -475,6 +533,8 @@ function ChatSummaryPanel({
 					searchPlaceholder="Search notes..."
 					searchDescription="Search notes..."
 					filtersEnabled={false}
+					groupByDate={false}
+					showResultsOnEmptySearch={false}
 					filterKinds={["note"]}
 					onSelectItem={(itemId) => {
 						const source = workspaceSources.find((item) => item.id === itemId);
@@ -493,6 +553,7 @@ function ChatSummaryPanel({
 						});
 						autoAddedSourceIdsRef.current.add(source.id);
 						onAddSource?.(source.id);
+						onOpenSummary();
 					}}
 				/>
 			) : null}
@@ -601,13 +662,13 @@ function SummaryAddPopover({
 				</TooltipTrigger>
 				<TooltipContent>Add tab</TooltipContent>
 			</Tooltip>
-			<PopoverContent align="end" sideOffset={6} className="w-72 p-0">
+			<PopoverContent align="end" sideOffset={6} className="w-56 p-0">
 				<Command>
 					<CommandList>
 						<CommandGroup>
 							<CommandItem
 								value="open-file"
-								className="cursor-pointer"
+								className="group/summary-add-item cursor-pointer"
 								onSelect={() => {
 									handleOpenChange(false);
 									onOpenFileSearch();
@@ -615,11 +676,12 @@ function SummaryAddPopover({
 							>
 								<FileText className="size-4" />
 								Open note
+								<SummaryAddShortcut keyLabel="P" />
 							</CommandItem>
 							{showAutomation ? (
 								<CommandItem
 									value="automation"
-									className="cursor-pointer"
+									className="group/summary-add-item cursor-pointer"
 									onSelect={() => {
 										onAddAutomation();
 										handleOpenChange(false);
@@ -627,6 +689,7 @@ function SummaryAddPopover({
 								>
 									<Clock3 className="size-4" />
 									Automation
+									<SummaryAddShortcut keyLabel="T" />
 								</CommandItem>
 							) : null}
 						</CommandGroup>
@@ -634,6 +697,37 @@ function SummaryAddPopover({
 				</Command>
 			</PopoverContent>
 		</Popover>
+	);
+}
+
+function SummaryAddShortcut({ keyLabel }: { keyLabel: string }) {
+	return (
+		<CommandShortcut className="opacity-0 transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover/summary-add-item:opacity-100 group-focus-visible/summary-add-item:opacity-100">
+			<Kbd
+				aria-hidden="true"
+				className="border border-border/60 bg-muted px-1.5 font-mono"
+			>
+				<span className="text-xs">⌘</span>
+				{keyLabel}
+			</Kbd>
+		</CommandShortcut>
+	);
+}
+
+function isEditableShortcutTarget(target: EventTarget | null) {
+	if (!(target instanceof HTMLElement)) {
+		return false;
+	}
+
+	if (target.closest("[data-chat-prompt='true']")) {
+		return false;
+	}
+
+	return (
+		target instanceof HTMLInputElement ||
+		target instanceof HTMLTextAreaElement ||
+		target instanceof HTMLSelectElement ||
+		target.isContentEditable
 	);
 }
 

@@ -382,6 +382,7 @@ export function ChatComposer({
 				<InputGroupTextarea
 					ref={promptRef}
 					id="chat-prompt"
+					data-chat-prompt="true"
 					value={draft}
 					onChange={handleDraftChange}
 					onKeyDown={handlePromptKeyDown}

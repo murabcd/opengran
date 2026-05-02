@@ -89,11 +89,14 @@ interface SearchCommandProps {
 	searchPlaceholder?: string;
 	searchDescription?: string;
 	filtersEnabled?: boolean;
+	groupByDate?: boolean;
+	showResultsOnEmptySearch?: boolean;
 	filterKinds?: SearchCommandKind[];
 }
 
 type SearchFiltersState = {
 	sourceFilter: SearchSourceFilter;
+	searchValue: string;
 	filtersVisible: boolean;
 	dateFilter: "all" | "today" | "last7" | "last30" | "custom";
 	dateRange: DateRange | undefined;
@@ -104,6 +107,7 @@ type SearchFiltersState = {
 
 const INITIAL_SEARCH_FILTERS_STATE: SearchFiltersState = {
 	sourceFilter: "all",
+	searchValue: "",
 	filtersVisible: false,
 	dateFilter: "all",
 	dateRange: undefined,
@@ -135,6 +139,7 @@ function useSearchCommandFilters({
 	);
 	const {
 		sourceFilter,
+		searchValue,
 		filtersVisible,
 		dateFilter,
 		dateRange,
@@ -168,6 +173,7 @@ function useSearchCommandFilters({
 		setState({
 			filtersVisible: false,
 			sourceFilter: "all",
+			searchValue: "",
 			dateFilter: "all",
 			dateRange: undefined,
 			sourcePopoverOpen: false,
@@ -178,6 +184,7 @@ function useSearchCommandFilters({
 
 	return {
 		sourceFilter,
+		searchValue,
 		filtersVisible,
 		dateFilter,
 		dateRange,
@@ -191,6 +198,7 @@ function useSearchCommandFilters({
 
 function SearchCommandFilters({
 	sourceFilter,
+	searchValue,
 	filtersVisible,
 	dateFilter,
 	dateRange,
@@ -209,6 +217,7 @@ function SearchCommandFilters({
 	hideFilters,
 }: {
 	sourceFilter: SearchSourceFilter;
+	searchValue: string;
 	filtersVisible: boolean;
 	dateFilter: "all" | "today" | "last7" | "last30" | "custom";
 	dateRange: DateRange | undefined;
@@ -233,7 +242,12 @@ function SearchCommandFilters({
 		<>
 			<div className="flex items-start gap-1 px-1 pt-1">
 				<div className="relative min-w-0 flex-1">
-					<CommandInput placeholder={searchPlaceholder} className="pr-14" />
+					<CommandInput
+						value={searchValue}
+						onValueChange={(value) => setState({ searchValue: value })}
+						placeholder={searchPlaceholder}
+						className="pr-14"
+					/>
 					<button
 						type="button"
 						onClick={() => onOpenChange(false)}
@@ -477,10 +491,13 @@ export function SearchCommand({
 	searchPlaceholder = "Search notes and chats...",
 	searchDescription = "Search notes and chats...",
 	filtersEnabled = true,
+	groupByDate = true,
+	showResultsOnEmptySearch = true,
 	filterKinds = ["note", "chat"],
 }: SearchCommandProps) {
 	const {
 		sourceFilter,
+		searchValue,
 		filtersVisible,
 		dateFilter,
 		dateRange,
@@ -548,6 +565,8 @@ export function SearchCommand({
 	);
 	const dateFilterLabel = getDateFilterLabel(dateFilter, dateRange);
 	const isFilterPopoverOpen = sourcePopoverOpen || datePopoverOpen;
+	const shouldShowResults =
+		showResultsOnEmptySearch || searchValue.trim().length > 0;
 	return (
 		<CommandDialog
 			open={open}
@@ -559,6 +578,7 @@ export function SearchCommand({
 			<Command className="**:[[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 **:[[cmdk-group-heading]]:px-1.5 **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 **:[[cmdk-input-wrapper]_svg]:size-5 **:[[cmdk-input]]:h-12">
 				<SearchCommandFilters
 					sourceFilter={sourceFilter}
+					searchValue={searchValue}
 					filtersVisible={filtersVisible}
 					dateFilter={dateFilter}
 					dateRange={dateRange}
@@ -576,18 +596,37 @@ export function SearchCommand({
 					setState={setState}
 					hideFilters={hideFilters}
 				/>
-				<CommandList
-					className={cn(
-						"h-[22rem] max-h-[calc(100vh-14rem)] min-h-[14rem]",
-						isFilterPopoverOpen && "pointer-events-none",
-					)}
-				>
-					<CommandEmpty>No results found.</CommandEmpty>
-					{itemSections.map((section) =>
-						section.items.length > 0 ? (
-							<CommandGroup key={section.key} heading={section.label}>
+				{shouldShowResults ? (
+					<CommandList
+						className={cn(
+							"h-[22rem] max-h-[calc(100vh-14rem)] min-h-[14rem]",
+							isFilterPopoverOpen && "pointer-events-none",
+						)}
+					>
+						<CommandEmpty>No results found.</CommandEmpty>
+						{groupByDate ? (
+							itemSections.map((section) =>
+								section.items.length > 0 ? (
+									<CommandGroup key={section.key} heading={section.label}>
+										<div className="flex flex-col gap-1">
+											{section.items.map((item) => (
+												<SearchCommandRow
+													key={item.id}
+													item={item}
+													onSelect={() => {
+														onOpenChange(false);
+														onSelectItem(item.id);
+													}}
+												/>
+											))}
+										</div>
+									</CommandGroup>
+								) : null,
+							)
+						) : (
+							<CommandGroup>
 								<div className="flex flex-col gap-1">
-									{section.items.map((item) => (
+									{visibleItems.map((item) => (
 										<SearchCommandRow
 											key={item.id}
 											item={item}
@@ -599,9 +638,13 @@ export function SearchCommand({
 									))}
 								</div>
 							</CommandGroup>
-						) : null,
-					)}
-				</CommandList>
+						)}
+					</CommandList>
+				) : (
+					<div className="flex h-12 items-center px-3 text-muted-foreground text-sm">
+						Type to search for notes
+					</div>
+				)}
 			</Command>
 		</CommandDialog>
 	);

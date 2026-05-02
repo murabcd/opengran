@@ -237,6 +237,9 @@ vi.mock("@workspace/ui/components/command", () => ({
 		</button>
 	),
 	CommandList: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+	CommandShortcut: ({ children }: React.PropsWithChildren) => (
+		<span>{children}</span>
+	),
 }));
 
 vi.mock("@workspace/ui/components/dropdown-menu", () => ({
