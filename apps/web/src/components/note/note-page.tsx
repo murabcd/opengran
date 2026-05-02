@@ -15,6 +15,7 @@ import { Streamdown } from "streamdown";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
 import { COMPOSER_DOCK_WRAPPER_CLASS } from "@/components/layout/composer-dock";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
+import { saveDesktopTextFile } from "@/lib/desktop-platform";
 import {
 	createNoteEditorExtensions,
 	EMPTY_DOCUMENT,
@@ -165,8 +166,10 @@ const exportTextFile = async ({
 	fileName: string;
 	content: string;
 }) => {
-	if (window.openGranDesktop) {
-		return await window.openGranDesktop.saveTextFile(fileName, content);
+	const desktopResult = await saveDesktopTextFile(fileName, content);
+
+	if (desktopResult) {
+		return desktopResult;
 	}
 
 	const blob = new Blob([content], {

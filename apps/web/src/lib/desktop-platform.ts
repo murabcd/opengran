@@ -44,3 +44,41 @@ export const supportsDesktopNativeAudioCapture = () => {
 			bridge?.onSystemAudioCaptureEvent,
 	);
 };
+
+export const openDesktopExternalUrl = async (url: string) => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.openExternalUrl) {
+		return false;
+	}
+
+	await bridge.openExternalUrl(url);
+	return true;
+};
+
+export const canOpenDesktopSoundSettings = () =>
+	Boolean(getDesktopBridge()?.openSoundSettings);
+
+export const openDesktopSoundSettings = async () => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.openSoundSettings) {
+		return false;
+	}
+
+	await bridge.openSoundSettings();
+	return true;
+};
+
+export const saveDesktopTextFile = async (
+	defaultFileName: string,
+	content: string,
+) => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.saveTextFile) {
+		return null;
+	}
+
+	return await bridge.saveTextFile(defaultFileName, content);
+};

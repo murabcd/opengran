@@ -129,6 +129,10 @@ import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
 import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
+import {
+	canOpenDesktopSoundSettings,
+	openDesktopSoundSettings,
+} from "@/lib/desktop-platform";
 import { ENHANCED_NOTE_TEMPLATE_SLUG } from "@/lib/note-templates";
 import {
 	getRecipeIcon,
@@ -1689,15 +1693,14 @@ const useNoteComposerController = ({
 		toggleTranscriptPanel,
 		handleTranscriptionLanguageChange,
 		isSavingTranscriptionLanguage,
-		canOpenTranscriptSoundSettings:
-			typeof window !== "undefined" && !!window.openGranDesktop,
+		canOpenTranscriptSoundSettings: canOpenDesktopSoundSettings(),
 		handleOpenTranscriptSoundSettings: async () => {
-			if (typeof window === "undefined" || !window.openGranDesktop) {
+			if (!canOpenDesktopSoundSettings()) {
 				return;
 			}
 
 			try {
-				await window.openGranDesktop.openSoundSettings();
+				await openDesktopSoundSettings();
 			} catch (error) {
 				console.error("Failed to open sound settings", error);
 				toast.error("Failed to open sound settings");

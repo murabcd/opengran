@@ -21,6 +21,7 @@ import {
 } from "@/app/location";
 import { PageTitle } from "@/components/layout/page-title";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
+import { openDesktopExternalUrl } from "@/lib/desktop-platform";
 import {
 	groupItemsByRelativeDate,
 	RELATIVE_DATE_GROUP_SECTIONS,
@@ -115,8 +116,7 @@ export function HomeView({
 	});
 
 	const openMeetingLink = React.useCallback(async (url: string) => {
-		if (window.openGranDesktop) {
-			await window.openGranDesktop.openExternalUrl(url);
+		if (await openDesktopExternalUrl(url)) {
 			return;
 		}
 

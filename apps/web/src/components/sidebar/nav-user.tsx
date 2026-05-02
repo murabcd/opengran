@@ -32,6 +32,10 @@ import * as React from "react";
 import { toast } from "sonner";
 import { ShortcutHint } from "@/components/sidebar/shortcut-hint";
 import { getAvatarSrc } from "@/lib/avatar";
+import {
+	isDesktopRuntime,
+	openDesktopExternalUrl,
+} from "@/lib/desktop-platform";
 import { resolveLatestDesktopDownloadUrl } from "@/lib/desktop-release";
 
 export function NavUser({
@@ -71,8 +75,7 @@ export function NavUser({
 	const nextTheme = isDarkTheme ? "light" : "dark";
 	const ThemeIcon = isDarkTheme ? Sun : Moon;
 	const themeLabel = isDarkTheme ? "Light theme" : "Dark theme";
-	const isDesktopApp =
-		typeof window !== "undefined" && Boolean(window.openGranDesktop);
+	const isDesktopApp = isDesktopRuntime();
 
 	const handleDesktopDownload = React.useCallback(async () => {
 		if (desktopDownloadInFlightRef.current) {
@@ -85,8 +88,7 @@ export function NavUser({
 		try {
 			const downloadUrl = await resolveLatestDesktopDownloadUrl();
 
-			if (window.openGranDesktop?.openExternalUrl) {
-				await window.openGranDesktop.openExternalUrl(downloadUrl);
+			if (await openDesktopExternalUrl(downloadUrl)) {
 				return;
 			}
 
