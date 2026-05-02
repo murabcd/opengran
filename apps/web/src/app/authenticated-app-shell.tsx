@@ -130,6 +130,13 @@ import {
 	DESKTOP_MAIN_HEADER_CONTENT_CLASS,
 	DESKTOP_MAIN_HEADER_LEADING_CLASS,
 } from "@/lib/desktop-chrome";
+import {
+	getDesktopMeta,
+	isDesktopRuntime,
+	onDesktopNavigate,
+	setDesktopActiveWorkspaceId,
+	setDesktopActiveWorkspaceNotificationPreferences,
+} from "@/lib/desktop-platform";
 import { getSidebarViewTitle } from "@/lib/navigation";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import type { WorkspaceRecord } from "@/lib/workspaces";
@@ -607,19 +614,11 @@ const useAppShellState = ({
 	]);
 
 	React.useEffect(() => {
-		if (!window.openGranDesktop) {
-			return;
-		}
-
-		void window.openGranDesktop.setActiveWorkspaceId(resolvedActiveWorkspaceId);
+		void setDesktopActiveWorkspaceId(resolvedActiveWorkspaceId);
 	}, [resolvedActiveWorkspaceId]);
 
 	React.useEffect(() => {
-		if (!window.openGranDesktop) {
-			return;
-		}
-
-		void window.openGranDesktop.setActiveWorkspaceNotificationPreferences({
+		void setDesktopActiveWorkspaceNotificationPreferences({
 			workspaceId: resolvedActiveWorkspaceId,
 			notifyForScheduledMeetings:
 				notificationPreferences?.notifyForScheduledMeetings ?? false,
@@ -749,11 +748,11 @@ const useAppShellState = ({
 	}, [applyLocationSyncState]);
 
 	React.useEffect(() => {
-		if (typeof window === "undefined" || !window.openGranDesktop?.onNavigate) {
+		if (typeof window === "undefined") {
 			return;
 		}
 
-		return window.openGranDesktop.onNavigate((navigation) => {
+		return onDesktopNavigate((navigation) => {
 			const nextLocation = `${navigation.pathname}${navigation.search}${navigation.hash}`;
 
 			if (
@@ -781,10 +780,11 @@ const useAppShellState = ({
 	}, [resolvedCurrentView, resolvedSelectedNote]);
 
 	React.useEffect(() => {
-		void window.openGranDesktop
-			?.getMeta()
+		void getDesktopMeta()
 			.then((meta) => {
-				setIsDesktopMac(meta.platform === "darwin");
+				if (meta) {
+					setIsDesktopMac(meta.platform === "darwin");
+				}
 			})
 			.catch(() => {
 				setIsDesktopMac(false);
@@ -1311,7 +1311,7 @@ const useAppShellState = ({
 	);
 
 	React.useEffect(() => {
-		if (typeof window === "undefined" || !window.openGranDesktop) {
+		if (typeof window === "undefined" || !isDesktopRuntime()) {
 			return;
 		}
 
@@ -1335,7 +1335,7 @@ const useAppShellState = ({
 	}, [handleSettingsOpenChange]);
 
 	React.useEffect(() => {
-		if (typeof window === "undefined" || !window.openGranDesktop) {
+		if (typeof window === "undefined" || !isDesktopRuntime()) {
 			return;
 		}
 

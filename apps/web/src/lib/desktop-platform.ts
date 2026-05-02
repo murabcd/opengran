@@ -131,6 +131,39 @@ export const setDesktopLaunchAtLogin = async (enabled: boolean) => {
 	return await bridge.setLaunchAtLogin(enabled);
 };
 
+export const setDesktopActiveWorkspaceId = async (
+	workspaceId: string | null,
+) => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.setActiveWorkspaceId) {
+		return false;
+	}
+
+	await bridge.setActiveWorkspaceId(workspaceId);
+	return true;
+};
+
+export const setDesktopActiveWorkspaceNotificationPreferences =
+	async (payload: {
+		workspaceId: string | null;
+		notifyForScheduledMeetings: boolean;
+		notifyForAutoDetectedMeetings: boolean;
+	}) => {
+		const bridge = getDesktopBridge();
+
+		if (!bridge?.setActiveWorkspaceNotificationPreferences) {
+			return false;
+		}
+
+		await bridge.setActiveWorkspaceNotificationPreferences(payload);
+		return true;
+	};
+
+export const onDesktopNavigate = (
+	listener: (navigation: DesktopNavigation) => void,
+) => getDesktopBridge()?.onNavigate?.(listener) ?? undefined;
+
 export const canOpenDesktopSoundSettings = () =>
 	Boolean(getDesktopBridge()?.openSoundSettings);
 
