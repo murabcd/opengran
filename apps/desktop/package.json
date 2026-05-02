@@ -21,8 +21,8 @@
     "check": "biome check src scripts package.json",
     "check:fix": "biome check --write src scripts package.json",
     "format": "biome format --write src scripts package.json",
-    "test": "node -e \"process.exit(0)\"",
-    "typecheck": "node --check src/main.mjs && node --check src/local-server.mjs && node --check src/auth-client.mjs && node --check src/network.mjs && node --check src/runtime-config.mjs && node --check src/env.mjs && node --check src/preload.cjs && node --check scripts/dev.mjs && node --check scripts/dev-bundled.mjs && node --check scripts/build.mjs && node --check scripts/build-system-audio-helper.mjs && node --check scripts/forward-electron-output.mjs && node --check scripts/generate-app-icon.mjs && node --check scripts/generate-tray-icons.mjs"
+    "test": "node scripts/check-syntax.mjs",
+    "typecheck": "node scripts/check-syntax.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.41",

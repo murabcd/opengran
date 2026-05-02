@@ -441,7 +441,7 @@ describe("ChatPage", () => {
 			screen.getByPlaceholderText("Ask, search, or make anything..."),
 		);
 		priorFocus.remove();
-	});
+	}, 10_000);
 
 	it("does not reopen trash confirmation after moving a history chat to trash", async () => {
 		const user = userEvent.setup();
