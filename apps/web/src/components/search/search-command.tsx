@@ -60,6 +60,7 @@ export interface SearchCommandProject {
 }
 
 type SearchSourceFilter = "all" | "notes" | "chats" | string;
+type SearchCommandKind = SearchCommandItem["kind"];
 
 const STATIC_SOURCE_FILTER_OPTIONS = [
 	{
@@ -85,6 +86,10 @@ interface SearchCommandProps {
 	items: SearchCommandItem[];
 	projects: SearchCommandProject[];
 	onSelectItem: (itemId: string) => void;
+	searchPlaceholder?: string;
+	searchDescription?: string;
+	filtersEnabled?: boolean;
+	filterKinds?: SearchCommandKind[];
 }
 
 type SearchFiltersState = {
@@ -195,6 +200,9 @@ function SearchCommandFilters({
 	matchingProjects,
 	sourceFilterLabel,
 	sourceFilterIcon,
+	sourceFilterOptions,
+	searchPlaceholder,
+	filtersEnabled,
 	dateFilterLabel,
 	onOpenChange,
 	setState,
@@ -210,21 +218,22 @@ function SearchCommandFilters({
 	matchingProjects: SearchCommandProject[];
 	sourceFilterLabel: string;
 	sourceFilterIcon: LucideIcon;
+	sourceFilterOptions: (typeof STATIC_SOURCE_FILTER_OPTIONS)[number][];
+	searchPlaceholder: string;
+	filtersEnabled: boolean;
 	dateFilterLabel: string;
 	onOpenChange: (open: boolean) => void;
 	setState: React.ActionDispatch<[patch: Partial<SearchFiltersState>]>;
 	hideFilters: () => void;
 }) {
 	const [defaultCalendarMonth] = React.useState(() => new Date());
+	const showTypeFilters = sourceFilterOptions.length > 1;
 
 	return (
 		<>
 			<div className="flex items-start gap-1 px-1 pt-1">
 				<div className="relative min-w-0 flex-1">
-					<CommandInput
-						placeholder="Search notes and chats..."
-						className="pr-14"
-					/>
+					<CommandInput placeholder={searchPlaceholder} className="pr-14" />
 					<button
 						type="button"
 						onClick={() => onOpenChange(false)}
@@ -234,36 +243,38 @@ function SearchCommandFilters({
 						<Kbd className="font-mono">Esc</Kbd>
 					</button>
 				</div>
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<Button
-							type="button"
-							variant="ghost"
-							size="sm"
-							aria-pressed={filtersVisible}
-							aria-label={filtersVisible ? "Hide filters" : "Show filters"}
-							onClick={() => {
-								if (filtersVisible) {
-									hideFilters();
-									return;
-								}
+				{filtersEnabled ? (
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								aria-pressed={filtersVisible}
+								aria-label={filtersVisible ? "Hide filters" : "Show filters"}
+								onClick={() => {
+									if (filtersVisible) {
+										hideFilters();
+										return;
+									}
 
-								setState({ filtersVisible: true });
-							}}
-							className={cn(
-								"mt-1 size-8 rounded-lg p-0 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground",
-								filtersVisible && "bg-muted text-foreground",
-							)}
-						>
-							<ListFilter className="size-3.5" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent side="bottom">
-						{filtersVisible ? "Hide filters" : "Show filters"}
-					</TooltipContent>
-				</Tooltip>
+									setState({ filtersVisible: true });
+								}}
+								className={cn(
+									"mt-1 size-8 rounded-lg p-0 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground",
+									filtersVisible && "bg-muted text-foreground",
+								)}
+							>
+								<ListFilter className="size-3.5" />
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent side="bottom">
+							{filtersVisible ? "Hide filters" : "Show filters"}
+						</TooltipContent>
+					</Tooltip>
+				) : null}
 			</div>
-			{filtersVisible ? (
+			{filtersEnabled && filtersVisible ? (
 				<div className="flex items-center gap-1.5 px-2 pb-2">
 					<Popover
 						open={sourcePopoverOpen}
@@ -305,24 +316,26 @@ function SearchCommandFilters({
 									/>
 								</div>
 								<CommandList className="max-h-64">
-									<CommandGroup heading="Types" className="px-1 py-1">
-										<div className="flex flex-col gap-1">
-											{STATIC_SOURCE_FILTER_OPTIONS.map((option) => (
-												<SearchSourceFilterOption
-													key={option.value}
-													icon={option.icon}
-													label={option.label}
-													selected={sourceFilter === option.value}
-													onSelect={() => {
-														setState({
-															sourceFilter: option.value,
-															sourcePopoverOpen: false,
-														});
-													}}
-												/>
-											))}
-										</div>
-									</CommandGroup>
+									{showTypeFilters ? (
+										<CommandGroup heading="Types" className="px-1 py-1">
+											<div className="flex flex-col gap-1">
+												{sourceFilterOptions.map((option) => (
+													<SearchSourceFilterOption
+														key={option.value}
+														icon={option.icon}
+														label={option.label}
+														selected={sourceFilter === option.value}
+														onSelect={() => {
+															setState({
+																sourceFilter: option.value,
+																sourcePopoverOpen: false,
+															});
+														}}
+													/>
+												))}
+											</div>
+										</CommandGroup>
+									) : null}
 									<CommandGroup heading="Projects" className="px-1 py-1">
 										{matchingProjects.length > 0 ? (
 											<div className="flex flex-col gap-1">
@@ -342,8 +355,8 @@ function SearchCommandFilters({
 												))}
 											</div>
 										) : (
-											<div className="px-2 py-3 text-sm text-muted-foreground">
-												No projects found.
+											<div className="px-2 pt-1 pb-2 text-xs text-muted-foreground/50">
+												No projects found
 											</div>
 										)}
 									</CommandGroup>
@@ -461,6 +474,10 @@ export function SearchCommand({
 	items,
 	projects,
 	onSelectItem,
+	searchPlaceholder = "Search notes and chats...",
+	searchDescription = "Search notes and chats...",
+	filtersEnabled = true,
+	filterKinds = ["note", "chat"],
 }: SearchCommandProps) {
 	const {
 		sourceFilter,
@@ -516,11 +533,19 @@ export function SearchCommand({
 			project.name.toLowerCase().includes(normalizedSearch),
 		);
 	}, [projects, sourceSearchValue]);
+	const sourceFilterOptions = React.useMemo(
+		() => getSourceFilterOptions(filterKinds),
+		[filterKinds],
+	);
 	const sourceFilterLabel = getSourceFilterLabel(
 		sourceFilter,
+		sourceFilterOptions,
 		selectedProject?.name,
 	);
-	const sourceFilterIcon = getSourceFilterIcon(sourceFilter);
+	const sourceFilterIcon = getSourceFilterIcon(
+		sourceFilter,
+		sourceFilterOptions,
+	);
 	const dateFilterLabel = getDateFilterLabel(dateFilter, dateRange);
 	const isFilterPopoverOpen = sourcePopoverOpen || datePopoverOpen;
 	return (
@@ -528,7 +553,7 @@ export function SearchCommand({
 			open={open}
 			onOpenChange={onOpenChange}
 			title="Search"
-			description="Search notes and chats..."
+			description={searchDescription}
 			className="top-1/2 max-w-[calc(100%-2rem)] -translate-y-1/2 rounded-lg sm:max-w-lg"
 		>
 			<Command className="**:[[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 **:[[cmdk-group-heading]]:px-1.5 **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 **:[[cmdk-input-wrapper]_svg]:size-5 **:[[cmdk-input]]:h-12">
@@ -543,6 +568,9 @@ export function SearchCommand({
 					matchingProjects={matchingProjects}
 					sourceFilterLabel={sourceFilterLabel}
 					sourceFilterIcon={sourceFilterIcon}
+					sourceFilterOptions={sourceFilterOptions}
+					searchPlaceholder={searchPlaceholder}
+					filtersEnabled={filtersEnabled}
 					dateFilterLabel={dateFilterLabel}
 					onOpenChange={onOpenChange}
 					setState={setState}
@@ -635,11 +663,29 @@ function isProjectSourceFilter(sourceFilter: SearchSourceFilter) {
 	);
 }
 
+function getSourceFilterOptions(filterKinds: SearchCommandKind[]) {
+	const enabledKinds = new Set(filterKinds);
+
+	if (enabledKinds.size < 2) {
+		return STATIC_SOURCE_FILTER_OPTIONS.filter(
+			(option) => option.value === "all",
+		);
+	}
+
+	return STATIC_SOURCE_FILTER_OPTIONS.filter(
+		(option) =>
+			option.value === "all" ||
+			(option.value === "notes" && enabledKinds.has("note")) ||
+			(option.value === "chats" && enabledKinds.has("chat")),
+	);
+}
+
 function getSourceFilterLabel(
 	sourceFilter: SearchSourceFilter,
+	sourceFilterOptions: (typeof STATIC_SOURCE_FILTER_OPTIONS)[number][],
 	projectName?: string,
 ) {
-	const option = STATIC_SOURCE_FILTER_OPTIONS.find(
+	const option = sourceFilterOptions.find(
 		(candidate) => candidate.value === sourceFilter,
 	);
 	if (option) {
@@ -649,8 +695,11 @@ function getSourceFilterLabel(
 	return projectName ?? "All";
 }
 
-function getSourceFilterIcon(sourceFilter: SearchSourceFilter) {
-	const option = STATIC_SOURCE_FILTER_OPTIONS.find(
+function getSourceFilterIcon(
+	sourceFilter: SearchSourceFilter,
+	sourceFilterOptions: (typeof STATIC_SOURCE_FILTER_OPTIONS)[number][],
+) {
+	const option = sourceFilterOptions.find(
 		(candidate) => candidate.value === sourceFilter,
 	);
 	if (option) {

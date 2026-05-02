@@ -54,7 +54,7 @@ describe("SearchCommand source filters", () => {
 		await user.click(screen.getByRole("button", { name: "All" }));
 		await user.type(screen.getByPlaceholderText("Search projects"), "sales");
 
-		expect(screen.getByText("No projects found.")).toBeDefined();
+		expect(screen.getByText("No projects found")).toBeDefined();
 		expect(screen.getByText("Types")).toBeDefined();
 		expect(screen.getByText("Projects")).toBeDefined();
 	});

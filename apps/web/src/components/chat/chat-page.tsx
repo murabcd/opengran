@@ -255,9 +255,26 @@ const useChatPageController = ({
 				icon: FileText,
 				preview: note.searchableText.trim(),
 				content: note.content,
+				projectId: note.projectId ?? undefined,
 				updatedAt: note.updatedAt,
 			})),
 		[notes],
+	);
+	const projects = useQuery(
+		api.projects.list,
+		activeWorkspace ? { workspaceId: activeWorkspace._id } : "skip",
+	);
+	const searchProjects = React.useMemo(
+		() =>
+			(projects ?? []).map((project) => ({
+				id: project._id,
+				name: project.name,
+			})),
+		[projects],
+	);
+	const projectNameById = React.useMemo(
+		() => new Map(searchProjects.map((project) => [project.id, project.name])),
+		[searchProjects],
 	);
 	const workspaceSources = React.useMemo(
 		() =>
@@ -266,9 +283,13 @@ const useChatPageController = ({
 				title: page.title,
 				preview: page.preview,
 				content: page.content,
+				projectId: page.projectId,
+				projectName: page.projectId
+					? projectNameById.get(page.projectId)
+					: undefined,
 				updatedAt: page.updatedAt,
 			})),
-		[contextPages],
+		[contextPages, projectNameById],
 	);
 	const shouldSearchDocuments = documentSearchTerm.trim().length > 0;
 	const mentionableDocuments = React.useMemo(() => {
@@ -489,6 +510,7 @@ const useChatPageController = ({
 		modelPopoverOpen,
 		selectedModel,
 		selectedSourceIds,
+		searchProjects,
 		workspaceSourceId,
 		setAppsEnabled,
 		setDocumentSearchTerm,
@@ -795,6 +817,7 @@ export function ChatPage({
 				chatTitle={controller.currentChatTitle}
 				desktopSafeTop={isDesktopMac}
 				workspaceSources={controller.workspaceSources}
+				workspaceProjects={controller.searchProjects}
 				onAddSource={controller.onAddSource}
 				onRemoveAutoAddedSource={controller.onRemoveAutoAddedSource}
 				onOpenChange={controller.setSummaryOpen}

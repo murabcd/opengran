@@ -38,6 +38,11 @@ import {
 	SheetTitle,
 } from "@workspace/ui/components/sheet";
 import { useOptionalSidebarShell } from "@workspace/ui/components/sidebar";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { useIsMobile } from "@workspace/ui/hooks/use-mobile";
 import {
 	APP_SIDEBAR_COLLAPSED_WIDTH,
@@ -76,6 +81,7 @@ import {
 import {
 	SearchCommand,
 	type SearchCommandItem,
+	type SearchCommandProject,
 } from "@/components/search/search-command";
 import { extractFileParts } from "@/lib/chat-message";
 import { collectMessageSources, type ToolSource } from "@/lib/chat-sources";
@@ -99,6 +105,8 @@ type SummaryWorkspaceSource = {
 	title: string;
 	preview?: string;
 	content?: string;
+	projectId?: string;
+	projectName?: string;
 	updatedAt?: number;
 };
 
@@ -195,6 +203,7 @@ export function ChatSummarySheet({
 	chatTitle,
 	desktopSafeTop = false,
 	workspaceSources,
+	workspaceProjects,
 	onAddSource,
 	onRemoveAutoAddedSource,
 	onOpenChange,
@@ -205,6 +214,7 @@ export function ChatSummarySheet({
 	chatTitle: string;
 	desktopSafeTop?: boolean;
 	workspaceSources: SummaryWorkspaceSource[];
+	workspaceProjects: SearchCommandProject[];
 	onAddSource?: (sourceId: string) => void;
 	onRemoveAutoAddedSource?: (sourceId: string) => void;
 	onOpenChange: (open: boolean) => void;
@@ -260,6 +270,7 @@ export function ChatSummarySheet({
 			artifacts={artifacts}
 			sources={sources}
 			workspaceSources={workspaceSources}
+			workspaceProjects={workspaceProjects}
 			onAddSource={onAddSource}
 			onRemoveAutoAddedSource={onRemoveAutoAddedSource}
 			onTogglePinned={togglePinned}
@@ -323,6 +334,7 @@ function ChatSummaryPanel({
 	artifacts,
 	sources,
 	workspaceSources,
+	workspaceProjects,
 	onAddSource,
 	onRemoveAutoAddedSource,
 	onTogglePinned,
@@ -335,6 +347,7 @@ function ChatSummaryPanel({
 	artifacts: SummaryArtifact[];
 	sources: ToolSource[];
 	workspaceSources: SummaryWorkspaceSource[];
+	workspaceProjects: SearchCommandProject[];
 	onAddSource?: (sourceId: string) => void;
 	onRemoveAutoAddedSource?: (sourceId: string) => void;
 	onTogglePinned: () => void;
@@ -352,6 +365,8 @@ function ChatSummaryPanel({
 				kind: "note" as const,
 				icon: FileText,
 				preview: source.preview,
+				projectId: source.projectId,
+				projectName: source.projectName,
 				updatedAt: source.updatedAt,
 			})),
 		[workspaceSources],
@@ -456,7 +471,11 @@ function ChatSummaryPanel({
 					open={fileSearchOpen}
 					onOpenChange={setFileSearchOpen}
 					items={fileSearchItems}
-					projects={[]}
+					projects={workspaceProjects}
+					searchPlaceholder="Search notes..."
+					searchDescription="Search notes..."
+					filtersEnabled={false}
+					filterKinds={["note"]}
 					onSelectItem={(itemId) => {
 						const source = workspaceSources.find((item) => item.id === itemId);
 
@@ -567,16 +586,21 @@ function SummaryAddPopover({
 
 	return (
 		<Popover open={open} onOpenChange={handleOpenChange}>
-			<PopoverTrigger asChild>
-				<Button
-					type="button"
-					variant="ghost"
-					size="icon-sm"
-					aria-label="Add summary tab"
-				>
-					<Plus className="size-4" />
-				</Button>
-			</PopoverTrigger>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<PopoverTrigger asChild>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-sm"
+							aria-label="Add tab"
+						>
+							<Plus className="size-4" />
+						</Button>
+					</PopoverTrigger>
+				</TooltipTrigger>
+				<TooltipContent>Add tab</TooltipContent>
+			</Tooltip>
 			<PopoverContent align="end" sideOffset={6} className="w-72 p-0">
 				<Command>
 					<CommandList>
