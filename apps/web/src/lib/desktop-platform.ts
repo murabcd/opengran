@@ -168,6 +168,43 @@ export const onDesktopMeetingDetectionState = (
 	listener: (state: DesktopMeetingDetectionState) => void,
 ) => getDesktopBridge()?.onMeetingDetectionState?.(listener) ?? undefined;
 
+export const getDesktopMeetingDetectionState = async () => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.getMeetingDetectionState) {
+		return null;
+	}
+
+	return await bridge.getMeetingDetectionState();
+};
+
+export const reportDesktopMeetingWidgetSize = (size: {
+	width: number;
+	height: number;
+}) => getDesktopBridge()?.reportMeetingWidgetSize?.(size);
+
+export const dismissDesktopDetectedMeetingWidget = async () => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.dismissDetectedMeetingWidget) {
+		return false;
+	}
+
+	await bridge.dismissDetectedMeetingWidget();
+	return true;
+};
+
+export const startDesktopDetectedMeetingNote = async () => {
+	const bridge = getDesktopBridge();
+
+	if (!bridge?.startDetectedMeetingNote) {
+		return false;
+	}
+
+	await bridge.startDetectedMeetingNote();
+	return true;
+};
+
 export const canOpenDesktopSoundSettings = () =>
 	Boolean(getDesktopBridge()?.openSoundSettings);
 

@@ -4,6 +4,14 @@ import { Separator } from "@workspace/ui/components/separator";
 import { cn } from "@workspace/ui/lib/utils";
 import { X } from "lucide-react";
 import * as React from "react";
+import {
+	dismissDesktopDetectedMeetingWidget,
+	getDesktopMeetingDetectionState,
+	isDesktopRuntime,
+	onDesktopMeetingDetectionState,
+	reportDesktopMeetingWidgetSize,
+	startDesktopDetectedMeetingNote,
+} from "@/lib/desktop-platform";
 
 const widgetTitleByStatus: Record<
 	DesktopMeetingDetectionState["status"],
@@ -33,23 +41,20 @@ export function MeetingWidgetScreen() {
 	}, []);
 
 	React.useEffect(() => {
-		if (!window.openGranDesktop) {
+		if (!isDesktopRuntime()) {
 			return;
 		}
 
 		let isMounted = true;
-		const unsubscribe = window.openGranDesktop.onMeetingDetectionState(
-			(nextState) => {
-				if (isMounted) {
-					setState(nextState);
-				}
-			},
-		);
+		const unsubscribe = onDesktopMeetingDetectionState((nextState) => {
+			if (isMounted) {
+				setState(nextState);
+			}
+		});
 
-		void window.openGranDesktop
-			.getMeetingDetectionState()
+		void getDesktopMeetingDetectionState()
 			.then((nextState) => {
-				if (isMounted) {
+				if (isMounted && nextState) {
 					setState(nextState);
 				}
 			})
@@ -57,19 +62,19 @@ export function MeetingWidgetScreen() {
 
 		return () => {
 			isMounted = false;
-			unsubscribe();
+			unsubscribe?.();
 		};
 	}, []);
 
 	React.useLayoutEffect(() => {
 		const frameElement = frameRef.current;
-		if (!frameElement || !window.openGranDesktop) {
+		if (!frameElement || !isDesktopRuntime()) {
 			return;
 		}
 
 		const reportSize = () => {
 			const rect = frameElement.getBoundingClientRect();
-			window.openGranDesktop?.reportMeetingWidgetSize({
+			reportDesktopMeetingWidgetSize({
 				width: Math.ceil(rect.width),
 				height: Math.ceil(rect.height),
 			});
@@ -108,9 +113,7 @@ export function MeetingWidgetScreen() {
 							variant="ghost"
 							aria-label="Dismiss meeting widget"
 							className="cursor-pointer text-muted-foreground hover:text-foreground"
-							onClick={() =>
-								void window.openGranDesktop?.dismissDetectedMeetingWidget()
-							}
+							onClick={() => void dismissDesktopDetectedMeetingWidget()}
 						>
 							<X className="size-3" />
 						</Button>
@@ -140,9 +143,7 @@ export function MeetingWidgetScreen() {
 							type="button"
 							size="sm"
 							className="h-8 cursor-pointer px-3"
-							onClick={() =>
-								void window.openGranDesktop?.startDetectedMeetingNote()
-							}
+							onClick={() => void startDesktopDetectedMeetingNote()}
 						>
 							<img
 								src="/opengran-dock.svg"
