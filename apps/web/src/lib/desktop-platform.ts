@@ -36,23 +36,13 @@ export const getDesktopMeta = async () => {
 export const supportsDesktopTranscriptionController = () => {
 	const bridge = getDesktopBridge();
 
-	return Boolean(
-		bridge?.getTranscriptionSessionState &&
-			bridge?.configureTranscriptionSession &&
-			bridge?.startTranscriptionSession &&
-			bridge?.stopTranscriptionSession,
-	);
+	return Boolean(bridge?.getTranscriptionSessionState);
 };
 
 export const supportsDesktopNativeAudioCapture = () => {
 	const bridge = getDesktopBridge();
 
-	return Boolean(
-		bridge?.startMicrophoneCapture &&
-			bridge?.onMicrophoneCaptureEvent &&
-			bridge?.startSystemAudioCapture &&
-			bridge?.onSystemAudioCaptureEvent,
-	);
+	return Boolean(bridge?.startMicrophoneCapture);
 };
 
 export const openDesktopExternalUrl = async (url: string) => {
