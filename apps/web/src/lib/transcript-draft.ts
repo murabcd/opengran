@@ -1,3 +1,4 @@
+import { getDesktopBridge } from "@/lib/desktop-platform";
 import {
 	createEmptyLiveTranscriptState,
 	type LiveTranscriptState,
@@ -29,16 +30,17 @@ const getStorageKey = (noteKey: string) => `${STORAGE_PREFIX}${noteKey}`;
 const canUseBrowserStorage = () => typeof window !== "undefined";
 
 const getDesktopDraftStore = () => {
+	const desktopBridge = getDesktopBridge();
+
 	if (
-		typeof window === "undefined" ||
-		!window.openGranDesktop?.loadTranscriptDraft ||
-		!window.openGranDesktop?.saveTranscriptDraft ||
-		!window.openGranDesktop?.clearTranscriptDraft
+		!desktopBridge?.loadTranscriptDraft ||
+		!desktopBridge?.saveTranscriptDraft ||
+		!desktopBridge?.clearTranscriptDraft
 	) {
 		return null;
 	}
 
-	return window.openGranDesktop;
+	return desktopBridge;
 };
 
 const isFreshDraft = (updatedAt: number) =>

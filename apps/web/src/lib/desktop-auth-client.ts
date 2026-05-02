@@ -1,4 +1,5 @@
 import * as React from "react";
+import { getDesktopBridge } from "@/lib/desktop-platform";
 
 type DesktopSessionData = {
 	user: Record<string, unknown> & {
@@ -148,11 +149,13 @@ const desktopAuthFetch = async ({
 	headers,
 	throw: shouldThrow,
 }: DesktopAuthFetchOptions) => {
-	if (!window.openGranDesktop?.authFetch) {
+	const desktopBridge = getDesktopBridge();
+
+	if (!desktopBridge?.authFetch) {
 		throw new Error("Desktop auth bridge is not available.");
 	}
 
-	return await window.openGranDesktop.authFetch({
+	return await desktopBridge.authFetch({
 		path,
 		method,
 		body,
@@ -304,10 +307,11 @@ export const desktopAuthClient = {
 			errorCallbackURL,
 			disableRedirect,
 		}: SignInSocialArgs) => {
+			const desktopBridge = getDesktopBridge();
 			const resolvedCallbackURL =
 				callbackURL ??
-				(window.openGranDesktop
-					? (await window.openGranDesktop.getAuthCallbackUrl()).url
+				(desktopBridge
+					? (await desktopBridge.getAuthCallbackUrl()).url
 					: window.location.href);
 			const result = await desktopAuthFetch({
 				path: "/sign-in/social",
@@ -333,8 +337,8 @@ export const desktopAuthClient = {
 				);
 			}
 
-			if (window.openGranDesktop) {
-				await window.openGranDesktop.openExternalUrl(url);
+			if (desktopBridge) {
+				await desktopBridge.openExternalUrl(url);
 			} else {
 				window.location.assign(url);
 			}

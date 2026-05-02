@@ -1,3 +1,4 @@
+import { getDesktopBridge } from "@/lib/desktop-platform";
 import {
 	createSystemAudioCaptureStatus,
 	type SystemAudioCaptureSourceMode,
@@ -23,7 +24,9 @@ export const getRealtimeAvailability = () =>
 
 export const resolveTranscriptionPolicy =
 	async (): Promise<TranscriptionPolicy> => {
-		if (typeof window === "undefined" || !window.openGranDesktop) {
+		const desktopBridge = getDesktopBridge();
+
+		if (!desktopBridge) {
 			return {
 				platform: "browser",
 				systemAudioCapability: {
@@ -39,7 +42,7 @@ export const resolveTranscriptionPolicy =
 		}
 
 		try {
-			const status = await window.openGranDesktop.getPermissionsStatus();
+			const status = await desktopBridge.getPermissionsStatus();
 			const systemAudioPermission = status.permissions.find(
 				(permission) => permission.id === "systemAudio",
 			);
@@ -91,11 +94,13 @@ export const createSystemAudioStatusFromPolicy = (
 	});
 
 export const ensureDesktopMicrophonePermission = async () => {
-	if (typeof window === "undefined" || !window.openGranDesktop) {
+	const desktopBridge = getDesktopBridge();
+
+	if (!desktopBridge) {
 		return;
 	}
 
-	let permissionsStatus = await window.openGranDesktop.getPermissionsStatus();
+	let permissionsStatus = await desktopBridge.getPermissionsStatus();
 	let microphonePermission = getMicrophonePermission(permissionsStatus);
 
 	if (!microphonePermission || microphonePermission.state === "granted") {
@@ -106,8 +111,7 @@ export const ensureDesktopMicrophonePermission = async () => {
 		microphonePermission.state === "prompt" &&
 		microphonePermission.canRequest
 	) {
-		permissionsStatus =
-			await window.openGranDesktop.requestPermission("microphone");
+		permissionsStatus = await desktopBridge.requestPermission("microphone");
 		microphonePermission = getMicrophonePermission(permissionsStatus);
 	}
 

@@ -1,8 +1,12 @@
+import { getDesktopBridge } from "@/lib/desktop-platform";
+
 export type NoteVisibility = "private" | "public";
 
 export async function writeTextToClipboard(value: string) {
-	if (window.openGranDesktop) {
-		await window.openGranDesktop.writeClipboardText(value);
+	const desktopBridge = getDesktopBridge();
+
+	if (desktopBridge) {
+		await desktopBridge.writeClipboardText(value);
 		return;
 	}
 
@@ -83,8 +87,10 @@ export async function writeRichTextToClipboard({
 	html: string;
 	text: string;
 }) {
-	if (window.openGranDesktop?.writeClipboardRichText) {
-		await window.openGranDesktop.writeClipboardRichText({
+	const desktopBridge = getDesktopBridge();
+
+	if (desktopBridge?.writeClipboardRichText) {
+		await desktopBridge.writeClipboardRichText({
 			html,
 			text,
 		});
@@ -117,8 +123,10 @@ export async function writeRichTextToClipboard({
 }
 
 async function getShareBaseUrl() {
-	if (window.openGranDesktop?.getShareBaseUrl) {
-		return (await window.openGranDesktop.getShareBaseUrl()).url;
+	const desktopBridge = getDesktopBridge();
+
+	if (desktopBridge?.getShareBaseUrl) {
+		return (await desktopBridge.getShareBaseUrl()).url;
 	}
 
 	return window.location.origin;
