@@ -447,6 +447,7 @@ describe("ChatPage", () => {
 		const user = userEvent.setup();
 		const { ChatPage } = await import("../src/components/chat/chat-page");
 		const onChatRemoved = vi.fn();
+		const chatTimestamp = new Date("2026-01-01T00:00:00.000Z").getTime();
 
 		render(
 			<ActiveWorkspaceProvider workspaceId={"workspace-1" as never}>
@@ -457,12 +458,12 @@ describe("ChatPage", () => {
 					chats={[
 						{
 							_id: "chat-1",
-							_creationTime: Date.now(),
+							_creationTime: chatTimestamp,
 							authorName: "Murad",
 							chatId: "chat-1",
-							createdAt: Date.now(),
+							createdAt: chatTimestamp,
 							title: "Meeting recap",
-							updatedAt: Date.now(),
+							updatedAt: chatTimestamp,
 						} as never,
 					]}
 					isChatsLoading={false}
