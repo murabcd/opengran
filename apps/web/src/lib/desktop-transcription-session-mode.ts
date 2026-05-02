@@ -1,4 +1,7 @@
+import {
+	isDesktopPlatform,
+	supportsDesktopTranscriptionController,
+} from "@/lib/desktop-platform";
+
 export const shouldUseDesktopTranscriptionProxy = () =>
-	typeof window !== "undefined" &&
-	Boolean(window.openGranDesktop?.getTranscriptionSessionState) &&
-	window.openGranDesktop?.platform === "darwin";
+	isDesktopPlatform("darwin") && supportsDesktopTranscriptionController();

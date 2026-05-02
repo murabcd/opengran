@@ -1,3 +1,5 @@
+import { getDesktopBridge } from "@/lib/desktop-platform";
+
 type AppRuntimeConfig = {
 	convexUrl: string;
 	convexSiteUrl: string;
@@ -19,11 +21,10 @@ function getEnv(...names: Array<keyof ImportMetaEnv>) {
 }
 
 export async function loadRuntimeConfig(): Promise<AppRuntimeConfig> {
-	if (
-		typeof window !== "undefined" &&
-		window.openGranDesktop?.getRuntimeConfig
-	) {
-		const config = await window.openGranDesktop.getRuntimeConfig();
+	const desktopBridge = getDesktopBridge();
+
+	if (desktopBridge?.getRuntimeConfig) {
+		const config = await desktopBridge.getRuntimeConfig();
 
 		return {
 			...config,

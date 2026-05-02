@@ -1,3 +1,4 @@
+import { getDesktopBridge } from "@/lib/desktop-platform";
 import type { TranscriptionControllerOptions } from "@/lib/transcription-controller";
 import type {
 	TranscriptionSessionEvent,
@@ -39,33 +40,33 @@ export class DesktopTranscriptionControllerProxy {
 
 	configure = async (options: TranscriptionControllerOptions) => {
 		await this.initializationPromise;
-		await window.openGranDesktop?.configureTranscriptionSession(options);
+		await getDesktopBridge()?.configureTranscriptionSession(options);
 	};
 
 	start = async () => {
 		await this.initializationPromise;
-		return (await window.openGranDesktop?.startTranscriptionSession()) ?? false;
+		return (await getDesktopBridge()?.startTranscriptionSession()) ?? false;
 	};
 
 	stop = async () => {
 		await this.initializationPromise;
-		await window.openGranDesktop?.stopTranscriptionSession();
+		await getDesktopBridge()?.stopTranscriptionSession();
 	};
 
 	requestSystemAudio = async () => {
 		await this.initializationPromise;
 		return (
-			(await window.openGranDesktop?.requestTranscriptionSystemAudio()) ?? false
+			(await getDesktopBridge()?.requestTranscriptionSystemAudio()) ?? false
 		);
 	};
 
 	detachSystemAudio = async () => {
 		await this.initializationPromise;
-		await window.openGranDesktop?.detachTranscriptionSystemAudio();
+		await getDesktopBridge()?.detachTranscriptionSystemAudio();
 	};
 
 	private initialize = async () => {
-		const desktopApi = window.openGranDesktop;
+		const desktopApi = getDesktopBridge();
 
 		if (!desktopApi) {
 			return;

@@ -1,4 +1,5 @@
 import { createDesktopMicrophoneInputStream } from "@/lib/capture/desktop-microphone";
+import { isDesktopPlatform } from "@/lib/desktop-platform";
 
 const createBrowserMicrophoneInputStream = async () =>
 	await navigator.mediaDevices.getUserMedia({
@@ -11,18 +12,8 @@ const createBrowserMicrophoneInputStream = async () =>
 	});
 
 export const createMicrophoneInputStream = async () => {
-	const desktopApi = window.openGranDesktop;
-
-	if (desktopApi?.getMeta) {
-		try {
-			const { platform } = await desktopApi.getMeta();
-
-			if (platform === "darwin") {
-				return await createDesktopMicrophoneInputStream();
-			}
-		} catch {
-			// Fall back to the browser capture path when desktop metadata is unavailable.
-		}
+	if (isDesktopPlatform("darwin")) {
+		return await createDesktopMicrophoneInputStream();
 	}
 
 	return await createBrowserMicrophoneInputStream();
