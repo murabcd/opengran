@@ -102,6 +102,10 @@ import {
 	USER_CHAT_BUBBLE_CLASS,
 } from "@/components/chat/message-layout";
 import { ChatMessageFileAttachments } from "@/components/chat/messages";
+import {
+	type ChatModel,
+	ChatModelPicker,
+} from "@/components/chat/model-picker";
 import { ChatRecipeReceipt } from "@/components/chat/recipe-receipt";
 import {
 	COMPOSER_DOCK_BOTTOM_OFFSET,
@@ -123,7 +127,7 @@ import {
 import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
-import { getChatModel, NOTE_CHAT_MODEL_ID } from "@/lib/ai/models";
+import { defaultChatModel, findChatModel } from "@/lib/ai/models";
 import {
 	extractFileParts,
 	getChatMessageMetadata,
@@ -166,7 +170,6 @@ import {
 } from "../layout/docked-panel-dimensions";
 
 type NoteChatPresentation = "inline" | "floating" | "sidebar";
-const NOTE_CHAT_MODEL = getChatModel(NOTE_CHAT_MODEL_ID);
 const NOTE_CHAT_FLOATING_WIDTH = "min(28rem, calc(100vw - 2rem))";
 const NOTE_CHAT_FLOATING_HEIGHT_STORAGE_KEY_PREFIX =
 	"opengran.noteComposer.floatingHeight";
@@ -211,6 +214,9 @@ const getNoteScopedStorageKey = ({
 	noteScopeKey: string;
 	platform: "desktop" | "mobile";
 }) => `${prefix}.${noteScopeKey}.${platform}`;
+
+const getStoredChatModel = (model: string | undefined): ChatModel | null =>
+	model ? (findChatModel(model) ?? null) : null;
 
 const readStoredPanelHeight = (
 	storageKeys: string | string[],
@@ -265,7 +271,13 @@ const storePanelHeight = (storageKeys: string | string[], height: number) => {
 
 type NoteChatSummary = Pick<
 	Doc<"chats">,
-	"_id" | "_creationTime" | "chatId" | "createdAt" | "title" | "updatedAt"
+	| "_id"
+	| "_creationTime"
+	| "chatId"
+	| "createdAt"
+	| "model"
+	| "title"
+	| "updatedAt"
 >;
 
 type NoteComposerProps = {
@@ -443,6 +455,11 @@ const useNoteComposerController = ({
 		),
 	);
 	const [recipePopoverOpen, setRecipePopoverOpen] = React.useState(false);
+	const [modelPopoverOpen, setModelPopoverOpen] = React.useState(false);
+	const [selectedModelOverride, setSelectedModelOverride] = React.useState<{
+		chatId: string;
+		model: ChatModel;
+	} | null>(null);
 	const [selectedRecipeSlug, setSelectedRecipeSlug] =
 		React.useState<RecipeSlug | null>(null);
 	const [editingMessageId, setEditingMessageId] = React.useState<string | null>(
@@ -546,8 +563,41 @@ const useNoteComposerController = ({
 				}
 			: "skip",
 	);
+	const selectedNoteChat =
+		(noteChats ?? []).find((chat) => chat.chatId === currentChatId) ?? null;
+	const selectedModel =
+		(selectedModelOverride?.chatId === currentChatId
+			? selectedModelOverride.model
+			: null) ??
+		getStoredChatModel(selectedNoteChat?.model ?? currentChatSession?.model) ??
+		defaultChatModel;
 	const updateUserPreferences = useMutation(api.userPreferences.update);
 	const truncateFromMessage = useMutation(api.chats.truncateFromMessage);
+	const persistChatModel = useMutation(api.chats.setModel);
+	const handleSelectedModelChange = React.useCallback(
+		(model: ChatModel) => {
+			setSelectedModelOverride({ chatId: currentChatId, model });
+
+			if (!activeWorkspaceId || currentChatSession?.model === model.model) {
+				return;
+			}
+
+			void persistChatModel({
+				workspaceId: activeWorkspaceId,
+				chatId: currentChatId,
+				model: model.model,
+			}).catch((error) => {
+				console.error("Failed to persist note chat model", error);
+				toast.error("Failed to save model");
+			});
+		},
+		[
+			activeWorkspaceId,
+			currentChatId,
+			currentChatSession?.model,
+			persistChatModel,
+		],
+	);
 	const recipeData = useQuery(
 		api.recipes.list,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
@@ -1013,8 +1063,6 @@ const useNoteComposerController = ({
 		!isCurrentNoteSpeechListening &&
 		!isChatOpen &&
 		!isTranscriptOpen;
-	const selectedNoteChat =
-		(noteChats ?? []).find((chat) => chat.chatId === currentChatId) ?? null;
 	const chatTitle =
 		selectedNoteChat?.title?.trim() ||
 		currentChatSession?.title?.trim() ||
@@ -1291,7 +1339,7 @@ const useNoteComposerController = ({
 			const currentNoteContext = readNoteContext();
 			const convexToken = await getCachedConvexToken();
 			const requestBody = {
-				model: NOTE_CHAT_MODEL.model,
+				model: selectedModel.model,
 				convexToken,
 				noteContext: {
 					noteId: currentNoteContext.noteId,
@@ -1343,6 +1391,7 @@ const useNoteComposerController = ({
 		resetTextareaHeight,
 		selectedRecipe,
 		editingMessageId,
+		selectedModel.model,
 		sendMessage,
 		setPanelMode,
 	]);
@@ -1439,7 +1488,7 @@ const useNoteComposerController = ({
 		const convexToken = await getCachedConvexToken();
 
 		return {
-			model: NOTE_CHAT_MODEL.model,
+			model: selectedModel.model,
 			convexToken,
 			noteContext: {
 				noteId: currentNoteContext.noteId,
@@ -1448,7 +1497,7 @@ const useNoteComposerController = ({
 			},
 			recipeSlug: selectedRecipe?.slug ?? null,
 		};
-	}, [readNoteContext, selectedRecipe?.slug]);
+	}, [readNoteContext, selectedModel.model, selectedRecipe?.slug]);
 
 	const handleDeleteMessage = React.useCallback(
 		(messageId: string) => {
@@ -1677,6 +1726,7 @@ const useNoteComposerController = ({
 		isTranscriptOpen,
 		liveTranscriptEntries: transcriptSession.liveTranscriptEntries,
 		message,
+		modelPopoverOpen,
 		noteChats,
 		handlePrefetchNoteChat,
 		orderedTranscriptUtterances: transcriptSession.orderedTranscriptUtterances,
@@ -1695,8 +1745,11 @@ const useNoteComposerController = ({
 		sidebarPanelWidth,
 		sidebarPanelWidthCss,
 		setPanelMode,
+		setModelPopoverOpen,
+		setSelectedModel: handleSelectedModelChange,
 		setRecipePopoverOpen,
 		setSelectedRecipeSlug,
+		selectedModel,
 		stop,
 		shouldShowInlinePanel,
 		textareaRef,
@@ -2569,9 +2622,13 @@ function ChatInlinePopoverFooter({
 	onRecipePopoverOpenChange,
 	onRecipeRemove,
 	onRecipeSelect,
+	onModelPopoverOpenChange,
+	onSelectedModelChange,
 	recipePopoverOpen,
 	recipes,
 	selectedRecipe,
+	modelPopoverOpen,
+	selectedModel,
 	speechControls,
 	textareaRef,
 }: {
@@ -2587,6 +2644,7 @@ function ChatInlinePopoverFooter({
 		canSendMessage: boolean;
 		isChatLoading: boolean;
 		isSidebarCompact: boolean;
+		showModelPicker: boolean;
 	};
 	message: string;
 	attachedFiles: ChatAttachment[];
@@ -2594,9 +2652,13 @@ function ChatInlinePopoverFooter({
 	onRecipePopoverOpenChange: (open: boolean) => void;
 	onRecipeRemove: () => void;
 	onRecipeSelect: (recipeSlug: RecipeSlug) => void;
+	onModelPopoverOpenChange: (open: boolean) => void;
+	onSelectedModelChange: (model: ChatModel) => void;
 	recipePopoverOpen: boolean;
 	recipes: RecipePrompt[];
 	selectedRecipe: RecipePrompt | null;
+	modelPopoverOpen: boolean;
+	selectedModel: ChatModel;
 	speechControls: React.ReactNode;
 	textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
@@ -2606,6 +2668,7 @@ function ChatInlinePopoverFooter({
 		canSendMessage,
 		isChatLoading,
 		isSidebarCompact,
+		showModelPicker,
 	} = status;
 	const shouldShowRecipeControls = !activateInlineOnFocus;
 	const shouldShowSelectedRecipe = shouldShowRecipeControls && selectedRecipe;
@@ -2763,11 +2826,24 @@ function ChatInlinePopoverFooter({
 					/>
 				) : null}
 				{speechControls}
+				{showModelPicker ? (
+					<div className="ml-auto flex min-w-0 items-center gap-1">
+						<ChatModelPicker
+							open={modelPopoverOpen}
+							onOpenChange={onModelPopoverOpenChange}
+							selectedModel={selectedModel}
+							onSelectedModelChange={onSelectedModelChange}
+							triggerClassName="text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
+							triggerIconClassName="text-current"
+							modelNameClassName="max-w-[120px] truncate"
+						/>
+					</div>
+				) : null}
 				<InputGroupButton
 					type={isChatLoading ? "button" : "submit"}
 					variant="default"
 					size="icon-sm"
-					className="ml-auto rounded-full"
+					className={cn("rounded-full", !showModelPicker && "ml-auto")}
 					aria-label={isChatLoading ? "Stop streaming" : "Send message"}
 					disabled={
 						!isChatLoading &&
@@ -2957,6 +3033,10 @@ function ChatComposerForm({
 					canSendMessage: controller.canSendMessage,
 					isChatLoading: controller.isChatLoading,
 					isSidebarCompact: controller.isSidebarPresentation,
+					showModelPicker:
+						controller.isChatOpen &&
+						controller.shouldShowInlinePanel &&
+						!activateInlineOnFocus,
 				}}
 				message={controller.message}
 				attachedFiles={controller.attachedFiles}
@@ -2967,9 +3047,13 @@ function ChatComposerForm({
 					controller.setSelectedRecipeSlug(recipeSlug);
 					controller.setRecipePopoverOpen(false);
 				}}
+				onModelPopoverOpenChange={controller.setModelPopoverOpen}
+				onSelectedModelChange={controller.setSelectedModel}
 				recipePopoverOpen={controller.recipePopoverOpen}
 				recipes={controller.recipes}
 				selectedRecipe={controller.selectedRecipe}
+				modelPopoverOpen={controller.modelPopoverOpen}
+				selectedModel={controller.selectedModel}
 				speechControls={speechControls}
 				textareaRef={controller.textareaRef}
 			/>

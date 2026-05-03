@@ -196,9 +196,33 @@ vi.mock("@workspace/ui/components/dropdown-menu", () => {
 			{children}
 		</button>
 	);
+	const CheckboxItem = ({
+		checked: _checked,
+		onCheckedChange,
+		onClick,
+		children,
+		...props
+	}: React.PropsWithChildren<
+		React.ButtonHTMLAttributes<HTMLButtonElement> & {
+			checked?: boolean;
+			onCheckedChange?: (checked: boolean) => void;
+		}
+	>) => (
+		<button
+			type="button"
+			{...props}
+			onClick={(event) => {
+				onClick?.(event);
+				onCheckedChange?.(true);
+			}}
+		>
+			{children}
+		</button>
+	);
 
 	return {
 		DropdownMenu: Div,
+		DropdownMenuCheckboxItem: CheckboxItem,
 		DropdownMenuContent: Div,
 		DropdownMenuGroup: Div,
 		DropdownMenuItem: Item,
