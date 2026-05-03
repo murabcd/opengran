@@ -93,6 +93,7 @@ type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
 
 type SidebarUiState = {
 	searchOpen: boolean;
+	chatSearchOpen: boolean;
 	trashOpen: boolean;
 	recipesOpen: boolean;
 	templatesOpen: boolean;
@@ -102,7 +103,12 @@ type SidebarUiState = {
 type SidebarUiAction =
 	| {
 			type: "setOpen";
-			key: "searchOpen" | "trashOpen" | "recipesOpen" | "templatesOpen";
+			key:
+				| "searchOpen"
+				| "chatSearchOpen"
+				| "trashOpen"
+				| "recipesOpen"
+				| "templatesOpen";
 			value: boolean;
 	  }
 	| { type: "resetReadInboxItems" }
@@ -110,6 +116,7 @@ type SidebarUiAction =
 
 const createInitialSidebarUiState = (): SidebarUiState => ({
 	searchOpen: false,
+	chatSearchOpen: false,
 	trashOpen: false,
 	recipesOpen: false,
 	templatesOpen: false,
@@ -180,7 +187,26 @@ function useMobileSidebarNavigation({
 		closeMobileSidebar();
 		dispatchUi({
 			type: "setOpen",
+			key: "chatSearchOpen",
+			value: false,
+		});
+		dispatchUi({
+			type: "setOpen",
 			key: "searchOpen",
+			value: true,
+		});
+	}, [closeMobileSidebar, dispatchUi]);
+
+	const handleChatSearchOpen = React.useCallback(() => {
+		closeMobileSidebar();
+		dispatchUi({
+			type: "setOpen",
+			key: "searchOpen",
+			value: false,
+		});
+		dispatchUi({
+			type: "setOpen",
+			key: "chatSearchOpen",
 			value: true,
 		});
 	}, [closeMobileSidebar, dispatchUi]);
@@ -234,6 +260,7 @@ function useMobileSidebarNavigation({
 	}, [closeMobileSidebar, onCreateNote]);
 
 	return {
+		handleChatSearchOpen,
 		handleChatSelect,
 		handleCreateNote,
 		handleInboxOpenChange,
@@ -253,6 +280,7 @@ function useAppSidebarModel({
 	inboxOpen,
 	isMobile,
 	notes,
+	projects,
 	onChatSelect,
 	onCreateNote,
 	onInboxOpenChange,
@@ -270,6 +298,7 @@ function useAppSidebarModel({
 	inboxOpen: boolean;
 	isMobile: boolean;
 	notes: Array<Doc<"notes">> | undefined;
+	projects: Array<Doc<"projects">> | undefined;
 	onChatSelect: (chatId: string) => void;
 	onCreateNote: () => void;
 	onInboxOpenChange: (open: boolean) => void;
@@ -298,6 +327,31 @@ function useAppSidebarModel({
 		setOpenMobile,
 	});
 	const transcriptionSession = useTranscriptionSession();
+	React.useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (
+				event.defaultPrevented ||
+				!(event.metaKey || event.ctrlKey) ||
+				!event.altKey ||
+				event.shiftKey ||
+				(event.key.toLowerCase() !== "k" && event.code !== "KeyK")
+			) {
+				return;
+			}
+
+			event.preventDefault();
+			event.stopPropagation();
+			mobileNavigation.handleChatSearchOpen();
+		};
+
+		window.addEventListener("keydown", handleKeyDown, { capture: true });
+		return () =>
+			window.removeEventListener("keydown", handleKeyDown, { capture: true });
+	}, [mobileNavigation.handleChatSearchOpen]);
 	const inboxItems = useQuery(
 		api.inboxItems.list,
 		activeWorkspaceId
@@ -353,10 +407,15 @@ function useAppSidebarModel({
 	);
 	const searchableNotes = notes ?? [];
 	const searchableChats = chats ?? [];
+	const projectNamesById = React.useMemo(
+		() =>
+			new Map((projects ?? []).map((project) => [project._id, project.name])),
+		[projects],
+	);
 	const searchItems = React.useMemo<SearchCommandItem[]>(
 		() =>
-			[
-				...searchableNotes.map((note) => ({
+			searchableNotes
+				.map((note) => ({
 					id: note._id,
 					title: getNoteDisplayTitle(
 						note._id === currentNoteId && currentNoteTitle?.trim()
@@ -365,22 +424,34 @@ function useAppSidebarModel({
 					),
 					kind: "note" as const,
 					icon: FileText,
+					projectName: note.projectId
+						? projectNamesById.get(note.projectId)
+						: undefined,
 					preview: note.searchableText.trim() || undefined,
 					updatedAt: note.updatedAt,
-				})),
-				...searchableChats.map((chat) => ({
+				}))
+				.sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0)),
+		[currentNoteId, currentNoteTitle, projectNamesById, searchableNotes],
+	);
+	const chatSearchItems = React.useMemo<SearchCommandItem[]>(
+		() =>
+			searchableChats
+				.map((chat) => ({
 					id: getChatId(chat),
 					title: chat.title || "New chat",
 					kind: "chat" as const,
 					icon: MessageCircle,
 					preview: chat.preview.trim() || undefined,
 					updatedAt: chat.updatedAt,
-				})),
-			].sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0)),
-		[currentNoteId, currentNoteTitle, searchableChats, searchableNotes],
+				}))
+				.sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0)),
+		[searchableChats],
 	);
 	const handleDialogOpenChange = React.useCallback(
-		(key: "searchOpen" | "recipesOpen" | "templatesOpen", value: boolean) => {
+		(
+			key: "searchOpen" | "chatSearchOpen" | "recipesOpen" | "templatesOpen",
+			value: boolean,
+		) => {
 			dispatchUi({
 				type: "setOpen",
 				key,
@@ -425,6 +496,7 @@ function useAppSidebarModel({
 		handleSettingsOpen,
 		handleTemplatesOpen,
 		handleTrashOpenChange,
+		chatSearchItems,
 		inboxItems,
 		navItems,
 		recordingNoteId,
@@ -479,6 +551,7 @@ export function AppSidebar({
 		inboxOpen,
 		isMobile,
 		notes,
+		projects,
 		onChatSelect,
 		onCreateNote,
 		onInboxOpenChange,
@@ -539,6 +612,8 @@ export function AppSidebar({
 			</Sidebar>
 			<AppSidebarDialogs
 				activeWorkspaceId={activeWorkspaceId}
+				chatSearchItems={model.chatSearchItems}
+				chatSearchOpen={model.uiState.chatSearchOpen}
 				onChatSelect={model.handleChatSelect}
 				onNoteSelect={model.handleNoteSelect}
 				onOpenChange={model.handleDialogOpenChange}
@@ -769,6 +844,8 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 
 const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 	activeWorkspaceId,
+	chatSearchItems,
+	chatSearchOpen,
 	onChatSelect,
 	onNoteSelect,
 	onOpenChange,
@@ -783,10 +860,12 @@ const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 	workspaces,
 }: {
 	activeWorkspaceId: Id<"workspaces"> | null;
+	chatSearchItems: SearchCommandItem[];
+	chatSearchOpen: boolean;
 	onChatSelect: (chatId: string) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onOpenChange: (
-		key: "searchOpen" | "recipesOpen" | "templatesOpen",
+		key: "searchOpen" | "chatSearchOpen" | "recipesOpen" | "templatesOpen",
 		value: boolean,
 	) => void;
 	onSettingsOpenChange: (open: boolean, page?: SettingsPage) => void;
@@ -807,6 +886,10 @@ const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 		(open: boolean) => onOpenChange("searchOpen", open),
 		[onOpenChange],
 	);
+	const handleChatSearchOpenChange = React.useCallback(
+		(open: boolean) => onOpenChange("chatSearchOpen", open),
+		[onOpenChange],
+	);
 	const handleSearchSelectItem = React.useCallback(
 		(itemId: string) => {
 			const selectedItem = searchItems.find((item) => item.id === itemId);
@@ -814,14 +897,20 @@ const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 				return;
 			}
 
-			if (selectedItem.kind === "chat") {
-				onChatSelect(itemId);
+			onNoteSelect(itemId as Id<"notes">);
+		},
+		[onNoteSelect, searchItems],
+	);
+	const handleChatSearchSelectItem = React.useCallback(
+		(itemId: string) => {
+			const selectedItem = chatSearchItems.find((item) => item.id === itemId);
+			if (!selectedItem) {
 				return;
 			}
 
-			onNoteSelect(itemId as Id<"notes">);
+			onChatSelect(itemId);
 		},
-		[onChatSelect, onNoteSelect, searchItems],
+		[chatSearchItems, onChatSelect],
 	);
 	const selectedWorkspace = React.useMemo(
 		() =>
@@ -851,6 +940,18 @@ const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 				workspaceId={activeWorkspaceId}
 				showKeyboardHintsFooter
 				onSelectItem={handleSearchSelectItem}
+			/>
+			<SearchCommand
+				open={chatSearchOpen}
+				onOpenChange={handleChatSearchOpenChange}
+				items={chatSearchItems}
+				workspaceId={activeWorkspaceId}
+				searchKind="chats"
+				searchPlaceholder="Search chats..."
+				searchDescription="Search chats..."
+				showKeyboardHintsFooter
+				keyboardHintsSearchKind="chats"
+				onSelectItem={handleChatSearchSelectItem}
 			/>
 			<SettingsDialog
 				open={settingsOpen}

@@ -52,6 +52,7 @@ export interface SearchCommandItem {
 	title: string;
 	kind: "note" | "chat";
 	icon: LucideIcon;
+	projectName?: string;
 	preview?: string;
 	updatedAt?: number;
 }
@@ -62,12 +63,14 @@ interface SearchCommandProps {
 	items: SearchCommandItem[];
 	onSelectItem: (itemId: string) => void;
 	workspaceId?: Id<"workspaces"> | null;
+	searchKind?: "notes" | "chats";
 	searchPlaceholder?: string;
 	searchDescription?: string;
 	filtersEnabled?: boolean;
 	groupByDate?: boolean;
 	showResultsOnEmptySearch?: boolean;
 	showKeyboardHintsFooter?: boolean;
+	keyboardHintsSearchKind?: "notes" | "chats";
 }
 
 type SearchFiltersState = {
@@ -349,12 +352,14 @@ export function SearchCommand({
 	items,
 	onSelectItem,
 	workspaceId,
-	searchPlaceholder = "Search notes and chats...",
-	searchDescription = "Search notes and chats...",
+	searchKind = "notes",
+	searchPlaceholder = "Search notes...",
+	searchDescription = "Search notes...",
 	filtersEnabled = true,
 	groupByDate = true,
 	showResultsOnEmptySearch = true,
 	showKeyboardHintsFooter = false,
+	keyboardHintsSearchKind = searchKind,
 }: SearchCommandProps) {
 	const filters = useSearchCommandFilters({ open });
 
@@ -366,12 +371,14 @@ export function SearchCommand({
 				items={items}
 				onSelectItem={onSelectItem}
 				workspaceId={workspaceId}
+				searchKind={searchKind}
 				searchPlaceholder={searchPlaceholder}
 				searchDescription={searchDescription}
 				filtersEnabled={filtersEnabled}
 				groupByDate={groupByDate}
 				showResultsOnEmptySearch={showResultsOnEmptySearch}
 				showKeyboardHintsFooter={showKeyboardHintsFooter}
+				keyboardHintsSearchKind={keyboardHintsSearchKind}
 				filters={filters}
 			/>
 		);
@@ -389,6 +396,7 @@ export function SearchCommand({
 			groupByDate={groupByDate}
 			showResultsOnEmptySearch={showResultsOnEmptySearch}
 			showKeyboardHintsFooter={showKeyboardHintsFooter}
+			keyboardHintsSearchKind={keyboardHintsSearchKind}
 			filters={filters}
 			shouldFilter
 		/>
@@ -398,6 +406,7 @@ export function SearchCommand({
 function SearchCommandWithServerSearch({
 	items,
 	workspaceId,
+	searchKind = "notes",
 	filters,
 	...props
 }: SearchCommandProps & {
@@ -413,6 +422,7 @@ function SearchCommandWithServerSearch({
 			? {
 					workspaceId,
 					query: normalizedSearchValue,
+					kind: searchKind,
 					titleOnly: filters.titleOnly,
 				}
 			: "skip",
@@ -427,6 +437,7 @@ function SearchCommandWithServerSearch({
 			title: item.title,
 			kind: item.kind,
 			icon: item.kind === "chat" ? MessageCircle : FileText,
+			projectName: item.projectName,
 			preview: item.preview,
 			updatedAt: item.updatedAt,
 		}));
@@ -448,12 +459,13 @@ function SearchCommandView({
 	onOpenChange,
 	items,
 	onSelectItem,
-	searchPlaceholder = "Search notes and chats...",
-	searchDescription = "Search notes and chats...",
+	searchPlaceholder = "Search notes...",
+	searchDescription = "Search notes...",
 	filtersEnabled = true,
 	groupByDate = true,
 	showResultsOnEmptySearch = true,
 	showKeyboardHintsFooter = false,
+	keyboardHintsSearchKind = "notes",
 	filters,
 	shouldFilter,
 }: SearchCommandProps & {
@@ -584,15 +596,23 @@ function SearchCommandView({
 						Type to search for notes
 					</div>
 				)}
-				{showKeyboardHintsFooter ? <SearchCommandKeyboardHints /> : null}
+				{showKeyboardHintsFooter ? (
+					<SearchCommandKeyboardHints searchKind={keyboardHintsSearchKind} />
+				) : null}
 			</Command>
 		</CommandDialog>
 	);
 }
 
-function SearchCommandKeyboardHints() {
+function SearchCommandKeyboardHints({
+	searchKind,
+}: {
+	searchKind: "notes" | "chats";
+}) {
 	const kbdClassName =
 		"border border-border/60 bg-muted px-1.5 font-mono text-xs";
+	const switchSearchLabel =
+		searchKind === "chats" ? "search notes" : "search chats";
 
 	return (
 		<div className="flex h-11 items-center gap-5 px-4 text-muted-foreground text-xs">
@@ -609,10 +629,18 @@ function SearchCommandKeyboardHints() {
 				<span>open</span>
 			</div>
 			<div className="flex items-center gap-2">
-				<Kbd aria-hidden="true" className={kbdClassName}>
-					Esc
-				</Kbd>
-				<span>close</span>
+				{searchKind === "chats" ? (
+					<Kbd aria-hidden="true" className={kbdClassName}>
+						⌘K
+					</Kbd>
+				) : (
+					<Kbd aria-hidden="true" className={cn(kbdClassName, "flex gap-1")}>
+						<span>⌘</span>
+						<span>⌥</span>
+						<span>K</span>
+					</Kbd>
+				)}
+				<span>{switchSearchLabel}</span>
 			</div>
 		</div>
 	);
@@ -629,11 +657,7 @@ function SearchCommandRow({
 }) {
 	return (
 		<CommandItem
-			value={
-				titleOnly
-					? `${item.kind} ${item.id} ${item.title}`
-					: `${item.kind} ${item.id} ${item.title} ${item.preview ?? ""}`
-			}
+			value={getSearchCommandItemValue(item, titleOnly)}
 			onSelect={onSelect}
 			className="h-8 cursor-pointer gap-1.5 rounded-md px-1.5"
 		>
@@ -641,8 +665,26 @@ function SearchCommandRow({
 				<item.icon className="size-4" />
 			</div>
 			<div className="min-w-0 flex-1 truncate">{item.title}</div>
+			{item.projectName ? (
+				<div className="max-w-32 shrink-0 truncate text-muted-foreground">
+					{item.projectName}
+				</div>
+			) : null}
 		</CommandItem>
 	);
+}
+
+function getSearchCommandItemValue(
+	item: SearchCommandItem,
+	titleOnly: boolean,
+) {
+	const projectName = item.projectName ?? "";
+
+	if (titleOnly) {
+		return `${item.kind} ${item.id} ${item.title} ${projectName}`;
+	}
+
+	return `${item.kind} ${item.id} ${item.title} ${projectName} ${item.preview ?? ""}`;
 }
 
 function SearchDatePresetOption({

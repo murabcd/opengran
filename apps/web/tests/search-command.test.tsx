@@ -75,10 +75,7 @@ describe("SearchCommand filters", () => {
 			</TooltipProvider>,
 		);
 
-		await user.type(
-			screen.getByPlaceholderText("Search notes and chats..."),
-			"needle",
-		);
+		await user.type(screen.getByPlaceholderText("Search notes..."), "needle");
 
 		expect(screen.getByText("Alpha title")).toBeDefined();
 		expect(screen.getByText("Needle title")).toBeDefined();
@@ -129,6 +126,24 @@ describe("SearchCommand filters", () => {
 
 		expect(screen.getByText("navigate")).toBeDefined();
 		expect(screen.getByText("open")).toBeDefined();
-		expect(screen.getByText("close")).toBeDefined();
+		expect(screen.getByText("search chats")).toBeDefined();
+	});
+
+	it("shows the note search shortcut in chat search", () => {
+		render(
+			<TooltipProvider>
+				<SearchCommand
+					open
+					onOpenChange={vi.fn()}
+					items={[]}
+					searchKind="chats"
+					keyboardHintsSearchKind="chats"
+					showKeyboardHintsFooter
+					onSelectItem={vi.fn()}
+				/>
+			</TooltipProvider>,
+		);
+
+		expect(screen.getByText("search notes")).toBeDefined();
 	});
 });

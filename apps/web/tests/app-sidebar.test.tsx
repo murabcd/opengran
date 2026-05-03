@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const useQueryMock = vi.fn();
 const useSidebarShellMock = vi.fn();
 const useTranscriptionSessionMock = vi.fn();
+const searchCommandMock = vi.hoisted(() => vi.fn());
 const TEST_NOW = new Date("2026-05-01T12:00:00.000Z").getTime();
 
 vi.mock("convex/react", () => ({
@@ -136,7 +137,19 @@ vi.mock("../src/components/recipes/recipes-dialog", () => ({
 }));
 
 vi.mock("../src/components/search/search-command", () => ({
-	SearchCommand: () => null,
+	SearchCommand: (props: {
+		open: boolean;
+		searchPlaceholder?: string;
+		items: Array<{ id: string; title: string; kind: string }>;
+	}) => {
+		searchCommandMock(props);
+
+		return props.open ? (
+			<div data-testid={`search-command-${props.searchPlaceholder}`}>
+				{props.searchPlaceholder}
+			</div>
+		) : null;
+	},
 }));
 
 vi.mock("../src/components/settings/settings-dialog", () => ({
@@ -186,6 +199,7 @@ describe("AppSidebar mobile interactions", () => {
 	});
 
 	beforeEach(() => {
+		searchCommandMock.mockClear();
 		useQueryMock.mockReturnValue([]);
 		useTranscriptionSessionMock.mockReturnValue({
 			isListening: false,
@@ -274,5 +288,71 @@ describe("AppSidebar mobile interactions", () => {
 		expect(onNoteSelect).toHaveBeenCalledWith("note-1");
 		expect(onCreateNote).toHaveBeenCalledTimes(2);
 		expect(onWorkspaceSelect).toHaveBeenCalledWith("workspace-1");
+	});
+
+	it("opens chat search with command option k", async () => {
+		const setOpenMobile = vi.fn();
+
+		useSidebarShellMock.mockReturnValue({
+			isMobile: true,
+			setOpenMobile,
+			state: "expanded",
+		});
+
+		const { AppSidebar } = await import(
+			"../src/components/sidebar/app-sidebar"
+		);
+
+		render(
+			<AppSidebar
+				workspaces={[{ _id: "workspace-1", name: "Workspace" } as never]}
+				activeWorkspaceId={"workspace-1" as never}
+				currentView="chat"
+				inboxOpen={false}
+				user={{
+					name: "Murad",
+					email: "murad@example.com",
+					avatar: "",
+				}}
+				chats={[
+					{
+						_id: "chat-1",
+						chatId: "chat-1",
+						preview: "Preview",
+						title: "First chat",
+						updatedAt: TEST_NOW,
+					} as never,
+				]}
+				currentChatId="chat-1"
+				currentChatTitle="First chat"
+				notes={[]}
+				sharedNotes={[]}
+				onWorkspaceSelect={vi.fn()}
+				onWorkspaceCreate={vi.fn()}
+				onViewChange={vi.fn()}
+				onInboxOpenChange={vi.fn()}
+				settingsOpen={false}
+				onSettingsOpenChange={vi.fn()}
+				onSignOut={vi.fn()}
+				currentNoteId={null}
+				onChatSelect={vi.fn()}
+				onNotePrefetch={vi.fn()}
+				onNoteSelect={vi.fn()}
+				onCreateNote={vi.fn()}
+			/>,
+		);
+
+		fireEvent.keyDown(window, { code: "KeyK", metaKey: true, altKey: true });
+
+		expect(setOpenMobile).toHaveBeenCalledWith(false);
+		expect(screen.getByTestId("search-command-Search chats...")).toBeDefined();
+		expect(
+			searchCommandMock.mock.calls.some(
+				([props]) =>
+					props.searchPlaceholder === "Search chats..." &&
+					props.open === true &&
+					props.items[0]?.kind === "chat",
+			),
+		).toBe(true);
 	});
 });
