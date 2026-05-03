@@ -3033,10 +3033,7 @@ function ChatComposerForm({
 					canSendMessage: controller.canSendMessage,
 					isChatLoading: controller.isChatLoading,
 					isSidebarCompact: controller.isSidebarPresentation,
-					showModelPicker:
-						controller.isChatOpen &&
-						controller.shouldShowInlinePanel &&
-						!activateInlineOnFocus,
+					showModelPicker: controller.isChatOpen && !activateInlineOnFocus,
 				}}
 				message={controller.message}
 				attachedFiles={controller.attachedFiles}
