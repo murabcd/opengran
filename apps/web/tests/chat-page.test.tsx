@@ -74,6 +74,10 @@ const mockChatPageMutations = () => {
 			return truncateFromMessageMock;
 		}
 
+		if (functionName === "chats:setModel") {
+			return vi.fn().mockResolvedValue(null);
+		}
+
 		if (functionName === "chats:moveToTrash") {
 			return {
 				withOptimisticUpdate: vi.fn(() => moveChatToTrashMock),

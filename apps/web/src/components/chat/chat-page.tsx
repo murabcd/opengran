@@ -20,6 +20,7 @@ import {
 	OPEN_CHAT_SUMMARY_EVENT,
 } from "@/components/chat/chat-summary-sheet";
 import { ChatMessages } from "@/components/chat/messages";
+import type { ChatModel } from "@/components/chat/model-picker";
 import { COMPOSER_DOCK_WRAPPER_CLASS } from "@/components/layout/composer-dock";
 import { PageTitle } from "@/components/layout/page-title";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
@@ -77,25 +78,39 @@ const getLatestUserMessageText = (messages: UIMessage[]) => {
 	return "";
 };
 
+const getStoredChatModel = (model: string | undefined): ChatModel | null =>
+	model ? (findChatModel(model) ?? null) : null;
+
 const useChatPageController = ({
 	chatId,
 	initialMessages,
 	onChatPersisted,
 	chats,
+	isChatsLoading,
 	activeWorkspace,
 }: Pick<
 	ChatPageProps,
-	"chatId" | "initialMessages" | "onChatPersisted" | "chats" | "activeWorkspace"
+	| "chatId"
+	| "initialMessages"
+	| "onChatPersisted"
+	| "chats"
+	| "isChatsLoading"
+	| "activeWorkspace"
 >) => {
 	const activeWorkspaceId = useActiveWorkspaceId();
+	const currentChat = React.useMemo(
+		() => chats.find((chat) => getChatId(chat) === chatId) ?? null,
+		[chats, chatId],
+	);
 	const [draft, setDraft] = React.useState("");
 	const [attachedFiles, setAttachedFiles] = React.useState<ChatAttachment[]>(
 		[],
 	);
 	useRevokeAttachmentObjectUrls(attachedFiles);
-	const [selectedModel, setSelectedModel] = React.useState(
-		defaultChatModel ?? chatModels[0],
-	);
+	const [selectedModelOverride, setSelectedModelOverride] = React.useState<{
+		chatId: string;
+		model: ChatModel;
+	} | null>(null);
 	const [mentionPopoverOpen, setMentionPopoverOpen] = React.useState(false);
 	const [documentSearchTerm, setDocumentSearchTerm] = React.useState("");
 	const [mentions, setMentions] = React.useState<string[]>([]);
@@ -122,6 +137,7 @@ const useChatPageController = ({
 		setSelectedSourceIds([]);
 	}, [activeWorkspaceId]);
 	const truncateFromMessage = useMutation(api.chats.truncateFromMessage);
+	const persistChatModel = useMutation(api.chats.setModel);
 	const storedMessages = useQuery(
 		api.chats.getMessages,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId, chatId } : "skip",
@@ -226,23 +242,33 @@ const useChatPageController = ({
 	const isLoading = isLocalChatLoading || isAutomationRunning;
 	const hasMessages = messages.length > 0 || isAutomationRunning;
 	const isNotesLoading = notes === undefined;
-	const currentChat = React.useMemo(
-		() => chats.find((chat) => getChatId(chat) === chatId) ?? null,
-		[chats, chatId],
+	const selectedModel =
+		(selectedModelOverride?.chatId === chatId
+			? selectedModelOverride.model
+			: null) ??
+		getStoredChatModel(currentChat?.model) ??
+		defaultChatModel ??
+		chatModels[0];
+	const isModelResolving = isChatsLoading && !currentChat;
+	const handleSelectedModelChange = React.useCallback(
+		(model: ChatModel) => {
+			setSelectedModelOverride({ chatId, model });
+
+			if (!activeWorkspaceId || currentChat?.model === model.model) {
+				return;
+			}
+
+			void persistChatModel({
+				workspaceId: activeWorkspaceId,
+				chatId,
+				model: model.model,
+			}).catch((error) => {
+				console.error("Failed to persist chat model", error);
+				toast.error("Failed to save model");
+			});
+		},
+		[activeWorkspaceId, chatId, currentChat?.model, persistChatModel],
 	);
-
-	React.useEffect(() => {
-		if (!currentChat?.model) {
-			setSelectedModel(defaultChatModel);
-			return;
-		}
-
-		const model = findChatModel(currentChat.model);
-
-		if (model) {
-			setSelectedModel(model);
-		}
-	}, [currentChat?.model]);
 
 	const contextPages = React.useMemo(
 		() =>
@@ -497,7 +523,7 @@ const useChatPageController = ({
 		mentionableDocuments,
 		messages,
 		modelPopoverOpen,
-		selectedModel,
+		selectedModel: isModelResolving ? null : selectedModel,
 		selectedSourceIds,
 		setAppsEnabled,
 		setDocumentSearchTerm,
@@ -505,7 +531,7 @@ const useChatPageController = ({
 		setMentionPopoverOpen,
 		setMentions,
 		setModelPopoverOpen,
-		setSelectedModel,
+		setSelectedModel: handleSelectedModelChange,
 		setProjectSearchTerm,
 		setSourcesOpen,
 		setSummaryOpen,
@@ -595,6 +621,7 @@ export function ChatPage({
 		initialMessages,
 		onChatPersisted,
 		chats,
+		isChatsLoading,
 		activeWorkspace,
 	});
 	const {
