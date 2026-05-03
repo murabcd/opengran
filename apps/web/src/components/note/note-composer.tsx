@@ -1072,7 +1072,17 @@ const useNoteComposerController = ({
 		[noteChats],
 	);
 	const latestNoteChat = noteChats?.[0] ?? null;
-	const composerPlaceholder = latestNoteChat ? "Continue chat" : "Ask anything";
+	const isNoteChatsLoading = Boolean(
+		noteId && activeWorkspaceId && noteChats === undefined,
+	);
+	const hasKnownNoteChat = Boolean(
+		latestNoteChat || selectedNoteChat || currentChatSession,
+	);
+	const composerPlaceholder = isNoteChatsLoading
+		? "Continue chat"
+		: hasKnownNoteChat
+			? "Continue chat"
+			: "Ask anything";
 	const recipes = React.useMemo(
 		() =>
 			(recipeData ?? []).map((recipe) => ({
