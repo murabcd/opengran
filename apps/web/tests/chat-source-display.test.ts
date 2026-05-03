@@ -15,9 +15,7 @@ describe("chat source display", () => {
 		expect(
 			getSelectedScopeLabel({
 				selectedSourceIds: ["app:notion"],
-				workspaceSourceId: "workspace:123",
-				workspaceLabel: "Murad's workspace",
-				workspaceSources: [],
+				projectSources: [],
 				appSources: [
 					{
 						id: "app:notion",
@@ -28,32 +26,28 @@ describe("chat source display", () => {
 		).toBe("Notion");
 	});
 
-	it("shows the workspace label instead of the workspace name", () => {
+	it("shows the project source title", () => {
 		expect(
 			getSelectedScopeLabel({
-				selectedSourceIds: ["workspace:123"],
-				workspaceSourceId: "workspace:123",
-				workspaceLabel: "Murad's workspace",
-				workspaceSources: [],
-				appSources: [],
-			}),
-		).toBe("Murad's workspace");
-	});
-
-	it("falls back to the note title for note-specific selections", () => {
-		expect(
-			getSelectedScopeLabel({
-				selectedSourceIds: ["note-1"],
-				workspaceSourceId: "workspace:123",
-				workspaceLabel: "Murad's workspace",
-				workspaceSources: [
+				selectedSourceIds: ["project:123"],
+				projectSources: [
 					{
-						id: "note-1",
-						title: "Launch plan",
+						id: "project:123",
+						title: "Internal",
 					},
 				],
 				appSources: [],
 			}),
-		).toBe("Launch plan");
+		).toBe("Internal");
+	});
+
+	it("falls back when the selected source is not in known app or project sources", () => {
+		expect(
+			getSelectedScopeLabel({
+				selectedSourceIds: ["note-1"],
+				projectSources: [],
+				appSources: [],
+			}),
+		).toBe("1 source");
 	});
 });

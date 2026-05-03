@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 
-export type ChatTurn = {
+type ChatTurn = {
 	userMessage?: UIMessage;
 	assistantMessages: UIMessage[];
 };

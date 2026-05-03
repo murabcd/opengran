@@ -32,12 +32,12 @@ export const getAppSourceLabel = (provider: ChatAppSourceProvider) =>
 
 export const getSelectedScopeLabel = ({
 	selectedSourceIds,
-	projectSources,
-	appSources,
+	projectSources = [],
+	appSources = [],
 }: {
 	selectedSourceIds: string[];
-	projectSources: ProjectSourceLike[];
-	appSources: AppSourceLike[];
+	projectSources?: ProjectSourceLike[];
+	appSources?: AppSourceLike[];
 }) => {
 	if (selectedSourceIds.length === 0) {
 		return "All sources";

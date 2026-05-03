@@ -259,8 +259,9 @@ test("message snapshots return only replay fields", async () => {
 			role: "user",
 			partsJson: JSON.stringify([{ type: "text", text: "Prompt" }]),
 			metadataJson: JSON.stringify({ source: "test" }),
+			createdAt: 2_500,
 		},
 	]);
 	expect("text" in snapshots[0]).toBe(false);
-	expect("createdAt" in snapshots[0]).toBe(false);
+	expect(snapshots[0]?.createdAt).toBe(2_500);
 });

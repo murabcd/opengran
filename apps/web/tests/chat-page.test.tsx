@@ -708,7 +708,7 @@ describe("ChatPage", () => {
 		);
 	});
 
-	it("shows a toast when web search is enabled or disabled", async () => {
+	it("toggles web search without showing a toast", async () => {
 		const user = userEvent.setup();
 		const { ChatPage } = await import("../src/components/chat/chat-page");
 
@@ -733,8 +733,7 @@ describe("ChatPage", () => {
 		await user.click(screen.getByLabelText("Web search"));
 		await user.click(screen.getByLabelText("Web search"));
 
-		expect(toastSuccessMock).toHaveBeenNthCalledWith(1, "Web search enabled");
-		expect(toastSuccessMock).toHaveBeenNthCalledWith(2, "Web search disabled");
+		expect(toastSuccessMock).not.toHaveBeenCalled();
 	});
 
 	it("loads a user message into the composer for editing and resubmits with the same id", async () => {
