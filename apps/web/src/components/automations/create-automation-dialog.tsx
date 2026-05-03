@@ -22,7 +22,6 @@ import {
 	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuItem,
-	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuSub,
 	DropdownMenuSubContent,
@@ -68,6 +67,7 @@ import {
 	Folder,
 	Globe,
 	LayoutGrid,
+	Settings2,
 	X,
 } from "lucide-react";
 import * as React from "react";
@@ -79,9 +79,10 @@ import {
 	type AutomationTarget,
 } from "@/components/automations/automation-types";
 import { getAutomationSchedulePeriodLabel } from "@/components/automations/automation-utils";
+import { ChatModelPicker } from "@/components/chat/model-picker";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { type AppSource, useAppSources } from "@/hooks/use-app-sources";
-import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
+import { defaultChatModel, findChatModel } from "@/lib/ai/models";
 import {
 	type ChatAppSourceProvider,
 	getAppSourceLabel,
@@ -669,13 +670,16 @@ function useCreateAutomationDialogElement({
 								align="block-end"
 								className="flex-wrap justify-start gap-1 px-2.5 py-2"
 							>
-								<ModelPicker
-									open={modelPickerOpen}
-									onOpenChange={handleModelPickerOpenChange}
-									selectedModel={selectedModel}
-									onSelectedModelChange={(value) =>
-										updateDialogState({ selectedModel: value })
+								<SchedulePicker
+									open={schedulePickerOpen}
+									onOpenChange={handleSchedulePickerOpenChange}
+									scheduleLabel={scheduleLabel}
+									schedulePeriod={schedulePeriod}
+									scheduledAt={scheduledAt}
+									onSchedulePeriodChange={(value) =>
+										updateDialogState({ schedulePeriod: value })
 									}
+									onTimeChange={handleTimeChange}
 								/>
 								<AppSourcesPicker
 									open={appSourcesPickerOpen}
@@ -697,17 +701,21 @@ function useCreateAutomationDialogElement({
 									}
 									onToggleSource={handleConnectedAppToggle}
 								/>
-								<SchedulePicker
-									open={schedulePickerOpen}
-									onOpenChange={handleSchedulePickerOpenChange}
-									scheduleLabel={scheduleLabel}
-									schedulePeriod={schedulePeriod}
-									scheduledAt={scheduledAt}
-									onSchedulePeriodChange={(value) =>
-										updateDialogState({ schedulePeriod: value })
-									}
-									onTimeChange={handleTimeChange}
-								/>
+								<div className="ml-auto flex min-w-0 items-center gap-1">
+									<ChatModelPicker
+										open={modelPickerOpen}
+										onOpenChange={handleModelPickerOpenChange}
+										selectedModel={selectedModel}
+										onSelectedModelChange={(value) =>
+											updateDialogState({ selectedModel: value })
+										}
+										triggerClassName="text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
+										triggerIconClassName="text-current"
+										modelNameClassName="max-w-[120px] truncate"
+										contentClassName="w-72"
+										menuLabel="Model"
+									/>
+								</div>
 							</InputGroupAddon>
 						</InputGroup>
 					</Field>
@@ -786,19 +794,22 @@ function AppSourcesPicker({
 
 	return (
 		<DropdownMenu open={open} onOpenChange={onOpenChange}>
-			<DropdownMenuTrigger asChild>
-				<InputGroupButton
-					type="button"
-					variant="ghost"
-					size="sm"
-					className={cn(AUTOMATION_PICKER_TRIGGER_CLASS_NAME)}
-				>
-					<span className="flex min-w-0 flex-1 items-center gap-2">
-						<Globe className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
-						<span className="min-w-0 truncate">{label}</span>
-					</span>
-				</InputGroupButton>
-			</DropdownMenuTrigger>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<DropdownMenuTrigger asChild>
+						<InputGroupButton
+							type="button"
+							variant="ghost"
+							size="icon-sm"
+							className="group/automation-picker rounded-full text-muted-foreground"
+							aria-label={`Select scope: ${label}`}
+						>
+							<Settings2 className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
+						</InputGroupButton>
+					</DropdownMenuTrigger>
+				</TooltipTrigger>
+				<TooltipContent>Select scope</TooltipContent>
+			</Tooltip>
 			<DropdownMenuContent side="top" align="start" className="w-64">
 				<DropdownMenuGroup>
 					<DropdownMenuItem
@@ -1128,59 +1139,6 @@ function ConnectedAppIcon({ provider }: { provider: ChatAppSourceProvider }) {
 	return <LayoutGrid className="size-4" />;
 }
 
-function ModelPicker({
-	open,
-	onOpenChange,
-	selectedModel,
-	onSelectedModelChange,
-}: {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	selectedModel: (typeof chatModels)[number];
-	onSelectedModelChange: (model: (typeof chatModels)[number]) => void;
-}) {
-	return (
-		<DropdownMenu open={open} onOpenChange={onOpenChange}>
-			<DropdownMenuTrigger asChild>
-				<InputGroupButton
-					type="button"
-					variant="ghost"
-					size="sm"
-					className="rounded-full gap-2 font-normal text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
-					aria-label={`Model: ${selectedModel.name}`}
-				>
-					<Icons.codexLogo className="size-3.5" />
-					<span className="max-w-[120px] truncate">{selectedModel.name}</span>
-				</InputGroupButton>
-			</DropdownMenuTrigger>
-			<DropdownMenuContent side="top" align="start" className="w-72">
-				<DropdownMenuGroup>
-					<DropdownMenuLabel className="text-xs text-muted-foreground">
-						Model
-					</DropdownMenuLabel>
-					{chatModels.map((model) => (
-						<DropdownMenuCheckboxItem
-							key={model.id}
-							checked={model.id === selectedModel.id}
-							onCheckedChange={(checked) => {
-								if (checked) {
-									onSelectedModelChange(model);
-								}
-							}}
-							className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
-						>
-							<span className="inline-flex items-center gap-2">
-								<Icons.codexLogo className="size-4 text-muted-foreground" />
-								{model.name}
-							</span>
-						</DropdownMenuCheckboxItem>
-					))}
-				</DropdownMenuGroup>
-			</DropdownMenuContent>
-		</DropdownMenu>
-	);
-}
-
 function SchedulePicker({
 	open,
 	onOpenChange,
@@ -1200,19 +1158,24 @@ function SchedulePicker({
 }) {
 	return (
 		<Popover open={open} onOpenChange={onOpenChange}>
-			<PopoverTrigger asChild>
-				<InputGroupButton
-					type="button"
-					variant="ghost"
-					size="sm"
-					className={cn(AUTOMATION_PICKER_TRIGGER_CLASS_NAME)}
-				>
-					<span className="flex items-center gap-2">
-						<Clock className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
-						<span>{scheduleLabel}</span>
-					</span>
-				</InputGroupButton>
-			</PopoverTrigger>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<PopoverTrigger asChild>
+						<InputGroupButton
+							type="button"
+							variant="ghost"
+							size="sm"
+							className={cn(AUTOMATION_PICKER_TRIGGER_CLASS_NAME)}
+						>
+							<span className="flex items-center gap-2">
+								<Clock className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
+								<span>{scheduleLabel}</span>
+							</span>
+						</InputGroupButton>
+					</PopoverTrigger>
+				</TooltipTrigger>
+				<TooltipContent>Edit schedule</TooltipContent>
+			</Tooltip>
 			<PopoverContent
 				align="start"
 				sideOffset={6}

@@ -12,7 +12,6 @@ import {
 	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuItem,
-	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuSub,
 	DropdownMenuSubContent,
@@ -49,6 +48,7 @@ import {
 	LayoutGrid,
 	type LucideIcon,
 	Plus,
+	Settings2,
 	Square,
 	X,
 } from "lucide-react";
@@ -59,7 +59,10 @@ import {
 	FileAttachmentChips,
 	hasUploadingAttachments,
 } from "@/components/ai-elements/file-attachment-controls";
-import { chatModels } from "@/lib/ai/models";
+import {
+	type ChatModel,
+	ChatModelPicker,
+} from "@/components/chat/model-picker";
 import {
 	type ChatAppSourceProvider,
 	getAppSourceLabel,
@@ -132,10 +135,10 @@ type ChatComposerProps = {
 	attachedFiles: ChatAttachment[];
 	onAttachedFilesChange: React.Dispatch<React.SetStateAction<ChatAttachment[]>>;
 	isLoading: boolean;
-	selectedModel: (typeof chatModels)[number];
+	selectedModel: ChatModel | null;
 	modelPopoverOpen: boolean;
 	onModelPopoverOpenChange: (open: boolean) => void;
-	onSelectedModelChange: (model: (typeof chatModels)[number]) => void;
+	onSelectedModelChange: (model: ChatModel) => void;
 	mentionPopoverOpen: boolean;
 	onMentionPopoverOpenChange: (open: boolean) => void;
 	documentSearchTerm: string;
@@ -367,12 +370,14 @@ export function ChatComposer({
 					onSubmit={onSubmit}
 					onStop={onStop}
 					modelPicker={
-						<ModelPicker
-							open={modelPopoverOpen}
-							onOpenChange={onModelPopoverOpenChange}
-							selectedModel={selectedModel}
-							onSelectedModelChange={onSelectedModelChange}
-						/>
+						selectedModel ? (
+							<ChatModelPicker
+								open={modelPopoverOpen}
+								onOpenChange={onModelPopoverOpenChange}
+								selectedModel={selectedModel}
+								onSelectedModelChange={onSelectedModelChange}
+							/>
+						) : null
 					}
 					scopePicker={
 						<ScopePicker
@@ -704,11 +709,13 @@ function ChatComposerFooter({
 					onAttachedFilesChange((currentFiles) => [...currentFiles, ...files])
 				}
 			/>
-			{modelPicker}
 			{scopePicker}
+			<div className="ml-auto flex min-w-0 items-center gap-1">
+				{modelPicker}
+			</div>
 			<InputGroupButton
 				aria-label={isLoading ? "Stop streaming" : "Send"}
-				className="ml-auto rounded-full"
+				className="rounded-full"
 				variant="default"
 				size="icon-sm"
 				disabled={
@@ -732,61 +739,6 @@ function ChatComposerFooter({
 				)}
 			</InputGroupButton>
 		</InputGroupAddon>
-	);
-}
-
-function ModelPicker({
-	open,
-	onOpenChange,
-	selectedModel,
-	onSelectedModelChange,
-}: {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	selectedModel: (typeof chatModels)[number];
-	onSelectedModelChange: (model: (typeof chatModels)[number]) => void;
-}) {
-	return (
-		<DropdownMenu open={open} onOpenChange={onOpenChange}>
-			<Tooltip>
-				<TooltipTrigger asChild>
-					<DropdownMenuTrigger asChild>
-						<InputGroupButton
-							size="sm"
-							className="group rounded-full gap-2 font-normal"
-						>
-							<Icons.codexLogo className="size-3.5 text-muted-foreground transition-colors group-hover:text-foreground group-data-[state=open]:text-foreground" />
-							{selectedModel.name}
-						</InputGroupButton>
-					</DropdownMenuTrigger>
-				</TooltipTrigger>
-				<TooltipContent>Select model</TooltipContent>
-			</Tooltip>
-			<DropdownMenuContent side="top" align="start">
-				<DropdownMenuGroup className="w-42">
-					<DropdownMenuLabel className="text-muted-foreground text-xs">
-						OpenAI
-					</DropdownMenuLabel>
-					{chatModels.map((model) => (
-						<DropdownMenuCheckboxItem
-							key={model.id}
-							checked={model.id === selectedModel.id}
-							onCheckedChange={(checked) => {
-								if (checked) {
-									onSelectedModelChange(model);
-								}
-							}}
-							className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
-						>
-							<span className="inline-flex items-center gap-2">
-								<Icons.codexLogo className="size-3.5 text-muted-foreground" />
-								{model.name}
-							</span>
-						</DropdownMenuCheckboxItem>
-					))}
-				</DropdownMenuGroup>
-			</DropdownMenuContent>
-		</DropdownMenu>
 	);
 }
 
@@ -833,11 +785,11 @@ function ScopePicker({
 				<TooltipTrigger asChild>
 					<DropdownMenuTrigger asChild>
 						<InputGroupButton
-							size="sm"
-							className="group max-w-[180px] justify-start rounded-full font-normal"
+							aria-label={`Select scope: ${scopesLabel}`}
+							size="icon-sm"
+							className="group rounded-full"
 						>
-							<Globe className="text-muted-foreground transition-colors group-hover:text-foreground group-data-[state=open]:text-foreground" />
-							<span className="max-w-[160px] truncate">{scopesLabel}</span>
+							<Settings2 className="text-muted-foreground transition-colors group-hover:text-foreground group-data-[state=open]:text-foreground" />
 						</InputGroupButton>
 					</DropdownMenuTrigger>
 				</TooltipTrigger>
