@@ -21,6 +21,7 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "@workspace/ui/components/popover";
+import { Separator } from "@workspace/ui/components/separator";
 import {
 	Tooltip,
 	TooltipContent,
@@ -30,6 +31,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useQuery } from "convex/react";
 import {
 	CalendarDays,
+	Check,
 	ChevronDown,
 	FileText,
 	ListFilter,
@@ -234,9 +236,9 @@ function SearchCommandFilters({
 						<PopoverContent
 							align="start"
 							sideOffset={6}
-							className="w-64 gap-0 p-0"
+							className="w-56 gap-0 p-0"
 						>
-							<div className="flex flex-col gap-0.5 border-b border-border/80 px-2 pt-2 pb-2">
+							<div className="flex flex-col gap-0.5 px-1.5 py-1.5">
 								<SearchDatePresetOption
 									label="Today"
 									selected={dateFilter === "today"}
@@ -271,7 +273,8 @@ function SearchCommandFilters({
 									}}
 								/>
 							</div>
-							<div className="px-2 py-2">
+							<Separator />
+							<div className="px-1.5 py-1.5">
 								<Calendar
 									mode="range"
 									selected={dateRange}
@@ -290,10 +293,11 @@ function SearchCommandFilters({
 											dateFilter: range?.from ? "custom" : "all",
 										});
 									}}
-									className="p-0"
+									className="p-0 text-sm [--cell-size:--spacing(6)]"
 								/>
 							</div>
-							<div className="border-t border-border/80 px-3 py-2">
+							<Separator />
+							<div className="px-2.5 py-1.5">
 								<button
 									type="button"
 									onClick={() => {
@@ -610,11 +614,12 @@ function SearchDatePresetOption({
 			type="button"
 			onClick={onSelect}
 			className={cn(
-				"flex h-8 w-full cursor-pointer items-center rounded-lg px-2 text-sm text-foreground transition-colors hover:bg-muted",
+				"flex h-7 w-full cursor-pointer items-center rounded-md px-2 text-sm text-foreground transition-colors hover:bg-muted",
 				selected && "bg-muted",
 			)}
 		>
 			<span className="truncate">{label}</span>
+			{selected ? <Check className="ml-auto size-3.5" /> : null}
 		</button>
 	);
 }
@@ -636,6 +641,7 @@ function SearchDateCalendarDayButton(
 			{...props}
 			className={cn(
 				props.className,
+				"text-sm",
 				isToday && !isSelected && "text-destructive",
 				isToday &&
 					"data-[selected-single=true]:bg-destructive/15 data-[selected-single=true]:text-destructive dark:data-[selected-single=true]:bg-destructive/25 data-[range-start=true]:rounded-(--cell-radius) data-[range-start=true]:bg-destructive/15 data-[range-start=true]:text-destructive dark:data-[range-start=true]:bg-destructive/25 data-[range-middle=true]:bg-destructive/15 data-[range-middle=true]:text-destructive dark:data-[range-middle=true]:bg-destructive/25 data-[range-end=true]:rounded-(--cell-radius) data-[range-end=true]:bg-destructive/15 data-[range-end=true]:text-destructive dark:data-[range-end=true]:bg-destructive/25",
