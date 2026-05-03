@@ -1,6 +1,11 @@
 "use client";
 
 import { Button } from "@workspace/ui/components/button";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { MicIcon, SquareIcon } from "lucide-react";
 import type { ComponentProps } from "react";
@@ -65,6 +70,10 @@ export const SpeechInput = ({
 	const scopedRecoveryStatus = isScopedSession
 		? session.recoveryStatus
 		: createTranscriptRecoveryStatus();
+	const tooltipLabel =
+		isScopedListening || isScopedConnecting
+			? "Stop transcription"
+			: "Start transcription";
 
 	useEffect(() => {
 		transcriptionSessionManager.controller.configure({
@@ -121,49 +130,55 @@ export const SpeechInput = ({
 					/>
 				))}
 
-			<Button
-				size={size}
-				className={cn(
-					"relative z-10 rounded-full transition-all duration-300",
-					isScopedListening || isScopedConnecting
-						? "!bg-destructive/15 !text-destructive hover:!bg-destructive/20 hover:!text-destructive"
-						: null,
-					size === "icon-sm" && "size-8",
-					!session.isAvailable && "cursor-not-allowed",
-					className,
-				)}
-				aria-disabled={!session.isAvailable}
-				onClick={() => {
-					if (!session.isAvailable) {
-						return;
-					}
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<Button
+						size={size}
+						className={cn(
+							"relative z-10 rounded-full transition-all duration-300",
+							isScopedListening || isScopedConnecting
+								? "!bg-destructive/15 !text-destructive hover:!bg-destructive/20 hover:!text-destructive"
+								: null,
+							size === "icon-sm" && "size-8",
+							!session.isAvailable && "cursor-not-allowed",
+							className,
+						)}
+						aria-disabled={!session.isAvailable}
+						aria-label={tooltipLabel}
+						onClick={() => {
+							if (!session.isAvailable) {
+								return;
+							}
 
-					void (async () => {
-						if (isScopedListening || isScopedConnecting) {
-							await transcriptionSessionManager.controller.stop();
-							return;
-						}
+							void (async () => {
+								if (isScopedListening || isScopedConnecting) {
+									await transcriptionSessionManager.controller.stop();
+									return;
+								}
 
-						if (session.isListening || session.isConnecting) {
-							await transcriptionSessionManager.controller.stop();
-						}
+								if (session.isListening || session.isConnecting) {
+									await transcriptionSessionManager.controller.stop();
+								}
 
-						transcriptionSessionManager.controller.configure({
-							autoStartKey: null,
-							lang,
-							scopeKey,
-						});
-						await transcriptionSessionManager.controller.start();
-					})();
-				}}
-				{...props}
-			>
-				{isScopedListening || isScopedConnecting ? (
-					<SquareIcon className="size-4 text-current" />
-				) : (
-					<MicIcon className="size-4 text-current" />
-				)}
-			</Button>
+								transcriptionSessionManager.controller.configure({
+									autoStartKey: null,
+									lang,
+									scopeKey,
+								});
+								await transcriptionSessionManager.controller.start();
+							})();
+						}}
+						{...props}
+					>
+						{isScopedListening || isScopedConnecting ? (
+							<SquareIcon className="size-4 text-current" />
+						) : (
+							<MicIcon className="size-4 text-current" />
+						)}
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>{tooltipLabel}</TooltipContent>
+			</Tooltip>
 		</div>
 	);
 };

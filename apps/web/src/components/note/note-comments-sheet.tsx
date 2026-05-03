@@ -1297,7 +1297,7 @@ const CommentsSheetBody = React.memo(function CommentsSheetBody({
 								isSubmitting={isCreating}
 								ariaLabel="New comment"
 								sendAriaLabel="Send comment"
-								placeholder="Add a Comment…"
+								placeholder="Add comment…"
 							/>
 						</div>
 					) : null}
