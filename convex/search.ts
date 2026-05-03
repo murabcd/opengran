@@ -25,6 +25,7 @@ export const command = query({
 	args: {
 		workspaceId: v.id("workspaces"),
 		query: v.string(),
+		titleOnly: v.optional(v.boolean()),
 	},
 	returns: v.array(searchResultValidator),
 	handler: async (ctx, args) => {
@@ -49,16 +50,18 @@ export const command = query({
 							.eq("isArchived", false),
 					)
 					.take(MAX_RESULTS_PER_SOURCE),
-				ctx.db
-					.query("notes")
-					.withSearchIndex("search_text", (q) =>
-						q
-							.search("searchableText", queryText)
-							.eq("ownerTokenIdentifier", ownerTokenIdentifier)
-							.eq("workspaceId", args.workspaceId)
-							.eq("isArchived", false),
-					)
-					.take(MAX_RESULTS_PER_SOURCE),
+				args.titleOnly
+					? []
+					: ctx.db
+							.query("notes")
+							.withSearchIndex("search_text", (q) =>
+								q
+									.search("searchableText", queryText)
+									.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+									.eq("workspaceId", args.workspaceId)
+									.eq("isArchived", false),
+							)
+							.take(MAX_RESULTS_PER_SOURCE),
 				ctx.db
 					.query("chats")
 					.withSearchIndex("search_title", (q) =>
@@ -69,16 +72,18 @@ export const command = query({
 							.eq("isArchived", false),
 					)
 					.take(MAX_RESULTS_PER_SOURCE),
-				ctx.db
-					.query("chats")
-					.withSearchIndex("search_preview", (q) =>
-						q
-							.search("preview", queryText)
-							.eq("ownerTokenIdentifier", ownerTokenIdentifier)
-							.eq("workspaceId", args.workspaceId)
-							.eq("isArchived", false),
-					)
-					.take(MAX_RESULTS_PER_SOURCE),
+				args.titleOnly
+					? []
+					: ctx.db
+							.query("chats")
+							.withSearchIndex("search_preview", (q) =>
+								q
+									.search("preview", queryText)
+									.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+									.eq("workspaceId", args.workspaceId)
+									.eq("isArchived", false),
+							)
+							.take(MAX_RESULTS_PER_SOURCE),
 			]);
 
 		const results = new Map<string, SearchResult>();

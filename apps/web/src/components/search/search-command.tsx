@@ -31,6 +31,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useQuery } from "convex/react";
 import {
 	CalendarDays,
+	CaseSensitive,
 	Check,
 	ChevronDown,
 	FileText,
@@ -72,6 +73,7 @@ interface SearchCommandProps {
 type SearchFiltersState = {
 	searchValue: string;
 	filtersVisible: boolean;
+	titleOnly: boolean;
 	dateFilter: "all" | "today" | "last7" | "last30" | "custom";
 	dateRange: DateRange | undefined;
 	datePopoverOpen: boolean;
@@ -80,6 +82,7 @@ type SearchFiltersState = {
 const INITIAL_SEARCH_FILTERS_STATE: SearchFiltersState = {
 	searchValue: "",
 	filtersVisible: false,
+	titleOnly: false,
 	dateFilter: "all",
 	dateRange: undefined,
 	datePopoverOpen: false,
@@ -103,6 +106,7 @@ function useSearchCommandFilters({ open }: { open: boolean }) {
 	const {
 		searchValue,
 		filtersVisible,
+		titleOnly,
 		dateFilter,
 		dateRange,
 		datePopoverOpen,
@@ -118,6 +122,7 @@ function useSearchCommandFilters({ open }: { open: boolean }) {
 		setState({
 			filtersVisible: false,
 			searchValue: "",
+			titleOnly: false,
 			dateFilter: "all",
 			dateRange: undefined,
 			datePopoverOpen: false,
@@ -127,6 +132,7 @@ function useSearchCommandFilters({ open }: { open: boolean }) {
 	return {
 		searchValue,
 		filtersVisible,
+		titleOnly,
 		dateFilter,
 		dateRange,
 		datePopoverOpen,
@@ -138,6 +144,7 @@ function useSearchCommandFilters({ open }: { open: boolean }) {
 function SearchCommandFilters({
 	searchValue,
 	filtersVisible,
+	titleOnly,
 	dateFilter,
 	dateRange,
 	datePopoverOpen,
@@ -150,6 +157,7 @@ function SearchCommandFilters({
 }: {
 	searchValue: string;
 	filtersVisible: boolean;
+	titleOnly: boolean;
 	dateFilter: "all" | "today" | "last7" | "last30" | "custom";
 	dateRange: DateRange | undefined;
 	datePopoverOpen: boolean;
@@ -214,6 +222,21 @@ function SearchCommandFilters({
 			</div>
 			{filtersEnabled && filtersVisible ? (
 				<div className="flex items-center gap-1.5 px-2 pb-2">
+					<Button
+						type="button"
+						variant="ghost"
+						size="sm"
+						aria-pressed={titleOnly}
+						aria-label="Search titles only"
+						onClick={() => setState({ titleOnly: !titleOnly })}
+						className={cn(
+							"h-7 rounded-full border border-transparent bg-transparent px-2.5 font-normal text-sm text-muted-foreground shadow-none hover:bg-muted hover:text-foreground",
+							titleOnly && "border-border/60 bg-muted text-foreground",
+						)}
+					>
+						<CaseSensitive className="size-3.5" />
+						<span className="truncate">Title only</span>
+					</Button>
 					<Popover
 						open={datePopoverOpen}
 						onOpenChange={(nextOpen) => setState({ datePopoverOpen: nextOpen })}
@@ -224,7 +247,7 @@ function SearchCommandFilters({
 								variant="ghost"
 								size="sm"
 								className={cn(
-									"h-7 rounded-full border border-transparent bg-transparent px-2.5 text-sm text-muted-foreground shadow-none hover:bg-muted hover:text-foreground aria-expanded:border-border/60 aria-expanded:bg-muted aria-expanded:text-foreground",
+									"h-7 rounded-full border border-transparent bg-transparent px-2.5 font-normal text-sm text-muted-foreground shadow-none hover:bg-muted hover:text-foreground aria-expanded:border-border/60 aria-expanded:bg-muted aria-expanded:text-foreground",
 									dateFilter !== "all" && "bg-muted text-foreground",
 								)}
 							>
@@ -390,6 +413,7 @@ function SearchCommandWithServerSearch({
 			? {
 					workspaceId,
 					query: normalizedSearchValue,
+					titleOnly: filters.titleOnly,
 				}
 			: "skip",
 	);
@@ -439,6 +463,7 @@ function SearchCommandView({
 	const {
 		searchValue,
 		filtersVisible,
+		titleOnly,
 		dateFilter,
 		dateRange,
 		datePopoverOpen,
@@ -446,12 +471,23 @@ function SearchCommandView({
 		hideFilters,
 	} = filters;
 
+	const titleFilteredItems = React.useMemo(() => {
+		const normalizedSearchValue = searchValue.trim().toLocaleLowerCase();
+
+		if (!shouldFilter || !titleOnly || !normalizedSearchValue) {
+			return items;
+		}
+
+		return items.filter((item) =>
+			item.title.toLocaleLowerCase().includes(normalizedSearchValue),
+		);
+	}, [items, searchValue, shouldFilter, titleOnly]);
 	const dateFilteredItems = React.useMemo(
 		() =>
-			items.filter((item) =>
+			titleFilteredItems.filter((item) =>
 				matchesDateFilter(item.updatedAt, dateFilter, dateRange),
 			),
-		[dateFilter, dateRange, items],
+		[dateFilter, dateRange, titleFilteredItems],
 	);
 
 	const visibleItems = dateFilteredItems;
@@ -480,12 +516,13 @@ function SearchCommandView({
 			className="top-1/2 max-w-[calc(100%-2rem)] -translate-y-1/2 rounded-lg sm:max-w-lg"
 		>
 			<Command
-				shouldFilter={shouldFilter}
+				shouldFilter={shouldFilter && !titleOnly}
 				className="**:[[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 **:[[cmdk-group-heading]]:px-1.5 **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 **:[[cmdk-input-wrapper]_svg]:size-5 **:[[cmdk-input]]:h-12"
 			>
 				<SearchCommandFilters
 					searchValue={searchValue}
 					filtersVisible={filtersVisible}
+					titleOnly={titleOnly}
 					dateFilter={dateFilter}
 					dateRange={dateRange}
 					datePopoverOpen={datePopoverOpen}
@@ -513,6 +550,7 @@ function SearchCommandView({
 												<SearchCommandRow
 													key={item.id}
 													item={item}
+													titleOnly={titleOnly}
 													onSelect={() => {
 														onOpenChange(false);
 														onSelectItem(item.id);
@@ -530,6 +568,7 @@ function SearchCommandView({
 										<SearchCommandRow
 											key={item.id}
 											item={item}
+											titleOnly={titleOnly}
 											onSelect={() => {
 												onOpenChange(false);
 												onSelectItem(item.id);
@@ -581,14 +620,20 @@ function SearchCommandKeyboardHints() {
 
 function SearchCommandRow({
 	item,
+	titleOnly,
 	onSelect,
 }: {
 	item: SearchCommandItem;
+	titleOnly: boolean;
 	onSelect: () => void;
 }) {
 	return (
 		<CommandItem
-			value={`${item.kind} ${item.id} ${item.title} ${item.preview ?? ""}`}
+			value={
+				titleOnly
+					? `${item.kind} ${item.id} ${item.title}`
+					: `${item.kind} ${item.id} ${item.title} ${item.preview ?? ""}`
+			}
 			onSelect={onSelect}
 			className="h-8 cursor-pointer gap-1.5 rounded-md px-1.5"
 		>
