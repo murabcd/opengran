@@ -21,7 +21,6 @@ import { RecipesDialog } from "@/components/recipes/recipes-dialog";
 import {
 	SearchCommand,
 	type SearchCommandItem,
-	type SearchCommandProject,
 } from "@/components/search/search-command";
 import {
 	SettingsDialog,
@@ -261,7 +260,6 @@ function useAppSidebarModel({
 	onSettingsOpenChange,
 	onViewChange,
 	onWorkspaceSelect,
-	projects,
 	setOpenMobile,
 }: {
 	activeWorkspaceId: Id<"workspaces"> | null;
@@ -281,7 +279,6 @@ function useAppSidebarModel({
 		view: "home" | "chat" | "automation" | "inbox" | "shared" | "note",
 	) => void;
 	onWorkspaceSelect: (workspaceId: Id<"workspaces">) => void;
-	projects: Array<Doc<"projects">> | undefined;
 	setOpenMobile: (open: boolean) => void;
 }) {
 	const [uiState, dispatchUi] = React.useReducer(
@@ -354,18 +351,6 @@ function useAppSidebarModel({
 			})),
 		[currentView, inboxOpen, unreadInboxCount],
 	);
-	const searchProjects = React.useMemo<SearchCommandProject[]>(
-		() =>
-			(projects ?? []).map((project) => ({
-				id: project._id,
-				name: project.name,
-			})),
-		[projects],
-	);
-	const projectNameById = React.useMemo(
-		() => new Map(searchProjects.map((project) => [project.id, project.name])),
-		[searchProjects],
-	);
 	const searchableNotes = notes ?? [];
 	const searchableChats = chats ?? [];
 	const searchItems = React.useMemo<SearchCommandItem[]>(
@@ -381,10 +366,6 @@ function useAppSidebarModel({
 					kind: "note" as const,
 					icon: FileText,
 					preview: note.searchableText.trim() || undefined,
-					projectId: note.projectId ?? undefined,
-					projectName: note.projectId
-						? projectNameById.get(note.projectId)
-						: undefined,
 					updatedAt: note.updatedAt,
 				})),
 				...searchableChats.map((chat) => ({
@@ -396,13 +377,7 @@ function useAppSidebarModel({
 					updatedAt: chat.updatedAt,
 				})),
 			].sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0)),
-		[
-			currentNoteId,
-			currentNoteTitle,
-			projectNameById,
-			searchableChats,
-			searchableNotes,
-		],
+		[currentNoteId, currentNoteTitle, searchableChats, searchableNotes],
 	);
 	const handleDialogOpenChange = React.useCallback(
 		(key: "searchOpen" | "recipesOpen" | "templatesOpen", value: boolean) => {
@@ -454,7 +429,6 @@ function useAppSidebarModel({
 		navItems,
 		recordingNoteId,
 		searchItems,
-		searchProjects,
 		uiState,
 	};
 }
@@ -512,7 +486,6 @@ export function AppSidebar({
 		onSettingsOpenChange,
 		onViewChange,
 		onWorkspaceSelect,
-		projects,
 		setOpenMobile,
 	});
 
@@ -571,7 +544,6 @@ export function AppSidebar({
 				onOpenChange={model.handleDialogOpenChange}
 				onSettingsOpenChange={onSettingsOpenChange}
 				searchItems={model.searchItems}
-				searchProjects={model.searchProjects}
 				settingsOpen={settingsOpen}
 				settingsPage={settingsPage}
 				templatesOpen={model.uiState.templatesOpen}
@@ -802,7 +774,6 @@ const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 	onOpenChange,
 	onSettingsOpenChange,
 	searchItems,
-	searchProjects,
 	settingsOpen,
 	settingsPage,
 	templatesOpen,
@@ -820,7 +791,6 @@ const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 	) => void;
 	onSettingsOpenChange: (open: boolean, page?: SettingsPage) => void;
 	searchItems: SearchCommandItem[];
-	searchProjects: SearchCommandProject[];
 	settingsOpen: boolean;
 	settingsPage: SettingsPage;
 	templatesOpen: boolean;
@@ -878,7 +848,7 @@ const AppSidebarDialogs = React.memo(function AppSidebarDialogs({
 				open={searchOpen}
 				onOpenChange={handleSearchOpenChange}
 				items={searchItems}
-				projects={searchProjects}
+				workspaceId={activeWorkspaceId}
 				showKeyboardHintsFooter
 				onSelectItem={handleSearchSelectItem}
 			/>

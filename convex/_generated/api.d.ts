@@ -30,6 +30,7 @@ import type * as notificationPreferences from "../notificationPreferences.js";
 import type * as onboarding from "../onboarding.js";
 import type * as projects from "../projects.js";
 import type * as recipes from "../recipes.js";
+import type * as search from "../search.js";
 import type * as templates from "../templates.js";
 import type * as transcriptSessions from "../transcriptSessions.js";
 import type * as trash from "../trash.js";
@@ -66,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   onboarding: typeof onboarding;
   projects: typeof projects;
   recipes: typeof recipes;
+  search: typeof search;
   templates: typeof templates;
   transcriptSessions: typeof transcriptSessions;
   trash: typeof trash;

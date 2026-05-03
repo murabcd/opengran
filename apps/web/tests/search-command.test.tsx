@@ -4,7 +4,7 @@ import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { SearchCommand } from "../src/components/search/search-command";
 
-describe("SearchCommand source filters", () => {
+describe("SearchCommand filters", () => {
 	beforeAll(() => {
 		window.HTMLElement.prototype.scrollIntoView = vi.fn();
 	});
@@ -13,7 +13,7 @@ describe("SearchCommand source filters", () => {
 		cleanup();
 	});
 
-	it("separates type filters from folders in the source popover", async () => {
+	it("shows only the date filter when filters are visible", async () => {
 		const user = userEvent.setup();
 
 		render(
@@ -22,24 +22,19 @@ describe("SearchCommand source filters", () => {
 					open
 					onOpenChange={vi.fn()}
 					items={[]}
-					projects={[{ id: "folder-internal", name: "Internal" }]}
 					onSelectItem={vi.fn()}
 				/>
 			</TooltipProvider>,
 		);
 
 		await user.click(screen.getByRole("button", { name: "Show filters" }));
-		await user.click(screen.getByRole("button", { name: "All" }));
 
-		expect(screen.getByPlaceholderText("Search projects")).toBeDefined();
-		expect(screen.getByText("Types")).toBeDefined();
-		expect(screen.getByText("Projects")).toBeDefined();
-		expect(screen.getByText("Notes")).toBeDefined();
-		expect(screen.getByText("Chats")).toBeDefined();
-		expect(screen.getByText("Internal")).toBeDefined();
+		expect(screen.getByRole("button", { name: "Date" })).toBeDefined();
+		expect(screen.queryByRole("button", { name: "All" })).toBeNull();
+		expect(screen.queryByPlaceholderText("Search projects")).toBeNull();
 	});
 
-	it("shows a project-specific empty state when no projects match", async () => {
+	it("opens date presets from the date filter", async () => {
 		const user = userEvent.setup();
 
 		render(
@@ -48,19 +43,17 @@ describe("SearchCommand source filters", () => {
 					open
 					onOpenChange={vi.fn()}
 					items={[]}
-					projects={[{ id: "folder-internal", name: "Internal" }]}
 					onSelectItem={vi.fn()}
 				/>
 			</TooltipProvider>,
 		);
 
 		await user.click(screen.getByRole("button", { name: "Show filters" }));
-		await user.click(screen.getByRole("button", { name: "All" }));
-		await user.type(screen.getByPlaceholderText("Search projects"), "sales");
+		await user.click(screen.getByRole("button", { name: "Date" }));
 
-		expect(screen.getByText("No projects found")).toBeDefined();
-		expect(screen.getByText("Types")).toBeDefined();
-		expect(screen.getByText("Projects")).toBeDefined();
+		expect(screen.getByText("Today")).toBeDefined();
+		expect(screen.getByText("Last 7 days")).toBeDefined();
+		expect(screen.getByText("Last 30 days")).toBeDefined();
 	});
 
 	it("shows keyboard hints when the footer is enabled", () => {
@@ -70,7 +63,6 @@ describe("SearchCommand source filters", () => {
 					open
 					onOpenChange={vi.fn()}
 					items={[]}
-					projects={[]}
 					showKeyboardHintsFooter
 					onSelectItem={vi.fn()}
 				/>

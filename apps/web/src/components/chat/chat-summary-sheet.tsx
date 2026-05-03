@@ -83,7 +83,6 @@ import {
 import {
 	SearchCommand,
 	type SearchCommandItem,
-	type SearchCommandProject,
 } from "@/components/search/search-command";
 import { extractFileParts } from "@/lib/chat-message";
 import { collectMessageSources, type ToolSource } from "@/lib/chat-sources";
@@ -107,8 +106,6 @@ type SummaryWorkspaceSource = {
 	title: string;
 	preview?: string;
 	content?: string;
-	projectId?: string;
-	projectName?: string;
 	updatedAt?: number;
 };
 
@@ -205,7 +202,6 @@ export function ChatSummarySheet({
 	chatTitle,
 	desktopSafeTop = false,
 	workspaceSources,
-	workspaceProjects,
 	onAddSource,
 	onRemoveAutoAddedSource,
 	onOpenChange,
@@ -216,7 +212,6 @@ export function ChatSummarySheet({
 	chatTitle: string;
 	desktopSafeTop?: boolean;
 	workspaceSources: SummaryWorkspaceSource[];
-	workspaceProjects: SearchCommandProject[];
 	onAddSource?: (sourceId: string) => void;
 	onRemoveAutoAddedSource?: (sourceId: string) => void;
 	onOpenChange: (open: boolean) => void;
@@ -271,7 +266,6 @@ export function ChatSummarySheet({
 			artifacts={artifacts}
 			sources={sources}
 			workspaceSources={workspaceSources}
-			workspaceProjects={workspaceProjects}
 			onAddSource={onAddSource}
 			onRemoveAutoAddedSource={onRemoveAutoAddedSource}
 			onOpenSummary={() => onOpenChange(true)}
@@ -336,7 +330,6 @@ function ChatSummaryPanel({
 	artifacts,
 	sources,
 	workspaceSources,
-	workspaceProjects,
 	onAddSource,
 	onRemoveAutoAddedSource,
 	onOpenSummary,
@@ -350,7 +343,6 @@ function ChatSummaryPanel({
 	artifacts: SummaryArtifact[];
 	sources: ToolSource[];
 	workspaceSources: SummaryWorkspaceSource[];
-	workspaceProjects: SearchCommandProject[];
 	onAddSource?: (sourceId: string) => void;
 	onRemoveAutoAddedSource?: (sourceId: string) => void;
 	onOpenSummary: () => void;
@@ -369,8 +361,6 @@ function ChatSummaryPanel({
 				kind: "note" as const,
 				icon: FileText,
 				preview: source.preview,
-				projectId: source.projectId,
-				projectName: source.projectName,
 				updatedAt: source.updatedAt,
 			})),
 		[workspaceSources],
@@ -506,13 +496,11 @@ function ChatSummaryPanel({
 					open={fileSearchOpen}
 					onOpenChange={setFileSearchOpen}
 					items={fileSearchItems}
-					projects={workspaceProjects}
 					searchPlaceholder="Search notes..."
 					searchDescription="Search notes..."
 					filtersEnabled={false}
 					groupByDate={false}
 					showResultsOnEmptySearch={false}
-					filterKinds={["note"]}
 					onSelectItem={(itemId) => {
 						const source = workspaceSources.find((item) => item.id === itemId);
 

@@ -267,6 +267,14 @@ export default defineSchema({
 			"isArchived",
 			"updatedAt",
 		])
+		.searchIndex("search_title", {
+			searchField: "title",
+			filterFields: ["ownerTokenIdentifier", "workspaceId", "isArchived"],
+		})
+		.searchIndex("search_text", {
+			searchField: "searchableText",
+			filterFields: ["ownerTokenIdentifier", "workspaceId", "isArchived"],
+		})
 		.index("by_owner_visibility_archived_updatedAt", [
 			"ownerTokenIdentifier",
 			"visibility",
@@ -404,7 +412,15 @@ export default defineSchema({
 			"ownerTokenIdentifier",
 			"noteId",
 			"chatId",
-		]),
+		])
+		.searchIndex("search_title", {
+			searchField: "title",
+			filterFields: ["ownerTokenIdentifier", "workspaceId", "isArchived"],
+		})
+		.searchIndex("search_preview", {
+			searchField: "preview",
+			filterFields: ["ownerTokenIdentifier", "workspaceId", "isArchived"],
+		}),
 	chatMessages: defineTable({
 		chatId: v.id("chats"),
 		ownerTokenIdentifier: v.string(),

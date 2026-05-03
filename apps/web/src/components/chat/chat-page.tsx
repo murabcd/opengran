@@ -252,7 +252,6 @@ const useChatPageController = ({
 				icon: FileText,
 				preview: note.searchableText.trim(),
 				content: note.content,
-				projectId: note.projectId ?? undefined,
 				updatedAt: note.updatedAt,
 			})),
 		[notes],
@@ -269,10 +268,6 @@ const useChatPageController = ({
 			})),
 		[projects],
 	);
-	const projectNameById = React.useMemo(
-		() => new Map(searchProjects.map((project) => [project.id, project.name])),
-		[searchProjects],
-	);
 	const workspaceSources = React.useMemo(
 		() =>
 			contextPages.map((page) => ({
@@ -280,13 +275,9 @@ const useChatPageController = ({
 				title: page.title,
 				preview: page.preview,
 				content: page.content,
-				projectId: page.projectId,
-				projectName: page.projectId
-					? projectNameById.get(page.projectId)
-					: undefined,
 				updatedAt: page.updatedAt,
 			})),
-		[contextPages, projectNameById],
+		[contextPages],
 	);
 	const projectSources = React.useMemo(
 		() =>
@@ -508,7 +499,6 @@ const useChatPageController = ({
 		modelPopoverOpen,
 		selectedModel,
 		selectedSourceIds,
-		searchProjects,
 		setAppsEnabled,
 		setDocumentSearchTerm,
 		setDraft,
@@ -803,7 +793,6 @@ export function ChatPage({
 				chatTitle={controller.currentChatTitle}
 				desktopSafeTop={isDesktopMac}
 				workspaceSources={controller.workspaceSources}
-				workspaceProjects={controller.searchProjects}
 				onAddSource={controller.onAddSource}
 				onRemoveAutoAddedSource={controller.onRemoveAutoAddedSource}
 				onOpenChange={controller.setSummaryOpen}
