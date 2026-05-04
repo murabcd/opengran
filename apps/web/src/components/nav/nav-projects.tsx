@@ -1033,7 +1033,7 @@ function ProjectActionsMenu({
 					}}
 				>
 					<Trash2 />
-					Delete project
+					Delete
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -1142,7 +1142,7 @@ function ProjectDeleteDialog({
 						onClick={onConfirm}
 						disabled={isRemoving}
 					>
-						{isRemoving ? "Deleting..." : "Delete project"}
+						{isRemoving ? "Deleting..." : "Delete"}
 					</AlertDialogAction>
 				</AlertDialogFooter>
 			</AlertDialogContent>

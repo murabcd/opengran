@@ -22,6 +22,7 @@ import {
 } from "@/app/location";
 import { PageTitle } from "@/components/layout/page-title";
 import { NoteActionsMenu } from "@/components/note/note-actions-menu";
+import { formatRelativeTimestamp } from "@/lib/chat-timestamp";
 import {
 	groupItemsByRelativeDate,
 	RELATIVE_DATE_GROUP_SECTIONS,
@@ -35,18 +36,11 @@ const HOME_NOTE_SKELETON_IDS = [
 	"home-note-skeleton-3",
 ] as const;
 
-const noteCreatedTimeFormatter = new Intl.DateTimeFormat(undefined, {
-	hour: "numeric",
-	minute: "2-digit",
-});
-
 const getNoteAuthorDisplayName = (note: Doc<"notes">, currentUser: AppUser) =>
 	note.authorName?.trim() || currentUser.name;
 
 const formatNoteCreatedTime = (note: Doc<"notes">) =>
-	noteCreatedTimeFormatter.format(
-		new Date(note.createdAt || note._creationTime),
-	);
+	formatRelativeTimestamp(note.createdAt || note._creationTime);
 
 const getNoteCreatedDateTime = (note: Doc<"notes">) =>
 	new Date(note.createdAt || note._creationTime).toISOString();

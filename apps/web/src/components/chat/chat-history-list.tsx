@@ -10,6 +10,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { Clock, MessageCircle, MoreHorizontal } from "lucide-react";
 import * as React from "react";
 import { getChatId } from "@/lib/chat";
+import { formatRelativeTimestamp } from "@/lib/chat-timestamp";
 import {
 	groupItemsByRelativeDate,
 	RELATIVE_DATE_GROUP_SECTIONS,
@@ -27,11 +28,6 @@ type ChatHistoryListProps = {
 	automationChatIds?: ReadonlySet<string>;
 	onAddAutomation?: (chatId: string) => void;
 };
-
-const chatActivityTimeFormatter = new Intl.DateTimeFormat(undefined, {
-	hour: "numeric",
-	minute: "2-digit",
-});
 
 const getChatActivityTime = (chat: Doc<"chats">) =>
 	chat.lastMessageAt || chat.updatedAt || chat.createdAt || chat._creationTime;
@@ -162,7 +158,7 @@ function ChatHistoryItem({
 	const preview = chat.authorName?.trim() || "Unknown user";
 	const activityTime = getChatActivityTime(chat);
 	const activityDate = new Date(activityTime);
-	const formattedActivityTime = chatActivityTimeFormatter.format(activityDate);
+	const formattedActivityTime = formatRelativeTimestamp(activityDate);
 	const activityDateTime = activityDate.toISOString();
 
 	return (

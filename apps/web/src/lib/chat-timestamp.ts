@@ -1,13 +1,16 @@
 import type { UIMessage } from "ai";
 
-const chatTimeFormatter = new Intl.DateTimeFormat("en-US", {
+const timestampTimeFormatter = new Intl.DateTimeFormat("en-US", {
 	hour: "numeric",
 	hour12: true,
 	minute: "2-digit",
 });
 
-const chatDateFormatter = new Intl.DateTimeFormat("en-US", {
+const timestampDateFormatter = new Intl.DateTimeFormat("en-US", {
 	day: "numeric",
+	hour: "numeric",
+	hour12: true,
+	minute: "2-digit",
 	month: "short",
 });
 
@@ -37,7 +40,24 @@ export const formatChatMessageTimestamp = (
 		return null;
 	}
 
+	return formatRelativeTimestamp(timestamp, now);
+};
+
+export const formatRelativeTimestamp = (
+	value: Date | string | number | undefined,
+	now = new Date(),
+) => {
+	if (value === undefined) {
+		return null;
+	}
+
+	const timestamp = new Date(value);
+
+	if (Number.isNaN(timestamp.getTime())) {
+		return null;
+	}
+
 	return isSameCalendarDay(timestamp, now)
-		? chatTimeFormatter.format(timestamp)
-		: chatDateFormatter.format(timestamp);
+		? timestampTimeFormatter.format(timestamp)
+		: timestampDateFormatter.format(timestamp);
 };

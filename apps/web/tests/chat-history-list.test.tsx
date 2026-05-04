@@ -15,9 +15,12 @@ const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
 const useMutationMock = vi.fn();
 const TEST_NOW = Date.now();
-const testTimeFormatter = new Intl.DateTimeFormat(undefined, {
+const testDateFormatter = new Intl.DateTimeFormat("en-US", {
+	day: "numeric",
 	hour: "numeric",
+	hour12: true,
 	minute: "2-digit",
+	month: "short",
 });
 
 vi.mock("@workspace/ui/components/dropdown-menu", async () => {
@@ -428,7 +431,7 @@ describe("ChatHistoryList", () => {
 		);
 		const createdAt = new Date("2026-04-25T12:50:54.000Z").getTime();
 		const lastMessageAt = new Date("2026-04-26T06:00:09.000Z").getTime();
-		const expectedTime = testTimeFormatter.format(new Date(lastMessageAt));
+		const expectedTime = testDateFormatter.format(new Date(lastMessageAt));
 
 		render(
 			<ChatHistoryList
