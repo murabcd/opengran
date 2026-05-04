@@ -363,7 +363,7 @@ function TrashPopoverContent() {
 			</div>
 			<DeleteConfirmDialog
 				open={deleteNoteId !== null}
-				description="This action cannot be undone. This will permanently delete your note from our servers."
+				description="This action cannot be undone. This will permanently delete your note."
 				onOpenChange={(open) => {
 					if (!open) {
 						setDeleteNoteId(null);
@@ -373,7 +373,7 @@ function TrashPopoverContent() {
 			/>
 			<DeleteConfirmDialog
 				open={deleteChatId !== null}
-				description="This action cannot be undone. This will permanently delete your chat from our servers."
+				description="This action cannot be undone. This will permanently delete your chat."
 				onOpenChange={(open) => {
 					if (!open) {
 						setDeleteChatId(null);

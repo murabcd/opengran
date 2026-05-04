@@ -271,8 +271,7 @@ function AutomationListItemRow({
 					<AlertDialogHeader>
 						<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
 						<AlertDialogDescription>
-							This action cannot be undone. This will permanently delete{" "}
-							{automation.title} from your automation list.
+							This action cannot be undone. This will delete your automation.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

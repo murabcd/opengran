@@ -20,7 +20,6 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
-	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import { cn } from "@workspace/ui/lib/utils";
@@ -44,6 +43,8 @@ type ChatActionsMenuProps = {
 	onAddAutomation?: (chatId: string) => void;
 	hasAutomation?: boolean;
 	showMoveToTrash?: boolean;
+	align?: "start" | "center" | "end";
+	side?: "top" | "right" | "bottom" | "left";
 };
 
 type ChatActionsMenuState = {
@@ -87,6 +88,8 @@ export function ChatActionsMenu({
 	onAddAutomation,
 	hasAutomation = false,
 	showMoveToTrash = true,
+	align = "end",
+	side,
 }: ChatActionsMenuProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
 	const renameInputRef = React.useRef<HTMLInputElement>(null);
@@ -284,6 +287,8 @@ export function ChatActionsMenu({
 						})
 					}
 					onCloseMenu={() => updateMenuState({ menuOpen: false })}
+					align={align}
+					side={side}
 				/>
 			</DropdownMenu>
 			<Dialog open={renameOpen} onOpenChange={handleRenameOpenChange}>
@@ -339,8 +344,7 @@ export function ChatActionsMenu({
 					<AlertDialogHeader>
 						<AlertDialogTitle>Move chat to trash?</AlertDialogTitle>
 						<AlertDialogDescription>
-							This removes the chat from the list. You can restore it later from
-							Trash.
+							This will move your chat to Trash. You can restore it later.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
@@ -348,7 +352,6 @@ export function ChatActionsMenu({
 							Cancel
 						</AlertDialogCancel>
 						<AlertDialogAction
-							className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
 							onClick={() => {
 								void handleMoveToTrash();
 							}}
@@ -371,6 +374,8 @@ function ChatActionsDropdownContent({
 	onToggleStar,
 	onOpenTrashConfirm,
 	onCloseMenu,
+	align,
+	side,
 }: {
 	chatId: string;
 	status: {
@@ -386,6 +391,8 @@ function ChatActionsDropdownContent({
 	onToggleStar: () => Promise<void>;
 	onOpenTrashConfirm: () => void;
 	onCloseMenu: () => void;
+	align: "start" | "center" | "end";
+	side: "top" | "right" | "bottom" | "left" | undefined;
 }) {
 	const {
 		hasAutomation,
@@ -397,7 +404,7 @@ function ChatActionsDropdownContent({
 	} = status;
 
 	return (
-		<DropdownMenuContent align="end">
+		<DropdownMenuContent align={align} side={side}>
 			<DropdownMenuItem
 				className="cursor-pointer"
 				disabled={!canUpdate}
@@ -431,18 +438,14 @@ function ChatActionsDropdownContent({
 				</DropdownMenuItem>
 			) : null}
 			{showMoveToTrash ? (
-				<>
-					<DropdownMenuSeparator />
-					<DropdownMenuItem
-						variant="destructive"
-						className="cursor-pointer"
-						disabled={isMovingToTrash || !canUpdate}
-						onSelect={onOpenTrashConfirm}
-					>
-						<Archive />
-						Move to trash
-					</DropdownMenuItem>
-				</>
+				<DropdownMenuItem
+					className="cursor-pointer"
+					disabled={isMovingToTrash || !canUpdate}
+					onSelect={onOpenTrashConfirm}
+				>
+					<Archive />
+					Move to trash
+				</DropdownMenuItem>
 			) : null}
 		</DropdownMenuContent>
 	);

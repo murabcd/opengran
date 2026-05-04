@@ -3532,7 +3532,7 @@ function DataControlsSettings({
 						onConfirm={handleDeleteAccount}
 						confirmDisabled={isDeletingAccount}
 						buttonDisabled={isDeletingAccount || !canDeleteData}
-						dialogDescription="This action cannot be undone. Your account will be permanently deleted, and OpenGran will remove your notes from the backend."
+						dialogDescription="This action cannot be undone. This will permanently delete your account."
 					/>
 				</Field>
 			</FieldGroup>

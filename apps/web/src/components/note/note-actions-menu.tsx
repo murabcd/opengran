@@ -29,7 +29,6 @@ import {
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuPortal,
-	DropdownMenuSeparator,
 	DropdownMenuSub,
 	DropdownMenuSubContent,
 	DropdownMenuSubTrigger,
@@ -769,8 +768,7 @@ export function NoteActionsMenu({
 					<AlertDialogHeader>
 						<AlertDialogTitle>Move note to trash?</AlertDialogTitle>
 						<AlertDialogDescription>
-							This removes the note from Home and the sidebar. You can restore
-							it later from Trash.
+							This will move your note to Trash. You can restore it later.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
@@ -778,7 +776,6 @@ export function NoteActionsMenu({
 							Cancel
 						</AlertDialogCancel>
 						<AlertDialogAction
-							className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
 							onClick={handleMoveToTrash}
 							disabled={isMovingToTrash}
 						>
@@ -1127,12 +1124,7 @@ function NoteActionsDropdownContent({
 				Copy link
 			</DropdownMenuItem>
 			{itemsAfterDefaults}
-			<DropdownMenuSeparator />
-			<DropdownMenuItem
-				variant="destructive"
-				className="cursor-pointer"
-				onSelect={onConfirmTrash}
-			>
+			<DropdownMenuItem className="cursor-pointer" onSelect={onConfirmTrash}>
 				<Archive />
 				Move to trash
 			</DropdownMenuItem>

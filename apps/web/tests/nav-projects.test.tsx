@@ -539,7 +539,7 @@ describe("NavProjects", () => {
 		);
 
 		expect(screen.getByText("Move notes to trash?")).toBeTruthy();
-		expect(screen.getByText(/The project folder will stay/)).toBeTruthy();
+		expect(screen.getByText(/This will move your notes to Trash/)).toBeTruthy();
 	});
 
 	it("renders unstar for starred projects", async () => {

@@ -161,6 +161,8 @@ export function NavStarred({
 									chat={chat}
 									hasAutomation={hasAutomation}
 									onAddAutomation={onAddAutomation}
+									align="start"
+									side="right"
 								>
 									<SidebarMenuAction
 										className="cursor-pointer opacity-0 pointer-events-none transition-opacity group-hover/menu-item:opacity-100 group-hover/menu-item:pointer-events-auto"

@@ -1297,8 +1297,8 @@ function ProjectDeleteDialog({
 				<AlertDialogHeader>
 					<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
 					<AlertDialogDescription>
-						This action cannot be undone. The project will be removed and its
-						notes will move back to Home.
+						This action cannot be undone. This will delete your project and move
+						its notes back.
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter>
@@ -1329,22 +1329,18 @@ function ProjectMoveNotesToTrashDialog({
 	onOpenChange: (open: boolean) => void;
 	onConfirm: () => void;
 }) {
-	const noteLabel = noteCount === 1 ? "1 note" : `${noteCount} notes`;
-
 	return (
 		<AlertDialog open={open} onOpenChange={onOpenChange}>
 			<AlertDialogContent>
 				<AlertDialogHeader>
 					<AlertDialogTitle>Move notes to trash?</AlertDialogTitle>
 					<AlertDialogDescription>
-						This will move {noteLabel} in this project to Trash. The project
-						folder will stay in your sidebar.
+						This will move your notes to Trash. You can restore them later.
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter>
 					<AlertDialogCancel disabled={isMoving}>Cancel</AlertDialogCancel>
 					<AlertDialogAction
-						className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
 						onClick={onConfirm}
 						disabled={isMoving || noteCount === 0}
 					>
