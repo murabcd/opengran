@@ -25,7 +25,7 @@ import {
 	deriveFallbackChatTitle,
 	finalizeGeneratedChatTitle,
 } from "../../../packages/ai/src/chat-titles.mjs";
-import { buildJiraTools } from "../../../packages/ai/src/jira-tools.mjs";
+import { buildConvexConnectedAppTools } from "../../../packages/ai/src/convex-app-tool-adapters.mjs";
 import {
 	CHAT_SERVER_MODELS,
 	CHAT_TITLE_MODEL_ID,
@@ -35,13 +35,6 @@ import {
 	parseTemplateStreamToStructuredNote,
 	validateTemplateStream,
 } from "../../../packages/ai/src/note-template-stream.mjs";
-import { buildNotionTools } from "../../../packages/ai/src/notion-tools.mjs";
-import { buildPostHogTools } from "../../../packages/ai/src/posthog-tools.mjs";
-import {
-	buildGoogleCalendarTools,
-	buildGoogleDriveTools,
-	buildYandexCalendarTools,
-} from "../../../packages/ai/src/productivity-tools.mjs";
 import {
 	APPLY_TEMPLATE_SYSTEM_PROMPT,
 	buildApplyTemplatePrompt,
@@ -50,7 +43,6 @@ import {
 	CHAT_TITLE_SYSTEM_PROMPT,
 	ENHANCED_NOTE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
-import { buildTrackerTools } from "../../../packages/ai/src/tracker-tools.mjs";
 import {
 	createDesktopRealtimeTranscriptionSession,
 	normalizeTranscriptionLanguage,
@@ -772,82 +764,11 @@ const handleChatRequest = async (request, response) => {
 		selectedAppConnections.find(
 			(connection) => connection.provider === "notion",
 		) ?? null;
-	const trackerTools = trackerConnection
-		? buildTrackerTools(trackerConnection)
-		: {};
-	const googleCalendarTools =
-		googleCalendarConnection && convexClient && resolvedWorkspaceId
-			? buildGoogleCalendarTools({
-					listEvents: async ({ limit, meetingsOnly }) =>
-						await convexClient.action(
-							api.calendar.listGoogleCalendarEventsForTool,
-							{
-								...(typeof limit === "number" ? { limit } : {}),
-								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
-							},
-						),
-					searchEvents: async ({ query, limit, meetingsOnly }) =>
-						await convexClient.action(
-							api.calendar.searchGoogleCalendarEventsForTool,
-							{
-								query: query ?? "",
-								...(typeof limit === "number" ? { limit } : {}),
-								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
-							},
-						),
-				})
-			: {};
-	const yandexCalendarTools =
-		yandexCalendarConnection && convexClient && resolvedWorkspaceId
-			? buildYandexCalendarTools({
-					listEvents: async ({ limit, meetingsOnly }) =>
-						await convexClient.action(
-							api.calendar.listYandexCalendarEventsForTool,
-							{
-								workspaceId: resolvedWorkspaceId,
-								...(typeof limit === "number" ? { limit } : {}),
-								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
-							},
-						),
-					searchEvents: async ({ query, limit, meetingsOnly }) =>
-						await convexClient.action(
-							api.calendar.searchYandexCalendarEventsForTool,
-							{
-								workspaceId: resolvedWorkspaceId,
-								query: query ?? "",
-								...(typeof limit === "number" ? { limit } : {}),
-								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
-							},
-						),
-				})
-			: {};
-	const jiraTools = jiraConnection ? buildJiraTools(jiraConnection) : {};
-	const googleDriveTools =
-		googleDriveConnection && convexClient
-			? buildGoogleDriveTools({
-					searchFiles: async ({ query, limit }) =>
-						await convexClient.action(
-							api.googleTools.searchGoogleDriveFilesForTool,
-							{
-								query,
-								...(typeof limit === "number" ? { limit } : {}),
-							},
-						),
-					getFile: async ({ fileId }) =>
-						await convexClient.action(
-							api.googleTools.getGoogleDriveFileForTool,
-							{
-								fileId,
-							},
-						),
-				})
-			: {};
-	const posthogTools = posthogConnection
-		? await buildPostHogTools(posthogConnection)
-		: {};
-	const notionTools = notionConnection
-		? buildNotionTools(notionConnection)
-		: {};
+	const appTools = await buildConvexConnectedAppTools({
+		connections: selectedAppConnections,
+		convexClient,
+		workspaceId: resolvedWorkspaceId,
+	});
 	const systemPrompt = `${buildChatSystemPrompt({
 		notesContext,
 		attachedNoteContext,
@@ -895,13 +816,7 @@ const handleChatRequest = async (request, response) => {
 					}),
 				}
 			: {}),
-		...trackerTools,
-		...googleCalendarTools,
-		...yandexCalendarTools,
-		...jiraTools,
-		...googleDriveTools,
-		...posthogTools,
-		...notionTools,
+		...appTools,
 	};
 	const agent = new ToolLoopAgent({
 		model: openai(selectedModel.model),

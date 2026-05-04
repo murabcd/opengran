@@ -20,20 +20,12 @@ import {
 	deriveFallbackChatTitle,
 	finalizeGeneratedChatTitle,
 } from "../../../packages/ai/src/chat-titles.mjs";
-import {
-	buildGoogleCalendarTools,
-	buildGoogleDriveTools,
-	buildYandexCalendarTools,
-} from "../../../packages/ai/src/productivity-tools.mjs";
+import { buildConvexConnectedAppTools } from "../../../packages/ai/src/convex-app-tool-adapters.mjs";
 import {
 	buildChatSystemPrompt,
 	CHAT_TITLE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
 import { CHAT_TITLE_MODEL_ID, findChatModel } from "../src/lib/ai/models";
-import { buildJiraTools } from "./jira";
-import { buildNotionTools } from "./notion";
-import { buildPostHogTools } from "./posthog";
-import { buildTrackerTools } from "./tracker";
 
 type ChatRequestBody = {
 	id?: string;
@@ -657,82 +649,11 @@ export const handleChatRequest = async (
 		selectedAppConnections.find(
 			(connection) => connection.provider === "notion",
 		) ?? null;
-	const trackerTools = trackerConnection
-		? buildTrackerTools(trackerConnection)
-		: {};
-	const googleCalendarTools =
-		googleCalendarConnection && convexClient && resolvedWorkspaceId
-			? buildGoogleCalendarTools({
-					listEvents: async ({ limit, meetingsOnly }) =>
-						await convexClient.action(
-							api.calendar.listGoogleCalendarEventsForTool,
-							{
-								...(typeof limit === "number" ? { limit } : {}),
-								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
-							},
-						),
-					searchEvents: async ({ query, limit, meetingsOnly }) =>
-						await convexClient.action(
-							api.calendar.searchGoogleCalendarEventsForTool,
-							{
-								query: query ?? "",
-								...(typeof limit === "number" ? { limit } : {}),
-								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
-							},
-						),
-				})
-			: {};
-	const yandexCalendarTools =
-		yandexCalendarConnection && convexClient && resolvedWorkspaceId
-			? buildYandexCalendarTools({
-					listEvents: async ({ limit, meetingsOnly }) =>
-						await convexClient.action(
-							api.calendar.listYandexCalendarEventsForTool,
-							{
-								workspaceId: resolvedWorkspaceId,
-								...(typeof limit === "number" ? { limit } : {}),
-								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
-							},
-						),
-					searchEvents: async ({ query, limit, meetingsOnly }) =>
-						await convexClient.action(
-							api.calendar.searchYandexCalendarEventsForTool,
-							{
-								workspaceId: resolvedWorkspaceId,
-								query: query ?? "",
-								...(typeof limit === "number" ? { limit } : {}),
-								...(typeof meetingsOnly === "boolean" ? { meetingsOnly } : {}),
-							},
-						),
-				})
-			: {};
-	const jiraTools = jiraConnection ? buildJiraTools(jiraConnection) : {};
-	const googleDriveTools =
-		googleDriveConnection && convexClient
-			? buildGoogleDriveTools({
-					searchFiles: async ({ query, limit }) =>
-						await convexClient.action(
-							api.googleTools.searchGoogleDriveFilesForTool,
-							{
-								query,
-								...(typeof limit === "number" ? { limit } : {}),
-							},
-						),
-					getFile: async ({ fileId }) =>
-						await convexClient.action(
-							api.googleTools.getGoogleDriveFileForTool,
-							{
-								fileId,
-							},
-						),
-				})
-			: {};
-	const posthogTools = posthogConnection
-		? await buildPostHogTools(posthogConnection)
-		: {};
-	const notionTools = notionConnection
-		? buildNotionTools(notionConnection)
-		: {};
+	const appTools = await buildConvexConnectedAppTools({
+		connections: selectedAppConnections,
+		convexClient,
+		workspaceId: resolvedWorkspaceId,
+	});
 	const systemPrompt = `${buildChatSystemPrompt({
 		notesContext,
 		attachedNoteContext,
@@ -780,16 +701,7 @@ export const handleChatRequest = async (
 		});
 	}
 
-	Object.assign(
-		enabledTools,
-		trackerTools,
-		googleCalendarTools,
-		yandexCalendarTools,
-		jiraTools,
-		googleDriveTools,
-		posthogTools,
-		notionTools,
-	);
+	Object.assign(enabledTools, appTools);
 
 	const agent = new ToolLoopAgent({
 		model: openai(resolvedModel.model),

@@ -5,6 +5,7 @@ import {
 	screen,
 	waitFor,
 } from "@testing-library/react";
+import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import type * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TranscriptionControllerState } from "../src/lib/transcription-controller";
@@ -87,6 +88,9 @@ const createSessionState = (
 	...overrides,
 });
 
+const renderWithProviders = (ui: React.ReactElement) =>
+	render(<TooltipProvider>{ui}</TooltipProvider>);
+
 describe("SpeechInput", () => {
 	beforeEach(() => {
 		subscribeToEventsMock.mockReset();
@@ -133,7 +137,7 @@ describe("SpeechInput", () => {
 			"../src/components/ai-elements/speech-input"
 		);
 
-		render(
+		renderWithProviders(
 			<SpeechInput
 				autoStartKey="note-1:capture"
 				scopeKey="note:1"
@@ -208,7 +212,7 @@ describe("SpeechInput", () => {
 			"../src/components/ai-elements/speech-input"
 		);
 
-		render(<SpeechInput scopeKey="note:1" />);
+		renderWithProviders(<SpeechInput scopeKey="note:1" />);
 
 		fireEvent.click(screen.getByRole("button"));
 		await waitFor(() => {
@@ -231,7 +235,7 @@ describe("SpeechInput", () => {
 			"../src/components/ai-elements/speech-input"
 		);
 
-		render(
+		renderWithProviders(
 			<SpeechInput scopeKey="note:1" onListeningChange={onListeningChange} />,
 		);
 
@@ -256,7 +260,7 @@ describe("SpeechInput", () => {
 			"../src/components/ai-elements/speech-input"
 		);
 
-		render(<SpeechInput lang="en" scopeKey="note:1" />);
+		renderWithProviders(<SpeechInput lang="en" scopeKey="note:1" />);
 
 		fireEvent.click(screen.getByRole("button"));
 

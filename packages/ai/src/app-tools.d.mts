@@ -14,13 +14,59 @@ export type YandexCalendarToolConnection = {
 	calendarHomePath: string;
 };
 
+export type GoogleCalendarToolConnection = {
+	id: string;
+	provider: "google-calendar";
+	title: string;
+	preview: string;
+};
+
+export type GoogleDriveToolConnection = {
+	id: string;
+	provider: "google-drive";
+	title: string;
+	preview: string;
+};
+
 export type ConnectedAppToolConnection =
 	| JiraToolConnection
 	| NotionToolConnection
 	| PostHogToolConnection
 	| TrackerToolConnection
-	| YandexCalendarToolConnection;
+	| YandexCalendarToolConnection
+	| GoogleCalendarToolConnection
+	| GoogleDriveToolConnection;
+
+export type ConnectedAppToolAdapters = {
+	googleCalendar?: {
+		listEvents(args: {
+			limit?: number;
+			meetingsOnly?: boolean;
+		}): Promise<unknown>;
+		searchEvents(args: {
+			query: string;
+			limit?: number;
+			meetingsOnly?: boolean;
+		}): Promise<unknown>;
+	};
+	googleDrive?: {
+		searchFiles(args: { query: string; limit?: number }): Promise<unknown>;
+		getFile(args: { fileId: string }): Promise<unknown>;
+	};
+	yandexCalendar?: {
+		listEvents(args: {
+			limit?: number;
+			meetingsOnly?: boolean;
+		}): Promise<unknown>;
+		searchEvents(args: {
+			query: string;
+			limit?: number;
+			meetingsOnly?: boolean;
+		}): Promise<unknown>;
+	};
+};
 
 export declare function buildConnectedAppTools(
 	connections: ConnectedAppToolConnection[],
+	adapters?: ConnectedAppToolAdapters,
 ): Promise<ToolSet>;
