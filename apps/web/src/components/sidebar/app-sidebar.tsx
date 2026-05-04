@@ -84,6 +84,7 @@ type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
 	currentNoteId: Id<"notes"> | null;
 	currentNoteTitle?: string;
 	onChatSelect: (chatId: string) => void;
+	onAddAutomation?: (chatId: string) => void;
 	onNotePrefetch: (noteId: Id<"notes">) => void;
 	onNoteSelect: (noteId: Id<"notes">) => void;
 	onNoteTitleChange?: (title: string) => void;
@@ -530,6 +531,7 @@ export function AppSidebar({
 	currentNoteId,
 	currentNoteTitle,
 	onChatSelect,
+	onAddAutomation,
 	onNotePrefetch,
 	onNoteSelect,
 	onNoteTitleChange,
@@ -589,6 +591,7 @@ export function AppSidebar({
 					currentNoteTitle={currentNoteTitle}
 					currentView={currentView}
 					onChatSelect={model.handleChatSelect}
+					onAddAutomation={onAddAutomation}
 					notes={notes}
 					onCreateNote={model.handleCreateNote}
 					onNotePrefetch={onNotePrefetch}
@@ -747,6 +750,7 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 	currentNoteTitle,
 	currentView,
 	onChatSelect,
+	onAddAutomation,
 	notes,
 	onCreateNote,
 	onNotePrefetch,
@@ -766,6 +770,7 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 	currentNoteTitle?: string;
 	currentView: AppSidebarView;
 	onChatSelect: (chatId: string) => void;
+	onAddAutomation?: (chatId: string) => void;
 	notes: Array<Doc<"notes">> | undefined;
 	onCreateNote: () => void;
 	onNotePrefetch: (noteId: Id<"notes">) => void;
@@ -787,12 +792,15 @@ const AppSidebarContentSection = React.memo(function AppSidebarContentSection({
 				chats={chats}
 				automationChatIds={automationChatIds}
 				notes={notes}
+				projects={projects}
+				workspaceId={activeWorkspaceId}
 				currentChatId={currentView === "chat" ? currentChatId : null}
 				currentChatTitle={currentChatTitle}
 				currentNoteId={currentView === "note" ? currentNoteId : null}
 				currentNoteTitle={currentNoteTitle}
 				recordingNoteId={recordingNoteId}
 				onChatSelect={onChatSelect}
+				onAddAutomation={onAddAutomation}
 				onNotePrefetch={onNotePrefetch}
 				onNoteSelect={onNoteSelect}
 				onNoteTitleChange={onNoteTitleChange}

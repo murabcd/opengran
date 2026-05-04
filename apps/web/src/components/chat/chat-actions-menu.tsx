@@ -25,7 +25,7 @@ import {
 } from "@workspace/ui/components/dropdown-menu";
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation } from "convex/react";
-import { Clock, Pencil, Star, StarOff, Trash2 } from "lucide-react";
+import { Archive, Clock, Pencil, Star, StarOff } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { NoteTitleEditInput } from "@/components/note/note-title-edit-input";
@@ -439,7 +439,7 @@ function ChatActionsDropdownContent({
 						disabled={isMovingToTrash || !canUpdate}
 						onSelect={onOpenTrashConfirm}
 					>
-						<Trash2 />
+						<Archive />
 						Move to trash
 					</DropdownMenuItem>
 				</>

@@ -11,6 +11,7 @@ const projectFields = {
 	workspaceId: v.id("workspaces"),
 	name: v.string(),
 	normalizedName: v.string(),
+	isStarred: v.boolean(),
 	createdAt: v.number(),
 	updatedAt: v.number(),
 };
@@ -177,6 +178,55 @@ const clearProjectNotes = async (
 	}
 };
 
+const moveProjectNotesToTrash = async (
+	ctx: MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+	projectId: Id<"projects">,
+) => {
+	let movedCount = 0;
+
+	while (true) {
+		const now = Date.now();
+		const notes = await ctx.db
+			.query("notes")
+			.withIndex("by_owner_ws_project_arch_upd", (q) =>
+				q
+					.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+					.eq("workspaceId", workspaceId)
+					.eq("projectId", projectId)
+					.eq("isArchived", false),
+			)
+			.take(REMOVE_PROJECT_NOTES_BATCH_SIZE);
+
+		if (notes.length === 0) {
+			break;
+		}
+
+		await Promise.all(
+			notes.map(async (note) => {
+				await ctx.db.patch(note._id, {
+					isArchived: true,
+					archivedAt: now,
+					updatedAt: now,
+				});
+				await ctx.runMutation(internal.chats.archiveForNote, {
+					ownerTokenIdentifier,
+					workspaceId,
+					noteId: note._id,
+				});
+			}),
+		);
+
+		movedCount += notes.length;
+
+		if (notes.length < REMOVE_PROJECT_NOTES_BATCH_SIZE) {
+			break;
+		}
+	}
+
+	return movedCount;
+};
 export const list = query({
 	args: {
 		workspaceId: v.id("workspaces"),
@@ -239,6 +289,7 @@ export const create = mutation({
 			workspaceId: args.workspaceId,
 			name,
 			normalizedName,
+			isStarred: false,
 			createdAt: now,
 			updatedAt: now,
 		});
@@ -308,6 +359,53 @@ export const rename = mutation({
 		}
 
 		return updatedProject;
+	},
+});
+
+export const toggleStar = mutation({
+	args: {
+		workspaceId: v.id("workspaces"),
+		id: v.id("projects"),
+	},
+	returns: v.object({
+		isStarred: v.boolean(),
+	}),
+	handler: async (ctx, args) => {
+		const project = await requireOwnedProject(ctx, args.id, args.workspaceId);
+		const isStarred = !project.isStarred;
+
+		await ctx.db.patch(project._id, {
+			isStarred,
+			updatedAt: Date.now(),
+		});
+
+		return {
+			isStarred,
+		};
+	},
+});
+
+export const moveNotesToTrash = mutation({
+	args: {
+		workspaceId: v.id("workspaces"),
+		id: v.id("projects"),
+	},
+	returns: v.object({
+		movedCount: v.number(),
+	}),
+	handler: async (ctx, args) => {
+		const identity = await requireIdentity(ctx);
+		const project = await requireOwnedProject(ctx, args.id, args.workspaceId);
+		const movedCount = await moveProjectNotesToTrash(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+			project._id,
+		);
+
+		return {
+			movedCount,
+		};
 	},
 });
 

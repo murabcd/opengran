@@ -200,6 +200,7 @@ test("notes.setProject assigns and clears a project without dropping note metada
 			workspaceId,
 			name: "Product",
 			normalizedName: "product",
+			isStarred: false,
 			createdAt: 3_000,
 			updatedAt: 3_000,
 		}),

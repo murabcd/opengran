@@ -37,8 +37,25 @@ vi.mock("@workspace/ui/components/sidebar", () => ({
 }));
 
 vi.mock("../src/components/chat/chat-actions-menu", () => ({
-	ChatActionsMenu: ({ children }: React.PropsWithChildren) => (
-		<div>{children}</div>
+	ChatActionsMenu: ({
+		children,
+		chat,
+		onAddAutomation,
+	}: React.PropsWithChildren<{
+		chat: { chatId?: string; _id: string; title: string };
+		onAddAutomation?: (chatId: string) => void;
+	}>) => (
+		<div>
+			{children}
+			{onAddAutomation ? (
+				<button
+					type="button"
+					onClick={() => onAddAutomation(chat.chatId ?? chat._id)}
+				>
+					Add automation
+				</button>
+			) : null}
+		</div>
 	),
 }));
 
@@ -66,6 +83,35 @@ vi.mock("../src/components/nav/sidebar-collapsible-group", () => ({
 	),
 }));
 
+vi.mock("../src/components/nav/nav-projects", () => ({
+	ProjectSidebarItem: ({
+		project,
+		notes,
+		onNoteSelect,
+	}: {
+		project: { _id: string; name: string };
+		notes: Array<{ _id: string; title: string }>;
+		onNoteSelect: (noteId: never) => void;
+	}) => (
+		<div>
+			<button type="button">{project.name}</button>
+			<button type="button" aria-label={`Open actions for ${project.name}`}>
+				Actions
+			</button>
+			{notes.map((note) => (
+				<div key={note._id}>
+					<button type="button" onClick={() => onNoteSelect(note._id as never)}>
+						{note.title}
+					</button>
+					<button type="button" aria-label={`Open actions for ${note.title}`}>
+						Actions
+					</button>
+				</div>
+			))}
+		</div>
+	),
+}));
+
 vi.mock("../src/lib/chat", () => ({
 	getChatId: (chat: { chatId?: string; _id: string }) =>
 		chat.chatId ?? chat._id,
@@ -83,6 +129,7 @@ describe("NavStarred", () => {
 	it("renders starred notes and chats under the same sidebar section", async () => {
 		const { NavStarred } = await import("../src/components/nav/nav-starred");
 		const onChatSelect = vi.fn();
+		const onAddAutomation = vi.fn();
 		const onNoteSelect = vi.fn();
 
 		render(
@@ -103,21 +150,56 @@ describe("NavStarred", () => {
 						isStarred: true,
 						updatedAt: 1,
 					} as never,
+					{
+						_id: "note-2",
+						title: "Project note",
+						projectId: "project-1",
+						isStarred: true,
+						updatedAt: 4,
+					} as never,
 				]}
+				projects={[
+					{
+						_id: "project-1",
+						name: "Starred project",
+						isStarred: true,
+						updatedAt: 3,
+					} as never,
+				]}
+				workspaceId={"workspace-1" as never}
 				currentChatId={null}
 				currentNoteId={null}
 				recordingNoteId={null}
 				onChatSelect={onChatSelect}
+				onAddAutomation={onAddAutomation}
 				onNotePrefetch={vi.fn()}
 				onNoteSelect={onNoteSelect}
 			/>,
 		);
 
 		expect(screen.getByText("Starred")).toBeTruthy();
+		expect(
+			screen.getByRole("button", { name: "Open actions for Starred project" }),
+		).toBeTruthy();
+		expect(
+			screen.getAllByRole("button", { name: "Open actions for Project note" }),
+		).toHaveLength(2);
+		const projectNoteButtons = screen.getAllByRole("button", {
+			name: "Project note",
+		});
+		expect(projectNoteButtons).toHaveLength(2);
+		fireEvent.click(projectNoteButtons[0]);
+		fireEvent.click(projectNoteButtons[1]);
 		fireEvent.click(screen.getByRole("button", { name: "Starred chat" }));
+		fireEvent.click(screen.getByRole("button", { name: "Add automation" }));
 		fireEvent.click(screen.getByRole("button", { name: "Starred note" }));
 
 		expect(onChatSelect).toHaveBeenCalledWith("chat-1");
+		expect(onAddAutomation).toHaveBeenCalledWith("chat-1");
+		expect(onNoteSelect).toHaveBeenCalledWith("note-2");
 		expect(onNoteSelect).toHaveBeenCalledWith("note-1");
+		expect(
+			onNoteSelect.mock.calls.filter(([noteId]) => noteId === "note-2"),
+		).toHaveLength(2);
 	});
 });

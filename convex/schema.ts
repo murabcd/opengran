@@ -190,6 +190,7 @@ export default defineSchema({
 		workspaceId: v.id("workspaces"),
 		name: v.string(),
 		normalizedName: v.string(),
+		isStarred: v.boolean(),
 		createdAt: v.number(),
 		updatedAt: v.number(),
 	})

@@ -124,6 +124,95 @@ test("projects.rename updates the project and preserves workspace uniqueness", a
 	).rejects.toBeInstanceOf(Error);
 });
 
+test("projects.toggleStar marks and unmarks a project", async () => {
+	const { asOwner, workspaceId } = await createWorkspace();
+
+	const project = await asOwner.mutation(api.projects.create, {
+		workspaceId,
+		name: "Product",
+	});
+
+	const firstToggle = await asOwner.mutation(api.projects.toggleStar, {
+		workspaceId,
+		id: project._id,
+	});
+	expect(firstToggle.isStarred).toBe(true);
+
+	const starredProject = await asOwner.run(async (ctx) =>
+		ctx.db.get(project._id),
+	);
+	expect(starredProject?.isStarred).toBe(true);
+
+	const secondToggle = await asOwner.mutation(api.projects.toggleStar, {
+		workspaceId,
+		id: project._id,
+	});
+	expect(secondToggle.isStarred).toBe(false);
+
+	const unstarredProject = await asOwner.run(async (ctx) =>
+		ctx.db.get(project._id),
+	);
+	expect(unstarredProject?.isStarred).toBe(false);
+});
+
+test("projects.moveNotesToTrash archives active project notes and keeps the project", async () => {
+	const { asOwner, workspaceId } = await createWorkspace();
+
+	const project = await asOwner.mutation(api.projects.create, {
+		workspaceId,
+		name: "Product",
+	});
+
+	const { activeNoteId, archivedNoteId } = await asOwner.run(async (ctx) => {
+		const activeNoteId = await ctx.db.insert("notes", {
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			workspaceId,
+			projectId: project._id,
+			title: "Active note",
+			content: "",
+			searchableText: "",
+			visibility: "private",
+			isArchived: false,
+			createdAt: 1_000,
+			updatedAt: 1_000,
+		});
+		const archivedNoteId = await ctx.db.insert("notes", {
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			workspaceId,
+			projectId: project._id,
+			title: "Archived note",
+			content: "",
+			searchableText: "",
+			visibility: "private",
+			isArchived: true,
+			archivedAt: 2_000,
+			createdAt: 1_000,
+			updatedAt: 1_000,
+		});
+
+		return { activeNoteId, archivedNoteId };
+	});
+
+	const result = await asOwner.mutation(api.projects.moveNotesToTrash, {
+		workspaceId,
+		id: project._id,
+	});
+	expect(result.movedCount).toBe(1);
+
+	const projects = await asOwner.query(api.projects.list, { workspaceId });
+	expect(projects).toHaveLength(1);
+
+	const activeNote = await asOwner.run(async (ctx) => ctx.db.get(activeNoteId));
+	const archivedNote = await asOwner.run(async (ctx) =>
+		ctx.db.get(archivedNoteId),
+	);
+
+	expect(activeNote?.isArchived).toBe(true);
+	expect(activeNote?.projectId).toBe(project._id);
+	expect(archivedNote?.isArchived).toBe(true);
+	expect(archivedNote?.projectId).toBe(project._id);
+});
+
 test("projects.remove deletes the project and clears it from assigned notes", async () => {
 	const { asOwner, workspaceId } = await createWorkspace();
 

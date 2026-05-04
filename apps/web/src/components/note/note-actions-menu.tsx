@@ -48,6 +48,7 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import { useMutation, useQuery } from "convex/react";
 import {
+	Archive,
 	Check,
 	CornerUpRight,
 	FileText,
@@ -59,7 +60,6 @@ import {
 	Share2,
 	Star,
 	StarOff,
-	Trash2,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -1133,7 +1133,7 @@ function NoteActionsDropdownContent({
 				className="cursor-pointer"
 				onSelect={onConfirmTrash}
 			>
-				<Trash2 />
+				<Archive />
 				Move to trash
 			</DropdownMenuItem>
 		</DropdownMenuContent>

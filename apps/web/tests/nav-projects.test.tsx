@@ -10,44 +10,63 @@ vi.mock("convex/react", () => ({
 	useMutation: useMutationMock,
 }));
 
-vi.mock("@workspace/ui/components/alert-dialog", () => ({
-	AlertDialog: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-	AlertDialogAction: ({
-		children,
-		...props
-	}: React.PropsWithChildren<
-		React.ButtonHTMLAttributes<HTMLButtonElement>
-	>) => (
-		<button type="button" {...props}>
-			{children}
-		</button>
-	),
-	AlertDialogCancel: ({
-		children,
-		...props
-	}: React.PropsWithChildren<
-		React.ButtonHTMLAttributes<HTMLButtonElement>
-	>) => (
-		<button type="button" {...props}>
-			{children}
-		</button>
-	),
-	AlertDialogContent: ({ children }: React.PropsWithChildren) => (
-		<div>{children}</div>
-	),
-	AlertDialogDescription: ({ children }: React.PropsWithChildren) => (
-		<div>{children}</div>
-	),
-	AlertDialogFooter: ({ children }: React.PropsWithChildren) => (
-		<div>{children}</div>
-	),
-	AlertDialogHeader: ({ children }: React.PropsWithChildren) => (
-		<div>{children}</div>
-	),
-	AlertDialogTitle: ({ children }: React.PropsWithChildren) => (
-		<div>{children}</div>
-	),
-}));
+vi.mock("@workspace/ui/components/alert-dialog", async () => {
+	const React = await import("react");
+	const AlertDialogContext = React.createContext<{ open: boolean }>({
+		open: false,
+	});
+
+	return {
+		AlertDialog: ({
+			open = false,
+			children,
+		}: React.PropsWithChildren<{ open?: boolean }>) => (
+			<AlertDialogContext.Provider value={{ open }}>
+				{children}
+			</AlertDialogContext.Provider>
+		),
+		AlertDialogAction: ({
+			children,
+			...props
+		}: React.PropsWithChildren<
+			React.ButtonHTMLAttributes<HTMLButtonElement>
+		>) => (
+			<button type="button" {...props}>
+				{children}
+			</button>
+		),
+		AlertDialogCancel: ({
+			children,
+			...props
+		}: React.PropsWithChildren<
+			React.ButtonHTMLAttributes<HTMLButtonElement>
+		>) => (
+			<button type="button" {...props}>
+				{children}
+			</button>
+		),
+		AlertDialogContent: ({ children }: React.PropsWithChildren) => (
+			<AlertDialogContentInner>{children}</AlertDialogContentInner>
+		),
+		AlertDialogDescription: ({ children }: React.PropsWithChildren) => (
+			<div>{children}</div>
+		),
+		AlertDialogFooter: ({ children }: React.PropsWithChildren) => (
+			<div>{children}</div>
+		),
+		AlertDialogHeader: ({ children }: React.PropsWithChildren) => (
+			<div>{children}</div>
+		),
+		AlertDialogTitle: ({ children }: React.PropsWithChildren) => (
+			<div>{children}</div>
+		),
+	};
+
+	function AlertDialogContentInner({ children }: React.PropsWithChildren) {
+		const { open } = React.use(AlertDialogContext);
+		return open ? <div>{children}</div> : null;
+	}
+});
 
 vi.mock("@workspace/ui/components/button", () => ({
 	Button: ({
@@ -348,11 +367,13 @@ function createProject({
 	name,
 	createdAt,
 	updatedAt,
+	isStarred = false,
 }: {
 	id: string;
 	name: string;
 	createdAt: number;
 	updatedAt: number;
+	isStarred?: boolean;
 }) {
 	return {
 		_id: id,
@@ -361,6 +382,7 @@ function createProject({
 		workspaceId: "workspace-1",
 		name,
 		normalizedName: name.toLowerCase(),
+		isStarred,
 		createdAt,
 		updatedAt,
 	} as never;
@@ -445,6 +467,106 @@ describe("NavProjects", () => {
 		expect(screen.getByRole("button", { name: "Sort projects" })).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Add project" })).toBeTruthy();
 		expect(getRenderedProjectNames()).toEqual(["Alpha", "Beta", "Gamma"]);
+	});
+
+	it("renders project star and trash actions", async () => {
+		const { NavProjects } = await import("../src/components/nav/nav-projects");
+
+		render(
+			<NavProjects
+				workspaceId={"workspace-1" as never}
+				projects={[
+					createProject({
+						id: "project-a",
+						name: "Alpha",
+						createdAt: 10,
+						updatedAt: 10,
+					}),
+				]}
+				notes={[]}
+				currentNoteId={null}
+				onPrefetchNote={vi.fn()}
+				onNoteSelect={vi.fn()}
+			/>,
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "Open actions for Alpha" }),
+		);
+
+		expect(screen.getByRole("button", { name: /rename/i })).toBeTruthy();
+		expect(screen.getByRole("button", { name: /^star$/i })).toBeTruthy();
+		expect(
+			screen.getByRole("button", { name: /move notes to trash/i }),
+		).toBeTruthy();
+		expect(screen.getByRole("button", { name: /^delete$/i })).toBeTruthy();
+	});
+
+	it("confirms before moving project notes to trash", async () => {
+		const { NavProjects } = await import("../src/components/nav/nav-projects");
+
+		render(
+			<NavProjects
+				workspaceId={"workspace-1" as never}
+				projects={[
+					createProject({
+						id: "project-a",
+						name: "Alpha",
+						createdAt: 10,
+						updatedAt: 10,
+					}),
+				]}
+				notes={[
+					createNote({
+						id: "note-1",
+						projectId: "project-a",
+						title: "Project note",
+						createdAt: 20,
+						updatedAt: 20,
+					}),
+				]}
+				currentNoteId={null}
+				onPrefetchNote={vi.fn()}
+				onNoteSelect={vi.fn()}
+			/>,
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "Open actions for Alpha" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: /move notes to trash/i }),
+		);
+
+		expect(screen.getByText("Move notes to trash?")).toBeTruthy();
+		expect(screen.getByText(/The project folder will stay/)).toBeTruthy();
+	});
+
+	it("renders unstar for starred projects", async () => {
+		const { NavProjects } = await import("../src/components/nav/nav-projects");
+
+		render(
+			<NavProjects
+				workspaceId={"workspace-1" as never}
+				projects={[
+					createProject({
+						id: "project-a",
+						name: "Alpha",
+						createdAt: 10,
+						updatedAt: 10,
+						isStarred: true,
+					}),
+				]}
+				notes={[]}
+				currentNoteId={null}
+				onPrefetchNote={vi.fn()}
+				onNoteSelect={vi.fn()}
+			/>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: /open actions/i }));
+
+		expect(screen.getByRole("button", { name: /unstar/i })).toBeTruthy();
 	});
 
 	it("sorts projects by latest activity from the filter menu", async () => {

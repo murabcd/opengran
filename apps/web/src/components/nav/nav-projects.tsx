@@ -51,6 +51,7 @@ import {
 import type { OptimisticLocalStore } from "convex/browser";
 import { useMutation } from "convex/react";
 import {
+	Archive,
 	ArrowUpAZ,
 	Check,
 	ChevronRight,
@@ -65,6 +66,8 @@ import {
 	Pencil,
 	Plus,
 	PlusCircle,
+	Star,
+	StarOff,
 	Trash2,
 } from "lucide-react";
 import * as React from "react";
@@ -73,6 +76,7 @@ import { NoteActionsMenu } from "@/components/note/note-actions-menu";
 import { NoteTitleEditInput } from "@/components/note/note-title-edit-input";
 import { ProjectComposer } from "@/components/projects/project-composer";
 import { getNoteDisplayTitle } from "@/lib/note-title";
+import { archiveNoteChats } from "@/lib/optimistic-note-chats";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import {
@@ -229,6 +233,7 @@ function navProjectsReducer(
 type ProjectItemState = {
 	confirmOpen: boolean;
 	menuOpen: boolean;
+	moveNotesConfirmOpen: boolean;
 	renameOpen: boolean;
 	renameValue: string;
 };
@@ -236,6 +241,7 @@ type ProjectItemState = {
 type ProjectItemAction =
 	| { type: "setConfirmOpen"; value: boolean }
 	| { type: "setMenuOpen"; value: boolean }
+	| { type: "setMoveNotesConfirmOpen"; value: boolean }
 	| { type: "setRenameOpen"; value: boolean }
 	| { type: "setRenameValue"; value: string }
 	| { type: "openRename"; value: string }
@@ -244,6 +250,7 @@ type ProjectItemAction =
 const createProjectItemState = (projectName: string): ProjectItemState => ({
 	confirmOpen: false,
 	menuOpen: false,
+	moveNotesConfirmOpen: false,
 	renameOpen: false,
 	renameValue: projectName,
 });
@@ -262,6 +269,11 @@ function projectItemReducer(
 			return {
 				...state,
 				menuOpen: action.value,
+			};
+		case "setMoveNotesConfirmOpen":
+			return {
+				...state,
+				moveNotesConfirmOpen: action.value,
 			};
 		case "setRenameOpen":
 			return {
@@ -644,7 +656,7 @@ function ProjectFilterItem({
 	);
 }
 
-function ProjectSidebarItem({
+export function ProjectSidebarItem({
 	project,
 	notes,
 	open,
@@ -685,6 +697,8 @@ function ProjectSidebarItem({
 		false,
 	);
 	const [isRemoving, setIsRemoving] = React.useState(false);
+	const [isMovingNotesToTrash, setIsMovingNotesToTrash] = React.useState(false);
+	const isUpdatingStarRef = React.useRef(false);
 	const renameValue = state.renameOpen ? state.renameValue : project.name;
 	const renameProject = useMutation(api.projects.rename).withOptimisticUpdate(
 		(localStore, args) => {
@@ -709,6 +723,26 @@ function ProjectSidebarItem({
 			optimisticClearProjectFromNotes(localStore, args.workspaceId, args.id);
 		},
 	);
+	const toggleProjectStar = useMutation(
+		api.projects.toggleStar,
+	).withOptimisticUpdate((localStore, args) => {
+		optimisticUpdateProjectList(localStore, args.workspaceId, (projects) =>
+			projects.map((entry) =>
+				entry._id === args.id
+					? {
+							...entry,
+							isStarred: !entry.isStarred,
+							updatedAt: Date.now(),
+						}
+					: entry,
+			),
+		);
+	});
+	const moveProjectNotesToTrash = useMutation(
+		api.projects.moveNotesToTrash,
+	).withOptimisticUpdate((localStore, args) => {
+		optimisticMoveProjectNotesToTrash(localStore, args.workspaceId, args.id);
+	});
 
 	const handleRename = React.useCallback(async () => {
 		if (!workspaceId || isRenaming) {
@@ -780,6 +814,27 @@ function ProjectSidebarItem({
 		dispatch({ type: "openRename", value: project.name });
 	}, [project.name]);
 
+	const handleToggleStar = React.useCallback(async () => {
+		if (!workspaceId || isUpdatingStarRef.current) {
+			return;
+		}
+
+		isUpdatingStarRef.current = true;
+
+		try {
+			const result = await toggleProjectStar({
+				workspaceId,
+				id: project._id,
+			});
+			toast.success(result.isStarred ? "Project starred" : "Project unstarred");
+		} catch (error) {
+			console.error("Failed to update project star", error);
+			toast.error("Failed to update project");
+		} finally {
+			isUpdatingStarRef.current = false;
+		}
+	}, [project._id, toggleProjectStar, workspaceId]);
+
 	const handleDeleteProject = React.useCallback(async () => {
 		if (!workspaceId || isRemoving) {
 			return;
@@ -802,12 +857,40 @@ function ProjectSidebarItem({
 		}
 	}, [isRemoving, project._id, removeProject, workspaceId]);
 
+	const handleMoveNotesToTrash = React.useCallback(async () => {
+		if (!workspaceId || isMovingNotesToTrash) {
+			return;
+		}
+
+		setIsMovingNotesToTrash(true);
+
+		try {
+			const result = await moveProjectNotesToTrash({
+				workspaceId,
+				id: project._id,
+			});
+			dispatch({ type: "setMoveNotesConfirmOpen", value: false });
+			toast.success(
+				result.movedCount === 1
+					? "1 note moved to trash"
+					: `${result.movedCount} notes moved to trash`,
+			);
+		} catch (error) {
+			console.error("Failed to move project notes to trash", error);
+			toast.error("Failed to move notes to trash");
+		} finally {
+			setIsMovingNotesToTrash(false);
+		}
+	}, [isMovingNotesToTrash, moveProjectNotesToTrash, project._id, workspaceId]);
+
 	return (
 		<>
 			<Collapsible asChild open={open} onOpenChange={onOpenChange}>
 				<SidebarMenuItem className="group/project-item group/collapsible">
 					<ProjectSidebarRow
 						projectName={project.name}
+						hasNotes={hasNotes}
+						isStarred={project.isStarred}
 						workspaceId={workspaceId}
 						isOpen={open}
 						menuOpen={state.menuOpen}
@@ -824,6 +907,11 @@ function ProjectSidebarItem({
 						onToggleOpen={() => onOpenChange(!open)}
 						onRenameOpenChange={handleRenameOpenChange}
 						onStartRename={handleStartRename}
+						onToggleStar={handleToggleStar}
+						onMoveNotesToTrash={() => {
+							dispatch({ type: "setMenuOpen", value: false });
+							dispatch({ type: "setMoveNotesConfirmOpen", value: true });
+						}}
 						onRenameValueChange={(value) =>
 							dispatch({ type: "setRenameValue", value })
 						}
@@ -849,13 +937,60 @@ function ProjectSidebarItem({
 					/>
 				</SidebarMenuItem>
 			</Collapsible>
-			<ProjectDeleteDialog
+			<ProjectSidebarItemDialogs
 				open={state.confirmOpen}
 				isRemoving={isRemoving}
-				onOpenChange={(nextOpen) =>
+				moveNotesOpen={state.moveNotesConfirmOpen}
+				isMoving={isMovingNotesToTrash}
+				noteCount={notes.length}
+				onDeleteOpenChange={(nextOpen) =>
 					dispatch({ type: "setConfirmOpen", value: nextOpen })
 				}
-				onConfirm={handleDeleteProject}
+				onMoveNotesOpenChange={(nextOpen) =>
+					dispatch({ type: "setMoveNotesConfirmOpen", value: nextOpen })
+				}
+				onDeleteConfirm={handleDeleteProject}
+				onMoveNotesConfirm={handleMoveNotesToTrash}
+			/>
+		</>
+	);
+}
+
+function ProjectSidebarItemDialogs({
+	open,
+	isRemoving,
+	moveNotesOpen,
+	isMoving,
+	noteCount,
+	onDeleteOpenChange,
+	onMoveNotesOpenChange,
+	onDeleteConfirm,
+	onMoveNotesConfirm,
+}: {
+	open: boolean;
+	isRemoving: boolean;
+	moveNotesOpen: boolean;
+	isMoving: boolean;
+	noteCount: number;
+	onDeleteOpenChange: (open: boolean) => void;
+	onMoveNotesOpenChange: (open: boolean) => void;
+	onDeleteConfirm: () => void;
+	onMoveNotesConfirm: () => void;
+}) {
+	return (
+		<>
+			<ProjectDeleteDialog
+				open={open}
+				isRemoving={isRemoving}
+				onOpenChange={onDeleteOpenChange}
+				onConfirm={onDeleteConfirm}
+			/>
+			<ProjectMoveNotesToTrashDialog
+				open={moveNotesOpen}
+				isMoving={isMoving}
+				noteCount={noteCount}
+				onOpenChange={onMoveNotesOpenChange}
+				onConfirm={onMoveNotesConfirm}
 			/>
 		</>
 	);
@@ -863,6 +998,8 @@ function ProjectSidebarItem({
 
 function ProjectSidebarRow({
 	projectName,
+	hasNotes,
+	isStarred,
 	workspaceId,
 	isOpen,
 	menuOpen,
@@ -875,12 +1012,16 @@ function ProjectSidebarRow({
 	onToggleOpen,
 	onRenameOpenChange,
 	onStartRename,
+	onToggleStar,
+	onMoveNotesToTrash,
 	onRenameValueChange,
 	onRenameCommit,
 	onRenameCancel,
 	onDeleteSelect,
 }: {
 	projectName: string;
+	hasNotes: boolean;
+	isStarred: boolean;
 	workspaceId: Id<"workspaces"> | null;
 	isOpen: boolean;
 	menuOpen: boolean;
@@ -893,6 +1034,8 @@ function ProjectSidebarRow({
 	onToggleOpen: () => void;
 	onRenameOpenChange: (open: boolean) => void;
 	onStartRename: () => void;
+	onToggleStar: () => void;
+	onMoveNotesToTrash: () => void;
 	onRenameValueChange: (value: string) => void;
 	onRenameCommit: () => void;
 	onRenameCancel: () => void;
@@ -923,11 +1066,15 @@ function ProjectSidebarRow({
 					</SidebarMenuButton>
 					<ProjectActionsMenu
 						projectName={projectName}
+						hasNotes={hasNotes}
+						isStarred={isStarred}
 						workspaceId={workspaceId}
 						menuOpen={menuOpen}
 						preventMenuCloseAutoFocusRef={preventMenuCloseAutoFocusRef}
 						onMenuOpenChange={onMenuOpenChange}
 						onStartRename={onStartRename}
+						onToggleStar={onToggleStar}
+						onMoveNotesToTrash={onMoveNotesToTrash}
 						onDeleteSelect={onDeleteSelect}
 					/>
 				</div>
@@ -976,19 +1123,27 @@ function ProjectSidebarRow({
 
 function ProjectActionsMenu({
 	projectName,
+	hasNotes,
+	isStarred,
 	workspaceId,
 	menuOpen,
 	preventMenuCloseAutoFocusRef,
 	onMenuOpenChange,
 	onStartRename,
+	onToggleStar,
+	onMoveNotesToTrash,
 	onDeleteSelect,
 }: {
 	projectName: string;
+	hasNotes: boolean;
+	isStarred: boolean;
 	workspaceId: Id<"workspaces"> | null;
 	menuOpen: boolean;
 	preventMenuCloseAutoFocusRef: React.MutableRefObject<boolean>;
 	onMenuOpenChange: (open: boolean) => void;
 	onStartRename: () => void;
+	onToggleStar: () => void;
+	onMoveNotesToTrash: () => void;
 	onDeleteSelect: () => void;
 }) {
 	return (
@@ -1022,6 +1177,17 @@ function ProjectActionsMenu({
 				<DropdownMenuItem disabled={!workspaceId} onClick={onStartRename}>
 					<Pencil />
 					Rename
+				</DropdownMenuItem>
+				<DropdownMenuItem disabled={!workspaceId} onClick={onToggleStar}>
+					{isStarred ? <StarOff /> : <Star />}
+					{isStarred ? "Unstar" : "Star"}
+				</DropdownMenuItem>
+				<DropdownMenuItem
+					disabled={!workspaceId || !hasNotes}
+					onClick={onMoveNotesToTrash}
+				>
+					<Archive />
+					Move notes to trash
 				</DropdownMenuItem>
 				<DropdownMenuSeparator />
 				<DropdownMenuItem
@@ -1143,6 +1309,46 @@ function ProjectDeleteDialog({
 						disabled={isRemoving}
 					>
 						{isRemoving ? "Deleting..." : "Delete"}
+					</AlertDialogAction>
+				</AlertDialogFooter>
+			</AlertDialogContent>
+		</AlertDialog>
+	);
+}
+
+function ProjectMoveNotesToTrashDialog({
+	open,
+	isMoving,
+	noteCount,
+	onOpenChange,
+	onConfirm,
+}: {
+	open: boolean;
+	isMoving: boolean;
+	noteCount: number;
+	onOpenChange: (open: boolean) => void;
+	onConfirm: () => void;
+}) {
+	const noteLabel = noteCount === 1 ? "1 note" : `${noteCount} notes`;
+
+	return (
+		<AlertDialog open={open} onOpenChange={onOpenChange}>
+			<AlertDialogContent>
+				<AlertDialogHeader>
+					<AlertDialogTitle>Move notes to trash?</AlertDialogTitle>
+					<AlertDialogDescription>
+						This will move {noteLabel} in this project to Trash. The project
+						folder will stay in your sidebar.
+					</AlertDialogDescription>
+				</AlertDialogHeader>
+				<AlertDialogFooter>
+					<AlertDialogCancel disabled={isMoving}>Cancel</AlertDialogCancel>
+					<AlertDialogAction
+						className="bg-destructive/15 text-destructive hover:bg-destructive/20 hover:text-destructive dark:text-red-500 dark:hover:bg-destructive/25"
+						onClick={onConfirm}
+						disabled={isMoving || noteCount === 0}
+					>
+						{isMoving ? "Moving..." : "Move to trash"}
 					</AlertDialogAction>
 				</AlertDialogFooter>
 			</AlertDialogContent>
@@ -1413,6 +1619,63 @@ function optimisticClearProjectFromNotes(
 				...latestNote,
 				projectId: undefined,
 			},
+		);
+	}
+}
+
+function optimisticMoveProjectNotesToTrash(
+	localStore: OptimisticLocalStore,
+	workspaceId: Id<"workspaces">,
+	projectId: Id<"projects">,
+) {
+	const notes = localStore.getQuery(api.notes.list, { workspaceId });
+	if (notes === undefined) {
+		return;
+	}
+
+	const timestamp = Date.now();
+	const projectNotes = notes.filter((note) => note.projectId === projectId);
+	const projectNoteIds = new Set(projectNotes.map((note) => note._id));
+
+	localStore.setQuery(
+		api.notes.list,
+		{ workspaceId },
+		notes.filter((note) => !projectNoteIds.has(note._id)),
+	);
+
+	const archivedNotes = localStore.getQuery(api.notes.listArchived, {
+		workspaceId,
+	});
+	if (archivedNotes !== undefined) {
+		localStore.setQuery(api.notes.listArchived, { workspaceId }, [
+			...projectNotes.map((note) => ({
+				...note,
+				isArchived: true,
+				archivedAt: timestamp,
+				updatedAt: timestamp,
+			})),
+			...archivedNotes,
+		]);
+	}
+
+	for (const note of projectNotes) {
+		const activeNote = localStore.getQuery(api.notes.get, {
+			workspaceId,
+			id: note._id,
+		});
+		if (activeNote !== undefined) {
+			localStore.setQuery(api.notes.get, { workspaceId, id: note._id }, null);
+		}
+
+		archiveNoteChats(localStore, workspaceId, note._id);
+	}
+
+	const latestNote = localStore.getQuery(api.notes.getLatest, { workspaceId });
+	if (latestNote && projectNoteIds.has(latestNote._id)) {
+		localStore.setQuery(
+			api.notes.getLatest,
+			{ workspaceId },
+			notes.find((note) => !projectNoteIds.has(note._id)) ?? null,
 		);
 	}
 }

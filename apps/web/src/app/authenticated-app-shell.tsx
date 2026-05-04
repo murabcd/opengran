@@ -2795,6 +2795,7 @@ export function AuthenticatedAppShell({
 					currentNoteId={controller.currentNoteId}
 					currentNoteTitle={controller.currentNoteTitle}
 					onChatSelect={controller.handleOpenChat}
+					onAddAutomation={controller.handleCreateChatAutomationOpen}
 					onNotePrefetch={controller.handlePrefetchNote}
 					onNoteSelect={controller.openNote}
 					onNoteTitleChange={controller.setCurrentNoteTitle}
