@@ -504,6 +504,29 @@ describe("ChatMessages", () => {
 		).toContain("justify-start");
 	});
 
+	it("renders one thinking indicator while waiting for the assistant stream", async () => {
+		const { ChatMessages } = await import("../src/components/chat/messages");
+
+		render(
+			<ChatMessages
+				isLoading
+				messages={[
+					{
+						id: "user-submitted",
+						role: "user",
+						parts: [{ type: "text", text: "Hello" }],
+					},
+				]}
+			/>,
+		);
+
+		expect(screen.getAllByText("Thinking")).toHaveLength(1);
+		expect(
+			screen.getByText("Thinking").closest("div[class*='group/message']")
+				?.className,
+		).toContain("justify-start");
+	});
+
 	it("copies assistant responses from the message actions", async () => {
 		const user = userEvent.setup();
 		const writeTextMock = vi.fn().mockResolvedValue(undefined);

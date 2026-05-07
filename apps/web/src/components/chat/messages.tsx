@@ -92,22 +92,35 @@ export function ChatMessages({
 	) => Promise<"created" | undefined> | "created" | undefined;
 	onRegenerateMessage?: (messageId: string) => void;
 }) {
-	const lastMessage = messages[messages.length - 1];
+	const displayMessages = React.useMemo(() => {
+		const lastMessage = messages[messages.length - 1];
+
+		if (!isLoading || lastMessage?.role === "assistant") {
+			return messages;
+		}
+
+		return [
+			...messages,
+			{
+				id: "pending-assistant-message",
+				role: "assistant" as const,
+				parts: [],
+			},
+		];
+	}, [isLoading, messages]);
+	const lastMessage = displayMessages[displayMessages.length - 1];
 	const [messageIdPendingDelete, setMessageIdPendingDelete] = React.useState<
 		string | null
 	>(null);
-	const showLoadingIndicator =
-		isLoading &&
-		(lastMessage === undefined || lastMessage.role !== "assistant");
 	const turns = React.useMemo(
-		() => groupMessagesIntoTurns(messages),
-		[messages],
+		() => groupMessagesIntoTurns(displayMessages),
+		[displayMessages],
 	);
 	const showAssistantBreathingSpace =
 		isLoading ||
 		(lastMessage?.role === "assistant" &&
 			getLastAssistantHasRenderableContent(
-				messages,
+				displayMessages,
 				(message) =>
 					extractTextParts(message).length > 0 ||
 					extractFileParts(message).length > 0 ||
@@ -148,20 +161,6 @@ export function ChatMessages({
 					/>
 				);
 			})}
-
-			{showLoadingIndicator ? (
-				<div className="group/message flex w-full justify-start">
-					<div className={cn("flex flex-col", CHAT_MESSAGE_MAX_WIDTH_CLASS)}>
-						<div className="flex flex-row items-start gap-2 pb-4">
-							<div className={ASSISTANT_CHAT_CONTENT_CLASS}>
-								<div className="text-sm text-muted-foreground">
-									<ShimmerText>Thinking</ShimmerText>
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
-			) : null}
 
 			{showAssistantBreathingSpace ? (
 				<div aria-hidden="true" className="min-h-[max(140px,24vh)] w-full" />
