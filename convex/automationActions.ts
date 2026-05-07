@@ -1,7 +1,10 @@
+"use node";
+
 import { openai } from "@ai-sdk/openai";
 import { generateText, stepCountIs } from "ai";
 import { v } from "convex/values";
 import { buildConnectedAppTools } from "../packages/ai/src/app-tools.mjs";
+import { buildPostHogTools } from "../packages/ai/src/posthog-tools.mjs";
 import { BASE_CHAT_SYSTEM_PROMPT } from "../packages/ai/src/prompts.mjs";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -63,7 +66,11 @@ const getAutomationAppTools = async (
 					workspaceId: run.workspaceId,
 				});
 
-	return await buildConnectedAppTools(connections);
+	return await buildConnectedAppTools(connections, {
+		posthog: {
+			buildTools: buildPostHogTools,
+		},
+	});
 };
 
 const buildAutomationSystemPrompt = ({

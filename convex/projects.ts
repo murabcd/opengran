@@ -41,6 +41,11 @@ const normalizeProjectName = (value: string) =>
 const toNormalizedProjectKey = (value: string) =>
 	normalizeProjectName(value).toLowerCase();
 
+const withProjectDefaults = (project: Doc<"projects">) => ({
+	...project,
+	isStarred: project.isStarred ?? false,
+});
+
 const requireOwnedWorkspace = async (
 	ctx: QueryCtx | MutationCtx,
 	ownerTokenIdentifier: string,
@@ -240,7 +245,7 @@ export const list = query({
 			args.workspaceId,
 		);
 
-		return await ctx.db
+		const projects = await ctx.db
 			.query("projects")
 			.withIndex("by_owner_ws_normalizedName", (q) =>
 				q
@@ -248,6 +253,8 @@ export const list = query({
 					.eq("workspaceId", args.workspaceId),
 			)
 			.take(100);
+
+		return projects.map(withProjectDefaults);
 	},
 });
 
@@ -302,7 +309,7 @@ export const create = mutation({
 			});
 		}
 
-		return project;
+		return withProjectDefaults(project);
 	},
 });
 
@@ -324,7 +331,7 @@ export const rename = mutation({
 			project.name === name &&
 			project.normalizedName === normalizedName
 		) {
-			return project;
+			return withProjectDefaults(project);
 		}
 
 		const existing = await ctx.db
@@ -358,7 +365,7 @@ export const rename = mutation({
 			});
 		}
 
-		return updatedProject;
+		return withProjectDefaults(updatedProject);
 	},
 });
 
@@ -372,7 +379,7 @@ export const toggleStar = mutation({
 	}),
 	handler: async (ctx, args) => {
 		const project = await requireOwnedProject(ctx, args.id, args.workspaceId);
-		const isStarred = !project.isStarred;
+		const isStarred = !(project.isStarred ?? false);
 
 		await ctx.db.patch(project._id, {
 			isStarred,

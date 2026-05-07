@@ -1,7 +1,6 @@
 import { listYandexUpcomingEvents } from "../../../convex/yandexCalendar.ts";
 import { buildJiraTools } from "./jira-tools.mjs";
 import { buildNotionTools } from "./notion-tools.mjs";
-import { buildPostHogTools } from "./posthog-tools.mjs";
 import {
 	buildGoogleCalendarTools,
 	buildGoogleDriveTools,
@@ -100,8 +99,8 @@ export const buildConnectedAppTools = async (connections, adapters = {}) => {
 			Object.assign(tools, buildNotionTools(connection));
 		}
 
-		if (connection.provider === "posthog") {
-			Object.assign(tools, await buildPostHogTools(connection));
+		if (connection.provider === "posthog" && adapters.posthog) {
+			Object.assign(tools, await adapters.posthog.buildTools(connection));
 		}
 
 		if (connection.provider === "google-calendar" && adapters.googleCalendar) {

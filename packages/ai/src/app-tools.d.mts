@@ -38,6 +38,9 @@ export type ConnectedAppToolConnection =
 	| GoogleDriveToolConnection;
 
 export type ConnectedAppToolAdapters = {
+	posthog?: {
+		buildTools(connection: PostHogToolConnection): Promise<ToolSet>;
+	};
 	googleCalendar?: {
 		listEvents(args: {
 			limit?: number;
