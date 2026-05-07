@@ -352,7 +352,7 @@ export function ChatMessageFileAttachments({
 						<button
 							key={file.url}
 							type="button"
-							className="size-24 cursor-zoom-in overflow-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							className="size-24 cursor-zoom-in overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 							onClick={() => setPreviewImage(file)}
 						>
 							<img
@@ -386,6 +386,12 @@ export function ChatMessageFileAttachments({
 				<DialogContent
 					showCloseButton={false}
 					className="!top-0 !left-0 !flex !h-screen !w-screen !max-w-none !translate-x-0 !translate-y-0 items-center justify-center !rounded-none !border-0 !bg-transparent p-10 !shadow-none !ring-0 sm:!max-w-none"
+					style={
+						{
+							"--tw-enter-scale": "1",
+							"--tw-exit-scale": "1",
+						} as React.CSSProperties
+					}
 					onPointerDown={(event) => {
 						if (event.target === event.currentTarget) {
 							setPreviewImage(null);
@@ -402,10 +408,10 @@ export function ChatMessageFileAttachments({
 						<img
 							src={previewImage.url}
 							alt={previewImage.filename || "Attached image preview"}
-							className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+							className="max-h-full max-w-full object-contain shadow-2xl"
 						/>
 					) : null}
-					<DialogClose className="absolute top-4 right-4 rounded-full bg-background/90 p-2 text-foreground shadow-lg transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-ring">
+					<DialogClose className="absolute top-4 right-4 cursor-pointer rounded-full bg-background/90 p-2 text-foreground shadow-lg transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-ring">
 						<X className="size-5" />
 						<span className="sr-only">Close</span>
 					</DialogClose>
