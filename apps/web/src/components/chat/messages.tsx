@@ -1,65 +1,20 @@
 import { Button } from "@workspace/ui/components/button";
 import {
-	Dialog,
-	DialogClose,
-	DialogContent,
-	DialogDescription,
-	DialogTitle,
-} from "@workspace/ui/components/dialog";
-import {
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
-import {
-	Check,
-	Copy,
-	Paperclip,
-	PenLine,
-	Plus,
-	RotateCcw,
-	Trash2,
-	X,
-} from "lucide-react";
+import { Check, Copy, PenLine, Plus, RotateCcw, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import { ShimmerText } from "@/components/ai-elements/shimmer";
-import {
-	Source,
-	Sources,
-	SourcesContent,
-	SourcesTrigger,
-} from "@/components/ai-elements/sources";
-import { CollapsibleMessageContent } from "@/components/chat/collapsible-message-content";
-import {
-	ASSISTANT_CHAT_CONTENT_CLASS,
-	CHAT_ACTIONS_VISIBILITY_CLASS,
-	CHAT_MESSAGE_MAX_WIDTH_CLASS,
-	getChatMessageJustifyClass,
-	USER_CHAT_BUBBLE_CLASS,
-} from "@/components/chat/message-layout";
-import { ChatRecipeReceipt } from "@/components/chat/recipe-receipt";
-import {
-	extractFileParts,
-	extractTextParts,
-	getChatMessageMetadata,
-	getChatText,
-} from "@/lib/chat-message";
-import { collectMessageSources } from "@/lib/chat-sources";
-import {
-	formatChatMessageTimestamp,
-	getChatMessageTimestamp,
-} from "@/lib/chat-timestamp";
-import {
-	getLastAssistantHasRenderableContent,
-	groupMessagesIntoTurns,
-} from "@/lib/chat-turns";
+import { CHAT_ACTIONS_VISIBILITY_CLASS } from "@/components/chat/message-layout";
+import { ChatMessageListContent } from "@/components/chat/message-list";
+
+export { ChatMessageFileAttachments } from "@/components/chat/message-list";
 
 type ChatMessagesActionProps = {
-	isLoading?: boolean;
-	lastMessageId?: string;
 	messageIdPendingDelete: string | null;
 	onDeleteClick: (messageId: string) => void;
 	onEditMessage?: (messageId: string, text: string) => void;
@@ -92,40 +47,9 @@ export function ChatMessages({
 	) => Promise<"created" | undefined> | "created" | undefined;
 	onRegenerateMessage?: (messageId: string) => void;
 }) {
-	const displayMessages = React.useMemo(() => {
-		const lastMessage = messages[messages.length - 1];
-
-		if (!isLoading || lastMessage?.role === "assistant") {
-			return messages;
-		}
-
-		return [
-			...messages,
-			{
-				id: "pending-assistant-message",
-				role: "assistant" as const,
-				parts: [],
-			},
-		];
-	}, [isLoading, messages]);
-	const lastMessage = displayMessages[displayMessages.length - 1];
 	const [messageIdPendingDelete, setMessageIdPendingDelete] = React.useState<
 		string | null
 	>(null);
-	const turns = React.useMemo(
-		() => groupMessagesIntoTurns(displayMessages),
-		[displayMessages],
-	);
-	const showAssistantBreathingSpace =
-		isLoading ||
-		(lastMessage?.role === "assistant" &&
-			getLastAssistantHasRenderableContent(
-				displayMessages,
-				(message) =>
-					extractTextParts(message).length > 0 ||
-					extractFileParts(message).length > 0 ||
-					collectMessageSources(message).length > 0,
-			));
 	const handleDeleteClick = React.useCallback(
 		(messageId: string) => {
 			if (messageIdPendingDelete === messageId) {
@@ -140,195 +64,37 @@ export function ChatMessages({
 	);
 
 	return (
-		<div className="space-y-4">
-			{turns.map((turn, turnIndex) => {
-				const turnKey = turn.userMessage?.id ?? `assistant-turn-${turnIndex}`;
-
-				return (
-					<ChatMessageTurn
-						key={turnKey}
-						turn={turn}
-						isLastTurn={turnIndex === turns.length - 1}
-						isLoading={isLoading}
-						lastMessageId={lastMessage?.id}
-						messageIdPendingDelete={messageIdPendingDelete}
-						onDeleteClick={handleDeleteClick}
-						onDeleteMessage={onDeleteMessage}
-						onEditMessage={onEditMessage}
-						onPlusAction={onPlusAction}
-						onRegenerateMessage={onRegenerateMessage}
-						setMessageIdPendingDelete={setMessageIdPendingDelete}
-					/>
-				);
-			})}
-
-			{showAssistantBreathingSpace ? (
-				<div aria-hidden="true" className="min-h-[max(140px,24vh)] w-full" />
-			) : null}
-
-			{error ? (
-				<p className="px-4 text-sm text-destructive">{error.message}</p>
-			) : null}
-		</div>
-	);
-}
-
-function ChatMessageTurn({
-	turn,
-	isLastTurn,
-	...actionProps
-}: {
-	turn: ReturnType<typeof groupMessagesIntoTurns>[number];
-	isLastTurn: boolean;
-} & ChatMessagesActionProps) {
-	const turnMessages = [
-		...(turn.userMessage ? [turn.userMessage] : []),
-		...turn.assistantMessages,
-	];
-
-	return (
-		<div className={cn("space-y-3", isLastTurn && "pb-9")}>
-			{turnMessages.map((message) => (
-				<ChatMessageItem key={message.id} message={message} {...actionProps} />
-			))}
-		</div>
-	);
-}
-
-function ChatMessageItem({
-	message,
-	isLoading,
-	lastMessageId,
-	messageIdPendingDelete,
-	onDeleteClick,
-	onDeleteMessage,
-	onEditMessage,
-	onPlusAction,
-	onRegenerateMessage,
-	setMessageIdPendingDelete,
-}: {
-	message: UIMessage;
-} & ChatMessagesActionProps) {
-	const textParts = extractTextParts(message);
-	const fileParts = extractFileParts(message);
-	const renderedText = textParts.map((part) => part.text).join("\n\n");
-	const metadata = getChatMessageMetadata(message);
-	const selectedRecipe = metadata?.recipe ?? null;
-	const displayText = metadata?.recipeOnly ? "" : renderedText;
-	const messageText = metadata?.recipeOnly ? "" : getChatText(message);
-	const messageSources =
-		message.role === "assistant" ? collectMessageSources(message) : [];
-	const isStreamingAssistantMessage =
-		isLoading && message.role === "assistant" && message.id === lastMessageId;
-	const isEmpty = displayText.length === 0;
-	const timestamp = formatChatMessageTimestamp(
-		getChatMessageTimestamp(message),
-	);
-
-	if (
-		isEmpty &&
-		fileParts.length === 0 &&
-		!selectedRecipe &&
-		!isStreamingAssistantMessage
-	) {
-		return null;
-	}
-
-	return (
-		<div
-			className={cn(
-				"group/message flex w-full",
-				getChatMessageJustifyClass(message.role),
-			)}
-		>
-			<div
-				className={cn(
-					"flex flex-col",
-					message.role === "user" ? "items-end" : "items-start",
-					CHAT_MESSAGE_MAX_WIDTH_CLASS,
-				)}
-			>
-				{selectedRecipe ? (
-					<ChatRecipeReceipt
-						isUserMessage={message.role === "user"}
-						recipe={selectedRecipe}
-					/>
-				) : null}
-				<ChatMessageFileAttachments files={fileParts} />
-				<ChatMessageText
-					displayText={displayText}
-					isEmpty={isEmpty}
-					isStreamingAssistantMessage={Boolean(isStreamingAssistantMessage)}
-					role={message.role}
+		<ChatMessageListContent
+			className="space-y-4"
+			error={error}
+			errorClassName="px-4"
+			isLoading={isLoading}
+			messages={messages}
+			streamdownClassName="note-streamdown"
+			textContainerClassName="mt-2 flex flex-row items-start gap-2 first:mt-0"
+			turnClassName={(isLastTurn) => cn("space-y-3", isLastTurn && "pb-9")}
+			renderAssistantActions={({ message, messageText, timestamp }) => (
+				<AssistantMessageActions
+					messageId={message.id}
+					messageText={messageText}
+					onPlusAction={onPlusAction}
+					onRegenerateMessage={onRegenerateMessage}
+					timestamp={timestamp}
 				/>
-				{message.role === "assistant" && !isEmpty ? (
-					<AssistantMessageActions
-						messageId={message.id}
-						messageText={messageText}
-						onPlusAction={onPlusAction}
-						onRegenerateMessage={onRegenerateMessage}
-						timestamp={timestamp}
-					/>
-				) : null}
-				{message.role === "user" && (!isEmpty || selectedRecipe) ? (
-					<UserMessageActions
-						isPendingDelete={messageIdPendingDelete === message.id}
-						messageId={message.id}
-						messageText={messageText}
-						onDeleteClick={onDeleteClick}
-						onDeleteMessage={onDeleteMessage}
-						onEditMessage={onEditMessage}
-						setMessageIdPendingDelete={setMessageIdPendingDelete}
-						timestamp={timestamp}
-					/>
-				) : null}
-				{message.role === "assistant" && messageSources.length > 0 ? (
-					<MessageSources messageId={message.id} sources={messageSources} />
-				) : null}
-			</div>
-		</div>
-	);
-}
-
-function ChatMessageText({
-	displayText,
-	isEmpty,
-	isStreamingAssistantMessage,
-	role,
-}: {
-	displayText: string;
-	isEmpty: boolean;
-	isStreamingAssistantMessage: boolean;
-	role: UIMessage["role"];
-}) {
-	if (!isStreamingAssistantMessage && !displayText) {
-		return null;
-	}
-
-	return (
-		<div className="mt-2 flex flex-row items-start gap-2 first:mt-0">
-			<div
-				className={cn(
-					role === "user"
-						? USER_CHAT_BUBBLE_CLASS
-						: ASSISTANT_CHAT_CONTENT_CLASS,
-					isStreamingAssistantMessage && isEmpty && "text-muted-foreground",
-				)}
-			>
-				{isStreamingAssistantMessage && isEmpty ? (
-					<div className="text-sm text-muted-foreground">
-						<ShimmerText>Thinking</ShimmerText>
-					</div>
-				) : (
-					<CollapsibleMessageContent
-						role={role}
-						text={displayText}
-						isAnimating={isStreamingAssistantMessage}
-						streamdownClassName="note-streamdown"
-					/>
-				)}
-			</div>
-		</div>
+			)}
+			renderUserActions={({ message, messageText, timestamp }) => (
+				<UserMessageActions
+					isPendingDelete={messageIdPendingDelete === message.id}
+					messageId={message.id}
+					messageText={messageText}
+					onDeleteClick={handleDeleteClick}
+					onDeleteMessage={onDeleteMessage}
+					onEditMessage={onEditMessage}
+					setMessageIdPendingDelete={setMessageIdPendingDelete}
+					timestamp={timestamp}
+				/>
+			)}
+		/>
 	);
 }
 
@@ -525,120 +291,5 @@ function CreateNoteButton({
 			</TooltipTrigger>
 			<TooltipContent>Create note</TooltipContent>
 		</Tooltip>
-	);
-}
-
-function MessageSources({
-	messageId,
-	sources,
-}: {
-	messageId: string;
-	sources: ReturnType<typeof collectMessageSources>;
-}) {
-	return (
-		<Sources defaultOpen={false} className="mt-1">
-			<SourcesTrigger count={sources.length} />
-			<SourcesContent>
-				{sources.map((source) => (
-					<Source
-						key={`${messageId}:${source.href}`}
-						href={source.href}
-						title={source.title}
-					/>
-				))}
-			</SourcesContent>
-		</Sources>
-	);
-}
-
-export function ChatMessageFileAttachments({
-	files,
-}: {
-	files: ReturnType<typeof extractFileParts>;
-}) {
-	const [previewImage, setPreviewImage] = React.useState<
-		ReturnType<typeof extractFileParts>[number] | null
-	>(null);
-
-	if (files.length === 0) {
-		return null;
-	}
-
-	return (
-		<>
-			<div className="mt-2 flex max-w-full flex-wrap gap-2 first:mt-0">
-				{files.map((file) =>
-					file.mediaType.startsWith("image/") ? (
-						<button
-							key={file.url}
-							type="button"
-							className="size-24 cursor-zoom-in overflow-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-							onClick={() => setPreviewImage(file)}
-						>
-							<img
-								src={file.url}
-								alt={file.filename || "Attached image"}
-								className="size-full object-cover"
-							/>
-						</button>
-					) : (
-						<button
-							key={file.url}
-							type="button"
-							className="flex size-24 items-center justify-center rounded-md border border-border/50 bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
-						>
-							<Paperclip className="size-5" />
-							<span className="sr-only">
-								{file.filename || "Attached file"}
-							</span>
-						</button>
-					),
-				)}
-			</div>
-			<Dialog
-				open={previewImage !== null}
-				onOpenChange={(open) => {
-					if (!open) {
-						setPreviewImage(null);
-					}
-				}}
-			>
-				<DialogContent
-					showCloseButton={false}
-					className="!top-0 !left-0 !flex !h-screen !w-screen !max-w-none !translate-x-0 !translate-y-0 items-center justify-center !rounded-none !border-0 !bg-transparent p-10 !shadow-none !ring-0 sm:!max-w-none"
-					onPointerDown={(event) => {
-						if (event.target === event.currentTarget) {
-							setPreviewImage(null);
-						}
-					}}
-				>
-					<DialogTitle className="sr-only">
-						{previewImage?.filename || "Attached image preview"}
-					</DialogTitle>
-					<DialogDescription className="sr-only">
-						Image attachment preview.
-					</DialogDescription>
-					<DialogClose asChild>
-						<Button
-							type="button"
-							variant="secondary"
-							size="icon"
-							className="fixed top-4 right-4 z-10 size-11 rounded-full"
-						>
-							<X className="size-6" />
-							<span className="sr-only">Close</span>
-						</Button>
-					</DialogClose>
-					{previewImage ? (
-						<img
-							src={previewImage.url}
-							alt={previewImage.filename || "Attached image"}
-							className="block max-h-[calc(100vh-8rem)] max-w-[calc(100vw-8rem)] rounded-lg object-contain"
-							onPointerDown={(event) => event.stopPropagation()}
-						/>
-					) : null}
-				</DialogContent>
-			</Dialog>
-		</>
 	);
 }

@@ -92,21 +92,12 @@ import {
 	hasUploadingAttachments,
 	useRevokeAttachmentObjectUrls,
 } from "@/components/ai-elements/file-attachment-controls";
-import { ShimmerText } from "@/components/ai-elements/shimmer";
-import { CollapsibleMessageContent } from "@/components/chat/collapsible-message-content";
-import {
-	ASSISTANT_CHAT_CONTENT_CLASS,
-	CHAT_ACTIONS_VISIBILITY_CLASS,
-	CHAT_MESSAGE_MAX_WIDTH_CLASS,
-	getChatMessageJustifyClass,
-	USER_CHAT_BUBBLE_CLASS,
-} from "@/components/chat/message-layout";
-import { ChatMessageFileAttachments } from "@/components/chat/messages";
+import { CHAT_ACTIONS_VISIBILITY_CLASS } from "@/components/chat/message-layout";
+import { ChatMessageListContent } from "@/components/chat/message-list";
 import {
 	type ChatModel,
 	ChatModelPicker,
 } from "@/components/chat/model-picker";
-import { ChatRecipeReceipt } from "@/components/chat/recipe-receipt";
 import {
 	COMPOSER_DOCK_BOTTOM_OFFSET,
 	COMPOSER_OVERLAY_FOOTER_PADDING,
@@ -128,21 +119,8 @@ import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
 import { defaultChatModel, findChatModel } from "@/lib/ai/models";
-import {
-	extractFileParts,
-	getChatMessageMetadata,
-	getChatText,
-} from "@/lib/chat-message";
 import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
-import {
-	formatChatMessageTimestamp,
-	getChatMessageTimestamp,
-} from "@/lib/chat-timestamp";
-import {
-	getLastAssistantHasRenderableContent,
-	groupMessagesIntoTurns,
-} from "@/lib/chat-turns";
 import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
 import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import { ENHANCED_NOTE_TEMPLATE_SLUG } from "@/lib/note-templates";
@@ -1928,21 +1906,6 @@ function NoteChatMessages({
 	onEditMessage?: (messageId: string, text: string) => void;
 	onRegenerateMessage?: (messageId: string) => void;
 }) {
-	const turns = React.useMemo(
-		() => groupMessagesIntoTurns(chatMessages),
-		[chatMessages],
-	);
-	const lastMessage = chatMessages[chatMessages.length - 1];
-	const showAssistantBreathingSpace =
-		isChatLoading ||
-		(lastMessage?.role === "assistant" &&
-			getLastAssistantHasRenderableContent(
-				chatMessages,
-				(message) =>
-					getChatText(message).length > 0 ||
-					extractFileParts(message).length > 0,
-			));
-
 	return (
 		<ScrollArea
 			className="min-h-0 flex-1"
@@ -1952,193 +1915,36 @@ function NoteChatMessages({
 			)}
 			viewportRef={chatViewportRef}
 		>
-			{turns.map((turn, turnIndex) => {
-				const turnKey = turn.userMessage?.id ?? `assistant-turn-${turnIndex}`;
-
-				return (
-					<NoteChatMessageTurn
-						key={turnKey}
-						turn={turn}
-						disableAddToNote={disableAddToNote}
-						isChatLoading={isChatLoading}
-						lastMessageId={lastMessage?.id}
-						onAddMessageToNote={onAddMessageToNote}
-						onDeleteMessage={onDeleteMessage}
-						onEditMessage={onEditMessage}
-						onRegenerateMessage={onRegenerateMessage}
-					/>
-				);
-			})}
-
-			{showAssistantBreathingSpace ? (
-				<div
-					aria-hidden="true"
-					className="min-h-[max(112px,20vh)] w-full shrink-0"
-				/>
-			) : null}
-
-			{chatError ? (
-				<p className="text-sm text-destructive">{chatError.message}</p>
-			) : null}
-		</ScrollArea>
-	);
-}
-
-function NoteChatMessageTurn({
-	turn,
-	...messageProps
-}: {
-	turn: ReturnType<typeof groupMessagesIntoTurns>[number];
-	disableAddToNote: boolean;
-	isChatLoading: boolean;
-	lastMessageId?: string;
-	onAddMessageToNote?: (text: string) => Promise<void> | void;
-	onDeleteMessage?: (messageId: string) => void;
-	onEditMessage?: (messageId: string, text: string) => void;
-	onRegenerateMessage?: (messageId: string) => void;
-}) {
-	const turnMessages = [
-		...(turn.userMessage ? [turn.userMessage] : []),
-		...turn.assistantMessages,
-	];
-
-	return (
-		<div className="flex flex-col gap-3">
-			{turnMessages.map((chatMessage) => (
-				<NoteChatMessageItem
-					key={chatMessage.id}
-					chatMessage={chatMessage}
-					{...messageProps}
-				/>
-			))}
-		</div>
-	);
-}
-
-function NoteChatMessageItem({
-	chatMessage,
-	disableAddToNote,
-	isChatLoading,
-	lastMessageId,
-	onAddMessageToNote,
-	onDeleteMessage,
-	onEditMessage,
-	onRegenerateMessage,
-}: {
-	chatMessage: UIMessage;
-	disableAddToNote: boolean;
-	isChatLoading: boolean;
-	lastMessageId?: string;
-	onAddMessageToNote?: (text: string) => Promise<void> | void;
-	onDeleteMessage?: (messageId: string) => void;
-	onEditMessage?: (messageId: string, text: string) => void;
-	onRegenerateMessage?: (messageId: string) => void;
-}) {
-	const text = getChatText(chatMessage);
-	const fileParts = extractFileParts(chatMessage);
-	const metadata = getChatMessageMetadata(chatMessage);
-	const selectedRecipe = metadata?.recipe ?? null;
-	const displayText = metadata?.recipeOnly ? "" : text;
-	const isStreamingAssistantMessage =
-		isChatLoading &&
-		chatMessage.role === "assistant" &&
-		chatMessage.id === lastMessageId;
-	const timestamp = formatChatMessageTimestamp(
-		getChatMessageTimestamp(chatMessage),
-	);
-
-	if (
-		!displayText &&
-		fileParts.length === 0 &&
-		!selectedRecipe &&
-		!isStreamingAssistantMessage
-	) {
-		return null;
-	}
-
-	return (
-		<div
-			className={cn(
-				"group/message flex w-full",
-				getChatMessageJustifyClass(chatMessage.role),
-			)}
-		>
-			<div
-				className={cn(
-					"flex flex-col gap-2",
-					chatMessage.role === "user" ? "items-end" : "items-start",
-					CHAT_MESSAGE_MAX_WIDTH_CLASS,
-				)}
-			>
-				{selectedRecipe ? (
-					<ChatRecipeReceipt
-						isUserMessage={chatMessage.role === "user"}
-						recipe={selectedRecipe}
-					/>
-				) : null}
-				<ChatMessageFileAttachments files={fileParts} />
-				<NoteChatMessageText
-					displayText={displayText}
-					isStreamingAssistantMessage={Boolean(isStreamingAssistantMessage)}
-					role={chatMessage.role}
-				/>
-				{chatMessage.role === "assistant" && displayText ? (
+			<ChatMessageListContent
+				breathingSpaceClassName="min-h-[max(112px,20vh)] w-full shrink-0"
+				error={chatError}
+				includeSources={false}
+				isLoading={isChatLoading}
+				messageStackClassName="gap-2"
+				messages={chatMessages}
+				textContainerClassName=""
+				turnClassName={() => "flex flex-col gap-3"}
+				renderAssistantActions={({ displayText, message, timestamp }) => (
 					<NoteAssistantMessageActions
 						disableAddToNote={disableAddToNote}
 						displayText={displayText}
-						messageId={chatMessage.id}
+						messageId={message.id}
 						onAddMessageToNote={onAddMessageToNote}
 						onRegenerateMessage={onRegenerateMessage}
 						timestamp={timestamp}
 					/>
-				) : chatMessage.role === "user" && (displayText || selectedRecipe) ? (
+				)}
+				renderUserActions={({ displayText, message, timestamp }) => (
 					<NoteUserMessageActions
 						displayText={displayText}
-						messageId={chatMessage.id}
+						messageId={message.id}
 						onDeleteMessage={onDeleteMessage}
 						onEditMessage={onEditMessage}
 						timestamp={timestamp}
 					/>
-				) : null}
-			</div>
-		</div>
-	);
-}
-
-function NoteChatMessageText({
-	displayText,
-	isStreamingAssistantMessage,
-	role,
-}: {
-	displayText: string;
-	isStreamingAssistantMessage: boolean;
-	role: UIMessage["role"];
-}) {
-	if (!isStreamingAssistantMessage && !displayText) {
-		return null;
-	}
-
-	return (
-		<div
-			className={cn(
-				role === "user" ? USER_CHAT_BUBBLE_CLASS : ASSISTANT_CHAT_CONTENT_CLASS,
-				isStreamingAssistantMessage && !displayText && "text-muted-foreground",
-			)}
-		>
-			{isStreamingAssistantMessage && !displayText ? (
-				<div className="text-sm text-muted-foreground">
-					<ShimmerText>Thinking</ShimmerText>
-				</div>
-			) : displayText ? (
-				<CollapsibleMessageContent
-					role={role}
-					text={displayText}
-					isAnimating={isStreamingAssistantMessage}
-					streamdownClassName={cn(role === "assistant" && "note-streamdown")}
-					mode={isStreamingAssistantMessage ? "streaming" : "static"}
-				/>
-			) : null}
-		</div>
+				)}
+			/>
+		</ScrollArea>
 	);
 }
 
