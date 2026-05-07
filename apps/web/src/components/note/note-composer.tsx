@@ -57,7 +57,7 @@ import {
 	APP_SIDEBAR_EXPANDED_WIDTH,
 } from "@workspace/ui/lib/panel-dimensions";
 import { cn } from "@workspace/ui/lib/utils";
-import type { UIMessage } from "ai";
+import type { FileUIPart, UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
 import { useConvex, useMutation, useQuery } from "convex/react";
 import {
@@ -90,6 +90,7 @@ import {
 	FileAttachmentChips,
 	getReadyFileParts,
 	hasUploadingAttachments,
+	useFileAttachmentDropzone,
 	useRevokeAttachmentObjectUrls,
 } from "@/components/ai-elements/file-attachment-controls";
 import { CHAT_ACTIONS_VISIBILITY_CLASS } from "@/components/chat/message-layout";
@@ -2488,6 +2489,41 @@ function ChatInlinePopoverFooter({
 	} = status;
 	const shouldShowRecipeControls = !activateInlineOnFocus;
 	const shouldShowSelectedRecipe = shouldShowRecipeControls && selectedRecipe;
+	const handleAttachmentUploadFailed = React.useCallback(
+		(id: string) => {
+			onAttachedFilesChange((files) => files.filter((file) => file.id !== id));
+		},
+		[onAttachedFilesChange],
+	);
+	const handleAttachmentUploaded = React.useCallback(
+		(id: string, uploadedFile: FileUIPart) => {
+			onAttachedFilesChange((files) =>
+				files.map((file) =>
+					file.id === id
+						? {
+								...file,
+								localUrl: undefined,
+								uploadStatus: "ready",
+								url: uploadedFile.url,
+							}
+						: file,
+				),
+			);
+		},
+		[onAttachedFilesChange],
+	);
+	const handleAttachmentsAdded = React.useCallback(
+		(files: ChatAttachment[]) => {
+			onAttachedFilesChange((currentFiles) => [...currentFiles, ...files]);
+		},
+		[onAttachedFilesChange],
+	);
+	const attachmentDropzone = useFileAttachmentDropzone({
+		disabled: isChatLoading || !shouldShowRecipeControls,
+		onFileUploadFailed: handleAttachmentUploadFailed,
+		onFileUploaded: handleAttachmentUploaded,
+		onFilesAdded: handleAttachmentsAdded,
+	});
 	const recipePickerPlaceholder = (
 		<InputGroupButton
 			aria-hidden="true"
@@ -2554,7 +2590,14 @@ function ChatInlinePopoverFooter({
 	);
 
 	return (
-		<InputGroup className={NOTE_COMPOSER_FOOTER_SURFACE_CLASS}>
+		<InputGroup
+			data-drag-over={attachmentDropzone.isDragOver ? "true" : undefined}
+			className={cn(
+				NOTE_COMPOSER_FOOTER_SURFACE_CLASS,
+				"data-[drag-over=true]:border-ring data-[drag-over=true]:ring-3 data-[drag-over=true]:ring-ring/50",
+			)}
+			{...attachmentDropzone.dropzoneProps}
+		>
 			<InputGroupAddon
 				align="block-start"
 				className={cn(
@@ -2578,14 +2621,16 @@ function ChatInlinePopoverFooter({
 						<X className="opacity-0 transition-opacity group-hover/recipe-chip:opacity-100 group-focus-visible/recipe-chip:opacity-100" />
 					</InputGroupButton>
 				) : null}
-				<FileAttachmentChips
-					files={attachedFiles}
-					onRemove={(index) =>
-						onAttachedFilesChange(
-							attachedFiles.filter((_, fileIndex) => fileIndex !== index),
-						)
-					}
-				/>
+				{shouldShowRecipeControls ? (
+					<FileAttachmentChips
+						files={attachedFiles}
+						onRemove={(index) =>
+							onAttachedFilesChange(
+								attachedFiles.filter((_, fileIndex) => fileIndex !== index),
+							)
+						}
+					/>
+				) : null}
 			</InputGroupAddon>
 			<InputGroupTextarea
 				data-slot="input-group-control"
@@ -2614,31 +2659,9 @@ function ChatInlinePopoverFooter({
 				{shouldShowRecipeControls ? (
 					<FileAttachmentButton
 						disabled={isChatLoading}
-						onFileUploadFailed={(id) =>
-							onAttachedFilesChange((files) =>
-								files.filter((file) => file.id !== id),
-							)
-						}
-						onFileUploaded={(id, uploadedFile) =>
-							onAttachedFilesChange((files) =>
-								files.map((file) =>
-									file.id === id
-										? {
-												...file,
-												localUrl: undefined,
-												uploadStatus: "ready",
-												url: uploadedFile.url,
-											}
-										: file,
-								),
-							)
-						}
-						onFilesAdded={(files) =>
-							onAttachedFilesChange((currentFiles) => [
-								...currentFiles,
-								...files,
-							])
-						}
+						onFileUploadFailed={handleAttachmentUploadFailed}
+						onFileUploaded={handleAttachmentUploaded}
+						onFilesAdded={handleAttachmentsAdded}
 					/>
 				) : null}
 				{speechControls}
