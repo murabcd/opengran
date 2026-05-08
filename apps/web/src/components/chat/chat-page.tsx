@@ -624,6 +624,7 @@ export function ChatPage({
 	);
 	const shouldShowActiveChatSurface =
 		controller.hasMessages || activeChatId === chatId;
+	const canShowChatSummary = activeChatId === chatId;
 	const automationChatIds = React.useMemo(
 		() => new Set((automations ?? []).map((automation) => automation.chatId)),
 		[automations],
@@ -636,6 +637,10 @@ export function ChatPage({
 	);
 	React.useEffect(() => {
 		const handleOpenSummary = () => {
+			if (!canShowChatSummary) {
+				return;
+			}
+
 			controller.setSummaryOpen((current) => !current);
 		};
 
@@ -644,7 +649,12 @@ export function ChatPage({
 		return () => {
 			window.removeEventListener(OPEN_CHAT_SUMMARY_EVENT, handleOpenSummary);
 		};
-	}, [controller.setSummaryOpen]);
+	}, [canShowChatSummary, controller.setSummaryOpen]);
+	React.useEffect(() => {
+		if (!canShowChatSummary) {
+			controller.setSummaryOpen(false);
+		}
+	}, [canShowChatSummary, controller.setSummaryOpen]);
 	// Web chat uses a 4rem shell header, while the native mac shell keeps a
 	// taller md offset. Matching the shell height keeps short-chat docks flush.
 	const chatSurfaceMinHeightClass = isDesktopMac
@@ -784,17 +794,19 @@ export function ChatPage({
 					</div>
 				</div>
 			</ScrollArea>
-			<ChatSummarySheet
-				open={controller.summaryOpen}
-				messages={controller.messages}
-				automation={currentAutomation}
-				chatTitle={controller.currentChatTitle}
-				desktopSafeTop={isDesktopMac}
-				workspaceSources={controller.workspaceSources}
-				onAddSource={controller.onAddSource}
-				onRemoveAutoAddedSource={controller.onRemoveAutoAddedSource}
-				onOpenChange={controller.setSummaryOpen}
-			/>
+			{canShowChatSummary ? (
+				<ChatSummarySheet
+					open={controller.summaryOpen}
+					messages={controller.messages}
+					automation={currentAutomation}
+					chatTitle={controller.currentChatTitle}
+					desktopSafeTop={isDesktopMac}
+					workspaceSources={controller.workspaceSources}
+					onAddSource={controller.onAddSource}
+					onRemoveAutoAddedSource={controller.onRemoveAutoAddedSource}
+					onOpenChange={controller.setSummaryOpen}
+				/>
+			) : null}
 		</>
 	);
 }
