@@ -96,7 +96,14 @@ import {
 	UserRound,
 	Workflow,
 } from "lucide-react";
-import { useEffect, useReducer, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useReducer,
+	useRef,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import { writeTextToClipboard } from "@/components/note/share-note";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
@@ -129,6 +136,15 @@ type SettingsUser = {
 	email: string;
 	avatar: string;
 };
+
+function useResetStateWhenValueChanges<T>(
+	value: T,
+	resetState: (value: T) => void,
+) {
+	useEffect(() => {
+		resetState(value);
+	}, [resetState, value]);
+}
 
 export type SettingsPage =
 	| "Profile"
@@ -1108,7 +1124,7 @@ function PreferencesSettings() {
 	if (isLoadingPreferences && !preferences) {
 		return (
 			<div className="py-4 text-sm text-muted-foreground">
-				Loading desktop preferences...
+				Loading desktop preferences…
 			</div>
 		);
 	}
@@ -3083,10 +3099,14 @@ function WorkspaceSettings({
 	);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const { name, iconStorageId, iconPreviewUrl } = formState;
+	const resetWorkspaceFormState = useCallback(
+		(nextWorkspace: typeof workspace) => {
+			setFormState(getWorkspaceFormState(nextWorkspace));
+		},
+		[],
+	);
 
-	useEffect(() => {
-		setFormState(getWorkspaceFormState(workspace));
-	}, [workspace]);
+	useResetStateWhenValueChanges(workspace, resetWorkspaceFormState);
 
 	useEffect(() => {
 		if (!iconPreviewUrl?.startsWith("blob:")) {
@@ -3627,15 +3647,23 @@ function useManageAccountFormElement({
 	const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 	const [isSavingPreferences, setIsSavingPreferences] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const profileFormSource = useMemo(
+		() => [user, userPreferences] as const,
+		[user, userPreferences],
+	);
+	const resetProfileFormState = useCallback(
+		([nextUser, nextUserPreferences]: typeof profileFormSource) => {
+			setFormState(
+				getProfileFormState({
+					user: nextUser,
+					userPreferences: nextUserPreferences,
+				}),
+			);
+		},
+		[],
+	);
 
-	useEffect(() => {
-		setFormState(
-			getProfileFormState({
-				user,
-				userPreferences,
-			}),
-		);
-	}, [user, userPreferences]);
+	useResetStateWhenValueChanges(profileFormSource, resetProfileFormState);
 
 	useEffect(() => {
 		const avatarPreviewUrl = formState.avatarPreviewUrl;

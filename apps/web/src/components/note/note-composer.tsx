@@ -2177,7 +2177,7 @@ export function NoteChatHeader({
 						? "h-10 px-2 py-0"
 						: "h-16 px-4 py-0"
 					: sidebarCompact
-						? "px-2 py-2"
+						? "p-2"
 						: "px-4 py-4",
 			)}
 		>
@@ -2919,7 +2919,7 @@ function TranscriptPanelHeader({
 		<CardHeader
 			className={cn(
 				"flex items-center justify-between",
-				controller.isSidebarPresentation ? "px-2 py-2" : "px-4 py-4",
+				controller.isSidebarPresentation ? "p-2" : "px-4 py-4",
 			)}
 		>
 			<div className="text-sm font-medium text-foreground">Live transcript</div>
@@ -3454,7 +3454,7 @@ function NoteTranscriptPanel({
 		return (
 			<div className="flex flex-1 items-center justify-center">
 				<p className="text-center text-sm font-medium tracking-tight text-muted-foreground">
-					Loading transcript...
+					Loading transcript…
 				</p>
 			</div>
 		);
@@ -3464,7 +3464,7 @@ function NoteTranscriptPanel({
 		return (
 			<div className="flex flex-1 items-center justify-center">
 				<p className="text-center text-sm font-medium tracking-tight">
-					{controller.isSpeechListening ? "Listening..." : "Transcript paused"}
+					{controller.isSpeechListening ? "Listening…" : "Transcript paused"}
 				</p>
 			</div>
 		);
@@ -3482,14 +3482,14 @@ function NoteTranscriptPanel({
 					deferredDisplayTranscriptEntries.length === 0 ? (
 						<div className="flex flex-1 items-center justify-center py-12">
 							<p className="text-center text-sm font-medium tracking-tight text-muted-foreground">
-								Loading transcript...
+								Loading transcript…
 							</p>
 						</div>
 					) : null}
 					{isProgressivelyRenderingTranscript ? (
 						<div className="flex justify-center">
 							<p className="text-[11px] font-medium tracking-tight text-muted-foreground">
-								Loading earlier transcript...
+								Loading earlier transcript…
 							</p>
 						</div>
 					) : null}

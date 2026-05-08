@@ -452,7 +452,7 @@ const useNotePageController = ({
 		editorProps: {
 			attributes: {
 				class:
-					"note-tiptap min-h-[240px] border border-transparent bg-transparent px-0 py-0 text-base outline-none",
+					"note-tiptap min-h-[240px] border border-transparent bg-transparent p-0 text-base outline-none",
 			},
 			handlePaste: (view, event) => handleMarkdownPaste(view, event),
 			transformPasted: (slice, view) =>
@@ -1534,7 +1534,7 @@ const NotePageEditorPane = React.memo(function NotePageEditorPane({
 										placeholder="New note"
 										aria-label="Note title"
 										rows={1}
-										className="note-title min-h-0 flex-1 resize-none overflow-hidden rounded-none border-0 !bg-transparent px-0 py-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
+										className="note-title min-h-0 flex-1 resize-none overflow-hidden rounded-none border-0 !bg-transparent p-0 text-2xl font-medium leading-tight tracking-tight shadow-none placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 dark:!bg-transparent md:text-3xl"
 									/>
 								</div>
 

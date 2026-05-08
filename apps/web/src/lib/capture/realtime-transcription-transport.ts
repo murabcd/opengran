@@ -355,12 +355,13 @@ export const connectRealtimeTranscriptionTransport = async ({
 
 	const answerSdp = await response.text();
 
-	await peerConnection.setRemoteDescription({
-		type: "answer",
-		sdp: answerSdp,
-	});
-
-	await waitForConnectedPeer(peerConnection, logger);
+	await Promise.all([
+		peerConnection.setRemoteDescription({
+			type: "answer",
+			sdp: answerSdp,
+		}),
+		waitForConnectedPeer(peerConnection, logger),
+	]);
 
 	return {
 		close,

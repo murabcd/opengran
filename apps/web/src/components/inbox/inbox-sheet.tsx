@@ -785,7 +785,7 @@ const InboxPanel = React.memo(function InboxPanel({
 							<div className="relative z-10">
 								<div
 									className={cn(
-										"pointer-events-none grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1 px-3 py-3",
+										"pointer-events-none grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1 p-3",
 										isRead && "opacity-50",
 									)}
 								>

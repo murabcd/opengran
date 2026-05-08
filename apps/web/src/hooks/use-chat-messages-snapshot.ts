@@ -162,6 +162,19 @@ export const useChatMessagesSnapshot = ({
 		StoredChatMessage[] | undefined
 	>(cachedMessages);
 	const [isFetching, setIsFetching] = React.useState(false);
+	const setSnapshotState = React.useCallback(
+		({
+			isFetching: nextIsFetching,
+			messages: nextMessages,
+		}: {
+			isFetching: boolean;
+			messages: StoredChatMessage[] | undefined;
+		}) => {
+			setMessages(nextMessages);
+			setIsFetching(nextIsFetching);
+		},
+		[],
+	);
 	const requestIdRef = React.useRef(0);
 	const lastRequestedCacheKeyRef = React.useRef<string | null>(null);
 
@@ -170,8 +183,7 @@ export const useChatMessagesSnapshot = ({
 		requestIdRef.current = requestId;
 
 		if (!enabled || !chatId || !workspaceId) {
-			setIsFetching(false);
-			setMessages([]);
+			setSnapshotState({ isFetching: false, messages: [] });
 			lastRequestedCacheKeyRef.current = null;
 			return [];
 		}
@@ -188,8 +200,7 @@ export const useChatMessagesSnapshot = ({
 
 			if (requestIdRef.current === requestId) {
 				React.startTransition(() => {
-					setMessages(result);
-					setIsFetching(false);
+					setSnapshotState({ isFetching: false, messages: result });
 				});
 			}
 
@@ -197,8 +208,7 @@ export const useChatMessagesSnapshot = ({
 		} catch (error) {
 			if (requestIdRef.current === requestId) {
 				React.startTransition(() => {
-					setMessages([]);
-					setIsFetching(false);
+					setSnapshotState({ isFetching: false, messages: [] });
 				});
 			}
 
@@ -206,27 +216,26 @@ export const useChatMessagesSnapshot = ({
 
 			return [];
 		}
-	}, [chatId, convex, enabled, workspaceId]);
+	}, [chatId, convex, enabled, setSnapshotState, workspaceId]);
 
 	React.useEffect(() => {
 		requestIdRef.current += 1;
 
 		if (!enabled || !chatId || !workspaceId) {
-			setIsFetching(false);
-			setMessages([]);
+			setSnapshotState({ isFetching: false, messages: [] });
 			lastRequestedCacheKeyRef.current = null;
 			return;
 		}
 
-		setIsFetching(false);
-		setMessages(
-			getCachedChatMessagesSnapshot({
+		setSnapshotState({
+			isFetching: false,
+			messages: getCachedChatMessagesSnapshot({
 				chatId,
 				workspaceId,
 			}),
-		);
+		});
 		lastRequestedCacheKeyRef.current = null;
-	}, [chatId, enabled, workspaceId]);
+	}, [chatId, enabled, setSnapshotState, workspaceId]);
 
 	React.useEffect(() => {
 		if (

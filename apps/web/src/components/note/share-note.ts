@@ -18,8 +18,7 @@ export async function writeTextToClipboard(value: string) {
 	const textarea = document.createElement("textarea");
 	textarea.value = value;
 	textarea.setAttribute("readonly", "");
-	textarea.style.position = "fixed";
-	textarea.style.opacity = "0";
+	textarea.style.cssText = "position: fixed; opacity: 0;";
 	document.body.appendChild(textarea);
 	textarea.select();
 	document.execCommand("copy");
@@ -36,11 +35,8 @@ const copyRichTextWithSelectionFallback = async ({
 	const container = document.createElement("div");
 	container.setAttribute("contenteditable", "true");
 	container.setAttribute("aria-hidden", "true");
-	container.style.position = "fixed";
-	container.style.pointerEvents = "none";
-	container.style.opacity = "0";
-	container.style.whiteSpace = "pre-wrap";
-	container.style.inset = "0";
+	container.style.cssText =
+		"position: fixed; pointer-events: none; opacity: 0; white-space: pre-wrap; inset: 0;";
 	container.innerHTML = html;
 	document.body.appendChild(container);
 

@@ -904,12 +904,9 @@ function ScopePicker({
 
 function ChatNoteListSkeleton() {
 	return (
-		<div className="space-y-2 px-1 py-1">
+		<div className="space-y-2 p-1">
 			{["primary", "secondary"].map((item) => (
-				<div
-					key={item}
-					className="flex items-center gap-2 rounded-md px-2 py-2"
-				>
+				<div key={item} className="flex items-center gap-2 rounded-md p-2">
 					<Skeleton className="size-4 rounded-sm" />
 					<Skeleton className="h-4 w-32 max-w-full" />
 				</div>

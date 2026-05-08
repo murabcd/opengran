@@ -86,7 +86,7 @@ export function NoteTableOfContents({
 					size="sm"
 					className="w-[243px] max-w-[calc(100vw-6rem)] rounded-2xl border-0 bg-popover/95 py-0 text-popover-foreground ring-0 shadow-xl backdrop-blur supports-[backdrop-filter]:bg-popover/90"
 				>
-					<CardContent className="min-h-0 px-3 py-3">
+					<CardContent className="min-h-0 p-3">
 						<ScrollArea
 							className="w-full max-h-[218px]"
 							viewportClassName="[&>div]:!block [&>div]:w-full [&>div]:min-w-0"

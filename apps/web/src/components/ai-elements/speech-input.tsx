@@ -37,6 +37,15 @@ type SpeechInputProps = ComponentProps<typeof Button> & {
 
 const pulseAnimationDelays = ["0s", "0.3s", "0.6s"] as const;
 
+function useSynchronizedCallbackValue<T>(
+	callback: ((value: T) => void) | undefined,
+	value: T,
+) {
+	useEffect(() => {
+		callback?.(value);
+	}, [callback, value]);
+}
+
 export const SpeechInput = ({
 	autoStartKey,
 	className,
@@ -88,21 +97,13 @@ export const SpeechInput = ({
 		lang,
 	]);
 
-	useEffect(() => {
-		onListeningChange?.(isScopedListening);
-	}, [isScopedListening, onListeningChange]);
-
-	useEffect(() => {
-		onLiveTranscriptChange?.(scopedLiveTranscript);
-	}, [onLiveTranscriptChange, scopedLiveTranscript]);
-
-	useEffect(() => {
-		onSystemAudioStatusChange?.(scopedSystemAudioStatus);
-	}, [onSystemAudioStatusChange, scopedSystemAudioStatus]);
-
-	useEffect(() => {
-		onRecoveryStatusChange?.(scopedRecoveryStatus);
-	}, [onRecoveryStatusChange, scopedRecoveryStatus]);
+	useSynchronizedCallbackValue(onListeningChange, isScopedListening);
+	useSynchronizedCallbackValue(onLiveTranscriptChange, scopedLiveTranscript);
+	useSynchronizedCallbackValue(
+		onSystemAudioStatusChange,
+		scopedSystemAudioStatus,
+	);
+	useSynchronizedCallbackValue(onRecoveryStatusChange, scopedRecoveryStatus);
 
 	useEffect(() => {
 		if (!onUtterance) {

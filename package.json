@@ -55,5 +55,13 @@
     "canvas-confetti": "^1.9.4",
     "convex": "^1.37.0",
     "zod": "^4.1.12"
+  },
+  "knip": {
+    "ignore": [
+      "apps/web/src/canvas-confetti.d.ts",
+      "apps/web/src/electron.d.ts",
+      "apps/web/src/vite-env.d.ts",
+      "apps/web/tests/setup.ts"
+    ]
   }
 }

@@ -599,7 +599,7 @@ function ThreadCommentNodeItem({
 												type="button"
 												variant="ghost"
 												size="icon-sm"
-												className="h-6 w-6 cursor-pointer rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+												className="size-6 cursor-pointer rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
 												aria-label="Comment actions"
 											>
 												<MoreHorizontal className="size-4" />
@@ -652,7 +652,7 @@ function ThreadCommentNodeItem({
 									isSubmitting={isReplySubmitting}
 									ariaLabel="Edit comment"
 									sendAriaLabel="Save comment"
-									placeholder="Edit Comment…"
+									placeholder="Edit Comment..."
 								/>
 							</div>
 						) : (
@@ -835,7 +835,7 @@ function DiscussionThreadSummary({
 				isActive && "bg-accent/10",
 			)}
 		>
-			<div className="flex items-start gap-3 px-3 py-3">
+			<div className="flex items-start gap-3 p-3">
 				<button
 					type="button"
 					className={cn(
@@ -1152,7 +1152,7 @@ function ExpandedDiscussionThread({
 						isSubmitting={isReplySubmitting}
 						ariaLabel="Reply to thread"
 						sendAriaLabel="Send reply"
-						placeholder="Reply…"
+						placeholder="Reply..."
 					/>
 				</div>
 			)}
@@ -1284,7 +1284,7 @@ const CommentsSheetBody = React.memo(function CommentsSheetBody({
 						/>
 					))}
 					{pendingSelection ? (
-						<div className="bg-accent/10 px-4 py-4">
+						<div className="bg-accent/10 p-4">
 							<p className="mb-4 whitespace-pre-wrap text-sm text-muted-foreground">
 								{pendingSelection.text}
 							</p>
@@ -1297,7 +1297,7 @@ const CommentsSheetBody = React.memo(function CommentsSheetBody({
 								isSubmitting={isCreating}
 								ariaLabel="New comment"
 								sendAriaLabel="Send comment"
-								placeholder="Add comment…"
+								placeholder="Add comment..."
 							/>
 						</div>
 					) : null}

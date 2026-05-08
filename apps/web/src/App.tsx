@@ -1219,7 +1219,7 @@ function DesktopPermissionsOnboardingScreen({
 					className="w-full"
 					disabled={!canContinue || isSubmitting}
 				>
-					Continue
+					Review permissions
 				</Button>
 			</OnboardingStepCard>
 		</OnboardingStepLayout>
@@ -1261,7 +1261,7 @@ function WorkspaceOnboardingScreen({
 								onClick={onSubmit}
 								disabled={isSubmitting || name.trim().length < 2}
 							>
-								Continue
+								Create workspace
 							</Button>
 						</Field>
 					</div>

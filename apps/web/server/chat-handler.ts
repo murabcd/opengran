@@ -71,19 +71,19 @@ const getReferencedNoteIds = ({
 	mentions,
 	selectedSourceIds,
 }: Pick<ChatRequestBody, "mentions" | "selectedSourceIds">): Id<"notes">[] =>
-	[
-		...(mentions ?? []),
-		...((selectedSourceIds ?? []).filter(
-			(value) =>
-				!value.startsWith(APP_SOURCE_PREFIX) &&
-				!value.startsWith(WORKSPACE_SOURCE_PREFIX),
-		) as string[]),
-	]
-		.filter(
-			(value, index, values): value is string =>
-				Boolean(value) && values.indexOf(value) === index,
-		)
-		.map((value) => value as Id<"notes">);
+	Array.from(
+		new Set(
+			[
+				...(mentions ?? []),
+				...(selectedSourceIds ?? []).flatMap((value) =>
+					value.startsWith(APP_SOURCE_PREFIX) ||
+					value.startsWith(WORKSPACE_SOURCE_PREFIX)
+						? []
+						: [value],
+				),
+			].filter(Boolean),
+		),
+	).map((value) => value as Id<"notes">);
 
 const getSelectedAppSourceIds = ({
 	selectedSourceIds,
@@ -250,15 +250,13 @@ const clampNoteContext = (value: string) =>
 const getMessageText = (message: UIMessage) =>
 	clampWhitespace(
 		message.parts
-			.filter(
-				(
-					part,
-				): part is Extract<(typeof message.parts)[number], { type: "text" }> =>
-					part.type === "text" &&
-					typeof part.text === "string" &&
-					part.text.length > 0,
+			.flatMap((part) =>
+				part.type === "text" &&
+				typeof part.text === "string" &&
+				part.text.length > 0
+					? [part.text]
+					: [],
 			)
-			.map((part) => part.text)
 			.join("\n\n"),
 	);
 

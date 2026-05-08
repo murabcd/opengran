@@ -201,7 +201,7 @@ export const useNoteTranscriptSession = ({
 
 	const orderedTranscriptUtterances = React.useMemo(
 		() =>
-			[...transcriptUtterances].sort((left, right) => {
+			transcriptUtterances.slice().sort((left, right) => {
 				if (left.startedAt !== right.startedAt) {
 					return left.startedAt - right.startedAt;
 				}
@@ -446,6 +446,84 @@ export const useNoteTranscriptSession = ({
 		[captureTranscriptDraftKey, captureTranscriptSessionRepository],
 	);
 
+	const restoreTranscriptDraft = React.useCallback(
+		(draft: {
+			pendingGenerateTranscript: string;
+			updatedAt: number;
+			utterances: TranscriptUtterance[];
+		}) => {
+			hasLoadedTranscriptDraftContentRef.current = true;
+			loadedTranscriptDraftUpdatedAtRef.current = draft.updatedAt;
+			persistedTranscriptUtteranceIdsRef.current = new Set(
+				draft.utterances.map((utterance) => utterance.id),
+			);
+			setTranscriptUtterances(draft.utterances);
+			setPendingGenerateTranscript(
+				draft.pendingGenerateTranscript.trim() ||
+					createTranscriptText(draft.utterances),
+			);
+		},
+		[],
+	);
+
+	const hydrateStoredTranscriptSession = React.useCallback(
+		({
+			generatedSessionId,
+			latestServerTranscript,
+			latestSession,
+		}: {
+			generatedSessionId: Id<"transcriptSessions"> | null;
+			latestServerTranscript: string;
+			latestSession: {
+				generatedNoteAt?: number | null;
+				sessionId: Id<"transcriptSessions">;
+				utterances: TranscriptUtterance[];
+			};
+		}) => {
+			hasHydratedStoredTranscriptSessionRef.current = true;
+			activeTranscriptSessionIdRef.current = null;
+			lastCompletedTranscriptSessionIdRef.current = latestSession.sessionId;
+			setActiveTranscriptSessionId(null);
+			persistedTranscriptUtteranceIdsRef.current = new Set(
+				latestSession.utterances.map((utterance) => utterance.id),
+			);
+			setTranscriptUtterances(latestSession.utterances);
+			setPendingGenerateTranscript(
+				latestSession.generatedNoteAt ||
+					latestSession.sessionId === generatedSessionId
+					? ""
+					: latestServerTranscript,
+			);
+		},
+		[],
+	);
+
+	const markSpeechListeningStarted = React.useCallback(() => {
+		listeningStartedAtRef.current = Date.now();
+		setPendingGenerateTranscript("");
+		hasRequestedAutomaticStopRef.current = false;
+		lastAudioActivityAtRef.current = Date.now();
+	}, []);
+
+	const markSpeechListeningStopped = React.useCallback(() => {
+		shouldStopWhenMeetingEndsRef.current = false;
+		hasSeenBrowserMeetingSignalRef.current = false;
+		hasRequestedAutomaticStopRef.current = false;
+		const completedTranscript = createTranscriptText(
+			transcriptUtterancesRef.current,
+		);
+		if (completedTranscript) {
+			setPendingGenerateTranscript(completedTranscript);
+		}
+
+		const completedSessionId = activeTranscriptSessionIdRef.current;
+		lastCompletedTranscriptSessionIdRef.current = completedSessionId;
+		activeTranscriptSessionIdRef.current = null;
+		setActiveTranscriptSessionId(null);
+		sessionSystemAudioModePersistedRef.current = null;
+		return completedSessionId;
+	}, []);
+
 	const persistTranscriptUtterance = React.useCallback(
 		async (
 			sessionId: Id<"transcriptSessions">,
@@ -471,9 +549,11 @@ export const useNoteTranscriptSession = ({
 			const queuedUtterances = [...queuedTranscriptUtterancesRef.current];
 			queuedTranscriptUtterancesRef.current = [];
 
-			for (const utterance of queuedUtterances) {
-				await persistTranscriptUtterance(sessionId, utterance, "live");
-			}
+			await Promise.all(
+				queuedUtterances.map((utterance) =>
+					persistTranscriptUtterance(sessionId, utterance, "live"),
+				),
+			);
 		},
 		[persistTranscriptUtterance],
 	);
@@ -569,16 +649,7 @@ export const useNoteTranscriptSession = ({
 					return;
 				}
 
-				hasLoadedTranscriptDraftContentRef.current = true;
-				loadedTranscriptDraftUpdatedAtRef.current = draft.updatedAt;
-				persistedTranscriptUtteranceIdsRef.current = new Set(
-					draft.utterances.map((utterance) => utterance.id),
-				);
-				setTranscriptUtterances(draft.utterances);
-				setPendingGenerateTranscript(
-					draft.pendingGenerateTranscript.trim() ||
-						createTranscriptText(draft.utterances),
-				);
+				restoreTranscriptDraft(draft);
 			})
 			.finally(() => {
 				if (!isCancelled) {
@@ -590,7 +661,11 @@ export const useNoteTranscriptSession = ({
 		return () => {
 			isCancelled = true;
 		};
-	}, [captureTranscriptDraftKey, captureTranscriptSessionRepository.loadDraft]);
+	}, [
+		captureTranscriptDraftKey,
+		captureTranscriptSessionRepository.loadDraft,
+		restoreTranscriptDraft,
+	]);
 
 	React.useEffect(() => {
 		const latestSession = captureLatestTranscriptSession;
@@ -627,20 +702,11 @@ export const useNoteTranscriptSession = ({
 			return;
 		}
 
-		hasHydratedStoredTranscriptSessionRef.current = true;
-		activeTranscriptSessionIdRef.current = null;
-		lastCompletedTranscriptSessionIdRef.current = latestSession.sessionId;
-		setActiveTranscriptSessionId(null);
-		persistedTranscriptUtteranceIdsRef.current = new Set(
-			latestSession.utterances.map((utterance) => utterance.id),
-		);
-		setTranscriptUtterances(latestSession.utterances);
-		setPendingGenerateTranscript(
-			latestSession.generatedNoteAt ||
-				latestSession.sessionId === generatedTranscriptSessionId
-				? ""
-				: latestServerTranscript,
-		);
+		hydrateStoredTranscriptSession({
+			generatedSessionId: generatedTranscriptSessionId,
+			latestServerTranscript,
+			latestSession,
+		});
 		if (hasLoadedTranscriptDraftContentRef.current) {
 			void captureTranscriptSessionRepository.clearDraft(
 				captureTranscriptDraftKey,
@@ -654,6 +720,7 @@ export const useNoteTranscriptSession = ({
 		captureTranscriptDraftKey,
 		captureTranscriptSessionRepository,
 		generatedTranscriptSessionId,
+		hydrateStoredTranscriptSession,
 		isSpeechListening,
 		isTranscriptDraftReady,
 		pendingGenerateTranscript,
@@ -690,28 +757,11 @@ export const useNoteTranscriptSession = ({
 
 	React.useEffect(() => {
 		if (isSpeechListening && !previousSpeechListeningRef.current) {
-			listeningStartedAtRef.current = Date.now();
-			setPendingGenerateTranscript("");
-			hasRequestedAutomaticStopRef.current = false;
-			lastAudioActivityAtRef.current = Date.now();
+			markSpeechListeningStarted();
 		}
 
 		if (!isSpeechListening && previousSpeechListeningRef.current) {
-			shouldStopWhenMeetingEndsRef.current = false;
-			hasSeenBrowserMeetingSignalRef.current = false;
-			hasRequestedAutomaticStopRef.current = false;
-			const completedTranscript = createTranscriptText(
-				transcriptUtterancesRef.current,
-			);
-			if (completedTranscript) {
-				setPendingGenerateTranscript(completedTranscript);
-			}
-
-			const completedSessionId = activeTranscriptSessionIdRef.current;
-			lastCompletedTranscriptSessionIdRef.current = completedSessionId;
-			activeTranscriptSessionIdRef.current = null;
-			setActiveTranscriptSessionId(null);
-			sessionSystemAudioModePersistedRef.current = null;
+			const completedSessionId = markSpeechListeningStopped();
 
 			if (completedSessionId) {
 				void captureTranscriptSessionRepository
@@ -725,7 +775,12 @@ export const useNoteTranscriptSession = ({
 		}
 
 		previousSpeechListeningRef.current = isSpeechListening;
-	}, [captureTranscriptSessionRepository, isSpeechListening]);
+	}, [
+		captureTranscriptSessionRepository,
+		isSpeechListening,
+		markSpeechListeningStarted,
+		markSpeechListeningStopped,
+	]);
 
 	React.useEffect(() => {
 		if (liveTranscriptEntries.some((entry) => entry.text.trim().length > 0)) {

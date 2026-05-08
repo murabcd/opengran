@@ -137,11 +137,13 @@ const joinTranscriptBlockText = (currentText: string, nextText: string) => {
 	return `${normalizedCurrentText} ${normalizedNextText}`;
 };
 
+const transcriptDateFormatter = new Intl.DateTimeFormat(undefined, {
+	day: "numeric",
+	month: "short",
+});
+
 const formatTranscriptDate = (timestamp: number) =>
-	new Intl.DateTimeFormat(undefined, {
-		day: "numeric",
-		month: "short",
-	}).format(new Date(timestamp));
+	transcriptDateFormatter.format(new Date(timestamp));
 
 export const formatTranscriptElapsed = (elapsedMs: number) => {
 	const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
@@ -166,7 +168,13 @@ const formatTranscriptDisplayEntry = (
 export const createTranscriptBlocksText = (
 	entries: Array<Pick<TranscriptDisplayEntry, "speaker" | "text">>,
 ) =>
-	entries.map(formatTranscriptDisplayEntry).filter(Boolean).join("\n\n").trim();
+	entries
+		.flatMap((entry) => {
+			const text = formatTranscriptDisplayEntry(entry);
+			return text ? [text] : [];
+		})
+		.join("\n\n")
+		.trim();
 
 export const createTranscriptExportText = ({
 	entries,
@@ -227,7 +235,9 @@ export const createTranscriptDisplayEntries = ({
 }): TranscriptDisplayEntry[] => {
 	const committedEntries: TranscriptDisplayEntry[] = [];
 
-	for (const utterance of [...utterances].sort(compareTranscriptUtterances)) {
+	for (const utterance of utterances
+		.slice()
+		.sort(compareTranscriptUtterances)) {
 		const trimmedText = utterance.text.trim();
 
 		if (!trimmedText) {

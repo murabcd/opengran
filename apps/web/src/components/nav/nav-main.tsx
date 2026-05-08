@@ -37,6 +37,13 @@ export function NavMain({
 	onSearchOpen: () => void;
 	onInboxToggle: () => void;
 }) {
+	const handleOpenSearchShortcut = React.useEffectEvent(() => {
+		onSearchOpen();
+	});
+	const handleCreateNoteShortcut = React.useEffectEvent(() => {
+		onCreateNote();
+	});
+
 	React.useEffect(() => {
 		const down = (event: KeyboardEvent) => {
 			if (
@@ -50,7 +57,7 @@ export function NavMain({
 
 			if (event.key.toLowerCase() === "k") {
 				event.preventDefault();
-				onSearchOpen();
+				handleOpenSearchShortcut();
 				return;
 			}
 
@@ -59,12 +66,12 @@ export function NavMain({
 			}
 
 			event.preventDefault();
-			onCreateNote();
+			handleCreateNoteShortcut();
 		};
 
 		document.addEventListener("keydown", down);
 		return () => document.removeEventListener("keydown", down);
-	}, [onCreateNote, onSearchOpen]);
+	}, []);
 
 	const searchItem = items.find((item) => item.action === "search");
 	const viewItems = items.filter((item) => item.action !== "search");

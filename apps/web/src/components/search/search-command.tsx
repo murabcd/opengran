@@ -264,7 +264,7 @@ function SearchCommandFilters({
 							sideOffset={6}
 							className="w-56 gap-0 p-0"
 						>
-							<div className="flex flex-col gap-0.5 px-1.5 py-1.5">
+							<div className="flex flex-col gap-0.5 p-1.5">
 								<SearchDatePresetOption
 									label="Today"
 									selected={dateFilter === "today"}
@@ -300,7 +300,7 @@ function SearchCommandFilters({
 								/>
 							</div>
 							<Separator />
-							<div className="px-1.5 py-1.5">
+							<div className="p-1.5">
 								<Calendar
 									mode="range"
 									selected={dateRange}

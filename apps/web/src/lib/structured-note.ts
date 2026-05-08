@@ -47,14 +47,17 @@ export const structuredNoteToDocument = ({
 	overview,
 	sections,
 }: StructuredNoteBody): JSONContent => {
-	const overviewParagraphs = overview
-		.map((item) => item.trim())
-		.filter(Boolean)
-		.map((item) => createParagraphNode(item));
+	const overviewParagraphs = overview.flatMap((item) => {
+		const text = item.trim();
+		return text ? [createParagraphNode(text)] : [];
+	});
 
 	const sectionNodes = sections.flatMap((section) => {
 		const title = section.title.trim();
-		const items = section.items.map((item) => item.trim()).filter(Boolean);
+		const items = section.items.flatMap((item) => {
+			const text = item.trim();
+			return text ? [text] : [];
+		});
 
 		if (!title && items.length === 0) {
 			return [];
@@ -83,11 +86,16 @@ export const structuredNoteToSearchableText = ({
 	sections,
 }: StructuredNoteBody) =>
 	[
-		...overview.map((item) => item.trim()).filter(Boolean),
-		...sections.flatMap((section) => [
-			section.title.trim(),
-			...section.items.map((item) => item.trim()),
-		]),
-	]
-		.filter(Boolean)
-		.join("\n");
+		...overview.flatMap((item) => {
+			const text = item.trim();
+			return text ? [text] : [];
+		}),
+		...sections.flatMap((section) => {
+			const title = section.title.trim();
+			const items = section.items.flatMap((item) => {
+				const text = item.trim();
+				return text ? [text] : [];
+			});
+			return title ? [title, ...items] : items;
+		}),
+	].join("\n");

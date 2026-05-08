@@ -15,6 +15,16 @@ const readStoredPinState = (storageKey: string, fallback: boolean) => {
 	}
 };
 
+function useResetPinState(
+	storageKey: string,
+	defaultPinned: boolean,
+	applyPinnedState: (isPinned: boolean) => void,
+) {
+	React.useEffect(() => {
+		applyPinnedState(readStoredPinState(storageKey, defaultPinned));
+	}, [applyPinnedState, defaultPinned, storageKey]);
+}
+
 export function useDesktopPanelPin({
 	storageKey,
 	defaultPinned = false,
@@ -27,10 +37,11 @@ export function useDesktopPanelPin({
 	const [isPinned, setIsPinned] = React.useState(() =>
 		readStoredPinState(storageKey, defaultPinned),
 	);
+	const applyPinnedState = React.useCallback((nextPinned: boolean) => {
+		setIsPinned(nextPinned);
+	}, []);
 
-	React.useEffect(() => {
-		setIsPinned(readStoredPinState(storageKey, defaultPinned));
-	}, [defaultPinned, storageKey]);
+	useResetPinState(storageKey, defaultPinned, applyPinnedState);
 
 	React.useEffect(() => {
 		onPinnedChange?.(isPinned);

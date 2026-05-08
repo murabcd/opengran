@@ -162,7 +162,7 @@ export function HomeView({
 								</div>
 								<div className="flex min-h-[152px] w-full items-start justify-center p-3">
 									{shouldShowUpcomingCalendarSkeleton ? (
-										<Empty className="h-full rounded-none border-0 px-4 py-4">
+										<Empty className="h-full rounded-none border-0 p-4">
 											<EmptyHeader>
 												<Skeleton className="mb-2 size-8 rounded-lg" />
 												<Skeleton className="h-5 w-40 max-w-full" />
@@ -173,7 +173,7 @@ export function HomeView({
 											</EmptyContent>
 										</Empty>
 									) : visibleUpcomingEvents.length > 0 ? (
-										<div className="w-full px-1 py-1">
+										<div className="w-full p-1">
 											<div className="space-y-1.5">
 												{visibleUpcomingEvents.map((event) => {
 													const isLive = isUpcomingEventLive(
@@ -238,7 +238,7 @@ export function HomeView({
 											</div>
 										</div>
 									) : (
-										<Empty className="h-full rounded-none border-0 px-4 py-4">
+										<Empty className="h-full rounded-none border-0 p-4">
 											<EmptyHeader>
 												<EmptyMedia variant="icon">
 													<CalendarClock className="size-4" />

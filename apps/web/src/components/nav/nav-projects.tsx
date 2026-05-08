@@ -890,7 +890,7 @@ export function ProjectSidebarItem({
 					<ProjectSidebarRow
 						projectName={project.name}
 						hasNotes={hasNotes}
-						isStarred={project.isStarred}
+						isStarred={project.isStarred ?? false}
 						workspaceId={workspaceId}
 						isOpen={open}
 						menuOpen={state.menuOpen}
@@ -1468,17 +1468,24 @@ const normalizeProjectName = (value: string) =>
 const toNormalizedProjectKey = (value: string) =>
 	normalizeProjectName(value).toLowerCase();
 
-function sortProjectsByNormalizedName(projects: Array<Doc<"projects">>) {
-	return projects.slice().sort((left, right) => {
-		const normalizedComparison = left.normalizedName.localeCompare(
-			right.normalizedName,
-		);
-		if (normalizedComparison !== 0) {
-			return normalizedComparison;
-		}
+function sortProjectsByNormalizedName(
+	projects: Array<Doc<"projects"> & { isStarred?: boolean }>,
+) {
+	return projects
+		.map((project) => ({
+			...project,
+			isStarred: project.isStarred ?? false,
+		}))
+		.sort((left, right) => {
+			const normalizedComparison = left.normalizedName.localeCompare(
+				right.normalizedName,
+			);
+			if (normalizedComparison !== 0) {
+				return normalizedComparison;
+			}
 
-		return left._creationTime - right._creationTime;
-	});
+			return left._creationTime - right._creationTime;
+		});
 }
 
 function sortProjectEntries(

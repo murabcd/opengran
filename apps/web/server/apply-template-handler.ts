@@ -26,6 +26,15 @@ type ApplyTemplateRequestBody = {
 	};
 };
 
+class ApplyTemplateRequestError extends Error {
+	readonly statusCode: number;
+
+	constructor(message: string, statusCode: number) {
+		super(message);
+		this.statusCode = statusCode;
+	}
+}
+
 const readJsonBody = async (request: IncomingMessage) => {
 	const chunks: Uint8Array[] = [];
 
@@ -52,6 +61,39 @@ const sendJson = (
 	response.end(JSON.stringify(payload));
 };
 
+const getApplyTemplatePayload = async (request: IncomingMessage) => {
+	const { title = "", noteText = "", template } = await readJsonBody(request);
+
+	if (!noteText.trim()) {
+		throw new ApplyTemplateRequestError("Note text is required.", 400);
+	}
+
+	if (!template?.name || !template.sections || template.sections.length === 0) {
+		throw new ApplyTemplateRequestError("A valid template is required.", 400);
+	}
+
+	const templateSections = template.sections.flatMap((section) => {
+		const title = section.title?.trim() ?? "";
+		return title
+			? [
+					{
+						title,
+						prompt: section.prompt?.trim() ?? "",
+					},
+				]
+			: [];
+	});
+
+	if (templateSections.length === 0) {
+		throw new ApplyTemplateRequestError(
+			"The selected template does not have usable sections.",
+			400,
+		);
+	}
+
+	return { noteText, template, templateSections, title };
+};
+
 export const handleApplyTemplateRequest = async (
 	request: IncomingMessage,
 	response: ServerResponse,
@@ -63,35 +105,21 @@ export const handleApplyTemplateRequest = async (
 		return;
 	}
 
-	const { title = "", noteText = "", template } = await readJsonBody(request);
+	let payload: Awaited<ReturnType<typeof getApplyTemplatePayload>>;
+	try {
+		payload = await getApplyTemplatePayload(request);
+	} catch (error) {
+		if (error instanceof ApplyTemplateRequestError) {
+			sendJson(response, error.statusCode, {
+				error: error.message,
+			});
+			return;
+		}
 
-	if (!noteText.trim()) {
-		sendJson(response, 400, {
-			error: "Note text is required.",
-		});
-		return;
+		throw error;
 	}
 
-	if (!template?.name || !template.sections || template.sections.length === 0) {
-		sendJson(response, 400, {
-			error: "A valid template is required.",
-		});
-		return;
-	}
-
-	const templateSections = template.sections
-		.map((section) => ({
-			title: section.title?.trim() ?? "",
-			prompt: section.prompt?.trim() ?? "",
-		}))
-		.filter((section) => section.title);
-
-	if (templateSections.length === 0) {
-		sendJson(response, 400, {
-			error: "The selected template does not have usable sections.",
-		});
-		return;
-	}
+	const { title, noteText, template, templateSections } = payload;
 
 	response.statusCode = 200;
 	response.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");

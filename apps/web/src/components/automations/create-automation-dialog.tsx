@@ -909,8 +909,8 @@ function NotePicker({
 					<CommandList>
 						{isLoading ? (
 							<CommandGroup heading="Notes">
-								<div className="px-2 py-2 text-sm text-muted-foreground">
-									Loading notes...
+								<div className="p-2 text-sm text-muted-foreground">
+									Loading notes…
 								</div>
 							</CommandGroup>
 						) : null}

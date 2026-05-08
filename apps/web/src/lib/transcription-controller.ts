@@ -841,14 +841,17 @@ export class TranscriptionController {
 
 	private emitOrderedTurns = (speaker: TranscriptSpeaker) => {
 		const state = this.speakers[speaker].data;
+		const turnsByPreviousItemId = new Map(
+			[...state.turns.values()].flatMap((turn) =>
+				(turn.completed || turn.failed) &&
+				!state.emittedItemIds.has(turn.itemId)
+					? [[turn.previousItemId, turn] as const]
+					: [],
+			),
+		);
 
 		for (;;) {
-			const nextTurn = [...state.turns.values()].find(
-				(turn) =>
-					(turn.completed || turn.failed) &&
-					!state.emittedItemIds.has(turn.itemId) &&
-					turn.previousItemId === state.lastCommittedItemId,
-			);
+			const nextTurn = turnsByPreviousItemId.get(state.lastCommittedItemId);
 
 			if (!nextTurn) {
 				return;

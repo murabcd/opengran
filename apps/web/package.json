@@ -53,5 +53,13 @@
     "typescript": "~5.9.3",
     "vite": "^7.3.1",
     "vitest": "^3.2.4"
+  },
+  "knip": {
+    "ignore": [
+      "src/canvas-confetti.d.ts",
+      "src/electron.d.ts",
+      "src/vite-env.d.ts",
+      "tests/setup.ts"
+    ]
   }
 }

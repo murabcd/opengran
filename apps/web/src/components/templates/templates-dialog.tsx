@@ -801,13 +801,13 @@ function SortableTemplateSectionCard({
 						id={`template-section-title-${section.id}`}
 						value={section.title}
 						onChange={(event) => onTitleChange(section.id, event.target.value)}
-						className="h-7 border-0 bg-transparent px-0 py-0 text-base shadow-none focus-visible:ring-0 dark:bg-transparent"
+						className="h-7 border-0 bg-transparent p-0 text-base shadow-none focus-visible:ring-0 dark:bg-transparent"
 					/>
 					<Textarea
 						id={`template-section-prompt-${section.id}`}
 						value={section.prompt}
 						onChange={(event) => onPromptChange(section.id, event.target.value)}
-						className="h-[72px] resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 shadow-none focus-visible:ring-0 dark:bg-transparent"
+						className="h-[72px] resize-none border-0 bg-transparent p-0 text-sm leading-6 shadow-none focus-visible:ring-0 dark:bg-transparent"
 					/>
 				</div>
 				<Button

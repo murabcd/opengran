@@ -15,6 +15,9 @@ type GitHubLatestReleaseResponse = {
 };
 
 const DESKTOP_ASSET_EXTENSIONS = [".dmg", ".zip"];
+const DESKTOP_ASSET_EXTENSION_INDEX = new Map(
+	DESKTOP_ASSET_EXTENSIONS.map((extension, index) => [extension, index]),
+);
 
 export const pickDesktopReleaseAsset = (
 	assets: GitHubLatestReleaseResponse["assets"],
@@ -23,17 +26,20 @@ export const pickDesktopReleaseAsset = (
 		return null;
 	}
 
-	for (const extension of DESKTOP_ASSET_EXTENSIONS) {
-		const preferredAsset = assets.find((asset) =>
-			asset.name.toLowerCase().endsWith(extension),
-		);
+	let preferredAsset: GitHubReleaseAsset | null = null;
+	let preferredPriority = Number.POSITIVE_INFINITY;
 
-		if (preferredAsset) {
-			return preferredAsset;
+	for (const asset of assets) {
+		const lowerName = asset.name.toLowerCase();
+		for (const [extension, priority] of DESKTOP_ASSET_EXTENSION_INDEX) {
+			if (lowerName.endsWith(extension) && priority < preferredPriority) {
+				preferredAsset = asset;
+				preferredPriority = priority;
+			}
 		}
 	}
 
-	return null;
+	return preferredAsset;
 };
 
 export const resolveLatestDesktopDownloadUrl = async (

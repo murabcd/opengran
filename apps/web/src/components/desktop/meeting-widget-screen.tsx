@@ -103,10 +103,10 @@ export function MeetingWidgetScreen() {
 					"relative rounded-lg border border-border/70 bg-card py-0 text-card-foreground shadow-none",
 				)}
 			>
-				<CardContent className="flex items-center gap-2 px-1.5 py-1.5">
+				<CardContent className="flex items-center gap-2 p-1.5">
 					<div
 						data-app-region="no-drag"
-						className="flex h-8 w-8 shrink-0 items-center justify-center"
+						className="flex size-8 shrink-0 items-center justify-center"
 					>
 						<Button
 							type="button"

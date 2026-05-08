@@ -137,8 +137,11 @@ const toDesktopAuthErrorShape = (
 	};
 };
 
-const setSessionState = (nextState: SessionState) => {
-	sessionState = nextState;
+const setSessionState = (
+	nextState: SessionState | ((current: SessionState) => SessionState),
+) => {
+	sessionState =
+		typeof nextState === "function" ? nextState(sessionState) : nextState;
 	notifyListeners();
 };
 
@@ -171,11 +174,11 @@ const refreshDesktopSession = async ({
 		return pendingSessionRefresh;
 	}
 
-	setSessionState({
-		...sessionState,
+	setSessionState((current) => ({
+		...current,
 		error: null,
 		isPending: true,
-	});
+	}));
 
 	pendingSessionRefresh = desktopAuthFetch({
 		path: "/get-session",

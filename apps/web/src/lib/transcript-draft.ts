@@ -49,19 +49,24 @@ const isFreshDraft = (updatedAt: number) =>
 const finalizeLiveTranscriptEntries = (
 	liveTranscript: LiveTranscriptState,
 ): TranscriptUtterance[] =>
-	Object.values(liveTranscript)
-		.filter((entry) => entry.text.trim())
-		.map((entry) => {
-			const startedAt = entry.startedAt ?? Date.now();
+	Object.values(liveTranscript).flatMap((entry) => {
+		const text = entry.text.trim();
+		if (!text) {
+			return [];
+		}
 
-			return {
+		const startedAt = entry.startedAt ?? Date.now();
+
+		return [
+			{
 				id: `recovered-live:${entry.speaker}:${startedAt}:${crypto.randomUUID()}`,
 				speaker: entry.speaker,
-				text: entry.text.trim(),
+				text,
 				startedAt,
 				endedAt: startedAt,
-			};
-		});
+			},
+		];
+	});
 
 const normalizeDraft = (
 	noteKey: string,
@@ -100,6 +105,7 @@ const pruneBrowserTranscriptDrafts = () => {
 	}
 
 	for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+		const { removeItem } = window.localStorage;
 		const key = window.localStorage.key(index);
 
 		if (!key?.startsWith(STORAGE_PREFIX)) {
@@ -109,7 +115,7 @@ const pruneBrowserTranscriptDrafts = () => {
 		try {
 			const rawValue = window.localStorage.getItem(key);
 			if (!rawValue) {
-				window.localStorage.removeItem(key);
+				removeItem.call(window.localStorage, key);
 				continue;
 			}
 
@@ -119,10 +125,10 @@ const pruneBrowserTranscriptDrafts = () => {
 				typeof parsed.updatedAt !== "number" ||
 				!isFreshDraft(parsed.updatedAt)
 			) {
-				window.localStorage.removeItem(key);
+				removeItem.call(window.localStorage, key);
 			}
 		} catch {
-			window.localStorage.removeItem(key);
+			removeItem.call(window.localStorage, key);
 		}
 	}
 };

@@ -9,7 +9,7 @@ export type ChatMessageMetadata = {
 	recipeOnly?: boolean;
 };
 
-export const extractTextParts = (message: UIMessage) =>
+const extractTextParts = (message: UIMessage) =>
 	message.parts.filter(
 		(part): part is Extract<(typeof message.parts)[number], { type: "text" }> =>
 			part.type === "text" &&

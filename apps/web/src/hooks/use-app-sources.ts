@@ -23,23 +23,19 @@ export function useAppSources(
 
 	React.useEffect(() => {
 		let cancelled = false;
-		setGoogleSources([]);
 
 		if (!workspaceId) {
+			setGoogleSources([]);
 			return () => {
 				cancelled = true;
 			};
 		}
 
 		void listGoogleSources({ workspaceId })
+			.catch(() => [])
 			.then((sources) => {
 				if (!cancelled) {
 					setGoogleSources(sources);
-				}
-			})
-			.catch(() => {
-				if (!cancelled) {
-					setGoogleSources([]);
 				}
 			});
 

@@ -381,6 +381,14 @@ function ChatSummaryPanel({
 			title: "Automation",
 		});
 	}, [addTab]);
+	const handleOpenSummaryShortcut = React.useEffectEvent(() => {
+		onOpenSummary();
+		openAutomationTab();
+	});
+	const handleOpenFileSearchShortcut = React.useEffectEvent(() => {
+		openFileSearch();
+	});
+
 	React.useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if (
@@ -400,17 +408,16 @@ function ChatSummaryPanel({
 
 			event.preventDefault();
 			if (key === "p") {
-				openFileSearch();
+				handleOpenFileSearchShortcut();
 				return;
 			}
 
-			onOpenSummary();
-			openAutomationTab();
+			handleOpenSummaryShortcut();
 		};
 
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [onOpenSummary, openAutomationTab, openFileSearch]);
+	}, []);
 	const closeTab = React.useCallback(
 		(tabId: string) => {
 			const tabToClose = tabs.find((tab) => tab.id === tabId);

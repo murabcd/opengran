@@ -82,7 +82,7 @@ export function CollapsibleMessageContent({
 					type="button"
 					variant="ghost"
 					size="xs"
-					className="h-auto px-0 py-0 text-secondary-foreground/55 hover:bg-transparent hover:text-secondary-foreground aria-expanded:bg-transparent aria-expanded:text-secondary-foreground/55 aria-expanded:hover:text-secondary-foreground"
+					className="h-auto p-0 text-secondary-foreground/55 hover:bg-transparent hover:text-secondary-foreground aria-expanded:bg-transparent aria-expanded:text-secondary-foreground/55 aria-expanded:hover:text-secondary-foreground"
 					aria-expanded={isExpanded}
 					onClick={() => setIsExpanded((current) => !current)}
 				>

@@ -331,7 +331,7 @@ function MessageSources({
 	);
 }
 
-export function ChatMessageFileAttachments({
+function ChatMessageFileAttachments({
 	files,
 }: {
 	files: ReturnType<typeof extractFileParts>;

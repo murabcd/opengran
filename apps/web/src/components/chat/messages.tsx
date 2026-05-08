@@ -12,8 +12,6 @@ import { toast } from "sonner";
 import { CHAT_ACTIONS_VISIBILITY_CLASS } from "@/components/chat/message-layout";
 import { ChatMessageListContent } from "@/components/chat/message-list";
 
-export { ChatMessageFileAttachments } from "@/components/chat/message-list";
-
 type ChatMessagesActionProps = {
 	messageIdPendingDelete: string | null;
 	onDeleteClick: (messageId: string) => void;

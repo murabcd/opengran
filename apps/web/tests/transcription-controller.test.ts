@@ -36,19 +36,21 @@ const flushPromises = async () => {
 };
 
 const waitForAssertion = async (assertion: () => void, attempts = 10) => {
-	let lastError: unknown;
-
-	for (let index = 0; index < attempts; index += 1) {
+	const attemptAssertion = async (attempt: number): Promise<void> => {
 		try {
 			assertion();
-			return;
+			return undefined;
 		} catch (error) {
-			lastError = error;
-			await flushPromises();
-		}
-	}
+			if (attempt >= attempts - 1) {
+				throw error;
+			}
 
-	throw lastError;
+			await flushPromises();
+			return attemptAssertion(attempt + 1);
+		}
+	};
+
+	await attemptAssertion(0);
 };
 
 const createMockTrack = () => ({

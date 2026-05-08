@@ -10,6 +10,6 @@ export const createTranscriptText = (utterances: TranscriptUtterance[]) =>
 	createTranscriptBlocksText(
 		createTranscriptDisplayEntries({
 			liveTranscript: createEmptyLiveTranscriptState(),
-			utterances: [...utterances].sort(compareTranscriptUtterances),
+			utterances: utterances.slice().sort(compareTranscriptUtterances),
 		}),
 	);
