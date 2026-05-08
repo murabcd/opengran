@@ -328,18 +328,19 @@ const useChatPageController = ({
 					}
 				: { text: value, ...filePayload };
 
-			const request = sendMessage(nextOutgoingMessage, {
-				body: {
-					model: selectedModel.model,
-					webSearchEnabled,
-					appsEnabled,
-					mentions,
-					selectedSourceIds,
-					workspaceId: activeWorkspaceId,
-					convexToken,
-				},
-			});
-			void request.finally(() => {
+			void Promise.resolve(
+				sendMessage(nextOutgoingMessage, {
+					body: {
+						model: selectedModel.model,
+						webSearchEnabled,
+						appsEnabled,
+						mentions,
+						selectedSourceIds,
+						workspaceId: activeWorkspaceId,
+						convexToken,
+					},
+				}),
+			).finally(() => {
 				setIsPreparingRequest(false);
 			});
 			setEditingMessageId(null);
@@ -472,11 +473,12 @@ const useChatPageController = ({
 				const requestBody = await buildRequestBody();
 				setEditingMessageId(null);
 				setDraft("");
-				const request = regenerate({
-					messageId: assistantMessageId,
-					body: requestBody,
-				});
-				void request.finally(() => {
+				void Promise.resolve(
+					regenerate({
+						messageId: assistantMessageId,
+						body: requestBody,
+					}),
+				).finally(() => {
 					setIsPreparingRequest(false);
 				});
 			} catch (error) {

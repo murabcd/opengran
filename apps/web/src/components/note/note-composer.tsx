@@ -1375,10 +1375,11 @@ const useNoteComposerController = ({
 					}
 				: { text: outgoingText, metadata: recipeMetadata, ...filePayload };
 
-			const request = sendMessage(nextOutgoingMessage, {
-				body: requestBody,
-			});
-			void request.finally(() => {
+			void Promise.resolve(
+				sendMessage(nextOutgoingMessage, {
+					body: requestBody,
+				}),
+			).finally(() => {
 				setIsPreparingRequest(false);
 			});
 			setEditingMessageId(null);
@@ -1568,11 +1569,12 @@ const useNoteComposerController = ({
 				setMessage("");
 				setIsExpanded(false);
 				resetTextareaHeight();
-				const request = regenerate({
-					messageId: assistantMessageId,
-					body: requestBody,
-				});
-				void request.finally(() => {
+				void Promise.resolve(
+					regenerate({
+						messageId: assistantMessageId,
+						body: requestBody,
+					}),
+				).finally(() => {
 					setIsPreparingRequest(false);
 				});
 			} catch (error) {
