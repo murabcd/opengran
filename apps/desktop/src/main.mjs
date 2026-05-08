@@ -4654,6 +4654,14 @@ const createMainWindow = async (targetUrl) => {
 		mainWindow = null;
 	});
 
+	mainWindow.webContents.on("before-input-event", (event, input) => {
+		const key = input.key?.toLowerCase();
+
+		if (key === "r" && (input.meta || input.control)) {
+			event.preventDefault();
+		}
+	});
+
 	mainWindow.webContents.on("did-navigate", (_event, url) => {
 		void rememberRendererNavigation(url);
 	});
@@ -5612,7 +5620,14 @@ const buildApplicationMenu = () => {
 			],
 		},
 		{ role: "editMenu" },
-		{ role: "viewMenu" },
+		{
+			label: "View",
+			submenu: [
+				{ role: "togglefullscreen" },
+				{ type: "separator" },
+				{ role: "toggleDevTools" },
+			],
+		},
 		{
 			role: "window",
 			submenu: [
