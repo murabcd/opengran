@@ -98,7 +98,7 @@ export default defineSchema({
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),
 		showGoogleCalendar: v.boolean(),
-		showGoogleDrive: v.boolean(),
+		showGoogleDrive: v.optional(v.boolean()),
 		showYandexCalendar: v.boolean(),
 		createdAt: v.number(),
 		updatedAt: v.number(),
