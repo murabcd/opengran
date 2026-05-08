@@ -81,9 +81,14 @@ export function ManageDialogSidebarNav({
 												type="button"
 												onClick={footerAction.onClick}
 												disabled={footerAction.disabled}
+												className="h-8 gap-2 px-2"
 											>
-												<Icon />
-												<span>{footerAction.label}</span>
+												<div className="flex size-6 items-center justify-center rounded-md bg-transparent">
+													<Icon className="size-4" />
+												</div>
+												<span className="font-medium">
+													{footerAction.label}
+												</span>
 											</SidebarMenuButton>
 										);
 									})()}
