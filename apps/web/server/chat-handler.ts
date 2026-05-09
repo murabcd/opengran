@@ -508,49 +508,19 @@ export const handleChatRequest = async (
 		editedMessageIndex >= 0
 			? storedChatMessages.slice(0, editedMessageIndex)
 			: storedChatMessages;
-	const chatMessages = await validateUIMessages({
-		messages:
-			convexClient && id
-				? [...fromStoredMessages(baseStoredMessages), message]
-				: [message],
-	});
-	const lastUserMessage =
-		message.role === "user"
-			? message
-			: [...chatMessages]
-					.reverse()
-					.find((currentMessage) => currentMessage.role === "user");
-	const shouldGenerateChatTitle = Boolean(
-		convexClient &&
-			id &&
-			lastUserMessage &&
-			(!storedChat || storedChat.title === "New chat"),
-	);
-	if (
+	const incomingMessages =
+		convexClient && id
+			? [...fromStoredMessages(baseStoredMessages), message]
+			: [message];
+	const shouldTruncateChatBranch =
 		convexClient &&
 		id &&
 		resolvedWorkspaceId &&
-		trigger === "submit-message" &&
 		messageId &&
-		editedMessageIndex >= 0
-	) {
-		try {
-			await convexClient.mutation(api.chats.truncateFromMessage, {
-				workspaceId: resolvedWorkspaceId,
-				chatId: id,
-				messageId,
-			});
-		} catch (error) {
-			console.error("Failed to truncate edited chat message branch", error);
-		}
-	}
-	if (
-		convexClient &&
-		id &&
-		resolvedWorkspaceId &&
-		trigger === "regenerate-message" &&
-		messageId
-	) {
+		((trigger === "submit-message" && editedMessageIndex >= 0) ||
+			trigger === "regenerate-message");
+
+	if (shouldTruncateChatBranch) {
 		try {
 			await convexClient.mutation(api.chats.truncateFromMessage, {
 				workspaceId: resolvedWorkspaceId,
@@ -562,20 +532,6 @@ export const handleChatRequest = async (
 				"Failed to truncate regenerated chat message branch",
 				error,
 			);
-		}
-	}
-	if (convexClient && id && resolvedWorkspaceId && lastUserMessage) {
-		try {
-			await convexClient.mutation(api.chats.saveMessage, {
-				workspaceId: resolvedWorkspaceId,
-				chatId: id,
-				noteId: resolvedNoteId ?? undefined,
-				preview: getChatPreviewFromMessage(lastUserMessage),
-				model: resolvedModel.model,
-				message: toStoredMessage(lastUserMessage),
-			});
-		} catch (error) {
-			console.error("Failed to persist user chat message", error);
 		}
 	}
 
@@ -701,23 +657,52 @@ export const handleChatRequest = async (
 
 	Object.assign(enabledTools, appTools);
 
+	const hasEnabledTools = Object.keys(enabledTools).length > 0;
+	const chatMessages = await validateUIMessages<
+		UIMessage<unknown, never, InferUITools<typeof enabledTools>>
+	>({
+		messages: incomingMessages,
+		tools: enabledTools,
+	});
+	const lastUserMessage =
+		message.role === "user"
+			? message
+			: [...chatMessages]
+					.reverse()
+					.find((currentMessage) => currentMessage.role === "user");
+	const shouldGenerateChatTitle = Boolean(
+		convexClient &&
+			id &&
+			lastUserMessage &&
+			(!storedChat || storedChat.title === "New chat"),
+	);
+	if (convexClient && id && resolvedWorkspaceId && lastUserMessage) {
+		try {
+			await convexClient.mutation(api.chats.saveMessage, {
+				workspaceId: resolvedWorkspaceId,
+				chatId: id,
+				noteId: resolvedNoteId ?? undefined,
+				preview: getChatPreviewFromMessage(lastUserMessage),
+				model: resolvedModel.model,
+				message: toStoredMessage(lastUserMessage),
+			});
+		} catch (error) {
+			console.error("Failed to persist user chat message", error);
+		}
+	}
+
 	const agent = new ToolLoopAgent({
 		model: openai(resolvedModel.model),
 		instructions: systemPrompt,
-		tools: Object.keys(enabledTools).length > 0 ? enabledTools : undefined,
-		stopWhen: Object.keys(enabledTools).length > 0 ? stepCountIs(5) : undefined,
+		tools: hasEnabledTools ? enabledTools : undefined,
+		stopWhen: hasEnabledTools ? stepCountIs(5) : undefined,
 	});
-	const agentMessages = chatMessages as unknown as UIMessage<
-		unknown,
-		never,
-		InferUITools<typeof enabledTools>
-	>[];
 
 	await pipeAgentUIStreamToResponse({
 		response,
 		agent,
-		uiMessages: agentMessages,
-		originalMessages: agentMessages,
+		uiMessages: chatMessages,
+		originalMessages: chatMessages,
 		generateMessageId,
 		consumeSseStream: consumeStream,
 		sendSources: true,
