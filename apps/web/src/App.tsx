@@ -31,6 +31,7 @@ import { Icons } from "@workspace/ui/components/icons";
 import { OpenGranMark } from "@workspace/ui/components/open-gran-mark";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { cn } from "@workspace/ui/lib/utils";
+import confetti from "canvas-confetti";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import {
 	AlertCircle,
@@ -951,8 +952,6 @@ function WelcomeCelebrationScreen({
 			if (isCancelled) {
 				return;
 			}
-
-			const { default: confetti } = await import("canvas-confetti");
 
 			const fire = confetti.create(canvas, {
 				resize: true,

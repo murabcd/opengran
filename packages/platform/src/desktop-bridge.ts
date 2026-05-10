@@ -269,6 +269,6 @@ export interface OpenGranDesktopBridge {
 
 declare global {
 	interface Window {
-		openGranDesktop?: import("./desktop-bridge").OpenGranDesktopBridge;
+		openGranDesktop?: OpenGranDesktopBridge;
 	}
 }
