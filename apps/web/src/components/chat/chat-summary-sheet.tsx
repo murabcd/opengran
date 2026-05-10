@@ -26,6 +26,7 @@ import {
 	HoverCardContent,
 	HoverCardTrigger,
 } from "@workspace/ui/components/hover-card";
+import { Icons } from "@workspace/ui/components/icons";
 import { Kbd } from "@workspace/ui/components/kbd";
 import {
 	Popover,
@@ -84,7 +85,11 @@ import {
 	SearchCommand,
 	type SearchCommandItem,
 } from "@/components/search/search-command";
-import { extractFileParts } from "@/lib/chat-message";
+import { extractFileParts, getChatMessageMetadata } from "@/lib/chat-message";
+import {
+	type ChatAppSourceProvider,
+	getAppSourceLabel,
+} from "@/lib/chat-source-display";
 import { collectMessageSources, type ToolSource } from "@/lib/chat-sources";
 import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
 import {
@@ -109,11 +114,24 @@ type SummaryWorkspaceSource = {
 	updatedAt?: number;
 };
 
+export type ChatSummaryOpenSourceRequest = {
+	sourceId: string;
+	requestId: number;
+};
+
 type SummaryArtifact = {
 	filename?: string;
 	mediaType: string;
 	url: string;
 };
+
+type SummarySource =
+	| ({ kind: "link" } & ToolSource)
+	| {
+			id: string;
+			kind: "tool";
+			title: string;
+	  };
 
 type SummaryTab =
 	| { id: "summary"; kind: "summary"; title: "Summary" }
@@ -163,14 +181,35 @@ const writeDesktopChatSummaryPanelPinnedState = (isPinned: boolean) => {
 	}
 };
 
-const collectChatSources = (messages: UIMessage[]): ToolSource[] => {
-	const sources = messages.flatMap((message) =>
-		message.role === "assistant" ? collectMessageSources(message) : [],
-	);
+const collectChatSources = (messages: UIMessage[]): SummarySource[] => {
+	const sources = messages.flatMap<SummarySource>((message) => {
+		if (message.role === "assistant") {
+			return collectMessageSources(message).map((source) => ({
+				...source,
+				kind: "link",
+			}));
+		}
+
+		return (getChatMessageMetadata(message)?.mentionPositions ?? []).flatMap(
+			(mention) =>
+				mention.type === "tool" || mention.id.startsWith("app:")
+					? [
+							{
+								id: mention.id,
+								kind: "tool",
+								title: mention.label,
+							} satisfies SummarySource,
+						]
+					: [],
+		);
+	});
 	const seen = new Set<string>();
 
 	return sources.filter((source) => {
-		const key = `${source.href}::${source.title}`;
+		const key =
+			source.kind === "link"
+				? `${source.kind}:${source.href}::${source.title}`
+				: `${source.kind}:${source.id}`;
 
 		if (seen.has(key)) {
 			return false;
@@ -202,6 +241,7 @@ export function ChatSummarySheet({
 	chatTitle,
 	desktopSafeTop = false,
 	workspaceSources,
+	openSourceRequest,
 	onAddSource,
 	onRemoveAutoAddedSource,
 	onOpenChange,
@@ -212,6 +252,7 @@ export function ChatSummarySheet({
 	chatTitle: string;
 	desktopSafeTop?: boolean;
 	workspaceSources: SummaryWorkspaceSource[];
+	openSourceRequest?: ChatSummaryOpenSourceRequest | null;
 	onAddSource?: (sourceId: string) => void;
 	onRemoveAutoAddedSource?: (sourceId: string) => void;
 	onOpenChange: (open: boolean) => void;
@@ -266,6 +307,7 @@ export function ChatSummarySheet({
 			artifacts={artifacts}
 			sources={sources}
 			workspaceSources={workspaceSources}
+			openSourceRequest={openSourceRequest}
 			onAddSource={onAddSource}
 			onRemoveAutoAddedSource={onRemoveAutoAddedSource}
 			onOpenSummary={() => onOpenChange(true)}
@@ -330,6 +372,7 @@ function ChatSummaryPanel({
 	artifacts,
 	sources,
 	workspaceSources,
+	openSourceRequest,
 	onAddSource,
 	onRemoveAutoAddedSource,
 	onOpenSummary,
@@ -341,8 +384,9 @@ function ChatSummaryPanel({
 	chatTitle: string;
 	desktopSafeTop: boolean;
 	artifacts: SummaryArtifact[];
-	sources: ToolSource[];
+	sources: SummarySource[];
 	workspaceSources: SummaryWorkspaceSource[];
+	openSourceRequest?: ChatSummaryOpenSourceRequest | null;
 	onAddSource?: (sourceId: string) => void;
 	onRemoveAutoAddedSource?: (sourceId: string) => void;
 	onOpenSummary: () => void;
@@ -352,6 +396,7 @@ function ChatSummaryPanel({
 	const [activeTabId, setActiveTabId] = React.useState(SUMMARY_TAB.id);
 	const [fileSearchOpen, setFileSearchOpen] = React.useState(false);
 	const autoAddedSourceIdsRef = React.useRef(new Set<string>());
+	const handledOpenSourceRequestIdRef = React.useRef<number | null>(null);
 	const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? SUMMARY_TAB;
 	const fileSearchItems = React.useMemo<SearchCommandItem[]>(
 		() =>
@@ -371,6 +416,28 @@ function ChatSummaryPanel({
 		);
 		setActiveTabId(tab.id);
 	}, []);
+	const openWorkspaceSource = React.useCallback(
+		(sourceId: string) => {
+			const source = workspaceSources.find((item) => item.id === sourceId);
+
+			if (!source) {
+				return;
+			}
+
+			addTab({
+				id: `file:${source.id}`,
+				kind: "file",
+				sourceId: source.id,
+				title: source.title,
+				preview: source.preview,
+				content: source.content,
+			});
+			autoAddedSourceIdsRef.current.add(source.id);
+			onAddSource?.(source.id);
+			onOpenSummary();
+		},
+		[addTab, onAddSource, onOpenSummary, workspaceSources],
+	);
 	const openFileSearch = React.useCallback(() => {
 		setFileSearchOpen(true);
 	}, []);
@@ -459,6 +526,18 @@ function ChatSummaryPanel({
 					],
 		);
 	}, [automation]);
+	React.useEffect(() => {
+		if (!openSourceRequest) {
+			return;
+		}
+
+		if (handledOpenSourceRequestIdRef.current === openSourceRequest.requestId) {
+			return;
+		}
+
+		handledOpenSourceRequestIdRef.current = openSourceRequest.requestId;
+		openWorkspaceSource(openSourceRequest.sourceId);
+	}, [openSourceRequest, openWorkspaceSource]);
 	return (
 		<div className="flex h-full min-h-0 flex-col">
 			<div
@@ -508,25 +587,7 @@ function ChatSummaryPanel({
 					filtersEnabled={false}
 					groupByDate={false}
 					showResultsOnEmptySearch={false}
-					onSelectItem={(itemId) => {
-						const source = workspaceSources.find((item) => item.id === itemId);
-
-						if (!source) {
-							return;
-						}
-
-						addTab({
-							id: `file:${source.id}`,
-							kind: "file",
-							sourceId: source.id,
-							title: source.title,
-							preview: source.preview,
-							content: source.content,
-						});
-						autoAddedSourceIdsRef.current.add(source.id);
-						onAddSource?.(source.id);
-						onOpenSummary();
-					}}
+					onSelectItem={openWorkspaceSource}
 				/>
 			) : null}
 			<SummaryTabContent
@@ -714,7 +775,7 @@ function SummaryTabContent({
 	automation?: AutomationListItem | null;
 	chatTitle: string;
 	artifacts: SummaryArtifact[];
-	sources: ToolSource[];
+	sources: SummarySource[];
 }) {
 	if (activeTab.kind === "automation") {
 		return automation ? (
@@ -963,7 +1024,7 @@ function SummaryDefaultContent({
 	sources,
 }: {
 	artifacts: SummaryArtifact[];
-	sources: ToolSource[];
+	sources: SummarySource[];
 }) {
 	return (
 		<ScrollArea
@@ -1026,22 +1087,10 @@ function SummaryDefaultContent({
 					{sources.length > 0 ? (
 						<div className="flex min-w-0 flex-col gap-0.5 overflow-hidden">
 							{sources.map((source) => (
-								<a
-									key={`${source.href}:${source.title}`}
-									href={source.href}
-									target="_blank"
-									rel="noreferrer"
-									className={cn(
-										"group/source flex h-8 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-md px-2 text-sm text-muted-foreground transition-colors",
-										"hover:bg-accent/50 hover:text-foreground",
-									)}
-								>
-									<Globe className="size-3.5 shrink-0" />
-									<span className="min-w-0 flex-1 basis-0 truncate">
-										{source.title}
-									</span>
-									<ExternalLink className="size-3 shrink-0 opacity-0 transition-opacity group-hover/source:opacity-70" />
-								</a>
+								<SummarySourceRow
+									key={getSummarySourceKey(source)}
+									source={source}
+								/>
 							))}
 						</div>
 					) : (
@@ -1054,6 +1103,109 @@ function SummaryDefaultContent({
 		</ScrollArea>
 	);
 }
+
+function getSummarySourceKey(source: SummarySource) {
+	return source.kind === "link"
+		? `${source.kind}:${source.href}:${source.title}`
+		: `${source.kind}:${source.id}`;
+}
+
+function SummarySourceRow({ source }: { source: SummarySource }) {
+	const className = cn(
+		"group/source flex h-8 w-full min-w-0 max-w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 text-sm text-muted-foreground transition-colors",
+		"hover:bg-accent/50 hover:text-foreground",
+	);
+
+	if (source.kind === "tool") {
+		return (
+			<div className={className} title={source.title}>
+				<SummaryToolSourceIcon source={source} />
+				<span className="min-w-0 flex-1 basis-0 truncate">{source.title}</span>
+			</div>
+		);
+	}
+
+	return (
+		<a
+			href={source.href}
+			target="_blank"
+			rel="noreferrer"
+			className={className}
+			title={source.title}
+		>
+			<Globe className="size-3.5 shrink-0" />
+			<span className="min-w-0 flex-1 basis-0 truncate">{source.title}</span>
+			<ExternalLink className="size-3 shrink-0 opacity-0 transition-opacity group-hover/source:opacity-70" />
+		</a>
+	);
+}
+
+function SummaryToolSourceIcon({
+	source,
+}: {
+	source: Extract<SummarySource, { kind: "tool" }>;
+}) {
+	const provider = getSummaryToolProvider(source);
+
+	if (provider === "google-calendar") {
+		return <Icons.googleCalendarLogo className="size-3.5 shrink-0" />;
+	}
+
+	if (provider === "google-drive") {
+		return <Icons.googleDriveLogo className="size-3.5 shrink-0" />;
+	}
+
+	if (provider === "yandex-calendar") {
+		return <Icons.yandexCalendarLogo className="size-3.5 shrink-0" />;
+	}
+
+	if (provider === "yandex-tracker") {
+		return (
+			<Icons.yandexTrackerLogo className="size-3.5 shrink-0 text-blue-500" />
+		);
+	}
+
+	if (provider === "jira") {
+		return <Icons.jiraLogo className="size-3.5 shrink-0" />;
+	}
+
+	if (provider === "notion") {
+		return <Icons.notionLogo className="size-3.5 shrink-0" />;
+	}
+
+	if (provider === "posthog") {
+		return <Icons.planeLogo className="size-3.5 shrink-0" />;
+	}
+
+	return null;
+}
+
+function getSummaryToolProvider(
+	source: Extract<SummarySource, { kind: "tool" }>,
+): ChatAppSourceProvider | null {
+	const normalizedId = source.id.replace(/^app:/, "");
+
+	for (const provider of CHAT_APP_SOURCE_PROVIDERS) {
+		if (
+			normalizedId === provider ||
+			source.title.toLowerCase() === getAppSourceLabel(provider).toLowerCase()
+		) {
+			return provider;
+		}
+	}
+
+	return null;
+}
+
+const CHAT_APP_SOURCE_PROVIDERS = [
+	"google-calendar",
+	"google-drive",
+	"jira",
+	"notion",
+	"posthog",
+	"yandex-calendar",
+	"yandex-tracker",
+] as const satisfies ChatAppSourceProvider[];
 
 function SummarySection({
 	children,

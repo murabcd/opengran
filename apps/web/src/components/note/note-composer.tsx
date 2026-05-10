@@ -1,18 +1,16 @@
 import { useChat } from "@ai-sdk/react";
+import type { Editor, JSONContent, Range } from "@tiptap/core";
+import Document from "@tiptap/extension-document";
+import Paragraph from "@tiptap/extension-paragraph";
+import Placeholder from "@tiptap/extension-placeholder";
+import Text from "@tiptap/extension-text";
+import { Tiptap, useEditor } from "@tiptap/react";
 import {
 	canOpenDesktopSoundSettings,
 	openDesktopSoundSettings,
 } from "@workspace/platform/desktop";
 import { Button } from "@workspace/ui/components/button";
 import { Card, CardContent, CardHeader } from "@workspace/ui/components/card";
-import {
-	Command,
-	CommandEmpty,
-	CommandGroup,
-	CommandInput,
-	CommandItem,
-	CommandList,
-} from "@workspace/ui/components/command";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -23,14 +21,8 @@ import {
 	InputGroup,
 	InputGroupAddon,
 	InputGroupButton,
-	InputGroupTextarea,
 } from "@workspace/ui/components/input-group";
 import { Kbd } from "@workspace/ui/components/kbd";
-import {
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from "@workspace/ui/components/popover";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import {
 	Select,
@@ -80,9 +72,9 @@ import {
 	Square,
 	Trash2,
 	WandSparkles,
-	X,
 } from "lucide-react";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import {
 	type ChatAttachment,
@@ -130,6 +122,14 @@ import {
 	type RecipePrompt,
 	type RecipeSlug,
 } from "@/lib/recipes";
+import {
+	getMentionAnchorRect,
+	getMentionPickerPosition,
+	INLINE_MENTION_CLASS,
+	INLINE_MENTION_LABEL_CLASS,
+	type MentionPickerPosition,
+	TypedMention,
+} from "@/lib/tiptap-mention";
 import { formatTranscriptElapsed } from "@/lib/transcript";
 import {
 	getTranscriptionLanguageSelectValue,
@@ -161,11 +161,11 @@ const NOTE_CHAT_PANEL_DOCK_OFFSET =
 const NOTE_CHAT_INLINE_PANEL_DOCK_OFFSET = COMPOSER_OVERLAY_FOOTER_PADDING;
 const INLINE_POPOVER_FOOTER_CONTAINER_CLASS = "px-6 pt-2 pb-4";
 const NOTE_COMPOSER_FOOTER_SURFACE_CLASS =
-	"min-h-[96px] max-w-full overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 data-[drag-over=true]:border-ring data-[drag-over=true]:ring-3 data-[drag-over=true]:ring-ring/50 dark:bg-input/30 dark:has-disabled:bg-input/30";
+	"min-h-[132px] max-w-full overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 data-[drag-over=true]:border-ring data-[drag-over=true]:ring-3 data-[drag-over=true]:ring-ring/50 dark:bg-input/30 dark:has-disabled:bg-input/30";
 const NOTE_COMPOSER_FOOTER_TOP_ROW_CLASS =
 	"min-w-0 flex-wrap gap-1 px-4 pb-0 pt-2.5";
 const NOTE_COMPOSER_FOOTER_BODY_CLASS =
-	"min-h-[40px] max-h-52 overflow-y-auto pt-2 pb-0 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0";
+	"min-h-[44px] max-h-[24rem] overflow-y-auto pb-0 text-[14px] leading-[1.6] font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0";
 const NOTE_COMPOSER_FOOTER_BODY_SPACER_CLASS =
 	"min-h-[40px] w-full shrink-0 px-4 pt-2 pb-0";
 const NOTE_COMPOSER_FOOTER_BOTTOM_ROW_CLASS =
@@ -309,29 +309,50 @@ const groupChatsForSelector = (chats: NoteChatSummary[]) => {
 	);
 };
 
-const findRecipeTriggerRange = (value: string, cursorPosition: number) => {
-	const textBeforeCursor = value.slice(0, cursorPosition);
-	const triggerStart = textBeforeCursor.lastIndexOf("@");
-
-	if (triggerStart === -1) {
-		return null;
+const getRecipeSlugFromComposerContent = (
+	content: JSONContent,
+): RecipeSlug | null => {
+	if (content.type === "mention" && typeof content.attrs?.id === "string") {
+		return content.attrs.id as RecipeSlug;
 	}
 
-	const characterBeforeTrigger = value[triggerStart - 1];
-	if (characterBeforeTrigger && !/\s/.test(characterBeforeTrigger)) {
-		return null;
+	for (const child of content.content ?? []) {
+		const recipeSlug = getRecipeSlugFromComposerContent(child);
+		if (recipeSlug) {
+			return recipeSlug;
+		}
 	}
 
-	const triggerText = value.slice(triggerStart + 1, cursorPosition);
-	if (/\s/.test(triggerText)) {
-		return null;
+	return null;
+};
+
+const escapeRegExp = (value: string) =>
+	value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const getMessageTextWithoutRecipeMention = (
+	value: string,
+	recipe: Pick<RecipePrompt, "name"> | null | undefined,
+) => {
+	const nextValue = value.trim();
+
+	if (!recipe) {
+		return nextValue;
 	}
 
-	return {
-		start: triggerStart,
-		end: cursorPosition,
-		query: triggerText,
-	};
+	return nextValue
+		.replace(
+			new RegExp(`(^|\\s)@${escapeRegExp(recipe.name)}(?=\\s|$)`, "u"),
+			" ",
+		)
+		.replace(/\s+/g, " ")
+		.trim();
+};
+
+type ComposerKeyboardEvent = Pick<
+	KeyboardEvent,
+	"key" | "shiftKey" | "preventDefault" | "isComposing"
+> & {
+	nativeEvent?: Pick<KeyboardEvent, "isComposing">;
 };
 
 const createDraftChatId = (): string => crypto.randomUUID();
@@ -450,7 +471,7 @@ const useNoteComposerController = ({
 	useRevokeAttachmentObjectUrls(attachedFiles);
 	const rootRef = React.useRef<HTMLDivElement>(null);
 	const inlinePanelRef = React.useRef<HTMLDivElement>(null);
-	const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+	const composerEditorRef = React.useRef<HTMLDivElement>(null);
 	const reservedCommentsPanelWidth = React.useMemo(
 		() => parseCssLengthToPixels(rightInsetPanelWidth ?? undefined),
 		[rightInsetPanelWidth],
@@ -535,7 +556,7 @@ const useNoteComposerController = ({
 	});
 	const currentChatSession = useQuery(
 		api.chats.getSession,
-		activeWorkspaceId
+		activeWorkspaceId && hasStoredCurrentChat
 			? {
 					workspaceId: activeWorkspaceId,
 					chatId: currentChatId,
@@ -770,23 +791,8 @@ const useNoteComposerController = ({
 		setMessages,
 	]);
 
-	const resetTextareaHeight = React.useCallback(() => {
-		if (!textareaRef.current) {
-			return;
-		}
-
-		textareaRef.current.style.height = "auto";
-	}, []);
-
-	const resizeTextarea = React.useCallback(() => {
-		if (!textareaRef.current) {
-			return;
-		}
-
-		textareaRef.current.style.cssText += "height: auto;";
-		const nextHeight = textareaRef.current.scrollHeight;
-		textareaRef.current.style.height = `${nextHeight}px`;
-	}, []);
+	const resetTextareaHeight = React.useCallback(() => {}, []);
+	const resizeTextarea = React.useCallback(() => {}, []);
 
 	const getInlinePanelMaxHeight = React.useCallback(() => {
 		if (typeof window === "undefined") {
@@ -1075,10 +1081,10 @@ const useNoteComposerController = ({
 		latestNoteChat || selectedNoteChat || currentChatSession,
 	);
 	const composerPlaceholder = isNoteChatsLoading
-		? "Continue chat"
+		? "Ask for follow-up"
 		: hasKnownNoteChat
-			? "Continue chat"
-			: "Ask anything";
+			? "Ask for follow-up"
+			: "Ask anything. @ to mention recipes";
 	const recipes = React.useMemo(
 		() =>
 			(recipeData ?? []).map((recipe) => ({
@@ -1232,13 +1238,9 @@ const useNoteComposerController = ({
 		}
 
 		const focusTextarea = () => {
-			if (!textareaRef.current) {
-				return;
-			}
-
-			textareaRef.current.focus({ preventScroll: true });
-			const cursorPosition = textareaRef.current.value.length;
-			textareaRef.current.setSelectionRange(cursorPosition, cursorPosition);
+			composerEditorRef.current
+				?.querySelector<HTMLElement>(".ProseMirror")
+				?.focus({ preventScroll: true });
 		};
 
 		const immediateTimeoutId = window.setTimeout(focusTextarea, 0);
@@ -1324,7 +1326,10 @@ const useNoteComposerController = ({
 	]);
 
 	const handleSend = React.useCallback(async () => {
-		const nextMessage = message.trim();
+		const nextMessage = getMessageTextWithoutRecipeMention(
+			message,
+			selectedRecipe,
+		);
 
 		if (
 			(!nextMessage && !selectedRecipe && attachedFiles.length === 0) ||
@@ -1412,42 +1417,16 @@ const useNoteComposerController = ({
 		await handleSend();
 	};
 
-	const handleTextareaChange = (
-		event: React.ChangeEvent<HTMLTextAreaElement>,
-	) => {
-		const nextValue = event.target.value;
+	const handleComposerValueChange = (nextValue: string) => {
 		setMessage(nextValue);
-		resizeTextarea();
 		setIsExpanded(nextValue.length > 100 || nextValue.includes("\n"));
 	};
 
-	const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-		if (event.key === "@" || (event.shiftKey && event.code === "Digit2")) {
-			if (event.metaKey || event.ctrlKey || event.altKey) {
-				return;
-			}
-
-			const selectionStart = event.currentTarget.selectionStart;
-			const selectionEnd = event.currentTarget.selectionEnd;
-			const nextValue = `${event.currentTarget.value.slice(0, selectionStart)}@${event.currentTarget.value.slice(selectionEnd)}`;
-			const triggerRange = findRecipeTriggerRange(
-				nextValue,
-				selectionStart + 1,
-			);
-
-			if (!triggerRange) {
-				return;
-			}
-
-			event.preventDefault();
-			setRecipePopoverOpen(true);
-			return;
-		}
-
+	const handleComposerKeyDown = (event: ComposerKeyboardEvent) => {
 		if (
 			event.key !== "Enter" ||
 			event.shiftKey ||
-			event.nativeEvent.isComposing
+			(event.nativeEvent?.isComposing ?? event.isComposing)
 		) {
 			return;
 		}
@@ -1458,14 +1437,9 @@ const useNoteComposerController = ({
 
 	const focusComposerInput = React.useCallback(() => {
 		window.setTimeout(() => {
-			const element = textareaRef.current;
-			if (!element) {
-				return;
-			}
-
-			element.focus({ preventScroll: true });
-			const cursorPosition = element.value.length;
-			element.setSelectionRange(cursorPosition, cursorPosition);
+			composerEditorRef.current
+				?.querySelector<HTMLElement>(".ProseMirror")
+				?.focus({ preventScroll: true });
 		}, 0);
 	}, []);
 
@@ -1703,7 +1677,9 @@ const useNoteComposerController = ({
 		handleEditMessage,
 		handleGenerateNotes: transcriptSession.handleGenerateNotes,
 		handleHideChat,
-		handleKeyDown,
+		composerEditorRef,
+		handleComposerKeyDown,
+		handleComposerValueChange,
 		getFloatingPanelMaxHeight,
 		getInlinePanelMaxHeight,
 		handleFloatingPanelResizeKeyDown: handleFloatingPanelResizeKeyDownInternal,
@@ -1715,7 +1691,6 @@ const useNoteComposerController = ({
 		handleSidebarResizeKeyDown,
 		handleSidebarResizeStart,
 		handleSubmit,
-		handleTextareaChange,
 		hasMessage,
 		canSendMessage,
 		attachedFiles,
@@ -1768,7 +1743,6 @@ const useNoteComposerController = ({
 		selectedModel,
 		stop,
 		shouldShowInlinePanel,
-		textareaRef,
 		toggleTranscriptPanel,
 		handleTranscriptionLanguageChange,
 		isSavingTranscriptionLanguage,
@@ -2150,7 +2124,7 @@ function NoteAddToNoteButton({
 	);
 }
 
-export function NoteChatHeader({
+function NoteChatHeader({
 	chatTitle,
 	currentChatId,
 	groupedNoteChats,
@@ -2369,22 +2343,20 @@ export function NoteChatHeader({
 					</DropdownMenuContent>
 				</DropdownMenu>
 
-				{presentationMode !== "inline" ? (
-					<Tooltip>
-						<TooltipTrigger asChild>
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon-sm"
-								onClick={onHideChat}
-								aria-label="Hide chat"
-							>
-								<Minus className="size-4" />
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent align="end">Hide chat</TooltipContent>
-					</Tooltip>
-				) : null}
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-sm"
+							onClick={onHideChat}
+							aria-label="Hide chat"
+						>
+							<Minus className="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent align="end">Hide chat</TooltipContent>
+				</Tooltip>
 			</div>
 		</CardHeader>
 	);
@@ -2452,35 +2424,35 @@ function useInlineFooterHeight() {
 	};
 }
 
+// oxlint-disable-next-line react-doctor/no-giant-component -- Tiptap note-chat composer keeps recipe suggestion lifecycle and submit controls together.
 function ChatInlinePopoverFooter({
+	composerEditorRef,
 	composerPlaceholder,
 	handleComposerFocus,
 	handleComposerPointerDown,
-	handleKeyDown,
-	handleTextareaChange,
+	handleComposerKeyDown,
+	handleComposerValueChange,
 	onStop,
 	status,
 	message,
 	attachedFiles,
 	onAttachedFilesChange,
 	onRecipePopoverOpenChange,
-	onRecipeRemove,
 	onRecipeSelect,
 	onModelPopoverOpenChange,
 	onSelectedModelChange,
 	recipePopoverOpen,
 	recipes,
-	selectedRecipe,
 	modelPopoverOpen,
 	selectedModel,
 	speechControls,
-	textareaRef,
 }: {
+	composerEditorRef: React.RefObject<HTMLDivElement | null>;
 	composerPlaceholder: string;
 	handleComposerFocus: () => void;
 	handleComposerPointerDown: () => void;
-	handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-	handleTextareaChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+	handleComposerKeyDown: (event: ComposerKeyboardEvent) => void;
+	handleComposerValueChange: (nextValue: string) => void;
 	onStop: () => void;
 	status: {
 		activateInlineOnFocus: boolean;
@@ -2494,17 +2466,14 @@ function ChatInlinePopoverFooter({
 	attachedFiles: ChatAttachment[];
 	onAttachedFilesChange: React.Dispatch<React.SetStateAction<ChatAttachment[]>>;
 	onRecipePopoverOpenChange: (open: boolean) => void;
-	onRecipeRemove: () => void;
-	onRecipeSelect: (recipeSlug: RecipeSlug) => void;
+	onRecipeSelect: (recipeSlug: RecipeSlug | null) => void;
 	onModelPopoverOpenChange: (open: boolean) => void;
 	onSelectedModelChange: (model: ChatModel) => void;
 	recipePopoverOpen: boolean;
 	recipes: RecipePrompt[];
-	selectedRecipe: RecipePrompt | null;
 	modelPopoverOpen: boolean;
 	selectedModel: ChatModel;
 	speechControls: React.ReactNode;
-	textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
 	const {
 		activateInlineOnFocus,
@@ -2515,7 +2484,268 @@ function ChatInlinePopoverFooter({
 		showModelPicker,
 	} = status;
 	const shouldShowRecipeControls = !activateInlineOnFocus;
-	const shouldShowSelectedRecipe = shouldShowRecipeControls && selectedRecipe;
+	const activeMentionRangeRef = React.useRef<Range | null>(null);
+	const filteredRecipesRef = React.useRef<RecipePrompt[]>(recipes);
+	const handleRecipeSelectRef = React.useRef<(recipeSlug: RecipeSlug) => void>(
+		() => {},
+	);
+	const recipePopoverOpenRef = React.useRef(recipePopoverOpen);
+	const selectedRecipeIndexRef = React.useRef(0);
+	const [activeMentionQuery, setActiveMentionQuery] = React.useState("");
+	const [recipePickerPosition, setRecipePickerPosition] =
+		React.useState<MentionPickerPosition | null>(null);
+	const [selectedRecipeIndex, setSelectedRecipeIndex] = React.useState(0);
+	const composerPlaceholderRef = React.useRef(composerPlaceholder);
+	const previousComposerPlaceholderRef = React.useRef(composerPlaceholder);
+	composerPlaceholderRef.current = composerPlaceholder;
+	const filteredRecipes = React.useMemo(() => {
+		const normalizedQuery = activeMentionQuery.trim().toLowerCase();
+
+		if (!normalizedQuery) {
+			return recipes;
+		}
+
+		return recipes.filter((recipe) =>
+			`${recipe.name} ${recipe.slug}`.toLowerCase().includes(normalizedQuery),
+		);
+	}, [activeMentionQuery, recipes]);
+	filteredRecipesRef.current = filteredRecipes;
+	recipePopoverOpenRef.current = recipePopoverOpen;
+	selectedRecipeIndexRef.current = selectedRecipeIndex;
+
+	const selectRecipeIndex = React.useCallback((index: number) => {
+		selectedRecipeIndexRef.current = index;
+		setSelectedRecipeIndex(index);
+	}, []);
+	const closeRecipePicker = React.useCallback(() => {
+		activeMentionRangeRef.current = null;
+		recipePopoverOpenRef.current = false;
+		setActiveMentionQuery("");
+		setRecipePickerPosition(null);
+		selectRecipeIndex(0);
+		onRecipePopoverOpenChange(false);
+	}, [onRecipePopoverOpenChange, selectRecipeIndex]);
+	const composerEditor = useEditor({
+		extensions: [
+			Document,
+			Paragraph,
+			Text,
+			TypedMention.configure({
+				HTMLAttributes: {
+					class: INLINE_MENTION_CLASS,
+				},
+				renderText({ node }) {
+					return `@${node.attrs.label ?? node.attrs.id}`;
+				},
+				renderHTML({ node }) {
+					return [
+						"span",
+						{
+							"data-type": "mention",
+							class: INLINE_MENTION_CLASS,
+						},
+						"@",
+						[
+							"span",
+							{
+								class: INLINE_MENTION_LABEL_CLASS,
+							},
+							node.attrs.label ?? node.attrs.id,
+						],
+					];
+				},
+				suggestion: {
+					char: "@",
+					allowedPrefixes: [" ", "\n"],
+					command: ({ editor, range, props }) => {
+						editor
+							.chain()
+							.focus()
+							.insertContentAt(range, [
+								{
+									type: "mention",
+									attrs: {
+										id: props.id,
+										label: props.label,
+									},
+								},
+								{ type: "text", text: " " },
+							])
+							.run();
+					},
+					items: ({ query }) => {
+						const normalizedQuery = query.trim().toLowerCase();
+						return recipes
+							.filter((recipe) =>
+								`${recipe.name} ${recipe.slug}`
+									.toLowerCase()
+									.includes(normalizedQuery),
+							)
+							.slice(0, 8)
+							.map((recipe) => ({
+								id: recipe.slug,
+								label: recipe.name,
+							}));
+					},
+					render: () => {
+						const updatePicker = ({
+							editor,
+							range,
+							query,
+						}: {
+							editor: Editor;
+							range: Range;
+							query: string;
+						}) => {
+							const rect = getMentionAnchorRect(editor, range);
+							const normalizedQuery = query.trim().toLowerCase();
+							const nextRecipes = normalizedQuery
+								? recipes.filter((recipe) =>
+										`${recipe.name} ${recipe.slug}`
+											.toLowerCase()
+											.includes(normalizedQuery),
+									)
+								: recipes;
+							activeMentionRangeRef.current = range;
+							filteredRecipesRef.current = nextRecipes;
+							setActiveMentionQuery(query);
+							selectRecipeIndex(0);
+							setRecipePickerPosition(
+								getMentionPickerPosition({
+									rect,
+									itemCount: nextRecipes.length,
+								}),
+							);
+							recipePopoverOpenRef.current = true;
+							onRecipePopoverOpenChange(true);
+						};
+
+						return {
+							onStart: updatePicker,
+							onUpdate: updatePicker,
+							onKeyDown: ({ event }) =>
+								handleRecipePickerKeyDown({
+									event,
+									filteredRecipesRef,
+									handleRecipeSelect: (recipeSlug) =>
+										handleRecipeSelectRef.current(recipeSlug),
+									selectRecipeIndex,
+									selectedRecipeIndexRef,
+								}),
+							onExit: closeRecipePicker,
+						};
+					},
+				},
+			}),
+			Placeholder.configure({
+				placeholder: () => composerPlaceholderRef.current,
+			}),
+		],
+		content: "",
+		immediatelyRender: false,
+		shouldRerenderOnTransaction: false,
+		editorProps: {
+			attributes: {
+				class:
+					"chat-composer-tiptap min-h-[44px] max-h-[24rem] w-full flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent pt-3 pr-3 pb-0 pl-3.5 text-left text-[14px] leading-[1.6] font-normal shadow-none ring-0 outline-none focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent",
+			},
+			handleDOMEvents: {
+				focus: () => {
+					if (activateInlineOnFocus) {
+						handleComposerFocus();
+					}
+					return false;
+				},
+				pointerdown: () => {
+					if (activateInlineOnFocus) {
+						handleComposerPointerDown();
+					}
+					return false;
+				},
+			},
+			handleKeyDown: (_view, event) => {
+				if (recipePopoverOpenRef.current) {
+					return handleRecipePickerKeyDown({
+						event,
+						filteredRecipesRef,
+						handleRecipeSelect: (recipeSlug) =>
+							handleRecipeSelectRef.current(recipeSlug),
+						selectRecipeIndex,
+						selectedRecipeIndexRef,
+					});
+				}
+
+				handleComposerKeyDown(event);
+				return event.defaultPrevented;
+			},
+		},
+		onUpdate: ({ editor }) => {
+			const nextValue = editor.getText({ blockSeparator: "\n" });
+			handleComposerValueChange(nextValue);
+			onRecipeSelect(getRecipeSlugFromComposerContent(editor.getJSON()));
+		},
+	});
+	React.useEffect(() => {
+		if (!composerEditor) {
+			return;
+		}
+
+		if (previousComposerPlaceholderRef.current === composerPlaceholder) {
+			return;
+		}
+
+		previousComposerPlaceholderRef.current = composerPlaceholder;
+		composerEditor.view.dispatch(
+			composerEditor.state.tr.setMeta("addToHistory", false),
+		);
+	}, [composerEditor, composerPlaceholder]);
+	React.useEffect(() => {
+		if (!composerEditor) {
+			return;
+		}
+
+		const currentText = composerEditor.getText({ blockSeparator: "\n" });
+		if (currentText === message) {
+			return;
+		}
+
+		if (composerEditor.isFocused && message.length > 0) {
+			return;
+		}
+
+		composerEditor.commands.setContent(message, { emitUpdate: false });
+	}, [composerEditor, message]);
+	const handleRecipeSelect = React.useCallback(
+		(recipeSlug: RecipeSlug) => {
+			const recipe = recipes.find((item) => item.slug === recipeSlug);
+			const activeMentionRange = activeMentionRangeRef.current;
+			if (!composerEditor || !recipe || !activeMentionRange) {
+				return;
+			}
+
+			composerEditor
+				.chain()
+				.focus()
+				.insertContentAt(activeMentionRange, [
+					{
+						type: "mention",
+						attrs: {
+							id: recipe.slug,
+							label: recipe.name,
+						},
+					},
+					{ type: "text", text: " " },
+				])
+				.run();
+			onRecipeSelect(recipe.slug);
+			closeRecipePicker();
+			requestAnimationFrame(() => {
+				composerEditor.commands.focus();
+			});
+		},
+		[closeRecipePicker, composerEditor, onRecipeSelect, recipes],
+	);
+	handleRecipeSelectRef.current = handleRecipeSelect;
 	const handleAttachmentUploadFailed = React.useCallback(
 		(id: string) => {
 			onAttachedFilesChange((files) => files.filter((file) => file.id !== id));
@@ -2551,177 +2781,260 @@ function ChatInlinePopoverFooter({
 		onFileUploaded: handleAttachmentUploaded,
 		onFilesAdded: handleAttachmentsAdded,
 	});
-	const recipePickerPlaceholder = (
-		<InputGroupButton
-			aria-hidden="true"
-			tabIndex={-1}
-			variant="ghost"
-			size="icon-sm"
-			className="pointer-events-none invisible rounded-full"
-		>
-			<AtSign className="size-3.5" />
-		</InputGroupButton>
-	);
-	const recipePicker = (
-		<Popover open={recipePopoverOpen} onOpenChange={onRecipePopoverOpenChange}>
-			<Tooltip>
-				<TooltipTrigger asChild>
-					<PopoverTrigger asChild>
-						<InputGroupButton
-							variant="ghost"
-							size="icon-sm"
-							className="rounded-full bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
-							disabled={isRecipeLoading}
-						>
-							<AtSign className="size-3.5" />
-						</InputGroupButton>
-					</PopoverTrigger>
-				</TooltipTrigger>
-				<TooltipContent>
-					{isRecipeLoading ? "Loading recipes" : "Choose a recipe"}
-				</TooltipContent>
-			</Tooltip>
-
-			<PopoverContent className="w-80 p-0" align="start">
-				<Command>
-					<CommandInput placeholder="Search recipes..." />
-					<CommandList>
-						<CommandEmpty>
-							{isRecipeLoading ? "Loading recipes..." : "No recipes found."}
-						</CommandEmpty>
-						{recipes.length > 0 ? (
-							<CommandGroup heading="Recipes">
-								{recipes.map((recipe) => {
-									const Icon = getRecipeIcon(recipe.slug);
-
-									return (
-										<CommandItem
-											key={recipe.slug}
-											value={`${recipe.slug} ${recipe.name}`}
-											className="cursor-pointer"
-											onSelect={() => onRecipeSelect(recipe.slug)}
-										>
-											<Icon />
-											<span className="cursor-pointer truncate">
-												{recipe.name}
-											</span>
-										</CommandItem>
-									);
-								})}
-							</CommandGroup>
-						) : null}
-					</CommandList>
-				</Command>
-			</PopoverContent>
-		</Popover>
-	);
-
 	return (
-		<InputGroup
-			data-drag-over={attachmentDropzone.isDragOver ? "true" : undefined}
-			className={NOTE_COMPOSER_FOOTER_SURFACE_CLASS}
-			{...attachmentDropzone.dropzoneProps}
-		>
-			<InputGroupAddon
-				align="block-start"
-				className={cn(
-					NOTE_COMPOSER_FOOTER_TOP_ROW_CLASS,
-					isSidebarCompact && "px-3.5",
-				)}
+		<>
+			<InputGroup
+				data-drag-over={attachmentDropzone.isDragOver ? "true" : undefined}
+				className={NOTE_COMPOSER_FOOTER_SURFACE_CLASS}
+				{...attachmentDropzone.dropzoneProps}
 			>
-				{shouldShowRecipeControls ? recipePicker : recipePickerPlaceholder}
-				{shouldShowSelectedRecipe ? (
-					<InputGroupButton
-						size="sm"
-						variant="secondary"
-						className="group/recipe-chip rounded-full pl-2!"
-						onClick={onRecipeRemove}
+				{shouldShowRecipeControls && attachedFiles.length > 0 ? (
+					<InputGroupAddon
+						align="block-start"
+						className={cn(
+							NOTE_COMPOSER_FOOTER_TOP_ROW_CLASS,
+							isSidebarCompact && "px-3.5",
+						)}
 					>
-						{(() => {
-							const Icon = getRecipeIcon(selectedRecipe.slug);
-							return <Icon />;
-						})()}
-						{selectedRecipe.name}
-						<X className="opacity-0 transition-opacity group-hover/recipe-chip:opacity-100 group-focus-visible/recipe-chip:opacity-100" />
-					</InputGroupButton>
-				) : null}
-				{shouldShowRecipeControls ? (
-					<FileAttachmentChips
-						files={attachedFiles}
-						onRemove={(index) =>
-							onAttachedFilesChange(
-								attachedFiles.filter((_, fileIndex) => fileIndex !== index),
-							)
-						}
-					/>
-				) : null}
-			</InputGroupAddon>
-			<InputGroupTextarea
-				data-slot="input-group-control"
-				ref={textareaRef}
-				value={message}
-				onChange={handleTextareaChange}
-				onPointerDown={
-					activateInlineOnFocus ? handleComposerPointerDown : undefined
-				}
-				onFocus={activateInlineOnFocus ? handleComposerFocus : undefined}
-				onKeyDown={handleKeyDown}
-				placeholder={composerPlaceholder}
-				className={cn(
-					NOTE_COMPOSER_FOOTER_BODY_CLASS,
-					isSidebarCompact ? "px-3.5" : "px-4",
-				)}
-				rows={1}
-			/>
-			<InputGroupAddon
-				align="block-end"
-				className={cn(
-					NOTE_COMPOSER_FOOTER_BOTTOM_ROW_CLASS,
-					isSidebarCompact ? "pl-3.5 pr-2.5" : "px-4",
-				)}
-			>
-				{shouldShowRecipeControls ? (
-					<FileAttachmentButton
-						disabled={isChatLoading}
-						onFileUploadFailed={handleAttachmentUploadFailed}
-						onFileUploaded={handleAttachmentUploaded}
-						onFilesAdded={handleAttachmentsAdded}
-					/>
-				) : null}
-				{speechControls}
-				{showModelPicker ? (
-					<div className="ml-auto flex min-w-0 items-center gap-1">
-						<ChatModelPicker
-							open={modelPopoverOpen}
-							onOpenChange={onModelPopoverOpenChange}
-							selectedModel={selectedModel}
-							onSelectedModelChange={onSelectedModelChange}
-							triggerClassName="text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
-							triggerIconClassName="text-current"
-							modelNameClassName="max-w-[120px] truncate"
+						<FileAttachmentChips
+							files={attachedFiles}
+							onRemove={(index) =>
+								onAttachedFilesChange(
+									attachedFiles.filter((_, fileIndex) => fileIndex !== index),
+								)
+							}
 						/>
+					</InputGroupAddon>
+				) : null}
+
+				<div
+					data-slot="input-group-control"
+					ref={composerEditorRef}
+					className={cn(
+						NOTE_COMPOSER_FOOTER_BODY_CLASS,
+						"chat-composer-editor flex w-full flex-1 cursor-text",
+						isSidebarCompact && "[&_.chat-composer-tiptap]:px-3.5",
+					)}
+				>
+					{composerEditor ? (
+						<Tiptap editor={composerEditor}>
+							<Tiptap.Content />
+						</Tiptap>
+					) : null}
+				</div>
+				<InputGroupAddon
+					align="block-end"
+					className={cn(
+						NOTE_COMPOSER_FOOTER_BOTTOM_ROW_CLASS,
+						isSidebarCompact ? "pl-3.5 pr-2.5" : "px-2",
+					)}
+				>
+					{shouldShowRecipeControls ? (
+						<FileAttachmentButton
+							disabled={isChatLoading}
+							onFileUploadFailed={handleAttachmentUploadFailed}
+							onFileUploaded={handleAttachmentUploaded}
+							onFilesAdded={handleAttachmentsAdded}
+						/>
+					) : null}
+					{speechControls}
+					{showModelPicker ? (
+						<div className="ml-auto flex min-w-0 items-center gap-1">
+							<ChatModelPicker
+								open={modelPopoverOpen}
+								onOpenChange={onModelPopoverOpenChange}
+								selectedModel={selectedModel}
+								onSelectedModelChange={onSelectedModelChange}
+								triggerClassName="text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
+								triggerIconClassName="text-current"
+								modelNameClassName="max-w-[120px] truncate"
+							/>
+						</div>
+					) : null}
+					<InputGroupButton
+						type={isChatLoading ? "button" : "submit"}
+						variant="default"
+						size="icon-sm"
+						className={cn("rounded-full", !showModelPicker && "ml-auto")}
+						aria-label={isChatLoading ? "Stop streaming" : "Send message"}
+						disabled={
+							!isChatLoading &&
+							(!canSendMessage || hasUploadingAttachments(attachedFiles))
+						}
+						onClick={isChatLoading ? onStop : undefined}
+					>
+						{isChatLoading ? (
+							<Square className="size-3.5 fill-current" />
+						) : (
+							<ArrowUp className="size-4" />
+						)}
+					</InputGroupButton>
+				</InputGroupAddon>
+			</InputGroup>
+			<NoteRecipeMentionPicker
+				open={recipePopoverOpen}
+				position={recipePickerPosition}
+				recipes={filteredRecipes}
+				selectedIndex={selectedRecipeIndex}
+				onSelectedIndexChange={selectRecipeIndex}
+				isRecipeLoading={isRecipeLoading}
+				emptyStateMessage={
+					activeMentionQuery.trim().length > 0
+						? "No recipes found."
+						: "Type to search for recipes"
+				}
+				onSelectRecipe={handleRecipeSelect}
+			/>
+		</>
+	);
+}
+
+function handleRecipePickerKeyDown({
+	event,
+	filteredRecipesRef,
+	handleRecipeSelect,
+	selectRecipeIndex,
+	selectedRecipeIndexRef,
+}: {
+	event: KeyboardEvent;
+	filteredRecipesRef: React.RefObject<RecipePrompt[]>;
+	handleRecipeSelect: (recipeSlug: RecipeSlug) => void;
+	selectRecipeIndex: (index: number) => void;
+	selectedRecipeIndexRef: React.RefObject<number>;
+}) {
+	if (
+		event.key !== "ArrowDown" &&
+		event.key !== "ArrowUp" &&
+		event.key !== "Enter"
+	) {
+		return false;
+	}
+
+	const recipes = filteredRecipesRef.current;
+
+	if (event.key === "ArrowDown") {
+		event.preventDefault();
+		selectRecipeIndex(
+			recipes.length === 0
+				? 0
+				: (selectedRecipeIndexRef.current + 1) % recipes.length,
+		);
+		return true;
+	}
+
+	if (event.key === "ArrowUp") {
+		event.preventDefault();
+		selectRecipeIndex(
+			recipes.length === 0
+				? 0
+				: (selectedRecipeIndexRef.current - 1 + recipes.length) %
+						recipes.length,
+		);
+		return true;
+	}
+
+	const selectedRecipe = recipes[selectedRecipeIndexRef.current] ?? recipes[0];
+	if (!selectedRecipe) {
+		return false;
+	}
+
+	event.preventDefault();
+	handleRecipeSelect(selectedRecipe.slug);
+	return true;
+}
+
+function NoteRecipeMentionPicker({
+	open,
+	position,
+	recipes,
+	selectedIndex,
+	onSelectedIndexChange,
+	isRecipeLoading,
+	emptyStateMessage,
+	onSelectRecipe,
+}: {
+	open: boolean;
+	position: MentionPickerPosition | null;
+	recipes: RecipePrompt[];
+	selectedIndex: number;
+	onSelectedIndexChange: (index: number) => void;
+	isRecipeLoading: boolean;
+	emptyStateMessage: string;
+	onSelectRecipe: (recipeSlug: RecipeSlug) => void;
+}) {
+	if (!open || !position) {
+		return null;
+	}
+
+	return createPortal(
+		<div
+			role="listbox"
+			aria-label="Recipe suggestions"
+			className="fixed z-[70] flex w-72 flex-col rounded-lg bg-popover p-0 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 pointer-events-auto"
+			style={{
+				top: position.top,
+				left: position.left,
+			}}
+			onPointerDown={(event) => {
+				event.preventDefault();
+				event.stopPropagation();
+			}}
+		>
+			<div className="max-h-72 overflow-y-auto p-1">
+				{isRecipeLoading ? (
+					<div className="py-6 text-center text-sm text-muted-foreground">
+						Loading recipes…
 					</div>
 				) : null}
-				<InputGroupButton
-					type={isChatLoading ? "button" : "submit"}
-					variant="default"
-					size="icon-sm"
-					className={cn("rounded-full", !showModelPicker && "ml-auto")}
-					aria-label={isChatLoading ? "Stop streaming" : "Send message"}
-					disabled={
-						!isChatLoading &&
-						(!canSendMessage || hasUploadingAttachments(attachedFiles))
-					}
-					onClick={isChatLoading ? onStop : undefined}
-				>
-					{isChatLoading ? (
-						<Square className="size-3.5 fill-current" />
-					) : (
-						<ArrowUp className="size-4" />
-					)}
-				</InputGroupButton>
-			</InputGroupAddon>
-		</InputGroup>
+				{!isRecipeLoading && recipes.length === 0 ? (
+					<div className="py-6 text-center text-sm text-muted-foreground">
+						{emptyStateMessage}
+					</div>
+				) : null}
+				{recipes.length > 0 ? (
+					<div>
+						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+							Recipes
+						</div>
+						<div className="space-y-0.5">
+							{recipes.map((recipe, index) => {
+								const Icon = getRecipeIcon(recipe.slug);
+								const selected = index === selectedIndex;
+								return (
+									<button
+										key={recipe.slug}
+										type="button"
+										onMouseEnter={() => onSelectedIndexChange(index)}
+										onPointerDown={(event) => {
+											event.preventDefault();
+											event.stopPropagation();
+											onSelectRecipe(recipe.slug);
+										}}
+										className={cn(
+											"flex h-9 w-full cursor-pointer items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-left",
+											selected
+												? "bg-accent text-accent-foreground"
+												: "text-popover-foreground",
+										)}
+									>
+										<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+											<Icon className="size-4" />
+										</div>
+										<div
+											className="min-w-0 flex-1 truncate"
+											title={recipe.name}
+										>
+											{recipe.name}
+										</div>
+									</button>
+								);
+							})}
+						</div>
+					</div>
+				) : null}
+			</div>
+		</div>,
+		document.body,
 	);
 }
 
@@ -2812,7 +3125,7 @@ export const NoteComposer = React.memo(function NoteComposer(
 						) : (
 							<WandSparkles className="size-4" />
 						)}
-						{controller.isGeneratingNotes ? "Generating..." : "Generate notes"}
+						{controller.isGeneratingNotes ? "Generating…" : "Generate notes"}
 					</Button>
 				</div>
 			) : null}
@@ -2884,11 +3197,12 @@ function ChatComposerForm({
 				</div>
 			) : null}
 			<ChatInlinePopoverFooter
+				composerEditorRef={controller.composerEditorRef}
 				composerPlaceholder={controller.composerPlaceholder}
 				handleComposerFocus={controller.handleComposerFocus}
 				handleComposerPointerDown={controller.handleComposerPointerDown}
-				handleKeyDown={controller.handleKeyDown}
-				handleTextareaChange={controller.handleTextareaChange}
+				handleComposerKeyDown={controller.handleComposerKeyDown}
+				handleComposerValueChange={controller.handleComposerValueChange}
 				onStop={controller.stop}
 				status={{
 					activateInlineOnFocus,
@@ -2902,20 +3216,16 @@ function ChatComposerForm({
 				attachedFiles={controller.attachedFiles}
 				onAttachedFilesChange={controller.setAttachedFiles}
 				onRecipePopoverOpenChange={controller.setRecipePopoverOpen}
-				onRecipeRemove={() => controller.setSelectedRecipeSlug(null)}
 				onRecipeSelect={(recipeSlug) => {
 					controller.setSelectedRecipeSlug(recipeSlug);
-					controller.setRecipePopoverOpen(false);
 				}}
 				onModelPopoverOpenChange={controller.setModelPopoverOpen}
 				onSelectedModelChange={controller.setSelectedModel}
 				recipePopoverOpen={controller.recipePopoverOpen}
 				recipes={controller.recipes}
-				selectedRecipe={controller.selectedRecipe}
 				modelPopoverOpen={controller.modelPopoverOpen}
 				selectedModel={controller.selectedModel}
 				speechControls={speechControls}
-				textareaRef={controller.textareaRef}
 			/>
 		</form>
 	);

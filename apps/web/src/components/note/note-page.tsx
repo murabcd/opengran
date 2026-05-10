@@ -122,6 +122,9 @@ type Highlight = object;
 const NOTE_SEARCH_MATCH_HIGHLIGHT = "note-search-match";
 const NOTE_SEARCH_ACTIVE_MATCH_HIGHLIGHT = "note-search-active-match";
 
+const escapeRegExp = (value: string) =>
+	value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const createTextMatchRanges = ({
 	element,
 	query,
@@ -138,23 +141,23 @@ const createTextMatchRanges = ({
 
 	const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
 	let currentNode = walker.nextNode();
+	const matcher = new RegExp(escapeRegExp(normalizedQuery), "gu");
 
 	while (currentNode) {
 		const textNode = currentNode as Text;
 		const normalizedText = textNode.data.toLocaleLowerCase();
-		let searchIndex = normalizedText.indexOf(normalizedQuery);
+		let match = matcher.exec(normalizedText);
 
-		while (searchIndex !== -1) {
+		while (match) {
+			const searchIndex = match.index;
 			const range = document.createRange();
 			range.setStart(textNode, searchIndex);
 			range.setEnd(textNode, searchIndex + normalizedQuery.length);
 			ranges.push(range);
-			searchIndex = normalizedText.indexOf(
-				normalizedQuery,
-				searchIndex + normalizedQuery.length,
-			);
+			match = matcher.exec(normalizedText);
 		}
 
+		matcher.lastIndex = 0;
 		currentNode = walker.nextNode();
 	}
 
@@ -1840,6 +1843,7 @@ function NoteSearchBar({
 	);
 }
 
+// oxlint-disable-next-line react-doctor/no-giant-component -- Page-level orchestrator coordinates editor, comments, search, and transcription.
 export function NotePage({
 	autoStartTranscription = false,
 	currentUser = {

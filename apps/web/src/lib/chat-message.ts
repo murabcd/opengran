@@ -7,6 +7,13 @@ export type ChatMessageMetadata = {
 		name: string;
 	};
 	recipeOnly?: boolean;
+	mentionPositions?: Array<{
+		id: string;
+		label: string;
+		from: number;
+		to: number;
+		type?: "note" | "tool";
+	}>;
 };
 
 const extractTextParts = (message: UIMessage) =>

@@ -60,6 +60,7 @@ export function ChatMessageListContent({
 	includeSources = true,
 	renderAssistantActions,
 	renderUserActions,
+	onOpenMention,
 }: {
 	messages: UIMessage[];
 	error?: Error;
@@ -78,6 +79,7 @@ export function ChatMessageListContent({
 		context: ChatMessageActionContext,
 	) => React.ReactNode;
 	renderUserActions?: (context: ChatMessageActionContext) => React.ReactNode;
+	onOpenMention?: (noteId: string) => void;
 }) {
 	const displayMessages = React.useMemo(() => {
 		const lastMessage = messages[messages.length - 1];
@@ -133,6 +135,7 @@ export function ChatMessageListContent({
 								messageStackClassName={messageStackClassName}
 								renderAssistantActions={renderAssistantActions}
 								renderUserActions={renderUserActions}
+								onOpenMention={onOpenMention}
 								streamdownClassName={streamdownClassName}
 								textContainerClassName={textContainerClassName}
 							/>
@@ -162,6 +165,7 @@ function ChatMessageListItem({
 	messageStackClassName,
 	renderAssistantActions,
 	renderUserActions,
+	onOpenMention,
 	streamdownClassName,
 	textContainerClassName,
 }: {
@@ -174,6 +178,7 @@ function ChatMessageListItem({
 		context: ChatMessageActionContext,
 	) => React.ReactNode;
 	renderUserActions?: (context: ChatMessageActionContext) => React.ReactNode;
+	onOpenMention?: (noteId: string) => void;
 	streamdownClassName?:
 		| string
 		| ((role: UIMessage["role"]) => string | undefined);
@@ -227,17 +232,14 @@ function ChatMessageListItem({
 					messageStackClassName,
 				)}
 			>
-				{selectedRecipe ? (
-					<ChatRecipeReceipt
-						isUserMessage={message.role === "user"}
-						recipe={selectedRecipe}
-					/>
-				) : null}
+				{selectedRecipe ? <ChatRecipeReceipt recipe={selectedRecipe} /> : null}
 				<ChatMessageFileAttachments files={fileParts} />
 				<ChatMessageText
 					displayText={displayText}
 					isEmpty={isEmpty}
 					isStreamingAssistantMessage={Boolean(isStreamingAssistantMessage)}
+					mentionPositions={metadata?.mentionPositions}
+					onOpenMention={onOpenMention}
 					role={message.role}
 					streamdownClassName={streamdownClassName}
 					textContainerClassName={textContainerClassName}
@@ -260,6 +262,8 @@ function ChatMessageText({
 	displayText,
 	isEmpty,
 	isStreamingAssistantMessage,
+	mentionPositions,
+	onOpenMention,
 	role,
 	streamdownClassName,
 	textContainerClassName,
@@ -267,6 +271,14 @@ function ChatMessageText({
 	displayText: string;
 	isEmpty: boolean;
 	isStreamingAssistantMessage: boolean;
+	mentionPositions?: Array<{
+		id: string;
+		label: string;
+		from: number;
+		to: number;
+		type?: "note" | "tool";
+	}>;
+	onOpenMention?: (noteId: string) => void;
 	role: UIMessage["role"];
 	streamdownClassName?:
 		| string
@@ -295,6 +307,12 @@ function ChatMessageText({
 					<div className="text-sm text-muted-foreground">
 						<ShimmerText>Thinking</ShimmerText>
 					</div>
+				) : role === "user" && mentionPositions?.length ? (
+					<UserMessageWithMentions
+						text={displayText}
+						mentionPositions={mentionPositions}
+						onOpenMention={onOpenMention}
+					/>
 				) : (
 					<CollapsibleMessageContent
 						role={role}
@@ -307,6 +325,76 @@ function ChatMessageText({
 			</div>
 		</div>
 	);
+}
+
+function UserMessageWithMentions({
+	text,
+	mentionPositions,
+	onOpenMention,
+}: {
+	text: string;
+	mentionPositions: Array<{
+		id: string;
+		label: string;
+		from: number;
+		to: number;
+		type?: "note" | "tool";
+	}>;
+	onOpenMention?: (noteId: string) => void;
+}) {
+	const parts: React.ReactNode[] = [];
+	let cursor = 0;
+	const sortedMentions = [...mentionPositions]
+		.filter(
+			(mention) =>
+				Number.isInteger(mention.from) &&
+				Number.isInteger(mention.to) &&
+				mention.from >= 0 &&
+				mention.to > mention.from &&
+				mention.from <= text.length,
+		)
+		.sort((a, b) => a.from - b.from);
+
+	for (const mention of sortedMentions) {
+		if (mention.from < cursor) {
+			continue;
+		}
+
+		if (mention.from > cursor) {
+			parts.push(text.slice(cursor, mention.from));
+		}
+
+		const isToolMention =
+			mention.type === "tool" || mention.id.startsWith("app:");
+		parts.push(
+			<span
+				key={`${mention.id}:${mention.from}`}
+				className="inline cursor-pointer align-baseline whitespace-nowrap text-inherit"
+			>
+				@
+				{onOpenMention && !isToolMention ? (
+					<button
+						type="button"
+						className="inline cursor-pointer bg-transparent p-0 text-left align-baseline font-medium text-blue-400 decoration-blue-300/80 decoration-dotted underline-offset-4 hover:underline"
+						onClick={() => onOpenMention(mention.id)}
+					>
+						{mention.label}
+					</button>
+				) : (
+					<span className="cursor-pointer font-medium text-blue-400 decoration-blue-300/80 decoration-dotted underline-offset-4 hover:underline">
+						{mention.label}
+					</span>
+				)}
+			</span>,
+		);
+		cursor = Math.min(mention.to, text.length);
+	}
+
+	if (cursor < text.length) {
+		parts.push(text.slice(cursor));
+	}
+
+	return <div className="whitespace-pre-wrap break-words">{parts}</div>;
 }
 
 function MessageSources({

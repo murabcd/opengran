@@ -11,11 +11,17 @@ import * as React from "react";
 import { toast } from "sonner";
 import { CHAT_ACTIONS_VISIBILITY_CLASS } from "@/components/chat/message-layout";
 import { ChatMessageListContent } from "@/components/chat/message-list";
+import { getChatMessageMetadata } from "@/lib/chat-message";
+import type { ChatComposerMention } from "./chat-composer";
 
 type ChatMessagesActionProps = {
 	messageIdPendingDelete: string | null;
 	onDeleteClick: (messageId: string) => void;
-	onEditMessage?: (messageId: string, text: string) => void;
+	onEditMessage?: (
+		messageId: string,
+		text: string,
+		mentions: ChatComposerMention[],
+	) => void;
 	onDeleteMessage?: (messageId: string) => void;
 	onPlusAction?: (
 		content: string,
@@ -34,16 +40,22 @@ export function ChatMessages({
 	onDeleteMessage,
 	onPlusAction,
 	onRegenerateMessage,
+	onOpenMention,
 }: {
 	messages: UIMessage[];
 	error?: Error;
 	isLoading?: boolean;
-	onEditMessage?: (messageId: string, text: string) => void;
+	onEditMessage?: (
+		messageId: string,
+		text: string,
+		mentions: ChatComposerMention[],
+	) => void;
 	onDeleteMessage?: (messageId: string) => void;
 	onPlusAction?: (
 		content: string,
 	) => Promise<"created" | undefined> | "created" | undefined;
 	onRegenerateMessage?: (messageId: string) => void;
+	onOpenMention?: (noteId: string) => void;
 }) {
 	const [messageIdPendingDelete, setMessageIdPendingDelete] = React.useState<
 		string | null
@@ -85,6 +97,7 @@ export function ChatMessages({
 					isPendingDelete={messageIdPendingDelete === message.id}
 					messageId={message.id}
 					messageText={messageText}
+					mentions={getChatMessageMetadata(message)?.mentionPositions ?? []}
 					onDeleteClick={handleDeleteClick}
 					onDeleteMessage={onDeleteMessage}
 					onEditMessage={onEditMessage}
@@ -92,6 +105,7 @@ export function ChatMessages({
 					timestamp={timestamp}
 				/>
 			)}
+			onOpenMention={onOpenMention}
 		/>
 	);
 }
@@ -147,6 +161,7 @@ function UserMessageActions({
 	isPendingDelete,
 	messageId,
 	messageText,
+	mentions,
 	onDeleteClick,
 	onDeleteMessage,
 	onEditMessage,
@@ -156,9 +171,14 @@ function UserMessageActions({
 	isPendingDelete: boolean;
 	messageId: string;
 	messageText: string;
+	mentions: ChatComposerMention[];
 	onDeleteClick: (messageId: string) => void;
 	onDeleteMessage?: (messageId: string) => void;
-	onEditMessage?: (messageId: string, text: string) => void;
+	onEditMessage?: (
+		messageId: string,
+		text: string,
+		mentions: ChatComposerMention[],
+	) => void;
 	setMessageIdPendingDelete: React.Dispatch<
 		React.SetStateAction<string | null>
 	>;
@@ -186,7 +206,9 @@ function UserMessageActions({
 								size="icon-sm"
 								className="size-7 text-muted-foreground hover:text-foreground"
 								aria-label="Edit"
-								onClick={() => onEditMessage?.(messageId, messageText)}
+								onClick={() =>
+									onEditMessage?.(messageId, messageText, mentions)
+								}
 							>
 								<PenLine className="size-3.5" />
 							</Button>

@@ -1,14 +1,12 @@
 "use client";
 
+import type { Editor, JSONContent, Range } from "@tiptap/core";
+import Document from "@tiptap/extension-document";
+import Paragraph from "@tiptap/extension-paragraph";
+import Placeholder from "@tiptap/extension-placeholder";
+import Text from "@tiptap/extension-text";
+import { Tiptap, useEditor } from "@tiptap/react";
 import { Button } from "@workspace/ui/components/button";
-import {
-	Command,
-	CommandEmpty,
-	CommandGroup,
-	CommandInput,
-	CommandItem,
-	CommandList,
-} from "@workspace/ui/components/command";
 import {
 	Dialog,
 	DialogContent,
@@ -18,7 +16,6 @@ import {
 } from "@workspace/ui/components/dialog";
 import {
 	DropdownMenu,
-	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuItem,
@@ -32,7 +29,6 @@ import {
 	InputGroup,
 	InputGroupAddon,
 	InputGroupButton,
-	InputGroupTextarea,
 } from "@workspace/ui/components/input-group";
 import {
 	Popover,
@@ -56,17 +52,15 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import { useQuery } from "convex/react";
 import {
-	AtSign,
-	CirclePlus,
 	Clock,
 	FileText,
 	Globe,
 	LayoutGrid,
 	Plus,
 	Settings2,
-	X,
 } from "lucide-react";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import {
 	AUTOMATION_SCHEDULE_PERIODS,
 	type AutomationAppSource,
@@ -84,6 +78,14 @@ import {
 	getAppSourceLabel,
 } from "@/lib/chat-source-display";
 import { getNoteDisplayTitle } from "@/lib/note-title";
+import {
+	getMentionAnchorRect,
+	getMentionPickerPosition,
+	INLINE_MENTION_CLASS,
+	INLINE_MENTION_LABEL_CLASS,
+	type MentionPickerPosition,
+	TypedMention,
+} from "@/lib/tiptap-mention";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
@@ -106,36 +108,156 @@ type AutomationNoteSource = {
 };
 
 type NoteMentionRange = {
-	start: number;
-	end: number;
-	query: string;
+	from: number;
+	to: number;
 };
 
-const findNoteMentionRange = (
-	value: string,
-	cursorPosition: number,
-): NoteMentionRange | null => {
-	const textBeforeCursor = value.slice(0, cursorPosition);
-	const mentionStart = textBeforeCursor.lastIndexOf("@");
+type AutomationPromptMention = {
+	id: string;
+	label: string;
+	from: number;
+	to: number;
+	type: "note" | "tool";
+};
 
-	if (mentionStart === -1) {
-		return null;
+type AutomationMentionPickerItem =
+	| {
+			type: "tool";
+			source: AppSource;
+	  }
+	| {
+			type: "note";
+			source: AutomationNoteSource;
+	  };
+
+const filterAutomationNotes = (
+	sources: AutomationNoteSource[],
+	query: string,
+): AutomationNoteSource[] => {
+	const normalizedQuery = query.trim().toLowerCase();
+
+	if (!normalizedQuery) {
+		return [];
 	}
 
-	const characterBeforeMention = value[mentionStart - 1];
-	if (characterBeforeMention && !/\s/.test(characterBeforeMention)) {
-		return null;
+	return sources.filter((source) =>
+		[source.title, source.preview]
+			.join(" ")
+			.toLowerCase()
+			.includes(normalizedQuery),
+	);
+};
+
+const filterAutomationTools = (sources: AppSource[], query: string) => {
+	const normalizedQuery = query.trim().toLowerCase();
+
+	if (!normalizedQuery) {
+		return sources;
 	}
 
-	const mentionText = value.slice(mentionStart + 1, cursorPosition);
-	if (/\s/.test(mentionText)) {
-		return null;
+	return sources.filter((source) =>
+		[source.title, source.preview, getAppSourceLabel(source.provider)]
+			.join(" ")
+			.toLowerCase()
+			.includes(normalizedQuery),
+	);
+};
+
+const getPromptMentionsFromContent = (
+	content: JSONContent,
+): AutomationPromptMention[] => {
+	const mentions: AutomationPromptMention[] = [];
+	let textOffset = 0;
+	const walk = (node: JSONContent) => {
+		if (node.type === "mention" && typeof node.attrs?.id === "string") {
+			const mentionId = node.attrs.id;
+			const label =
+				typeof node.attrs.label === "string" ? node.attrs.label : mentionId;
+			const text = `@${label}`;
+			mentions.push({
+				id: mentionId,
+				label,
+				from: textOffset,
+				to: textOffset + text.length,
+				type:
+					node.attrs.type === "tool" || mentionId.startsWith("app:")
+						? "tool"
+						: "note",
+			});
+			textOffset += text.length;
+			return;
+		}
+
+		if (typeof node.text === "string") {
+			textOffset += node.text.length;
+			return;
+		}
+
+		for (const child of node.content ?? []) {
+			walk(child);
+		}
+	};
+
+	walk(content);
+	return mentions;
+};
+
+const getPromptDocument = (
+	prompt: string,
+	mentions: AutomationPromptMention[] = [],
+): JSONContent => {
+	if (!prompt) {
+		return {
+			type: "doc",
+			content: [{ type: "paragraph" }],
+		};
+	}
+
+	const sortedMentions = [...mentions]
+		.filter(
+			(mention) =>
+				mention.from >= 0 &&
+				mention.to > mention.from &&
+				mention.to <= prompt.length &&
+				prompt.slice(mention.from, mention.to) === `@${mention.label}`,
+		)
+		.sort((a, b) => a.from - b.from);
+	const content: JSONContent[] = [];
+	let cursor = 0;
+
+	for (const mention of sortedMentions) {
+		if (mention.from < cursor) {
+			continue;
+		}
+
+		if (mention.from > cursor) {
+			content.push({ type: "text", text: prompt.slice(cursor, mention.from) });
+		}
+
+		content.push({
+			type: "mention",
+			attrs: {
+				id: mention.id,
+				label: mention.label,
+				type: mention.type,
+			},
+		});
+		cursor = mention.to;
+	}
+
+	if (cursor < prompt.length) {
+		content.push({ type: "text", text: prompt.slice(cursor) });
 	}
 
 	return {
-		start: mentionStart,
-		end: cursorPosition,
-		query: mentionText,
+		type: "doc",
+		content: [
+			{
+				type: "paragraph",
+				content:
+					content.length > 0 ? content : [{ type: "text", text: prompt }],
+			},
+		],
 	};
 };
 
@@ -155,11 +277,9 @@ type AutomationDialogState = {
 	schedulePickerOpen: boolean;
 	modelPickerOpen: boolean;
 	appSourcesPickerOpen: boolean;
-	notePickerOpen: boolean;
-	noteSearchTerm: string;
-	noteMentionRange: NoteMentionRange | null;
 	title: string;
 	prompt: string;
+	promptMentions: AutomationPromptMention[];
 	selectedModel: typeof defaultChatModel;
 	schedulePeriod: AutomationSchedulePeriod;
 	scheduledAt: Date;
@@ -178,11 +298,9 @@ const createEmptyAutomationDialogState = (): AutomationDialogState => ({
 	schedulePickerOpen: false,
 	modelPickerOpen: false,
 	appSourcesPickerOpen: false,
-	notePickerOpen: false,
-	noteSearchTerm: "",
-	noteMentionRange: null,
 	title: "",
 	prompt: "",
+	promptMentions: [],
 	selectedModel: defaultChatModel,
 	schedulePeriod: "daily",
 	scheduledAt: createInitialScheduledAt(),
@@ -246,7 +364,6 @@ function useCreateAutomationDialogElement({
 	initialTitle = "",
 }: CreateAutomationDialogProps) {
 	const activeWorkspaceId = useActiveWorkspaceId();
-	const promptTextareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 	const notes = useQuery(
 		api.notes.list,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
@@ -270,11 +387,9 @@ function useCreateAutomationDialogElement({
 		schedulePickerOpen,
 		modelPickerOpen,
 		appSourcesPickerOpen,
-		notePickerOpen,
-		noteSearchTerm,
-		noteMentionRange,
 		title,
 		prompt,
+		promptMentions,
 		selectedModel,
 		schedulePeriod,
 		scheduledAt,
@@ -356,20 +471,8 @@ function useCreateAutomationDialogElement({
 			schedulePickerOpen: false,
 			modelPickerOpen: false,
 			appSourcesPickerOpen: false,
-			notePickerOpen: false,
 		});
 	}, []);
-
-	const handleNotePickerOpenChange = React.useCallback(
-		(nextOpen: boolean) => {
-			if (nextOpen) {
-				closeAutomationPickers();
-			}
-
-			updateDialogState({ notePickerOpen: nextOpen });
-		},
-		[closeAutomationPickers],
-	);
 
 	const handleAppSourcesPickerOpenChange = React.useCallback(
 		(nextOpen: boolean) => {
@@ -404,85 +507,25 @@ function useCreateAutomationDialogElement({
 		[closeAutomationPickers],
 	);
 
-	const handleConnectedAppToggle = React.useCallback((sourceId: string) => {
-		updateDialogState((currentState) => ({
-			selectedConnectedAppIds: currentState.selectedConnectedAppIds.includes(
-				sourceId,
-			)
-				? currentState.selectedConnectedAppIds.filter(
-						(currentId) => currentId !== sourceId,
-					)
-				: [...currentState.selectedConnectedAppIds, sourceId],
-		}));
-	}, []);
-
 	const handlePromptChange = React.useCallback(
-		(event: React.ChangeEvent<HTMLTextAreaElement>) => {
-			const nextPrompt = event.target.value;
-			const cursorPosition = event.target.selectionStart;
-			const nextNoteMentionRange = findNoteMentionRange(
-				nextPrompt,
-				cursorPosition,
+		(value: string, mentions: AutomationPromptMention[]) => {
+			const nextNoteIds = mentions.flatMap((mention) =>
+				mention.type === "note" ? [mention.id as Id<"notes">] : [],
+			);
+			const nextToolIds = mentions.flatMap((mention) =>
+				mention.type === "tool" ? [mention.id] : [],
 			);
 
 			updateDialogState({
-				prompt: nextPrompt,
-				noteMentionRange: nextNoteMentionRange,
-			});
-
-			if (nextNoteMentionRange) {
-				updateDialogState({ noteSearchTerm: nextNoteMentionRange.query });
-				handleNotePickerOpenChange(true);
-			}
-		},
-		[handleNotePickerOpenChange],
-	);
-
-	const handleNoteSelect = React.useCallback(
-		(noteId: Id<"notes">) => {
-			updateDialogState((currentState) => {
-				const range = noteMentionRange;
-				const nextNoteIds = currentState.selectedNoteIds.includes(noteId)
-					? currentState.selectedNoteIds
-					: [...currentState.selectedNoteIds, noteId];
-				if (!range) {
-					return {
-						target: null,
-						selectedNoteIds: nextNoteIds,
-						noteMentionRange: null,
-						noteSearchTerm: "",
-					};
-				}
-
-				const nextPrompt = `${currentState.prompt.slice(0, range.start)}${currentState.prompt.slice(range.end)}`;
-				queueMicrotask(() => {
-					const textarea = promptTextareaRef.current;
-					if (!textarea) {
-						return;
-					}
-
-					textarea.focus();
-					textarea.setSelectionRange(range.start, range.start);
-				});
-				return {
-					target: null,
-					selectedNoteIds: nextNoteIds,
-					prompt: nextPrompt,
-					noteMentionRange: null,
-					noteSearchTerm: "",
-				};
+				prompt: value,
+				promptMentions: mentions,
+				target: nextNoteIds.length > 0 ? null : target,
+				selectedNoteIds: Array.from(new Set(nextNoteIds)),
+				selectedConnectedAppIds: Array.from(new Set(nextToolIds)),
 			});
 		},
-		[noteMentionRange],
+		[target],
 	);
-
-	const handleNoteRemove = React.useCallback((noteId: Id<"notes">) => {
-		updateDialogState((currentState) => ({
-			selectedNoteIds: currentState.selectedNoteIds.filter(
-				(currentId) => currentId !== noteId,
-			),
-		}));
-	}, []);
 
 	const handleTimeChange = React.useCallback(
 		(event: React.ChangeEvent<HTMLInputElement>) => {
@@ -586,7 +629,7 @@ function useCreateAutomationDialogElement({
 							onChange={(event) =>
 								updateDialogState({ title: event.target.value })
 							}
-							placeholder="Meeting notes recap"
+							placeholder="Add title"
 						/>
 					</Field>
 					<Field>
@@ -597,33 +640,16 @@ function useCreateAutomationDialogElement({
 							Prompt
 						</FieldLabel>
 						<InputGroup className="min-h-40 items-stretch rounded-xl bg-background">
-							<InputGroupAddon align="block-start" className="px-2.5 pt-2">
-								<NotePicker
-									open={notePickerOpen}
-									onOpenChange={handleNotePickerOpenChange}
-									sources={noteSources}
-									searchTerm={noteSearchTerm}
-									onSearchTermChange={(value) =>
-										updateDialogState({ noteSearchTerm: value })
-									}
-									selectedSourceIds={selectedNoteIds}
-									isLoading={notes === undefined}
-									onSelectSource={handleNoteSelect}
-								/>
-								{selectedNoteSources.length > 0 ? (
-									<NoteChips
-										sources={selectedNoteSources}
-										onRemoveSource={handleNoteRemove}
-									/>
-								) : null}
-							</InputGroupAddon>
-							<InputGroupTextarea
-								ref={promptTextareaRef}
+							<AutomationPromptEditor
 								id="automation-prompt"
-								value={prompt}
-								onChange={handlePromptChange}
-								placeholder="Summarize meeting notes and list follow-ups"
-								className="min-h-28 px-4 py-3 text-sm"
+								prompt={prompt}
+								mentions={promptMentions}
+								noteSources={noteSources}
+								appSources={connectedAppSources}
+								isNotesLoading={notes === undefined}
+								onMentionPickerOpen={closeAutomationPickers}
+								onPromptChange={handlePromptChange}
+								placeholder="Add prompt. @ to use tools or mention notes"
 							/>
 							<InputGroupAddon
 								align="block-end"
@@ -643,17 +669,10 @@ function useCreateAutomationDialogElement({
 								<AppSourcesPicker
 									open={appSourcesPickerOpen}
 									onOpenChange={handleAppSourcesPickerOpenChange}
-									sources={connectedAppSources}
-									selectedSourceIds={selectedConnectedAppIds}
 									webSearchEnabled={webSearchEnabled}
 									onWebSearchEnabledChange={(value) =>
 										updateDialogState({ webSearchEnabled: value })
 									}
-									appsEnabled={appsEnabled}
-									onAppsEnabledChange={(value) =>
-										updateDialogState({ appsEnabled: value })
-									}
-									onToggleSource={handleConnectedAppToggle}
 									onOpenConnectionsSettings={onOpenConnectionsSettings}
 								/>
 								<div className="ml-auto flex min-w-0 items-center gap-1">
@@ -700,43 +719,592 @@ export function CreateAutomationDialog(props: CreateAutomationDialogProps) {
 	return useCreateAutomationDialogElement(props);
 }
 
+// oxlint-disable-next-line react-doctor/no-giant-component -- Tiptap editor shell keeps lifecycle refs and suggestion state together.
+function AutomationPromptEditor({
+	id,
+	prompt,
+	mentions,
+	noteSources,
+	appSources,
+	isNotesLoading,
+	onMentionPickerOpen,
+	onPromptChange,
+	placeholder,
+}: {
+	id: string;
+	prompt: string;
+	mentions: AutomationPromptMention[];
+	noteSources: AutomationNoteSource[];
+	appSources: AppSource[];
+	isNotesLoading: boolean;
+	onMentionPickerOpen: () => void;
+	onPromptChange: (value: string, mentions: AutomationPromptMention[]) => void;
+	placeholder: string;
+}) {
+	const editorRef = React.useRef<Editor | null>(null);
+	const mentionRangeRef = React.useRef<NoteMentionRange | null>(null);
+	const mentionTriggerRectRef = React.useRef<Pick<
+		DOMRect,
+		"bottom" | "left" | "top"
+	> | null>(null);
+	const allNoteSourcesRef = React.useRef(noteSources);
+	const allAppSourcesRef = React.useRef(appSources);
+	const visibleNoteSourcesRef = React.useRef<AutomationNoteSource[]>([]);
+	const visibleItemsRef = React.useRef<AutomationMentionPickerItem[]>([]);
+	const selectedIndexRef = React.useRef(0);
+	const popoverOpenRef = React.useRef(false);
+	const [popoverOpen, setPopoverOpen] = React.useState(false);
+	const [searchTerm, setSearchTerm] = React.useState("");
+	const [selectedIndex, setSelectedIndex] = React.useState(0);
+	const [position, setPosition] = React.useState<MentionPickerPosition | null>(
+		null,
+	);
+	const visibleNoteSources = React.useMemo(
+		() => filterAutomationNotes(noteSources, searchTerm),
+		[noteSources, searchTerm],
+	);
+	const visibleToolSources = React.useMemo(
+		() => filterAutomationTools(appSources, searchTerm),
+		[appSources, searchTerm],
+	);
+	const shouldSearchNotes = searchTerm.trim().length > 0;
+	const visibleItems = React.useMemo<AutomationMentionPickerItem[]>(
+		() => [
+			...visibleToolSources.map<AutomationMentionPickerItem>((source) => ({
+				type: "tool",
+				source,
+			})),
+			...visibleNoteSources.map<AutomationMentionPickerItem>((source) => ({
+				type: "note",
+				source,
+			})),
+		],
+		[visibleNoteSources, visibleToolSources],
+	);
+
+	allNoteSourcesRef.current = noteSources;
+	allAppSourcesRef.current = appSources;
+	visibleNoteSourcesRef.current = visibleNoteSources;
+	visibleItemsRef.current = visibleItems;
+	selectedIndexRef.current = selectedIndex;
+	popoverOpenRef.current = popoverOpen;
+
+	const selectIndex = React.useCallback((index: number) => {
+		selectedIndexRef.current = index;
+		setSelectedIndex(index);
+	}, []);
+	const closePicker = React.useCallback(() => {
+		mentionRangeRef.current = null;
+		mentionTriggerRectRef.current = null;
+		popoverOpenRef.current = false;
+		setPopoverOpen(false);
+		setSearchTerm("");
+		setPosition(null);
+	}, []);
+	const insertMention = React.useCallback(
+		(item: AutomationMentionPickerItem) => {
+			const editor = editorRef.current;
+			const range = mentionRangeRef.current;
+			if (!editor || !range) {
+				return;
+			}
+
+			const mention =
+				item.type === "tool"
+					? {
+							id: item.source.id,
+							label: getAppSourceLabel(item.source.provider),
+							type: "tool" as const,
+						}
+					: {
+							id: item.source.id,
+							label: item.source.title,
+							type: "note" as const,
+						};
+			editor
+				.chain()
+				.focus()
+				.insertContentAt(range, [
+					{
+						type: "mention",
+						attrs: mention,
+					},
+					{ type: "text", text: " " },
+				])
+				.run();
+			closePicker();
+			requestAnimationFrame(() => {
+				editor.commands.focus();
+			});
+		},
+		[closePicker],
+	);
+	const handleKeyDown = React.useCallback(
+		(event: KeyboardEvent) =>
+			handleAutomationMentionPickerKeyDown({
+				event,
+				itemsRef: visibleItemsRef,
+				selectedIndexRef,
+				selectIndex,
+				onSelectItem: insertMention,
+			}),
+		[insertMention, selectIndex],
+	);
+	React.useEffect(() => {
+		if (!popoverOpen) {
+			return;
+		}
+
+		const rect = mentionTriggerRectRef.current;
+		if (!rect) {
+			return;
+		}
+
+		setPosition(
+			getMentionPickerPosition({
+				rect,
+				itemCount: visibleItems.length,
+				minSectionedHeight: true,
+			}),
+		);
+	}, [popoverOpen, visibleItems.length]);
+
+	const editor = useEditor({
+		extensions: [
+			Document,
+			Paragraph,
+			Text,
+			TypedMention.configure({
+				HTMLAttributes: {
+					class: INLINE_MENTION_CLASS,
+				},
+				renderText({ node }) {
+					return `@${node.attrs.label ?? node.attrs.id}`;
+				},
+				renderHTML({ node }) {
+					return [
+						"span",
+						{
+							"data-type": "mention",
+							class: INLINE_MENTION_CLASS,
+						},
+						"@",
+						[
+							"span",
+							{
+								class: INLINE_MENTION_LABEL_CLASS,
+							},
+							node.attrs.label ?? node.attrs.id,
+						],
+					];
+				},
+				suggestion: {
+					char: "@",
+					allowedPrefixes: [" ", "\n"],
+					command: ({ editor, range, props }) => {
+						editor
+							.chain()
+							.focus()
+							.insertContentAt(range, [
+								{
+									type: "mention",
+									attrs: {
+										id: props.id,
+										label: props.label,
+									},
+								},
+								{ type: "text", text: " " },
+							])
+							.run();
+					},
+					items: () => [],
+					render: () => {
+						const updatePicker = ({
+							editor,
+							range,
+							query,
+						}: {
+							editor: Editor;
+							range: Range;
+							query: string;
+						}) => {
+							const nextNotes = filterAutomationNotes(
+								allNoteSourcesRef.current,
+								query,
+							);
+							const nextTools = filterAutomationTools(
+								allAppSourcesRef.current,
+								query,
+							);
+							const nextItems = [
+								...nextTools.map<AutomationMentionPickerItem>((source) => ({
+									type: "tool",
+									source,
+								})),
+								...nextNotes.map<AutomationMentionPickerItem>((source) => ({
+									type: "note",
+									source,
+								})),
+							];
+							mentionRangeRef.current = range;
+							visibleNoteSourcesRef.current = nextNotes;
+							visibleItemsRef.current = nextItems;
+							setSearchTerm(query);
+							selectIndex(0);
+							requestAnimationFrame(() => {
+								const rect = getMentionAnchorRect(editor, range);
+								mentionTriggerRectRef.current = rect;
+								setPosition(
+									getMentionPickerPosition({
+										rect,
+										itemCount: nextItems.length,
+										minSectionedHeight: true,
+									}),
+								);
+							});
+							onMentionPickerOpen();
+							popoverOpenRef.current = true;
+							setPopoverOpen(true);
+						};
+
+						return {
+							onStart: updatePicker,
+							onUpdate: updatePicker,
+							onKeyDown: ({ event }) => handleKeyDown(event),
+							onExit: closePicker,
+						};
+					},
+				},
+			}),
+			Placeholder.configure({ placeholder }),
+		],
+		content: getPromptDocument(prompt, mentions),
+		immediatelyRender: false,
+		shouldRerenderOnTransaction: false,
+		onCreate: ({ editor }) => {
+			editorRef.current = editor;
+		},
+		onDestroy: () => {
+			editorRef.current = null;
+		},
+		editorProps: {
+			attributes: {
+				id,
+				class:
+					"chat-composer-tiptap min-h-28 w-full flex-1 overflow-y-auto bg-transparent pt-3 pr-3 pb-0 pl-3.5 text-left text-[14px] leading-[1.6] font-normal outline-none",
+				"data-slot": "input-group-control",
+			},
+			handleKeyDown: (_view, event) => {
+				if (popoverOpenRef.current) {
+					return handleKeyDown(event);
+				}
+				return false;
+			},
+		},
+		onUpdate: ({ editor }) => {
+			onPromptChange(
+				editor.getText({ blockSeparator: "\n" }),
+				getPromptMentionsFromContent(editor.getJSON()),
+			);
+		},
+	});
+
+	React.useEffect(() => {
+		if (!editor) {
+			return;
+		}
+
+		const currentText = editor.getText({ blockSeparator: "\n" });
+		if (
+			currentText === prompt &&
+			getPromptMentionsFromContent(editor.getJSON()).length === mentions.length
+		) {
+			return;
+		}
+
+		if (editor.isFocused) {
+			return;
+		}
+
+		editor.commands.setContent(getPromptDocument(prompt, mentions), {
+			emitUpdate: false,
+		});
+	}, [editor, prompt, mentions]);
+
+	return (
+		<>
+			<div className="flex w-full flex-1 cursor-text">
+				{editor ? (
+					<Tiptap editor={editor}>
+						<Tiptap.Content />
+					</Tiptap>
+				) : null}
+			</div>
+			<AutomationMentionPicker
+				open={popoverOpen}
+				position={position}
+				appSources={visibleToolSources}
+				noteSources={visibleNoteSources}
+				items={visibleItems}
+				selectedIndex={selectedIndex}
+				onSelectedIndexChange={selectIndex}
+				isNotesLoading={isNotesLoading}
+				shouldSearchNotes={shouldSearchNotes}
+				onSelectItem={insertMention}
+			/>
+		</>
+	);
+}
+
+function handleAutomationMentionPickerKeyDown({
+	event,
+	itemsRef,
+	selectedIndexRef,
+	selectIndex,
+	onSelectItem,
+}: {
+	event: KeyboardEvent;
+	itemsRef: React.RefObject<AutomationMentionPickerItem[]>;
+	selectedIndexRef: React.RefObject<number>;
+	selectIndex: (index: number) => void;
+	onSelectItem: (item: AutomationMentionPickerItem) => void;
+}) {
+	if (
+		event.key !== "ArrowDown" &&
+		event.key !== "ArrowUp" &&
+		event.key !== "Enter"
+	) {
+		return false;
+	}
+
+	const items = itemsRef.current;
+
+	if (event.key === "ArrowDown") {
+		event.preventDefault();
+		selectIndex(
+			items.length === 0 ? 0 : (selectedIndexRef.current + 1) % items.length,
+		);
+		return true;
+	}
+
+	if (event.key === "ArrowUp") {
+		event.preventDefault();
+		selectIndex(
+			items.length === 0
+				? 0
+				: (selectedIndexRef.current - 1 + items.length) % items.length,
+		);
+		return true;
+	}
+
+	const selectedItem = items[selectedIndexRef.current] ?? items[0];
+	if (!selectedItem) {
+		return false;
+	}
+
+	event.preventDefault();
+	onSelectItem(selectedItem);
+	return true;
+}
+
+function AutomationMentionPicker({
+	open,
+	position,
+	appSources,
+	noteSources,
+	items,
+	selectedIndex,
+	onSelectedIndexChange,
+	isNotesLoading,
+	shouldSearchNotes,
+	onSelectItem,
+}: {
+	open: boolean;
+	position: MentionPickerPosition | null;
+	appSources: AppSource[];
+	noteSources: AutomationNoteSource[];
+	items: AutomationMentionPickerItem[];
+	selectedIndex: number;
+	onSelectedIndexChange: (index: number) => void;
+	isNotesLoading: boolean;
+	shouldSearchNotes: boolean;
+	onSelectItem: (item: AutomationMentionPickerItem) => void;
+}) {
+	if (!open || !position) {
+		return null;
+	}
+
+	return createPortal(
+		<div
+			role="listbox"
+			aria-label="Mention suggestions"
+			className="fixed z-[70] flex w-72 flex-col rounded-lg bg-popover p-0 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 pointer-events-auto"
+			style={{ top: position.top, left: position.left }}
+			onPointerDown={(event) => {
+				event.preventDefault();
+				event.stopPropagation();
+			}}
+		>
+			<div className="max-h-72 overflow-y-auto p-1">
+				{!shouldSearchNotes && appSources.length > 0 ? (
+					<div>
+						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+							Tools
+						</div>
+						<div className="space-y-0.5">
+							{appSources.map((source, index) => {
+								const selected = index === selectedIndex;
+
+								return (
+									<button
+										key={source.id}
+										type="button"
+										onMouseEnter={() => onSelectedIndexChange(index)}
+										onPointerDown={(event) => {
+											event.preventDefault();
+											event.stopPropagation();
+											onSelectItem({ type: "tool", source });
+										}}
+										className={cn(
+											"flex h-9 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 text-left",
+											selected
+												? "bg-accent text-accent-foreground"
+												: "text-popover-foreground",
+										)}
+									>
+										<div className="flex size-6 shrink-0 items-center justify-center">
+											<ConnectedAppIcon provider={source.provider} />
+										</div>
+										<div className="min-w-0 flex-1 truncate">
+											{getAppSourceLabel(source.provider)}
+										</div>
+									</button>
+								);
+							})}
+						</div>
+					</div>
+				) : null}
+				{shouldSearchNotes && appSources.length > 0 ? (
+					<div>
+						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+							Tools
+						</div>
+						<div className="space-y-0.5">
+							{appSources.map((source, index) => {
+								const selected = index === selectedIndex;
+
+								return (
+									<button
+										key={source.id}
+										type="button"
+										onMouseEnter={() => onSelectedIndexChange(index)}
+										onPointerDown={(event) => {
+											event.preventDefault();
+											event.stopPropagation();
+											onSelectItem({ type: "tool", source });
+										}}
+										className={cn(
+											"flex h-9 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 text-left",
+											selected
+												? "bg-accent text-accent-foreground"
+												: "text-popover-foreground",
+										)}
+									>
+										<div className="flex size-6 shrink-0 items-center justify-center">
+											<ConnectedAppIcon provider={source.provider} />
+										</div>
+										<div className="min-w-0 flex-1 truncate">
+											{getAppSourceLabel(source.provider)}
+										</div>
+									</button>
+								);
+							})}
+						</div>
+					</div>
+				) : null}
+				{!shouldSearchNotes ? (
+					<div className={appSources.length > 0 ? "mt-1" : undefined}>
+						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+							Notes
+						</div>
+						<div className="px-2 pt-0.5 pb-2 text-xs text-muted-foreground">
+							Type to search for notes
+						</div>
+					</div>
+				) : null}
+				{shouldSearchNotes && isNotesLoading ? (
+					<div className="px-2 py-6 text-center text-sm text-muted-foreground">
+						Loading notes…
+					</div>
+				) : null}
+				{shouldSearchNotes && !isNotesLoading && items.length === 0 ? (
+					<div>
+						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+							Notes
+						</div>
+						<div className="px-2 py-6 text-center text-sm text-muted-foreground">
+							No results found
+						</div>
+					</div>
+				) : null}
+				{shouldSearchNotes && noteSources.length > 0 ? (
+					<div className={appSources.length > 0 ? "mt-1" : undefined}>
+						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+							Notes
+						</div>
+						<div className="space-y-0.5">
+							{noteSources.map((source, index) => {
+								const itemIndex = appSources.length + index;
+								const selected = itemIndex === selectedIndex;
+
+								return (
+									<button
+										key={source.id}
+										type="button"
+										onMouseEnter={() => onSelectedIndexChange(itemIndex)}
+										onPointerDown={(event) => {
+											event.preventDefault();
+											event.stopPropagation();
+											onSelectItem({ type: "note", source });
+										}}
+										className={cn(
+											"flex h-9 w-full cursor-pointer items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-left",
+											selected
+												? "bg-accent text-accent-foreground"
+												: "text-popover-foreground",
+										)}
+									>
+										<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+											<FileText className="size-4" />
+										</div>
+										<div className="min-w-0 flex-1 truncate">
+											{source.title}
+										</div>
+									</button>
+								);
+							})}
+						</div>
+					</div>
+				) : null}
+			</div>
+		</div>,
+		document.body,
+	);
+}
+
 function AppSourcesPicker({
 	open,
 	onOpenChange,
-	sources,
-	selectedSourceIds,
 	webSearchEnabled,
 	onWebSearchEnabledChange,
-	appsEnabled,
-	onAppsEnabledChange,
-	onToggleSource,
 	onOpenConnectionsSettings,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	sources: AppSource[];
-	selectedSourceIds: string[];
 	webSearchEnabled: boolean;
 	onWebSearchEnabledChange: (value: boolean) => void;
-	appsEnabled: boolean;
-	onAppsEnabledChange: (value: boolean) => void;
-	onToggleSource: (sourceId: string) => void;
 	onOpenConnectionsSettings: () => void;
 }) {
-	const keepPickerOpen = React.useCallback((event: Event) => {
-		event.preventDefault();
-	}, []);
-	const selectedSource =
-		selectedSourceIds.length === 1
-			? sources.find((source) => source.id === selectedSourceIds[0])
-			: null;
-	const label =
-		selectedSourceIds.length === 1 && selectedSource
-			? getAppSourceLabel(selectedSource.provider)
-			: selectedSourceIds.length > 1
-				? `${selectedSourceIds.length} sources`
-				: "All sources";
-
 	return (
 		<DropdownMenu open={open} onOpenChange={onOpenChange}>
 			<Tooltip>
@@ -747,7 +1315,7 @@ function AppSourcesPicker({
 							variant="ghost"
 							size="icon-sm"
 							className="group/automation-picker rounded-full text-muted-foreground"
-							aria-label={`Select scope: ${label}`}
+							aria-label="Select scope"
 						>
 							<Settings2 className="size-4 shrink-0 text-muted-foreground group-hover/automation-picker:text-foreground group-focus-visible/automation-picker:text-foreground group-data-[state=open]/automation-picker:text-foreground" />
 						</InputGroupButton>
@@ -775,66 +1343,6 @@ function AppSourcesPicker({
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
 					<DropdownMenuItem
-						asChild
-						onSelect={(event) => event.preventDefault()}
-					>
-						<label htmlFor="automation-apps">
-							<LayoutGrid aria-hidden="true" className="text-foreground" />
-							<span aria-hidden="true">Tools and integrations</span>
-							<span className="sr-only">Apps and integrations</span>
-							<Switch
-								id="automation-apps"
-								className="ml-auto"
-								checked={appsEnabled}
-								onCheckedChange={onAppsEnabledChange}
-							/>
-						</label>
-					</DropdownMenuItem>
-					<DropdownMenuCheckboxItem
-						checked={selectedSourceIds.length === 0}
-						className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
-						onSelect={keepPickerOpen}
-						onCheckedChange={(checked) => {
-							if (!checked) {
-								return;
-							}
-
-							for (const sourceId of selectedSourceIds) {
-								onToggleSource(sourceId);
-							}
-						}}
-					>
-						<CirclePlus /> All sources I can access
-					</DropdownMenuCheckboxItem>
-					{sources.length > 0 ? (
-						sources.map((source, index) => {
-							const selected = selectedSourceIds.includes(source.id);
-							const sourceKey = source.id
-								? `${source.provider}:${source.id}`
-								: `app-source-${index}`;
-
-							return (
-								<DropdownMenuCheckboxItem
-									key={sourceKey}
-									checked={selected}
-									className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
-									onSelect={keepPickerOpen}
-									onCheckedChange={() => onToggleSource(source.id)}
-								>
-									<ConnectedAppIcon provider={source.provider} />
-									<div className="min-w-0 truncate">
-										{getAppSourceLabel(source.provider)}
-									</div>
-								</DropdownMenuCheckboxItem>
-							);
-						})
-					) : (
-						<DropdownMenuItem disabled>No connected apps</DropdownMenuItem>
-					)}
-				</DropdownMenuGroup>
-				<DropdownMenuSeparator />
-				<DropdownMenuGroup>
-					<DropdownMenuItem
 						aria-label="Connect apps"
 						onClick={onOpenConnectionsSettings}
 					>
@@ -845,136 +1353,6 @@ function AppSourcesPicker({
 				</DropdownMenuGroup>
 			</DropdownMenuContent>
 		</DropdownMenu>
-	);
-}
-
-function NotePicker({
-	open,
-	onOpenChange,
-	sources,
-	searchTerm = "",
-	onSearchTermChange,
-	selectedSourceIds,
-	isLoading,
-	onSelectSource,
-}: {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	sources: AutomationNoteSource[];
-	searchTerm?: string;
-	onSearchTermChange: (value: string) => void;
-	selectedSourceIds: string[];
-	isLoading: boolean;
-	onSelectSource: (sourceId: Id<"notes">) => void;
-}) {
-	const filteredSources = React.useMemo(() => {
-		const query = searchTerm.trim().toLowerCase();
-
-		if (!query) {
-			return sources;
-		}
-
-		return sources.filter((source) =>
-			[source.title, source.preview].join(" ").toLowerCase().includes(query),
-		);
-	}, [searchTerm, sources]);
-
-	return (
-		<Popover open={open} onOpenChange={onOpenChange}>
-			<Tooltip>
-				<TooltipTrigger asChild>
-					<PopoverTrigger asChild>
-						<InputGroupButton
-							variant="ghost"
-							size="icon-sm"
-							className="rounded-full bg-transparent text-muted-foreground transition-transform hover:bg-muted hover:text-foreground"
-						>
-							<AtSign />
-							<span className="sr-only">Mention a note</span>
-						</InputGroupButton>
-					</PopoverTrigger>
-				</TooltipTrigger>
-				<TooltipContent>Mention a note</TooltipContent>
-			</Tooltip>
-			<PopoverContent
-				className="w-72 p-0 [&_[data-slot=scroll-area]]:w-full [&_[data-slot=scroll-area-viewport]]:w-full [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:w-full [&_[data-slot=scroll-area-viewport]>div]:min-w-0 [&_[data-slot=command-list]]:w-full [&_[data-slot=command-list]]:min-w-0"
-				align="start"
-			>
-				<Command>
-					<CommandInput
-						placeholder="Search notes..."
-						value={searchTerm}
-						onValueChange={onSearchTermChange}
-					/>
-					<CommandList>
-						{isLoading ? (
-							<CommandGroup heading="Notes">
-								<div className="p-2 text-sm text-muted-foreground">
-									Loading notes…
-								</div>
-							</CommandGroup>
-						) : null}
-						<CommandEmpty>No notes found.</CommandEmpty>
-						{filteredSources.length > 0 ? (
-							<CommandGroup heading={searchTerm ? "Search results" : "Notes"}>
-								{filteredSources.map((source) => {
-									const selected = selectedSourceIds.includes(source.id);
-
-									return (
-										<CommandItem
-											key={source.id}
-											value={`${source.id} ${source.title}`}
-											onSelect={() => {
-												onSelectSource(source.id);
-												onOpenChange(false);
-											}}
-											data-checked={selected}
-											className="w-full cursor-pointer gap-1.5 overflow-hidden rounded-md px-1.5"
-										>
-											<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
-												<FileText className="size-4" />
-											</div>
-											<div
-												className="min-w-0 flex-1 truncate"
-												title={source.title}
-											>
-												{source.title}
-											</div>
-										</CommandItem>
-									);
-								})}
-							</CommandGroup>
-						) : null}
-					</CommandList>
-				</Command>
-			</PopoverContent>
-		</Popover>
-	);
-}
-
-function NoteChips({
-	sources,
-	onRemoveSource,
-}: {
-	sources: AutomationNoteSource[];
-	onRemoveSource: (sourceId: Id<"notes">) => void;
-}) {
-	return (
-		<div className="no-scrollbar -m-1.5 flex gap-1 overflow-y-auto p-1.5">
-			{sources.map((source) => (
-				<InputGroupButton
-					key={source.id}
-					size="sm"
-					variant="secondary"
-					className="group/note-mention-chip max-w-48 rounded-full pl-2!"
-					onClick={() => onRemoveSource(source.id)}
-				>
-					<FileText />
-					<span className="min-w-0 truncate">{source.title}</span>
-					<X className="opacity-0 transition-opacity group-hover/note-mention-chip:opacity-100 group-focus-visible/note-mention-chip:opacity-100" />
-				</InputGroupButton>
-			))}
-		</div>
 	);
 }
 
@@ -1051,7 +1429,6 @@ function SchedulePicker({
 				align="start"
 				sideOffset={6}
 				className="w-64 gap-0 p-1.5"
-				onFocusOutside={(event) => event.preventDefault()}
 				onInteractOutside={(event) => {
 					const target = event.target;
 					if (

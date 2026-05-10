@@ -32,6 +32,7 @@ export const getUIMessageSeedKey = (messages: UIMessage[]) =>
 				id: message.id,
 				role: message.role,
 				parts: message.parts,
+				metadata: message.metadata,
 				createdAt: (message as TimestampedUIMessage).createdAt,
 			}),
 		)

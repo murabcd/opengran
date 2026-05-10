@@ -1,14 +1,11 @@
-import {
-	Command,
-	CommandEmpty,
-	CommandGroup,
-	CommandInput,
-	CommandItem,
-	CommandList,
-} from "@workspace/ui/components/command";
+import type { Editor, JSONContent, Range } from "@tiptap/core";
+import Document from "@tiptap/extension-document";
+import Paragraph from "@tiptap/extension-paragraph";
+import Placeholder from "@tiptap/extension-placeholder";
+import Text from "@tiptap/extension-text";
+import { Tiptap, useEditor } from "@tiptap/react";
 import {
 	DropdownMenu,
-	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuItem,
@@ -20,14 +17,8 @@ import {
 	InputGroup,
 	InputGroupAddon,
 	InputGroupButton,
-	InputGroupTextarea,
 } from "@workspace/ui/components/input-group";
 import { Kbd } from "@workspace/ui/components/kbd";
-import {
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from "@workspace/ui/components/popover";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Switch } from "@workspace/ui/components/switch";
 import {
@@ -38,17 +29,15 @@ import {
 import type { FileUIPart } from "ai";
 import {
 	ArrowUp,
-	AtSign,
-	CirclePlus,
 	Globe,
 	LayoutGrid,
 	type LucideIcon,
 	Plus,
 	Settings2,
 	Square,
-	X,
 } from "lucide-react";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import {
 	type ChatAttachment,
 	FileAttachmentButton,
@@ -65,6 +54,14 @@ import {
 	getAppSourceLabel,
 	getSelectedScopeLabel,
 } from "@/lib/chat-source-display";
+import {
+	getMentionAnchorRect,
+	getMentionPickerPosition,
+	INLINE_MENTION_CLASS,
+	INLINE_MENTION_LABEL_CLASS,
+	type MentionPickerPosition,
+	TypedMention,
+} from "@/lib/tiptap-mention";
 
 type ContextPage = {
 	id: string;
@@ -81,37 +78,161 @@ type AppSource = {
 };
 
 type NoteMentionRange = {
-	start: number;
-	end: number;
-	query: string;
+	from: number;
+	to: number;
 };
 
-const findNoteMentionRange = (
-	value: string,
-	cursorPosition: number,
-): NoteMentionRange | null => {
-	const textBeforeCursor = value.slice(0, cursorPosition);
-	const mentionStart = textBeforeCursor.lastIndexOf("@");
+type MentionPickerItem =
+	| {
+			type: "tool";
+			source: AppSource;
+	  }
+	| {
+			type: "note";
+			document: ContextPage;
+	  };
 
-	if (mentionStart === -1) {
-		return null;
+export type ChatComposerMention = {
+	id: string;
+	label: string;
+	from: number;
+	to: number;
+	type?: "note" | "tool";
+};
+
+const getMentionsFromComposerContent = (
+	content: JSONContent,
+): ChatComposerMention[] => {
+	const mentions: ChatComposerMention[] = [];
+	let textOffset = 0;
+	const walk = (node: JSONContent) => {
+		if (node.type === "mention" && typeof node.attrs?.id === "string") {
+			const mentionId = node.attrs.id;
+			const label =
+				typeof node.attrs.label === "string" ? node.attrs.label : mentionId;
+			const text = `@${label}`;
+			mentions.push({
+				id: mentionId,
+				label,
+				from: textOffset,
+				to: textOffset + text.length,
+				type:
+					node.attrs.type === "tool" || mentionId.startsWith("app:")
+						? "tool"
+						: "note",
+			});
+			textOffset += text.length;
+			return;
+		}
+
+		if (typeof node.text === "string") {
+			textOffset += node.text.length;
+			return;
+		}
+
+		for (const child of node.content ?? []) {
+			walk(child);
+		}
+	};
+
+	walk(content);
+	return mentions;
+};
+
+const getDraftDocument = (
+	draft: string,
+	mentions: ChatComposerMention[] = [],
+): JSONContent => {
+	if (!draft) {
+		return {
+			type: "doc",
+			content: [{ type: "paragraph" }],
+		};
 	}
 
-	const characterBeforeMention = value[mentionStart - 1];
-	if (characterBeforeMention && !/\s/.test(characterBeforeMention)) {
-		return null;
+	const sortedMentions = [...mentions]
+		.filter(
+			(mention) =>
+				Number.isInteger(mention.from) &&
+				Number.isInteger(mention.to) &&
+				mention.from >= 0 &&
+				mention.to > mention.from &&
+				mention.to <= draft.length &&
+				draft.slice(mention.from, mention.to) === `@${mention.label}`,
+		)
+		.sort((a, b) => a.from - b.from);
+	const content: JSONContent[] = [];
+	let cursor = 0;
+
+	for (const mention of sortedMentions) {
+		if (mention.from < cursor) {
+			continue;
+		}
+
+		if (mention.from > cursor) {
+			content.push({ type: "text", text: draft.slice(cursor, mention.from) });
+		}
+
+		content.push({
+			type: "mention",
+			attrs: {
+				id: mention.id,
+				label: mention.label,
+				type: mention.type ?? "note",
+			},
+		});
+		cursor = mention.to;
 	}
 
-	const mentionText = value.slice(mentionStart + 1, cursorPosition);
-	if (/\s/.test(mentionText)) {
-		return null;
+	if (cursor < draft.length) {
+		content.push({ type: "text", text: draft.slice(cursor) });
 	}
 
 	return {
-		start: mentionStart,
-		end: cursorPosition,
-		query: mentionText,
+		type: "doc",
+		content: [
+			{
+				type: "paragraph",
+				content: content.length > 0 ? content : [{ type: "text", text: draft }],
+			},
+		],
 	};
+};
+
+const filterMentionableDocuments = (
+	documents: ContextPage[],
+	query: string,
+): ContextPage[] => {
+	const normalizedQuery = query.trim().toLowerCase();
+
+	if (!normalizedQuery) {
+		return [];
+	}
+
+	return documents.filter((document) =>
+		[document.title, document.preview]
+			.join(" ")
+			.toLowerCase()
+			.includes(normalizedQuery),
+	);
+};
+
+const filterMentionableTools = (
+	sources: AppSource[],
+	query: string,
+): AppSource[] => {
+	const normalizedQuery = query.trim().toLowerCase();
+
+	if (!normalizedQuery) {
+		return sources;
+	}
+
+	return sources.filter((source) =>
+		[source.title, source.preview, getAppSourceLabel(source.provider)]
+			.join(" ")
+			.toLowerCase()
+			.includes(normalizedQuery),
+	);
 };
 
 type ChatComposerProps = {
@@ -120,8 +241,9 @@ type ChatComposerProps = {
 	editingMessageId?: string | null;
 	topAccessory?: React.ReactNode;
 	onDraftChange: (value: string) => void;
-	onDraftKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement>;
+	onDraftKeyDown: (event: KeyboardEvent) => void;
 	onCancelEdit?: () => void;
+	mentions: ChatComposerMention[];
 	onSubmit: () => void | Promise<void>;
 	onStop: () => void;
 	attachedFiles: ChatAttachment[];
@@ -131,28 +253,15 @@ type ChatComposerProps = {
 	modelPopoverOpen: boolean;
 	onModelPopoverOpenChange: (open: boolean) => void;
 	onSelectedModelChange: (model: ChatModel) => void;
-	mentionPopoverOpen: boolean;
-	onMentionPopoverOpenChange: (open: boolean) => void;
-	documentSearchTerm: string;
-	onDocumentSearchTermChange: (value: string) => void;
-	mentions: string[];
-	contextPages: ContextPage[];
 	mentionableDocuments: ContextPage[];
 	isNotesLoading: boolean;
-	emptyStateMessage: string;
-	shouldSearchDocuments: boolean;
-	onAddMention: (pageId: string) => void;
-	onRemoveMention: (pageId: string) => void;
+	onMentionsChange: (mentions: ChatComposerMention[]) => void;
 	sourcesOpen: boolean;
 	onSourcesOpenChange: (open: boolean) => void;
 	webSearchEnabled: boolean;
 	onWebSearchEnabledChange: (value: boolean) => void;
-	appsEnabled: boolean;
-	onAppsEnabledChange: (value: boolean) => void;
 	selectedSourceIds: string[];
 	appSources: AppSource[];
-	onToggleSource: (sourceId: string) => void;
-	onClearSelectedSources: () => void;
 	onOpenConnectionsSettings: () => void;
 };
 
@@ -164,6 +273,7 @@ export function ChatComposer({
 	onDraftChange,
 	onDraftKeyDown,
 	onCancelEdit,
+	mentions,
 	onSubmit,
 	onStop,
 	attachedFiles,
@@ -173,32 +283,17 @@ export function ChatComposer({
 	modelPopoverOpen,
 	onModelPopoverOpenChange,
 	onSelectedModelChange,
-	mentionPopoverOpen,
-	onMentionPopoverOpenChange,
-	documentSearchTerm,
-	onDocumentSearchTermChange,
-	mentions,
-	contextPages,
 	mentionableDocuments,
 	isNotesLoading,
-	emptyStateMessage,
-	shouldSearchDocuments,
-	onAddMention,
-	onRemoveMention,
+	onMentionsChange,
 	sourcesOpen,
 	onSourcesOpenChange,
 	webSearchEnabled,
 	onWebSearchEnabledChange,
-	appsEnabled,
-	onAppsEnabledChange,
 	selectedSourceIds,
 	appSources,
-	onToggleSource,
-	onClearSelectedSources,
 	onOpenConnectionsSettings,
 }: ChatComposerProps) {
-	const promptRef = React.useRef<HTMLTextAreaElement | null>(null);
-	const noteMentionRangeRef = React.useRef<NoteMentionRange | null>(null);
 	const handleAttachmentUploadFailed = React.useCallback(
 		(id: string) => {
 			onAttachedFilesChange((files) => files.filter((file) => file.id !== id));
@@ -235,95 +330,7 @@ export function ChatComposer({
 		onFilesAdded: handleAttachmentsAdded,
 	});
 	const scopesLabel = getSelectedScopeLabel({ selectedSourceIds, appSources });
-	const mentionedPages = React.useMemo(
-		() =>
-			mentions.flatMap((mentionId) => {
-				const document = contextPages.find((page) => page.id === mentionId);
-				return document ? [document] : [];
-			}),
-		[contextPages, mentions],
-	);
-	const showTopAddon = true;
-	useChatComposerPromptFocus({
-		promptRef,
-		editingMessageId,
-		onCancelEdit,
-	});
-	const handleDraftChange = React.useCallback(
-		(event: React.ChangeEvent<HTMLTextAreaElement>) => {
-			const nextDraft = event.target.value;
-			const mentionRange = findNoteMentionRange(
-				nextDraft,
-				event.target.selectionStart,
-			);
-
-			onDraftChange(nextDraft);
-			noteMentionRangeRef.current = mentionRange;
-
-			if (mentionRange) {
-				onDocumentSearchTermChange(mentionRange.query);
-				onMentionPopoverOpenChange(true);
-			}
-		},
-		[onDocumentSearchTermChange, onDraftChange, onMentionPopoverOpenChange],
-	);
-	const handlePromptKeyDown = React.useCallback(
-		(event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-			if (event.key === "@" || (event.shiftKey && event.code === "Digit2")) {
-				if (event.metaKey || event.ctrlKey || event.altKey) {
-					onDraftKeyDown(event);
-					return;
-				}
-
-				const selectionStart = event.currentTarget.selectionStart;
-				const selectionEnd = event.currentTarget.selectionEnd;
-				const nextDraft = `${event.currentTarget.value.slice(0, selectionStart)}@${event.currentTarget.value.slice(selectionEnd)}`;
-				const mentionRange = findNoteMentionRange(
-					nextDraft,
-					selectionStart + 1,
-				);
-
-				if (mentionRange) {
-					event.preventDefault();
-					noteMentionRangeRef.current = {
-						start: selectionStart,
-						end: selectionStart,
-						query: "",
-					};
-					onDocumentSearchTermChange("");
-					onMentionPopoverOpenChange(true);
-					return;
-				}
-			}
-
-			onDraftKeyDown(event);
-		},
-		[onDocumentSearchTermChange, onDraftKeyDown, onMentionPopoverOpenChange],
-	);
-	const handleAddMention = React.useCallback(
-		(pageId: string) => {
-			const noteMentionRange = noteMentionRangeRef.current;
-			onAddMention(pageId);
-
-			if (noteMentionRange) {
-				const nextCursorPosition = noteMentionRange.start;
-				onDraftChange(
-					`${draft.slice(0, noteMentionRange.start)}${draft.slice(noteMentionRange.end)}`,
-				);
-				window.requestAnimationFrame(() => {
-					promptRef.current?.focus({ preventScroll: true });
-					promptRef.current?.setSelectionRange(
-						nextCursorPosition,
-						nextCursorPosition,
-					);
-				});
-			}
-
-			noteMentionRangeRef.current = null;
-		},
-		[draft, onAddMention, onDraftChange],
-	);
-
+	const showTopAddon = attachedFiles.length > 0;
 	return (
 		<div
 			className={`relative mx-auto w-full max-w-full min-w-0 md:max-w-xl ${useCompactLayout ? "mt-auto" : ""}`}
@@ -338,50 +345,35 @@ export function ChatComposer({
 			/>
 			<InputGroup
 				data-drag-over={attachmentDropzone.isDragOver ? "true" : undefined}
-				className={`${useCompactLayout ? "min-h-[96px]" : "min-h-[148px]"} max-h-[32rem] max-w-full overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 data-[drag-over=true]:border-ring data-[drag-over=true]:ring-3 data-[drag-over=true]:ring-ring/50 dark:bg-input/30 dark:has-disabled:bg-input/30`}
+				className="min-h-[132px] max-h-[32rem] max-w-full overflow-hidden rounded-lg border-input/30 bg-background bg-clip-padding shadow-sm has-disabled:bg-background has-disabled:opacity-100 data-[drag-over=true]:border-ring data-[drag-over=true]:ring-3 data-[drag-over=true]:ring-ring/50 dark:bg-input/30 dark:has-disabled:bg-input/30"
 				{...attachmentDropzone.dropzoneProps}
 			>
 				{showTopAddon ? (
 					<ChatComposerTopAddon
 						useCompactLayout={useCompactLayout}
-						mentionedPages={mentionedPages}
 						attachedFiles={attachedFiles}
-						onRemoveMention={onRemoveMention}
 						onRemoveAttachedFile={(index) =>
 							onAttachedFilesChange(
 								attachedFiles.filter((_, fileIndex) => fileIndex !== index),
 							)
 						}
-						mentionPicker={
-							<MentionPicker
-								open={mentionPopoverOpen}
-								onOpenChange={onMentionPopoverOpenChange}
-								documentSearchTerm={documentSearchTerm}
-								onDocumentSearchTermChange={onDocumentSearchTermChange}
-								mentionableDocuments={mentionableDocuments}
-								isNotesLoading={isNotesLoading}
-								emptyStateMessage={emptyStateMessage}
-								shouldSearchDocuments={shouldSearchDocuments}
-								onAddMention={handleAddMention}
-							/>
-						}
 					/>
 				) : null}
 
-				<InputGroupTextarea
-					ref={promptRef}
-					id="chat-prompt"
-					data-chat-prompt="true"
-					value={draft}
-					onChange={handleDraftChange}
-					onKeyDown={handlePromptKeyDown}
-					rows={useCompactLayout ? 1 : 3}
-					placeholder="Ask, search, or make anything..."
-					className={`${useCompactLayout ? "min-h-[40px] pt-2 pb-0" : "min-h-[64px] pt-2"} max-h-[24rem] overflow-y-auto px-4 text-base font-normal placeholder:font-normal placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0`}
+				<ChatComposerTextEditor
+					draft={draft}
+					editingMessageId={editingMessageId}
+					onCancelEdit={onCancelEdit}
+					onDraftChange={onDraftChange}
+					onDraftKeyDown={onDraftKeyDown}
+					mentions={mentions}
+					mentionableDocuments={mentionableDocuments}
+					isNotesLoading={isNotesLoading}
+					onMentionsChange={onMentionsChange}
+					appSources={appSources}
 				/>
 
 				<ChatComposerFooter
-					useCompactLayout={useCompactLayout}
 					draft={draft}
 					attachedFiles={attachedFiles}
 					isLoading={isLoading}
@@ -407,12 +399,6 @@ export function ChatComposer({
 							scopesLabel={scopesLabel}
 							webSearchEnabled={webSearchEnabled}
 							onWebSearchEnabledChange={onWebSearchEnabledChange}
-							appsEnabled={appsEnabled}
-							onAppsEnabledChange={onAppsEnabledChange}
-							selectedSourceIds={selectedSourceIds}
-							appSources={appSources}
-							onToggleSource={onToggleSource}
-							onClearSelectedSources={onClearSelectedSources}
 							onOpenConnectionsSettings={onOpenConnectionsSettings}
 						/>
 					}
@@ -422,12 +408,472 @@ export function ChatComposer({
 	);
 }
 
+// oxlint-disable-next-line react-doctor/no-giant-component -- Tiptap composer shell keeps editor lifecycle and mention picker state colocated.
+function ChatComposerTextEditor({
+	draft,
+	editingMessageId,
+	onCancelEdit,
+	onDraftChange,
+	onDraftKeyDown,
+	mentions,
+	mentionableDocuments,
+	isNotesLoading,
+	onMentionsChange,
+	appSources,
+}: {
+	draft: string;
+	editingMessageId?: string | null;
+	onCancelEdit?: () => void;
+	onDraftChange: (value: string) => void;
+	onDraftKeyDown: (event: KeyboardEvent) => void;
+	mentions: ChatComposerMention[];
+	mentionableDocuments: ContextPage[];
+	isNotesLoading: boolean;
+	onMentionsChange: (mentions: ChatComposerMention[]) => void;
+	appSources: AppSource[];
+}) {
+	const promptRef = React.useRef<HTMLDivElement | null>(null);
+	const noteMentionRangeRef = React.useRef<NoteMentionRange | null>(null);
+	const composerEditorRef = React.useRef<Editor | null>(null);
+	const mentionPopoverOpenRef = React.useRef(false);
+	const allMentionDocumentsRef = React.useRef(mentionableDocuments);
+	const allAppSourcesRef = React.useRef(appSources);
+	const visibleMentionDocumentsRef = React.useRef(mentionableDocuments);
+	const visibleMentionItemsRef = React.useRef<MentionPickerItem[]>([]);
+	const selectedMentionIndexRef = React.useRef(0);
+	const [mentionPopoverOpen, setMentionPopoverOpen] = React.useState(false);
+	const [documentSearchTerm, setDocumentSearchTerm] = React.useState("");
+	const [mentionPickerPosition, setMentionPickerPosition] =
+		React.useState<MentionPickerPosition | null>(null);
+	const [selectedMentionIndex, setSelectedMentionIndex] = React.useState(0);
+	const visibleMentionDocuments = React.useMemo(
+		() => filterMentionableDocuments(mentionableDocuments, documentSearchTerm),
+		[documentSearchTerm, mentionableDocuments],
+	);
+	const visibleMentionTools = React.useMemo(
+		() => filterMentionableTools(appSources, documentSearchTerm),
+		[appSources, documentSearchTerm],
+	);
+	const shouldSearchDocuments = documentSearchTerm.trim().length > 0;
+	const visibleMentionItems = React.useMemo<MentionPickerItem[]>(
+		() => [
+			...visibleMentionTools.map<MentionPickerItem>((source) => ({
+				type: "tool",
+				source,
+			})),
+			...visibleMentionDocuments.map<MentionPickerItem>((document) => ({
+				type: "note",
+				document,
+			})),
+		],
+		[visibleMentionDocuments, visibleMentionTools],
+	);
+	const emptyStateMessage = shouldSearchDocuments
+		? "No results found"
+		: "Type to search for notes";
+
+	mentionPopoverOpenRef.current = mentionPopoverOpen;
+	allMentionDocumentsRef.current = mentionableDocuments;
+	allAppSourcesRef.current = appSources;
+	visibleMentionDocumentsRef.current = visibleMentionDocuments;
+	visibleMentionItemsRef.current = visibleMentionItems;
+	selectedMentionIndexRef.current = selectedMentionIndex;
+
+	const selectMentionIndex = React.useCallback((index: number) => {
+		selectedMentionIndexRef.current = index;
+		setSelectedMentionIndex(index);
+	}, []);
+	const closeMentionPicker = React.useCallback(() => {
+		noteMentionRangeRef.current = null;
+		mentionPopoverOpenRef.current = false;
+		setMentionPopoverOpen(false);
+		setDocumentSearchTerm("");
+		setMentionPickerPosition(null);
+	}, []);
+	const handleAddMention = React.useCallback(
+		(pageId: string) => {
+			const noteMentionRange = noteMentionRangeRef.current;
+			const editor = composerEditorRef.current;
+			const document = visibleMentionDocumentsRef.current.find(
+				(page) => page.id === pageId,
+			);
+			if (!editor || !document || !noteMentionRange) {
+				return;
+			}
+
+			editor
+				.chain()
+				.focus()
+				.insertContentAt(noteMentionRange, [
+					{
+						type: "mention",
+						attrs: {
+							id: document.id,
+							label: document.title,
+						},
+					},
+					{ type: "text", text: " " },
+				])
+				.run();
+			closeMentionPicker();
+			requestAnimationFrame(() => {
+				editor.commands.focus();
+			});
+		},
+		[closeMentionPicker],
+	);
+	const handleAddTool = React.useCallback(
+		(sourceId: string) => {
+			const noteMentionRange = noteMentionRangeRef.current;
+			const editor = composerEditorRef.current;
+			const source = allAppSourcesRef.current.find(
+				(item) => item.id === sourceId,
+			);
+			if (!editor || !source || !noteMentionRange) {
+				return;
+			}
+
+			editor
+				.chain()
+				.focus()
+				.insertContentAt(noteMentionRange, [
+					{
+						type: "mention",
+						attrs: {
+							id: source.id,
+							label: getAppSourceLabel(source.provider),
+							type: "tool",
+						},
+					},
+					{ type: "text", text: " " },
+				])
+				.run();
+			closeMentionPicker();
+			requestAnimationFrame(() => {
+				editor.commands.focus();
+			});
+		},
+		[closeMentionPicker],
+	);
+	const handleSelectMentionPickerItem = React.useCallback(
+		(item: MentionPickerItem) => {
+			if (item.type === "tool") {
+				handleAddTool(item.source.id);
+				return;
+			}
+
+			handleAddMention(item.document.id);
+		},
+		[handleAddMention, handleAddTool],
+	);
+
+	useChatComposerPromptFocus({
+		promptRef,
+		editingMessageId,
+		onCancelEdit,
+	});
+
+	const composerEditor = useEditor({
+		extensions: [
+			Document,
+			Paragraph,
+			Text,
+			TypedMention.configure({
+				HTMLAttributes: {
+					class: INLINE_MENTION_CLASS,
+				},
+				renderText({ node }) {
+					return `@${node.attrs.label ?? node.attrs.id}`;
+				},
+				renderHTML({ node }) {
+					return [
+						"span",
+						{
+							"data-type": "mention",
+							class: INLINE_MENTION_CLASS,
+						},
+						"@",
+						[
+							"span",
+							{
+								class: INLINE_MENTION_LABEL_CLASS,
+							},
+							node.attrs.label ?? node.attrs.id,
+						],
+					];
+				},
+				suggestion: {
+					char: "@",
+					allowedPrefixes: [" ", "\n"],
+					command: ({ editor, range, props }) => {
+						editor
+							.chain()
+							.focus()
+							.insertContentAt(range, [
+								{
+									type: "mention",
+									attrs: {
+										id: props.id,
+										label: props.label,
+									},
+								},
+								{ type: "text", text: " " },
+							])
+							.run();
+					},
+					items: ({ query }) => {
+						return filterMentionableDocuments(
+							allMentionDocumentsRef.current,
+							query,
+						)
+							.slice(0, 8)
+							.map((document) => ({
+								id: document.id,
+								label: document.title,
+							}));
+					},
+					render: () => {
+						const updatePicker = ({
+							editor,
+							range,
+							query,
+						}: {
+							editor: Editor;
+							range: Range;
+							query: string;
+						}) => {
+							const nextDocuments = filterMentionableDocuments(
+								allMentionDocumentsRef.current,
+								query,
+							);
+							const nextTools = filterMentionableTools(
+								allAppSourcesRef.current,
+								query,
+							);
+							const nextItems = [
+								...nextTools.map<MentionPickerItem>((source) => ({
+									type: "tool",
+									source,
+								})),
+								...nextDocuments.map<MentionPickerItem>((document) => ({
+									type: "note",
+									document,
+								})),
+							];
+							noteMentionRangeRef.current = range;
+							visibleMentionDocumentsRef.current = nextDocuments;
+							visibleMentionItemsRef.current = nextItems;
+							setDocumentSearchTerm(query);
+							selectMentionIndex(0);
+							requestAnimationFrame(() => {
+								const rect = getMentionAnchorRect(editor, range);
+								setMentionPickerPosition(
+									getMentionPickerPosition({
+										rect,
+										itemCount: nextItems.length,
+										minSectionedHeight: true,
+									}),
+								);
+							});
+							mentionPopoverOpenRef.current = true;
+							setMentionPopoverOpen(true);
+						};
+
+						return {
+							onStart: updatePicker,
+							onUpdate: updatePicker,
+							onKeyDown: ({ event }) =>
+								handleMentionPickerKeyDown({
+									event,
+									handleSelectMentionPickerItem,
+									selectMentionIndex,
+									selectedMentionIndexRef,
+									visibleMentionItemsRef,
+								}),
+							onExit: closeMentionPicker,
+						};
+					},
+				},
+			}),
+			Placeholder.configure({
+				placeholder: "Ask anything. @ to use tools or mention notes",
+			}),
+		],
+		content: getDraftDocument(draft, mentions),
+		immediatelyRender: false,
+		shouldRerenderOnTransaction: false,
+		onCreate: ({ editor }) => {
+			composerEditorRef.current = editor;
+		},
+		onDestroy: () => {
+			composerEditorRef.current = null;
+		},
+		editorProps: {
+			attributes: {
+				class:
+					"chat-composer-tiptap min-h-[44px] max-h-[24rem] w-full flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent pt-3 pr-3 pb-0 pl-3.5 text-left text-[14px] leading-[1.6] font-normal shadow-none ring-0 outline-none focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent",
+				"data-chat-prompt": "true",
+				"data-slot": "input-group-control",
+			},
+			handleKeyDown: (_view, event) => {
+				if (editingMessageId && onCancelEdit && event.key === "Escape") {
+					event.preventDefault();
+					onCancelEdit();
+					return true;
+				}
+
+				if (mentionPopoverOpenRef.current) {
+					return handleMentionPickerKeyDown({
+						event,
+						handleSelectMentionPickerItem,
+						selectMentionIndex,
+						selectedMentionIndexRef,
+						visibleMentionItemsRef,
+					});
+				}
+
+				onDraftKeyDown(event);
+				return event.defaultPrevented;
+			},
+		},
+		onUpdate: ({ editor }) => {
+			onDraftChange(editor.getText({ blockSeparator: "\n" }));
+			onMentionsChange(getMentionsFromComposerContent(editor.getJSON()));
+		},
+	});
+
+	React.useEffect(() => {
+		if (!composerEditor) {
+			return;
+		}
+
+		const currentText = composerEditor.getText({ blockSeparator: "\n" });
+		if (
+			currentText === draft &&
+			getMentionsFromComposerContent(composerEditor.getJSON()).length ===
+				mentions.length
+		) {
+			return;
+		}
+
+		if (composerEditor.isFocused && draft && !editingMessageId) {
+			return;
+		}
+
+		composerEditor.commands.setContent(getDraftDocument(draft, mentions), {
+			emitUpdate: false,
+		});
+	}, [composerEditor, draft, editingMessageId, mentions]);
+	React.useEffect(() => {
+		if (!composerEditor) {
+			return;
+		}
+
+		const activeElement = document.activeElement;
+		const isEditableElement =
+			activeElement instanceof HTMLElement &&
+			(activeElement instanceof HTMLInputElement ||
+				activeElement instanceof HTMLTextAreaElement ||
+				activeElement instanceof HTMLSelectElement ||
+				activeElement.isContentEditable);
+
+		if (isEditableElement) {
+			return;
+		}
+
+		composerEditor.commands.focus("end", { scrollIntoView: false });
+	}, [composerEditor]);
+
+	return (
+		<>
+			<div
+				ref={promptRef}
+				id="chat-prompt"
+				className="chat-composer-editor flex w-full flex-1 cursor-text"
+			>
+				{composerEditor ? (
+					<Tiptap editor={composerEditor}>
+						<Tiptap.Content />
+					</Tiptap>
+				) : null}
+			</div>
+			<MentionPicker
+				open={mentionPopoverOpen}
+				position={mentionPickerPosition}
+				mentionableDocuments={visibleMentionDocuments}
+				appSources={visibleMentionTools}
+				items={visibleMentionItems}
+				selectedIndex={selectedMentionIndex}
+				onSelectedIndexChange={selectMentionIndex}
+				isNotesLoading={isNotesLoading}
+				emptyStateMessage={emptyStateMessage}
+				shouldSearchDocuments={shouldSearchDocuments}
+				onAddMention={handleAddMention}
+				onAddTool={handleAddTool}
+			/>
+		</>
+	);
+}
+
+function handleMentionPickerKeyDown({
+	event,
+	handleSelectMentionPickerItem,
+	selectMentionIndex,
+	selectedMentionIndexRef,
+	visibleMentionItemsRef,
+}: {
+	event: KeyboardEvent;
+	handleSelectMentionPickerItem: (item: MentionPickerItem) => void;
+	selectMentionIndex: (index: number) => void;
+	selectedMentionIndexRef: React.RefObject<number>;
+	visibleMentionItemsRef: React.RefObject<MentionPickerItem[]>;
+}) {
+	if (
+		event.key !== "ArrowDown" &&
+		event.key !== "ArrowUp" &&
+		event.key !== "Enter"
+	) {
+		return false;
+	}
+
+	const items = visibleMentionItemsRef.current;
+
+	if (event.key === "ArrowDown") {
+		event.preventDefault();
+		selectMentionIndex(
+			items.length === 0
+				? 0
+				: (selectedMentionIndexRef.current + 1) % items.length,
+		);
+		return true;
+	}
+
+	if (event.key === "ArrowUp") {
+		event.preventDefault();
+		selectMentionIndex(
+			items.length === 0
+				? 0
+				: (selectedMentionIndexRef.current - 1 + items.length) % items.length,
+		);
+		return true;
+	}
+
+	const selectedItem = items[selectedMentionIndexRef.current] ?? items[0];
+	if (!selectedItem) {
+		return false;
+	}
+
+	event.preventDefault();
+	handleSelectMentionPickerItem(selectedItem);
+	return true;
+}
+
 function useChatComposerPromptFocus({
 	promptRef,
 	editingMessageId,
 	onCancelEdit,
 }: {
-	promptRef: React.RefObject<HTMLTextAreaElement | null>;
+	promptRef: React.RefObject<HTMLDivElement | null>;
 	editingMessageId: string | null | undefined;
 	onCancelEdit?: () => void;
 }) {
@@ -449,9 +895,9 @@ function useChatComposerPromptFocus({
 			return;
 		}
 
-		prompt.focus({ preventScroll: true });
-		const selectionEnd = prompt.value.length;
-		prompt.setSelectionRange(selectionEnd, selectionEnd);
+		prompt.querySelector<HTMLElement>(".ProseMirror")?.focus({
+			preventScroll: true,
+		});
 	}, [promptRef]);
 
 	React.useEffect(() => {
@@ -489,73 +935,163 @@ function useChatComposerPromptFocus({
 
 function MentionPicker({
 	open,
-	onOpenChange,
-	documentSearchTerm,
-	onDocumentSearchTermChange,
+	position,
 	mentionableDocuments,
+	appSources,
+	items,
+	selectedIndex,
+	onSelectedIndexChange,
 	isNotesLoading,
 	emptyStateMessage,
 	shouldSearchDocuments,
 	onAddMention,
+	onAddTool,
 }: {
 	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	documentSearchTerm: string;
-	onDocumentSearchTermChange: (value: string) => void;
+	position: MentionPickerPosition | null;
 	mentionableDocuments: ContextPage[];
+	appSources: AppSource[];
+	items: MentionPickerItem[];
+	selectedIndex: number;
+	onSelectedIndexChange: (index: number) => void;
 	isNotesLoading: boolean;
 	emptyStateMessage: string;
 	shouldSearchDocuments: boolean;
 	onAddMention: (pageId: string) => void;
+	onAddTool: (sourceId: string) => void;
 }) {
-	return (
-		<Popover open={open} onOpenChange={onOpenChange}>
-			<Tooltip>
-				<TooltipTrigger
-					asChild
-					onFocusCapture={(event) => event.stopPropagation()}
-				>
-					<PopoverTrigger asChild>
-						<InputGroupButton
-							variant="ghost"
-							size="icon-sm"
-							className="rounded-full bg-transparent text-muted-foreground transition-transform hover:bg-muted hover:text-foreground"
-						>
-							<AtSign />
-							<span className="sr-only">Mention a page</span>
-						</InputGroupButton>
-					</PopoverTrigger>
-				</TooltipTrigger>
-				<TooltipContent>Add context</TooltipContent>
-			</Tooltip>
+	if (!open || !position) {
+		return null;
+	}
 
-			<PopoverContent
-				className="p-0 [&_[data-slot=scroll-area]]:w-full [&_[data-slot=scroll-area-viewport]]:w-full [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:w-full [&_[data-slot=scroll-area-viewport]>div]:min-w-0 [&_[data-slot=command-list]]:w-full [&_[data-slot=command-list]]:min-w-0"
-				align="start"
-			>
-				<Command>
-					<CommandInput
-						placeholder="Search notes..."
-						value={documentSearchTerm}
-						onValueChange={onDocumentSearchTermChange}
-					/>
-					<CommandList>
-						{isNotesLoading ? (
-							<CommandGroup heading="Notes">
-								<ChatNoteListSkeleton />
-							</CommandGroup>
-						) : null}
-						<CommandEmpty>{emptyStateMessage}</CommandEmpty>
-						{mentionableDocuments.length > 0 ? (
-							<CommandGroup
-								heading={shouldSearchDocuments ? "Search results" : "Notes"}
-							>
-								{mentionableDocuments.map((document) => (
-									<CommandItem
+	return createPortal(
+		<div
+			role="listbox"
+			aria-label="Mention suggestions"
+			className="fixed z-[70] flex w-72 flex-col rounded-lg bg-popover p-0 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 pointer-events-auto"
+			style={{
+				top: position.top,
+				left: position.left,
+			}}
+			onPointerDown={(event) => {
+				event.preventDefault();
+				event.stopPropagation();
+			}}
+		>
+			<div className="max-h-72 overflow-y-auto p-1">
+				{!shouldSearchDocuments && appSources.length > 0 ? (
+					<div>
+						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+							Tools
+						</div>
+						<div className="space-y-0.5">
+							{appSources.map((source, index) => {
+								const selected = index === selectedIndex;
+								return (
+									<button
+										key={source.id}
+										type="button"
+										onMouseEnter={() => onSelectedIndexChange(index)}
+										onPointerDown={(event) => {
+											event.preventDefault();
+											event.stopPropagation();
+											onAddTool(source.id);
+										}}
+										className={`flex h-9 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 text-left ${selected ? "bg-accent text-accent-foreground" : "text-popover-foreground"}`}
+									>
+										<div className="flex size-6 shrink-0 items-center justify-center">
+											<AppSourceIcon
+												provider={source.provider}
+												className="size-4"
+											/>
+										</div>
+										<div className="min-w-0 flex-1 truncate">
+											{getAppSourceLabel(source.provider)}
+										</div>
+									</button>
+								);
+							})}
+						</div>
+					</div>
+				) : null}
+				{shouldSearchDocuments && appSources.length > 0 ? (
+					<div>
+						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+							Tools
+						</div>
+						<div className="space-y-0.5">
+							{appSources.map((source, index) => {
+								const selected = index === selectedIndex;
+								return (
+									<button
+										key={source.id}
+										type="button"
+										onMouseEnter={() => onSelectedIndexChange(index)}
+										onPointerDown={(event) => {
+											event.preventDefault();
+											event.stopPropagation();
+											onAddTool(source.id);
+										}}
+										className={`flex h-9 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 text-left ${selected ? "bg-accent text-accent-foreground" : "text-popover-foreground"}`}
+									>
+										<div className="flex size-6 shrink-0 items-center justify-center">
+											<AppSourceIcon
+												provider={source.provider}
+												className="size-4"
+											/>
+										</div>
+										<div className="min-w-0 flex-1 truncate">
+											{getAppSourceLabel(source.provider)}
+										</div>
+									</button>
+								);
+							})}
+						</div>
+					</div>
+				) : null}
+				{!shouldSearchDocuments ? (
+					<div className={appSources.length > 0 ? "mt-1" : undefined}>
+						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+							Notes
+						</div>
+						<div className="px-2 pt-0.5 pb-2 text-xs text-muted-foreground">
+							Type to search for notes
+						</div>
+					</div>
+				) : null}
+				{shouldSearchDocuments && isNotesLoading ? (
+					<div className="px-1">
+						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+							Notes
+						</div>
+						<ChatNoteListSkeleton />
+					</div>
+				) : null}
+				{!isNotesLoading && items.length === 0 ? (
+					<div className="py-6 text-center text-sm text-muted-foreground">
+						{emptyStateMessage}
+					</div>
+				) : null}
+				{shouldSearchDocuments && mentionableDocuments.length > 0 ? (
+					<div className={appSources.length > 0 ? "mt-1" : undefined}>
+						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+							Notes
+						</div>
+						<div className="space-y-0.5">
+							{mentionableDocuments.map((document, index) => {
+								const itemIndex = appSources.length + index;
+								const selected = itemIndex === selectedIndex;
+								return (
+									<button
 										key={document.id}
-										value={`${document.id} ${document.title}`}
-										onSelect={() => onAddMention(document.id)}
-										className="w-full cursor-pointer gap-1.5 overflow-hidden rounded-md px-1.5"
+										type="button"
+										onMouseEnter={() => onSelectedIndexChange(itemIndex)}
+										onPointerDown={(event) => {
+											event.preventDefault();
+											event.stopPropagation();
+											onAddMention(document.id);
+										}}
+										className={`flex h-9 w-full cursor-pointer items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-left ${selected ? "bg-accent text-accent-foreground" : "text-popover-foreground"}`}
 									>
 										<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
 											<document.icon className="size-4" />
@@ -566,14 +1102,15 @@ function MentionPicker({
 										>
 											{document.title}
 										</div>
-									</CommandItem>
-								))}
-							</CommandGroup>
-						) : null}
-					</CommandList>
-				</Command>
-			</PopoverContent>
-		</Popover>
+									</button>
+								);
+							})}
+						</div>
+					</div>
+				) : null}
+			</div>
+		</div>,
+		document.body,
 	);
 }
 
@@ -617,31 +1154,18 @@ function ChatComposerTopAccessory({
 
 function ChatComposerTopAddon({
 	useCompactLayout,
-	mentionedPages,
 	attachedFiles,
-	onRemoveMention,
 	onRemoveAttachedFile,
-	mentionPicker,
 }: {
 	useCompactLayout: boolean;
-	mentionedPages: ContextPage[];
 	attachedFiles: ChatAttachment[];
-	onRemoveMention: (pageId: string) => void;
 	onRemoveAttachedFile: (index: number) => void;
-	mentionPicker: React.ReactNode;
 }) {
 	return (
 		<InputGroupAddon
 			align="block-start"
-			className={`px-4 pb-0 ${useCompactLayout ? "pt-2.5" : "pt-4"}`}
+			className={`px-3.5 pb-0 ${useCompactLayout ? "pt-2.5" : "pt-3"}`}
 		>
-			{mentionPicker}
-			{mentionedPages.length > 0 ? (
-				<ChatComposerMentionChips
-					mentionedPages={mentionedPages}
-					onRemoveMention={onRemoveMention}
-				/>
-			) : null}
 			<FileAttachmentChips
 				files={attachedFiles}
 				onRemove={onRemoveAttachedFile}
@@ -650,34 +1174,7 @@ function ChatComposerTopAddon({
 	);
 }
 
-function ChatComposerMentionChips({
-	mentionedPages,
-	onRemoveMention,
-}: {
-	mentionedPages: ContextPage[];
-	onRemoveMention: (pageId: string) => void;
-}) {
-	return (
-		<div className="no-scrollbar -m-1.5 flex gap-1 overflow-y-auto p-1.5">
-			{mentionedPages.map((document) => (
-				<InputGroupButton
-					key={document.id}
-					size="sm"
-					variant="secondary"
-					className="group/note-mention-chip max-w-48 rounded-full pl-2!"
-					onClick={() => onRemoveMention(document.id)}
-				>
-					<document.icon />
-					<span className="min-w-0 truncate">{document.title}</span>
-					<X className="opacity-0 transition-opacity group-hover/note-mention-chip:opacity-100 group-focus-visible/note-mention-chip:opacity-100" />
-				</InputGroupButton>
-			))}
-		</div>
-	);
-}
-
 function ChatComposerFooter({
-	useCompactLayout,
 	draft,
 	attachedFiles,
 	isLoading,
@@ -689,7 +1186,6 @@ function ChatComposerFooter({
 	modelPicker,
 	scopePicker,
 }: {
-	useCompactLayout: boolean;
 	draft: string;
 	attachedFiles: ChatAttachment[];
 	isLoading: boolean;
@@ -704,7 +1200,7 @@ function ChatComposerFooter({
 	return (
 		<InputGroupAddon
 			align="block-end"
-			className={`min-w-0 flex-wrap gap-1 px-4 ${useCompactLayout ? "pb-2.5" : "pb-4"}`}
+			className="min-w-0 flex-wrap gap-1 px-2 pt-1 pb-2"
 		>
 			<FileAttachmentButton
 				disabled={isLoading}
@@ -751,12 +1247,6 @@ function ScopePicker({
 	scopesLabel,
 	webSearchEnabled,
 	onWebSearchEnabledChange,
-	appsEnabled,
-	onAppsEnabledChange,
-	selectedSourceIds,
-	appSources,
-	onToggleSource,
-	onClearSelectedSources,
 	onOpenConnectionsSettings,
 }: {
 	open: boolean;
@@ -764,18 +1254,8 @@ function ScopePicker({
 	scopesLabel: string;
 	webSearchEnabled: boolean;
 	onWebSearchEnabledChange: (value: boolean) => void;
-	appsEnabled: boolean;
-	onAppsEnabledChange: (value: boolean) => void;
-	selectedSourceIds: string[];
-	appSources: AppSource[];
-	onToggleSource: (sourceId: string) => void;
-	onClearSelectedSources: () => void;
 	onOpenConnectionsSettings: () => void;
 }) {
-	const keepScopePickerOpen = React.useCallback((event: Event) => {
-		event.preventDefault();
-	}, []);
-
 	return (
 		<DropdownMenu open={open} onOpenChange={onOpenChange}>
 			<Tooltip>
@@ -816,79 +1296,6 @@ function ScopePicker({
 				</DropdownMenuGroup>
 				<DropdownMenuSeparator />
 				<DropdownMenuGroup>
-					<label className="sr-only" htmlFor="apps">
-						Apps and integrations
-					</label>
-					<DropdownMenuItem
-						asChild
-						onSelect={(event) => event.preventDefault()}
-					>
-						<label htmlFor="apps">
-							<LayoutGrid aria-hidden="true" className="text-foreground" />
-							<span aria-hidden="true">Tools and integrations</span>
-							<span className="sr-only">Apps and integrations</span>
-							<Switch
-								id="apps"
-								className="ml-auto"
-								checked={appsEnabled}
-								onCheckedChange={onAppsEnabledChange}
-							/>
-						</label>
-					</DropdownMenuItem>
-					<DropdownMenuCheckboxItem
-						checked={selectedSourceIds.length === 0}
-						className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
-						onSelect={keepScopePickerOpen}
-						onCheckedChange={(checked) => {
-							if (checked) {
-								onClearSelectedSources();
-							}
-						}}
-					>
-						<CirclePlus /> All sources I can access
-					</DropdownMenuCheckboxItem>
-					{appSources.map((source, index) => {
-						const selected = selectedSourceIds.includes(source.id);
-						const sourceKey = source.id
-							? `${source.provider ?? "app"}:${source.id}`
-							: `app-source-${index}`;
-
-						return (
-							<DropdownMenuCheckboxItem
-								key={sourceKey}
-								checked={selected}
-								className="pl-2 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
-								onSelect={keepScopePickerOpen}
-								onCheckedChange={() => onToggleSource(source.id)}
-							>
-								{source.provider === "google-calendar" ? (
-									<Icons.googleCalendarLogo className="size-4" />
-								) : source.provider === "google-drive" ? (
-									<Icons.googleDriveLogo className="size-4" />
-								) : source.provider === "yandex-calendar" ? (
-									<Icons.yandexCalendarLogo className="size-4" />
-								) : source.provider === "yandex-tracker" ? (
-									<Icons.yandexTrackerLogo className="size-4 text-blue-500" />
-								) : source.provider === "jira" ? (
-									<Icons.jiraLogo className="size-4" />
-								) : source.provider === "notion" ? (
-									<Icons.notionLogo className="size-4" />
-								) : source.provider === "posthog" ? (
-									<Icons.planeLogo className="size-4" />
-								) : (
-									<LayoutGrid className="size-4" />
-								)}
-								<div className="min-w-0">
-									<div className="truncate">
-										{getAppSourceLabel(source.provider)}
-									</div>
-								</div>
-							</DropdownMenuCheckboxItem>
-						);
-					})}
-				</DropdownMenuGroup>
-				<DropdownMenuSeparator />
-				<DropdownMenuGroup>
 					<DropdownMenuItem
 						aria-label="Connect apps"
 						onClick={onOpenConnectionsSettings}
@@ -901,6 +1308,46 @@ function ScopePicker({
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);
+}
+
+function AppSourceIcon({
+	provider,
+	className,
+}: {
+	provider: ChatAppSourceProvider;
+	className?: string;
+}) {
+	if (provider === "google-calendar") {
+		return <Icons.googleCalendarLogo className={className} />;
+	}
+
+	if (provider === "google-drive") {
+		return <Icons.googleDriveLogo className={className} />;
+	}
+
+	if (provider === "yandex-calendar") {
+		return <Icons.yandexCalendarLogo className={className} />;
+	}
+
+	if (provider === "yandex-tracker") {
+		return (
+			<Icons.yandexTrackerLogo className={`${className ?? ""} text-blue-500`} />
+		);
+	}
+
+	if (provider === "jira") {
+		return <Icons.jiraLogo className={className} />;
+	}
+
+	if (provider === "notion") {
+		return <Icons.notionLogo className={className} />;
+	}
+
+	if (provider === "posthog") {
+		return <Icons.planeLogo className={className} />;
+	}
+
+	return <LayoutGrid className={className} />;
 }
 
 function ChatNoteListSkeleton() {

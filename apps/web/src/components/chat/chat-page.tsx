@@ -25,6 +25,7 @@ import {
 } from "@/components/ai-elements/file-attachment-controls";
 import type { AutomationListItem } from "@/components/automations/automation-types";
 import {
+	type ChatSummaryOpenSourceRequest,
 	ChatSummarySheet,
 	OPEN_CHAT_SUMMARY_EVENT,
 } from "@/components/chat/chat-summary-sheet";
@@ -44,7 +45,7 @@ import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
-import { ChatComposer } from "./chat-composer";
+import { ChatComposer, type ChatComposerMention } from "./chat-composer";
 import { ChatHistoryList } from "./chat-history-list";
 
 type ChatPageProps = {
@@ -88,6 +89,33 @@ const getLatestUserMessageText = (messages: UIMessage[]) => {
 const getStoredChatModel = (model: string | undefined): ChatModel | null =>
 	model ? (findChatModel(model) ?? null) : null;
 
+const escapeRegExp = (value: string) =>
+	value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const getMentionRequestContext = (
+	mentions: ChatComposerMention[],
+	selectedSourceIds: string[],
+) => {
+	const noteMentionIds: string[] = [];
+	const toolMentionIds: string[] = [];
+
+	for (const mention of mentions) {
+		if (mention.type === "tool" || mention.id.startsWith("app:")) {
+			toolMentionIds.push(mention.id);
+			continue;
+		}
+
+		noteMentionIds.push(mention.id);
+	}
+
+	return {
+		mentionIds: [...new Set(noteMentionIds)],
+		requestSelectedSourceIds: [
+			...new Set([...selectedSourceIds, ...toolMentionIds]),
+		],
+	};
+};
+
 const getChatSearchMatches = (messages: UIMessage[], query: string) => {
 	const normalizedQuery = query.trim().toLocaleLowerCase();
 
@@ -95,12 +123,16 @@ const getChatSearchMatches = (messages: UIMessage[], query: string) => {
 		return [];
 	}
 
-	return messages
-		.map((message) => ({
-			messageId: message.id,
-			text: getChatText(message),
-		}))
-		.filter(({ text }) => text.toLocaleLowerCase().includes(normalizedQuery));
+	const matches: Array<{ messageId: string; text: string }> = [];
+	const matcher = new RegExp(escapeRegExp(normalizedQuery), "u");
+	for (const message of messages) {
+		const text = getChatText(message);
+		if (matcher.test(text.toLocaleLowerCase())) {
+			matches.push({ messageId: message.id, text });
+		}
+	}
+
+	return matches;
 };
 
 type CssHighlightRegistry = {
@@ -110,6 +142,37 @@ type CssHighlightRegistry = {
 
 type CssWithHighlights = typeof CSS & {
 	highlights?: CssHighlightRegistry;
+};
+
+type MessageSearchState = {
+	open: boolean;
+	query: string;
+	index: number;
+};
+
+type MessageSearchAction =
+	| { type: "close" }
+	| { type: "open" }
+	| { type: "setQuery"; query: string }
+	| { type: "setIndex"; index: number };
+
+const messageSearchReducer = (
+	state: MessageSearchState,
+	action: MessageSearchAction,
+): MessageSearchState => {
+	if (action.type === "open") {
+		return { ...state, open: true };
+	}
+
+	if (action.type === "close") {
+		return { open: false, query: "", index: 0 };
+	}
+
+	if (action.type === "setQuery") {
+		return { ...state, query: action.query, index: 0 };
+	}
+
+	return { ...state, index: action.index };
 };
 
 declare const Highlight: (new (...ranges: Range[]) => Highlight) | undefined;
@@ -132,25 +195,25 @@ const createTextMatchRanges = ({
 		return ranges;
 	}
 
+	const matcher = new RegExp(escapeRegExp(normalizedQuery), "gu");
 	const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
 	let currentNode = walker.nextNode();
 
 	while (currentNode) {
 		const textNode = currentNode as Text;
 		const normalizedText = textNode.data.toLocaleLowerCase();
-		let searchIndex = normalizedText.indexOf(normalizedQuery);
+		let match = matcher.exec(normalizedText);
 
-		while (searchIndex !== -1) {
+		while (match) {
 			const range = document.createRange();
+			const searchIndex = match.index;
 			range.setStart(textNode, searchIndex);
 			range.setEnd(textNode, searchIndex + normalizedQuery.length);
 			ranges.push(range);
-			searchIndex = normalizedText.indexOf(
-				normalizedQuery,
-				searchIndex + normalizedQuery.length,
-			);
+			match = matcher.exec(normalizedText);
 		}
 
+		matcher.lastIndex = 0;
 		currentNode = walker.nextNode();
 	}
 
@@ -181,12 +244,12 @@ const useChatPageController = ({
 		chatId: string;
 		model: ChatModel;
 	} | null>(null);
-	const [mentionPopoverOpen, setMentionPopoverOpen] = React.useState(false);
-	const [documentSearchTerm, setDocumentSearchTerm] = React.useState("");
-	const [mentions, setMentions] = React.useState<string[]>([]);
+	const [mentions, setMentions] = React.useState<ChatComposerMention[]>([]);
 	const [modelPopoverOpen, setModelPopoverOpen] = React.useState(false);
 	const [sourcesOpen, setSourcesOpen] = React.useState(false);
 	const [summaryOpen, setSummaryOpen] = React.useState(false);
+	const [summaryOpenSourceRequest, setSummaryOpenSourceRequest] =
+		React.useState<ChatSummaryOpenSourceRequest | null>(null);
 	const [webSearchEnabled, setWebSearchEnabled] = React.useState(false);
 	const [appsEnabled, setAppsEnabled] = React.useState(true);
 	const [editingMessageId, setEditingMessageId] = React.useState<string | null>(
@@ -367,24 +430,11 @@ const useChatPageController = ({
 			})),
 		[contextPages],
 	);
-	const shouldSearchDocuments = documentSearchTerm.trim().length > 0;
-	const mentionableDocuments = React.useMemo(() => {
-		const query = documentSearchTerm.trim().toLowerCase();
-
-		if (!query) {
-			return contextPages;
-		}
-
-		return contextPages.filter((page) =>
-			[page.title, page.preview].join(" ").toLowerCase().includes(query),
-		);
-	}, [contextPages, documentSearchTerm]);
-
 	const handleSubmit = React.useCallback(async () => {
-		const value = draft.trim();
+		const value = draft;
 
 		if (
-			(!value && attachedFiles.length === 0) ||
+			(!value.trim() && attachedFiles.length === 0) ||
 			hasUploadingAttachments(attachedFiles) ||
 			isLoading
 		) {
@@ -398,13 +448,24 @@ const useChatPageController = ({
 			onChatPersisted?.(chatId);
 			const readyFiles = getReadyFileParts(attachedFiles);
 			const filePayload = readyFiles.length > 0 ? { files: readyFiles } : {};
+			const { mentionIds, requestSelectedSourceIds } = getMentionRequestContext(
+				mentions,
+				selectedSourceIds,
+			);
+			const metadata =
+				mentions.length > 0 ? { mentionPositions: mentions } : undefined;
 			const nextOutgoingMessage = editingMessageId
 				? {
 						messageId: editingMessageId,
 						text: value,
+						metadata,
 						...filePayload,
 					}
-				: { text: value, ...filePayload };
+				: {
+						text: value,
+						metadata,
+						...filePayload,
+					};
 
 			void Promise.resolve(
 				sendMessage(nextOutgoingMessage, {
@@ -412,8 +473,8 @@ const useChatPageController = ({
 						model: selectedModel.model,
 						webSearchEnabled,
 						appsEnabled,
-						mentions,
-						selectedSourceIds,
+						mentions: mentionIds,
+						selectedSourceIds: requestSelectedSourceIds,
 						workspaceId: activeWorkspaceId,
 						convexToken,
 					},
@@ -423,6 +484,7 @@ const useChatPageController = ({
 			});
 			setEditingMessageId(null);
 			setDraft("");
+			setMentions([]);
 			setAttachedFiles([]);
 		} catch (error) {
 			console.error("Failed to prepare chat request", error);
@@ -439,18 +501,14 @@ const useChatPageController = ({
 		mentions,
 		onChatPersisted,
 		selectedModel.model,
-		selectedSourceIds,
 		sendMessage,
 		webSearchEnabled,
+		selectedSourceIds,
 	]);
 
 	const handleDraftKeyDown = React.useCallback(
-		(event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-			if (
-				event.key !== "Enter" ||
-				event.shiftKey ||
-				event.nativeEvent.isComposing
-			) {
+		(event: KeyboardEvent) => {
+			if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
 				return;
 			}
 
@@ -465,13 +523,18 @@ const useChatPageController = ({
 	}, []);
 
 	const handleEditMessage = React.useCallback(
-		(messageId: string, text: string) => {
+		(
+			messageId: string,
+			text: string,
+			messageMentions: ChatComposerMention[],
+		) => {
 			if (isLoading) {
 				stop();
 			}
 
 			setEditingMessageId(messageId);
 			setDraft(text);
+			setMentions(messageMentions);
 			setAttachedFiles([]);
 		},
 		[isLoading, stop],
@@ -480,18 +543,23 @@ const useChatPageController = ({
 	const handleCancelEdit = React.useCallback(() => {
 		setEditingMessageId(null);
 		setDraft("");
+		setMentions([]);
 		setAttachedFiles([]);
 	}, []);
 
 	const buildRequestBody = React.useCallback(async () => {
 		const convexToken = await getCachedConvexToken();
+		const { mentionIds, requestSelectedSourceIds } = getMentionRequestContext(
+			mentions,
+			selectedSourceIds,
+		);
 
 		return {
 			model: selectedModel.model,
 			webSearchEnabled,
 			appsEnabled,
-			mentions,
-			selectedSourceIds,
+			mentions: mentionIds,
+			selectedSourceIds: requestSelectedSourceIds,
 			workspaceId: activeWorkspaceId,
 			convexToken,
 		};
@@ -566,6 +634,13 @@ const useChatPageController = ({
 		},
 		[buildRequestBody, isLoading, regenerate, stop],
 	);
+	const handleOpenMention = React.useCallback((sourceId: string) => {
+		setSummaryOpen(true);
+		setSummaryOpenSourceRequest((current) => ({
+			sourceId,
+			requestId: (current?.requestId ?? 0) + 1,
+		}));
+	}, []);
 
 	return {
 		appsEnabled,
@@ -582,43 +657,29 @@ const useChatPageController = ({
 		hasMessages,
 		isLoading,
 		isNotesLoading,
-		mentionPopoverOpen,
-		mentionableDocuments,
 		messages,
 		modelPopoverOpen,
 		selectedModel: isModelResolving ? null : selectedModel,
 		selectedSourceIds,
 		setAppsEnabled,
-		setDocumentSearchTerm,
 		setDraft,
-		setMentionPopoverOpen,
 		setMentions,
 		setModelPopoverOpen,
 		setSelectedModel: handleSelectedModelChange,
 		setSourcesOpen,
 		setSummaryOpen,
+		summaryOpenSourceRequest,
 		stop,
-		shouldSearchDocuments,
 		sourcesOpen,
 		summaryOpen,
 		webSearchEnabled,
 		workspaceSources,
 		appSources,
-		documentSearchTerm,
 		editingMessageId,
 		mentions,
 		handleCancelEdit,
 		onDeleteMessage: handleDeleteMessage,
-		onAddMention: (pageId: string) => {
-			setMentions((current) =>
-				current.includes(pageId) ? current : [...current, pageId],
-			);
-			setDocumentSearchTerm("");
-			setMentionPopoverOpen(false);
-		},
-		onRemoveMention: (pageId: string) => {
-			setMentions((current) => current.filter((id) => id !== pageId));
-		},
+		onOpenMention: handleOpenMention,
 		onAddSource: (sourceId: string) => {
 			setSelectedSourceIds((current) => {
 				if (current.includes(sourceId)) {
@@ -635,24 +696,12 @@ const useChatPageController = ({
 					: current,
 			);
 		},
-		onToggleSource: (sourceId: string) => {
-			setSelectedSourceIds((current) => {
-				if (sourceId.startsWith("app:")) {
-					return current.includes(sourceId)
-						? current.filter((id) => id !== sourceId)
-						: [...current, sourceId];
-				}
-
-				return current.includes(sourceId)
-					? current.filter((id) => id !== sourceId)
-					: [...current, sourceId];
-			});
-		},
 		onEditMessage: handleEditMessage,
 		onRegenerateMessage: handleRegenerateMessage,
 	};
 };
 
+// oxlint-disable-next-line react-doctor/no-giant-component -- Page-level orchestrator wires chat state, search, history, and summary surfaces.
 export function ChatPage({
 	chatId,
 	initialMessages,
@@ -683,9 +732,10 @@ export function ChatPage({
 	} = useStickyScrollToBottom();
 	const historyViewportRef = React.useRef<HTMLDivElement | null>(null);
 	const searchInputRef = React.useRef<HTMLInputElement | null>(null);
-	const [messageSearchOpen, setMessageSearchOpen] = React.useState(false);
-	const [messageSearchQuery, setMessageSearchQuery] = React.useState("");
-	const [messageSearchIndex, setMessageSearchIndex] = React.useState(0);
+	const [messageSearch, dispatchMessageSearch] = React.useReducer(
+		messageSearchReducer,
+		{ open: false, query: "", index: 0 },
+	);
 	const handleCreateNoteFromResponse = React.useCallback(
 		(content: string) => {
 			if (!onCreateNoteFromResponse) {
@@ -710,14 +760,16 @@ export function ChatPage({
 	const canSearchMessages =
 		shouldShowActiveChatSurface && controller.hasMessages;
 	const messageSearchMatches = React.useMemo(
-		() => getChatSearchMatches(controller.messages, messageSearchQuery),
-		[controller.messages, messageSearchQuery],
+		() => getChatSearchMatches(controller.messages, messageSearch.query),
+		[controller.messages, messageSearch.query],
 	);
+	const messageSearchIndex =
+		messageSearchMatches.length > 0
+			? Math.min(messageSearch.index, messageSearchMatches.length - 1)
+			: 0;
 	const activeMessageSearchMatch =
 		messageSearchMatches.length > 0
-			? messageSearchMatches[
-					Math.min(messageSearchIndex, messageSearchMatches.length - 1)
-				]
+			? messageSearchMatches[messageSearchIndex]
 			: null;
 	const viewportRef = React.useCallback(
 		(node: HTMLDivElement | null) => {
@@ -769,13 +821,11 @@ export function ChatPage({
 	}, [shouldShowActiveChatSurface]);
 	React.useEffect(() => {
 		if (!canSearchMessages) {
-			setMessageSearchOpen(false);
-			setMessageSearchQuery("");
-			setMessageSearchIndex(0);
+			dispatchMessageSearch({ type: "close" });
 		}
 	}, [canSearchMessages]);
 	React.useEffect(() => {
-		if (!messageSearchOpen) {
+		if (!messageSearch.open) {
 			return;
 		}
 
@@ -783,16 +833,9 @@ export function ChatPage({
 			searchInputRef.current?.focus();
 			searchInputRef.current?.select();
 		});
-	}, [messageSearchOpen]);
+	}, [messageSearch.open]);
 	React.useEffect(() => {
-		if (messageSearchIndex < messageSearchMatches.length) {
-			return;
-		}
-
-		setMessageSearchIndex(0);
-	}, [messageSearchIndex, messageSearchMatches.length]);
-	React.useEffect(() => {
-		if (!activeMessageSearchMatch || !messageSearchOpen) {
+		if (!activeMessageSearchMatch || !messageSearch.open) {
 			return;
 		}
 
@@ -808,7 +851,7 @@ export function ChatPage({
 			block: "center",
 			behavior: "smooth",
 		});
-	}, [activeMessageSearchMatch, messageSearchOpen]);
+	}, [activeMessageSearchMatch, messageSearch.open]);
 	React.useEffect(() => {
 		const highlightRegistry =
 			typeof CSS === "undefined"
@@ -816,8 +859,8 @@ export function ChatPage({
 				: (CSS as CssWithHighlights).highlights;
 
 		if (
-			!messageSearchOpen ||
-			!messageSearchQuery.trim() ||
+			!messageSearch.open ||
+			!messageSearch.query.trim() ||
 			!highlightRegistry ||
 			typeof Highlight === "undefined"
 		) {
@@ -844,7 +887,7 @@ export function ChatPage({
 
 			const ranges = createTextMatchRanges({
 				element: messageElement,
-				query: messageSearchQuery,
+				query: messageSearch.query,
 			});
 
 			if (match.messageId === activeMessageSearchMatch?.messageId) {
@@ -871,8 +914,8 @@ export function ChatPage({
 	}, [
 		activeMessageSearchMatch,
 		messageSearchMatches,
-		messageSearchOpen,
-		messageSearchQuery,
+		messageSearch.open,
+		messageSearch.query,
 	]);
 	React.useEffect(() => {
 		if (!canSearchMessages || !isDesktopRuntime()) {
@@ -891,38 +934,42 @@ export function ChatPage({
 			}
 
 			event.preventDefault();
-			if (messageSearchOpen) {
+			if (messageSearch.open) {
 				requestAnimationFrame(() => {
 					searchInputRef.current?.focus();
 					searchInputRef.current?.select();
 				});
 			}
-			setMessageSearchOpen(true);
+			dispatchMessageSearch({ type: "open" });
 		};
 
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [canSearchMessages, messageSearchOpen]);
+	}, [canSearchMessages, messageSearch.open]);
 	const handleMessageSearchPrevious = React.useCallback(() => {
-		setMessageSearchIndex((current) =>
-			messageSearchMatches.length === 0
-				? 0
-				: (current - 1 + messageSearchMatches.length) %
-					messageSearchMatches.length,
-		);
-	}, [messageSearchMatches.length]);
+		dispatchMessageSearch({
+			type: "setIndex",
+			index:
+				messageSearchMatches.length === 0
+					? 0
+					: (messageSearchIndex - 1 + messageSearchMatches.length) %
+						messageSearchMatches.length,
+		});
+	}, [messageSearchIndex, messageSearchMatches.length]);
 	const handleMessageSearchNext = React.useCallback(() => {
-		setMessageSearchIndex((current) =>
-			messageSearchMatches.length === 0
-				? 0
-				: (current + 1) % messageSearchMatches.length,
-		);
-	}, [messageSearchMatches.length]);
+		dispatchMessageSearch({
+			type: "setIndex",
+			index:
+				messageSearchMatches.length === 0
+					? 0
+					: (messageSearchIndex + 1) % messageSearchMatches.length,
+		});
+	}, [messageSearchIndex, messageSearchMatches.length]);
 	const handleMessageSearchKeyDown = React.useCallback(
 		(event: React.KeyboardEvent<HTMLInputElement>) => {
 			if (event.key === "Escape") {
 				event.preventDefault();
-				setMessageSearchOpen(false);
+				dispatchMessageSearch({ type: "close" });
 				return;
 			}
 
@@ -965,6 +1012,7 @@ export function ChatPage({
 			}
 			onDraftChange={controller.setDraft}
 			onDraftKeyDown={controller.handleDraftKeyDown}
+			mentions={controller.mentions}
 			onSubmit={controller.handleSubmit}
 			onStop={controller.stop}
 			attachedFiles={controller.attachedFiles}
@@ -974,32 +1022,15 @@ export function ChatPage({
 			modelPopoverOpen={controller.modelPopoverOpen}
 			onModelPopoverOpenChange={controller.setModelPopoverOpen}
 			onSelectedModelChange={controller.setSelectedModel}
-			mentionPopoverOpen={controller.mentionPopoverOpen}
-			onMentionPopoverOpenChange={controller.setMentionPopoverOpen}
-			documentSearchTerm={controller.documentSearchTerm}
-			onDocumentSearchTermChange={controller.setDocumentSearchTerm}
-			mentions={controller.mentions}
-			contextPages={controller.contextPages}
-			mentionableDocuments={controller.mentionableDocuments}
+			mentionableDocuments={controller.contextPages}
 			isNotesLoading={controller.isNotesLoading}
-			emptyStateMessage={
-				controller.shouldSearchDocuments
-					? "No notes found."
-					: "No notes available."
-			}
-			shouldSearchDocuments={controller.shouldSearchDocuments}
-			onAddMention={controller.onAddMention}
-			onRemoveMention={controller.onRemoveMention}
+			onMentionsChange={controller.setMentions}
 			sourcesOpen={controller.sourcesOpen}
 			onSourcesOpenChange={controller.setSourcesOpen}
 			webSearchEnabled={controller.webSearchEnabled}
 			onWebSearchEnabledChange={controller.handleWebSearchEnabledChange}
-			appsEnabled={controller.appsEnabled}
-			onAppsEnabledChange={controller.setAppsEnabled}
 			selectedSourceIds={controller.selectedSourceIds}
 			appSources={controller.appSources}
-			onToggleSource={controller.onToggleSource}
-			onClearSelectedSources={controller.handleClearSelectedSources}
 			onOpenConnectionsSettings={onOpenConnectionsSettings}
 			editingMessageId={controller.editingMessageId}
 			onCancelEdit={controller.handleCancelEdit}
@@ -1027,13 +1058,12 @@ export function ChatPage({
 									chatSurfaceMinHeightClass,
 								)}
 							>
-								{messageSearchOpen ? (
+								{messageSearch.open ? (
 									<ChatMessageSearchBar
 										inputRef={searchInputRef}
-										query={messageSearchQuery}
+										query={messageSearch.query}
 										onQueryChange={(value) => {
-											setMessageSearchQuery(value);
-											setMessageSearchIndex(0);
+											dispatchMessageSearch({ type: "setQuery", query: value });
 										}}
 										matchCount={messageSearchMatches.length}
 										matchIndex={
@@ -1041,7 +1071,7 @@ export function ChatPage({
 										}
 										onPrevious={handleMessageSearchPrevious}
 										onNext={handleMessageSearchNext}
-										onClose={() => setMessageSearchOpen(false)}
+										onClose={() => dispatchMessageSearch({ type: "close" })}
 										onKeyDown={handleMessageSearchKeyDown}
 									/>
 								) : null}
@@ -1052,6 +1082,7 @@ export function ChatPage({
 										isLoading={controller.isLoading}
 										onDeleteMessage={controller.onDeleteMessage}
 										onEditMessage={controller.onEditMessage}
+										onOpenMention={controller.onOpenMention}
 										onPlusAction={handleCreateNoteFromResponse}
 										onRegenerateMessage={controller.onRegenerateMessage}
 									/>
@@ -1105,6 +1136,7 @@ export function ChatPage({
 					chatTitle={controller.currentChatTitle}
 					desktopSafeTop={isDesktopMac}
 					workspaceSources={controller.workspaceSources}
+					openSourceRequest={controller.summaryOpenSourceRequest}
 					onAddSource={controller.onAddSource}
 					onRemoveAutoAddedSource={controller.onRemoveAutoAddedSource}
 					onOpenChange={controller.setSummaryOpen}

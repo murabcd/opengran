@@ -81,7 +81,6 @@ import {
 	Undo2,
 } from "lucide-react";
 import * as React from "react";
-import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import type { AppUser, AppView, UpcomingCalendarEvent } from "@/app/app-types";
 import { HomeView, SharedView } from "@/app/home-shared-views";
@@ -802,7 +801,7 @@ const useAppShellState = ({
 	}, [inboxOpen]);
 
 	const openFreshChat = React.useCallback(() => {
-		flushSync(() => {
+		React.startTransition(() => {
 			setInboxOpen(shouldKeepPinnedInboxOpen());
 			setCurrentView("chat");
 			setSettingsOpen(false);
@@ -814,7 +813,7 @@ const useAppShellState = ({
 
 	const openStoredChat = React.useCallback(
 		(chatId: string) => {
-			flushSync(() => {
+			React.startTransition(() => {
 				setInboxOpen(shouldKeepPinnedInboxOpen());
 				setCurrentView("chat");
 				setSettingsOpen(false);
