@@ -8,6 +8,10 @@
   "files": {
     "ignoreUnknown": false
   },
+  "plugins": [
+    "./tools/biome/no-local-vitest-mocks.grit",
+    "./tools/biome/no-vitest-global-mutation.grit"
+  ],
   "formatter": {
     "enabled": true,
     "indentStyle": "tab"
@@ -38,6 +42,17 @@
           }
         }
       }
+    },
+    {
+      "includes": [
+        "apps/**/*.{ts,tsx}",
+        "packages/**/*.{ts,tsx}",
+        "!**/_generated/**"
+      ],
+      "plugins": [
+        "./tools/biome/no-inline-imports.grit",
+        "./tools/biome/no-import-types.grit"
+      ]
     }
   ],
   "json": {

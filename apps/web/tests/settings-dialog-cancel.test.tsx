@@ -1,10 +1,14 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SettingsDialog } from "../src/components/settings/settings-dialog";
 
-const useActionMock = vi.fn();
-const useMutationMock = vi.fn();
-const useQueryMock = vi.fn();
-const updateUserMock = vi.fn();
+const { updateUserMock, useActionMock, useMutationMock, useQueryMock } =
+	vi.hoisted(() => ({
+		updateUserMock: vi.fn(),
+		useActionMock: vi.fn(),
+		useMutationMock: vi.fn(),
+		useQueryMock: vi.fn(),
+	}));
 
 vi.mock("convex/react", () => ({
 	useAction: useActionMock,
@@ -53,9 +57,6 @@ describe("settings dialog cancel actions", () => {
 
 	it("resets profile edits and closes settings", async () => {
 		const onOpenChange = vi.fn();
-		const { SettingsDialog } = await import(
-			"../src/components/settings/settings-dialog"
-		);
 
 		render(
 			<SettingsDialog
@@ -93,9 +94,6 @@ describe("settings dialog cancel actions", () => {
 
 	it("resets workspace edits and closes settings", async () => {
 		const onOpenChange = vi.fn();
-		const { SettingsDialog } = await import(
-			"../src/components/settings/settings-dialog"
-		);
 
 		render(
 			<SettingsDialog

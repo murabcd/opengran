@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	clearCachedConvexToken,
+	getCachedConvexToken,
+	prefetchConvexToken,
+} from "../src/lib/convex-token";
 
-const convexTokenMock = vi.fn();
+const { convexTokenMock } = vi.hoisted(() => ({
+	convexTokenMock: vi.fn(),
+}));
 
 vi.mock("../src/lib/auth-client", () => ({
 	authClient: {
@@ -37,7 +44,6 @@ const createToken = (expirationOffsetSeconds = 60 * 60) => {
 describe("convex-token", () => {
 	beforeEach(async () => {
 		convexTokenMock.mockReset();
-		const { clearCachedConvexToken } = await import("../src/lib/convex-token");
 		clearCachedConvexToken();
 	});
 
@@ -52,10 +58,6 @@ describe("convex-token", () => {
 			.mockResolvedValueOnce({
 				data: { token: newToken },
 			});
-
-		const { clearCachedConvexToken, getCachedConvexToken } = await import(
-			"../src/lib/convex-token"
-		);
 
 		const firstTokenRequest = getCachedConvexToken();
 		clearCachedConvexToken();
@@ -74,8 +76,6 @@ describe("convex-token", () => {
 		const error = new Error("token fetch failed");
 		convexTokenMock.mockRejectedValueOnce(error);
 
-		const { getCachedConvexToken } = await import("../src/lib/convex-token");
-
 		await expect(getCachedConvexToken()).rejects.toThrow("token fetch failed");
 	});
 
@@ -85,10 +85,6 @@ describe("convex-token", () => {
 			.mockResolvedValueOnce({
 				data: { token: "fresh-token" },
 			});
-
-		const { getCachedConvexToken, prefetchConvexToken } = await import(
-			"../src/lib/convex-token"
-		);
 
 		await expect(prefetchConvexToken()).resolves.toBeUndefined();
 		await expect(getCachedConvexToken()).resolves.toBe("fresh-token");
