@@ -26,7 +26,6 @@ import {
 	HoverCardContent,
 	HoverCardTrigger,
 } from "@workspace/ui/components/hover-card";
-import { Icons } from "@workspace/ui/components/icons";
 import { Kbd } from "@workspace/ui/components/kbd";
 import {
 	Popover,
@@ -64,6 +63,7 @@ import {
 	X,
 } from "lucide-react";
 import * as React from "react";
+import { AppSourceIcon } from "@/components/app-source-icon";
 import type { AutomationListItem } from "@/components/automations/automation-types";
 import { getAutomationSchedulePeriodLabel } from "@/components/automations/automation-utils";
 import {
@@ -87,6 +87,7 @@ import {
 } from "@/components/search/search-command";
 import { extractFileParts, getChatMessageMetadata } from "@/lib/chat-message";
 import {
+	CHAT_APP_SOURCE_PROVIDERS,
 	type ChatAppSourceProvider,
 	getAppSourceLabel,
 } from "@/lib/chat-source-display";
@@ -1147,37 +1148,9 @@ function SummaryToolSourceIcon({
 }) {
 	const provider = getSummaryToolProvider(source);
 
-	if (provider === "google-calendar") {
-		return <Icons.googleCalendarLogo className="size-3.5 shrink-0" />;
-	}
-
-	if (provider === "google-drive") {
-		return <Icons.googleDriveLogo className="size-3.5 shrink-0" />;
-	}
-
-	if (provider === "yandex-calendar") {
-		return <Icons.yandexCalendarLogo className="size-3.5 shrink-0" />;
-	}
-
-	if (provider === "yandex-tracker") {
-		return (
-			<Icons.yandexTrackerLogo className="size-3.5 shrink-0 text-blue-500" />
-		);
-	}
-
-	if (provider === "jira") {
-		return <Icons.jiraLogo className="size-3.5 shrink-0" />;
-	}
-
-	if (provider === "notion") {
-		return <Icons.notionLogo className="size-3.5 shrink-0" />;
-	}
-
-	if (provider === "posthog") {
-		return <Icons.planeLogo className="size-3.5 shrink-0" />;
-	}
-
-	return null;
+	return provider ? (
+		<AppSourceIcon provider={provider} className="size-3.5 shrink-0" />
+	) : null;
 }
 
 function getSummaryToolProvider(
@@ -1196,16 +1169,6 @@ function getSummaryToolProvider(
 
 	return null;
 }
-
-const CHAT_APP_SOURCE_PROVIDERS = [
-	"google-calendar",
-	"google-drive",
-	"jira",
-	"notion",
-	"posthog",
-	"yandex-calendar",
-	"yandex-tracker",
-] as const satisfies ChatAppSourceProvider[];
 
 function SummarySection({
 	children,

@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import type { ChatAppSourceProvider } from "@/lib/chat-source-display";
 import type { RecipeSlug } from "@/lib/recipes";
 
 export type ChatMessageMetadata = {
@@ -13,6 +14,7 @@ export type ChatMessageMetadata = {
 		from: number;
 		to: number;
 		type?: "note" | "tool";
+		provider?: ChatAppSourceProvider;
 	}>;
 };
 

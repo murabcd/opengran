@@ -1,12 +1,15 @@
 import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
 import "./index.css";
 import { setDesktopNativeTheme } from "@workspace/platform/desktop";
 import type { DesktopThemeSource } from "@workspace/platform/desktop-bridge";
 import { Toaster } from "@workspace/ui/components/sonner";
-import { ThemeProvider } from "@workspace/ui/components/theme-provider";
+import {
+	ThemeProvider,
+	useTheme,
+} from "@workspace/ui/components/theme-provider";
 import App from "./App.tsx";
 import { MeetingWidgetScreen } from "./components/desktop/meeting-widget-screen";
 import { initializeAuthClient } from "./lib/auth-client";
@@ -32,11 +35,22 @@ const syncDesktopNativeTheme = (theme: DesktopThemeSource) => {
 	});
 };
 
+function DesktopNativeThemeSync() {
+	const { theme } = useTheme();
+
+	useEffect(() => {
+		syncDesktopNativeTheme(theme);
+	}, [theme]);
+
+	return null;
+}
+
 async function bootstrap() {
 	if (isMeetingWidgetRoute()) {
 		root.render(
 			<StrictMode>
-				<ThemeProvider onThemeChange={syncDesktopNativeTheme}>
+				<ThemeProvider>
+					<DesktopNativeThemeSync />
 					<MeetingWidgetScreen />
 				</ThemeProvider>
 			</StrictMode>,
@@ -55,7 +69,8 @@ async function bootstrap() {
 	root.render(
 		<StrictMode>
 			<ConvexBetterAuthProvider client={convex} authClient={authClient}>
-				<ThemeProvider onThemeChange={syncDesktopNativeTheme}>
+				<ThemeProvider>
+					<DesktopNativeThemeSync />
 					<App />
 					<Toaster />
 				</ThemeProvider>

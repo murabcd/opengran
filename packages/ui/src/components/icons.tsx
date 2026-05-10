@@ -320,15 +320,6 @@ export const Icons = {
 			/>
 		</svg>
 	),
-	posthogLogo: ({ ...props }: LucideProps) => (
-		<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" {...props}>
-			<circle cx="12" cy="12" r="10" fill="#F97316" />
-			<path
-				fill="#fff"
-				d="M8.25 7.5a.75.75 0 0 1 .75-.75h2.8a3.45 3.45 0 1 1 0 6.9H9.75v3.1a.75.75 0 0 1-1.5 0zm1.5.75v3.9h2.05a1.95 1.95 0 1 0 0-3.9zm5.5-.75a.75.75 0 0 1 .75.75v8.5a.75.75 0 0 1-1.5 0v-8.5a.75.75 0 0 1 .75-.75"
-			/>
-		</svg>
-	),
 	githubLogo: ({ ...props }: LucideProps) => (
 		<svg
 			className="size-4"

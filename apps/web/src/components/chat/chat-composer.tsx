@@ -12,7 +12,6 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { Icons } from "@workspace/ui/components/icons";
 import {
 	InputGroup,
 	InputGroupAddon,
@@ -30,7 +29,6 @@ import type { FileUIPart } from "ai";
 import {
 	ArrowUp,
 	Globe,
-	LayoutGrid,
 	type LucideIcon,
 	Plus,
 	Settings2,
@@ -45,6 +43,7 @@ import {
 	hasUploadingAttachments,
 	useFileAttachmentDropzone,
 } from "@/components/ai-elements/file-attachment-controls";
+import { AppSourceIcon } from "@/components/app-source-icon";
 import {
 	type ChatModel,
 	ChatModelPicker,
@@ -57,9 +56,10 @@ import {
 import {
 	getMentionAnchorRect,
 	getMentionPickerPosition,
+	getMentionProvider,
 	INLINE_MENTION_CLASS,
-	INLINE_MENTION_LABEL_CLASS,
 	type MentionPickerPosition,
+	renderInlineMentionHTML,
 	TypedMention,
 } from "@/lib/tiptap-mention";
 
@@ -98,6 +98,7 @@ export type ChatComposerMention = {
 	from: number;
 	to: number;
 	type?: "note" | "tool";
+	provider?: ChatAppSourceProvider;
 };
 
 const getMentionsFromComposerContent = (
@@ -120,6 +121,10 @@ const getMentionsFromComposerContent = (
 					node.attrs.type === "tool" || mentionId.startsWith("app:")
 						? "tool"
 						: "note",
+				provider:
+					typeof node.attrs.provider === "string"
+						? (node.attrs.provider as ChatAppSourceProvider)
+						: undefined,
 			});
 			textOffset += text.length;
 			return;
@@ -179,6 +184,7 @@ const getDraftDocument = (
 				id: mention.id,
 				label: mention.label,
 				type: mention.type ?? "note",
+				provider: mention.provider,
 			},
 		});
 		cursor = mention.to;
@@ -469,7 +475,7 @@ function ChatComposerTextEditor({
 		[visibleMentionDocuments, visibleMentionTools],
 	);
 	const emptyStateMessage = shouldSearchDocuments
-		? "No results found"
+		? "No results found."
 		: "Type to search for notes";
 
 	mentionPopoverOpenRef.current = mentionPopoverOpen;
@@ -543,6 +549,7 @@ function ChatComposerTextEditor({
 							id: source.id,
 							label: getAppSourceLabel(source.provider),
 							type: "tool",
+							provider: source.provider,
 						},
 					},
 					{ type: "text", text: " " },
@@ -586,21 +593,14 @@ function ChatComposerTextEditor({
 					return `@${node.attrs.label ?? node.attrs.id}`;
 				},
 				renderHTML({ node }) {
-					return [
-						"span",
-						{
-							"data-type": "mention",
-							class: INLINE_MENTION_CLASS,
-						},
-						"@",
-						[
-							"span",
-							{
-								class: INLINE_MENTION_LABEL_CLASS,
-							},
-							node.attrs.label ?? node.attrs.id,
-						],
-					];
+					const id = String(node.attrs.id);
+					const label = String(node.attrs.label ?? node.attrs.id);
+					return renderInlineMentionHTML({
+						id,
+						label,
+						provider: getMentionProvider(node.attrs.provider) ?? undefined,
+						type: node.attrs.type === "tool" ? "tool" : "note",
+					});
 				},
 				suggestion: {
 					char: "@",
@@ -968,7 +968,7 @@ function MentionPicker({
 		<div
 			role="listbox"
 			aria-label="Mention suggestions"
-			className="fixed z-[70] flex w-72 flex-col rounded-lg bg-popover p-0 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 pointer-events-auto"
+			className="fixed z-[70] flex w-56 flex-col rounded-lg bg-popover p-0 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 pointer-events-auto"
 			style={{
 				top: position.top,
 				left: position.left,
@@ -984,7 +984,7 @@ function MentionPicker({
 						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
 							Tools
 						</div>
-						<div className="space-y-0.5">
+						<div>
 							{appSources.map((source, index) => {
 								const selected = index === selectedIndex;
 								return (
@@ -997,9 +997,9 @@ function MentionPicker({
 											event.stopPropagation();
 											onAddTool(source.id);
 										}}
-										className={`flex h-9 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 text-left ${selected ? "bg-accent text-accent-foreground" : "text-popover-foreground"}`}
+										className={`flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 py-1.5 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground ${selected ? "bg-accent text-accent-foreground" : "text-popover-foreground"}`}
 									>
-										<div className="flex size-6 shrink-0 items-center justify-center">
+										<div className="flex size-4 shrink-0 items-center justify-center">
 											<AppSourceIcon
 												provider={source.provider}
 												className="size-4"
@@ -1019,7 +1019,7 @@ function MentionPicker({
 						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
 							Tools
 						</div>
-						<div className="space-y-0.5">
+						<div>
 							{appSources.map((source, index) => {
 								const selected = index === selectedIndex;
 								return (
@@ -1032,9 +1032,9 @@ function MentionPicker({
 											event.stopPropagation();
 											onAddTool(source.id);
 										}}
-										className={`flex h-9 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 text-left ${selected ? "bg-accent text-accent-foreground" : "text-popover-foreground"}`}
+										className={`flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 py-1.5 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground ${selected ? "bg-accent text-accent-foreground" : "text-popover-foreground"}`}
 									>
-										<div className="flex size-6 shrink-0 items-center justify-center">
+										<div className="flex size-4 shrink-0 items-center justify-center">
 											<AppSourceIcon
 												provider={source.provider}
 												className="size-4"
@@ -1077,7 +1077,7 @@ function MentionPicker({
 						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
 							Notes
 						</div>
-						<div className="space-y-0.5">
+						<div>
 							{mentionableDocuments.map((document, index) => {
 								const itemIndex = appSources.length + index;
 								const selected = itemIndex === selectedIndex;
@@ -1091,9 +1091,9 @@ function MentionPicker({
 											event.stopPropagation();
 											onAddMention(document.id);
 										}}
-										className={`flex h-9 w-full cursor-pointer items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-left ${selected ? "bg-accent text-accent-foreground" : "text-popover-foreground"}`}
+										className={`flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 py-1.5 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground ${selected ? "bg-accent text-accent-foreground" : "text-popover-foreground"}`}
 									>
-										<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+										<div className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
 											<document.icon className="size-4" />
 										</div>
 										<div
@@ -1276,7 +1276,7 @@ function ScopePicker({
 				side="bottom"
 				align="start"
 				sideOffset={4}
-				className="w-72"
+				className="w-56"
 			>
 				<DropdownMenuGroup>
 					<DropdownMenuItem
@@ -1308,46 +1308,6 @@ function ScopePicker({
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);
-}
-
-function AppSourceIcon({
-	provider,
-	className,
-}: {
-	provider: ChatAppSourceProvider;
-	className?: string;
-}) {
-	if (provider === "google-calendar") {
-		return <Icons.googleCalendarLogo className={className} />;
-	}
-
-	if (provider === "google-drive") {
-		return <Icons.googleDriveLogo className={className} />;
-	}
-
-	if (provider === "yandex-calendar") {
-		return <Icons.yandexCalendarLogo className={className} />;
-	}
-
-	if (provider === "yandex-tracker") {
-		return (
-			<Icons.yandexTrackerLogo className={`${className ?? ""} text-blue-500`} />
-		);
-	}
-
-	if (provider === "jira") {
-		return <Icons.jiraLogo className={className} />;
-	}
-
-	if (provider === "notion") {
-		return <Icons.notionLogo className={className} />;
-	}
-
-	if (provider === "posthog") {
-		return <Icons.planeLogo className={className} />;
-	}
-
-	return <LayoutGrid className={className} />;
 }
 
 function ChatNoteListSkeleton() {

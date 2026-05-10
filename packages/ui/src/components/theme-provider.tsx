@@ -9,7 +9,6 @@ type ThemeProviderProps = {
 	defaultTheme?: Theme;
 	storageKey?: string;
 	disableTransitionOnChange?: boolean;
-	onThemeChange?: (theme: Theme) => void;
 };
 
 type ThemeProviderState = {
@@ -64,7 +63,6 @@ export function ThemeProvider({
 	defaultTheme = "system",
 	storageKey = "theme",
 	disableTransitionOnChange = true,
-	onThemeChange,
 	...props
 }: ThemeProviderProps) {
 	const [theme, setThemeState] = React.useReducer(
@@ -125,10 +123,6 @@ export function ThemeProvider({
 			mediaQuery.removeEventListener("change", handleChange);
 		};
 	}, [theme, applyTheme]);
-
-	React.useEffect(() => {
-		onThemeChange?.(theme);
-	}, [theme, onThemeChange]);
 
 	React.useEffect(() => {
 		const handleStorageChange = (event: StorageEvent) => {

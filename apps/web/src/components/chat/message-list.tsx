@@ -7,7 +7,7 @@ import {
 } from "@workspace/ui/components/dialog";
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
-import { Paperclip, X } from "lucide-react";
+import { FileText, Paperclip, X } from "lucide-react";
 import * as React from "react";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
 import {
@@ -16,6 +16,7 @@ import {
 	SourcesContent,
 	SourcesTrigger,
 } from "@/components/ai-elements/sources";
+import { AppSourceIcon } from "@/components/app-source-icon";
 import { CollapsibleMessageContent } from "@/components/chat/collapsible-message-content";
 import {
 	ASSISTANT_CHAT_CONTENT_CLASS,
@@ -29,6 +30,11 @@ import {
 	getChatMessageMetadata,
 	getChatText,
 } from "@/lib/chat-message";
+import {
+	CHAT_APP_SOURCE_PROVIDERS,
+	type ChatAppSourceProvider,
+	getAppSourceLabel,
+} from "@/lib/chat-source-display";
 import { collectMessageSources } from "@/lib/chat-sources";
 import {
 	formatChatMessageTimestamp,
@@ -38,6 +44,7 @@ import {
 	getLastAssistantHasRenderableContent,
 	groupMessagesIntoTurns,
 } from "@/lib/chat-turns";
+import { getMentionProvider } from "@/lib/tiptap-mention";
 
 export type ChatMessageActionContext = {
 	displayText: string;
@@ -277,6 +284,7 @@ function ChatMessageText({
 		from: number;
 		to: number;
 		type?: "note" | "tool";
+		provider?: ChatAppSourceProvider;
 	}>;
 	onOpenMention?: (noteId: string) => void;
 	role: UIMessage["role"];
@@ -366,26 +374,54 @@ function UserMessageWithMentions({
 
 		const isToolMention =
 			mention.type === "tool" || mention.id.startsWith("app:");
+		const provider = getRenderedToolMentionProvider(mention);
 		parts.push(
-			<span
-				key={`${mention.id}:${mention.from}`}
-				className="inline cursor-pointer align-baseline whitespace-nowrap text-inherit"
-			>
-				@
-				{onOpenMention && !isToolMention ? (
-					<button
-						type="button"
-						className="inline cursor-pointer bg-transparent p-0 text-left align-baseline font-medium text-blue-400 decoration-blue-300/80 decoration-dotted underline-offset-4 hover:underline"
-						onClick={() => onOpenMention(mention.id)}
+			isToolMention ? (
+				<span
+					key={`${mention.id}:${mention.from}`}
+					className="inline-tool-mention"
+					data-mention-id={mention.id}
+					data-mention-type="tool"
+					data-mention-provider={provider}
+				>
+					<span
+						aria-hidden="true"
+						className="inline-tool-mention-icon"
+						data-provider={provider}
 					>
-						{mention.label}
-					</button>
-				) : (
-					<span className="cursor-pointer font-medium text-blue-400 decoration-blue-300/80 decoration-dotted underline-offset-4 hover:underline">
-						{mention.label}
+						{provider ? (
+							<AppSourceIcon
+								provider={provider}
+								className="inline-tool-mention-svg"
+							/>
+						) : null}
 					</span>
-				)}
-			</span>,
+					<span className="inline-tool-mention-label">{mention.label}</span>
+				</span>
+			) : (
+				<span
+					key={`${mention.id}:${mention.from}`}
+					className="inline cursor-pointer align-baseline whitespace-nowrap text-inherit"
+				>
+					<FileText
+						aria-hidden="true"
+						className="mr-1 inline size-4 align-[-0.125em] text-blue-400"
+					/>
+					{onOpenMention ? (
+						<button
+							type="button"
+							className="inline cursor-pointer bg-transparent p-0 text-left align-baseline font-medium text-blue-400 decoration-blue-300/80 decoration-dotted underline-offset-4 hover:underline"
+							onClick={() => onOpenMention(mention.id)}
+						>
+							{mention.label}
+						</button>
+					) : (
+						<span className="cursor-pointer font-medium text-blue-400 decoration-blue-300/80 decoration-dotted underline-offset-4 hover:underline">
+							{mention.label}
+						</span>
+					)}
+				</span>
+			),
 		);
 		cursor = Math.min(mention.to, text.length);
 	}
@@ -395,6 +431,25 @@ function UserMessageWithMentions({
 	}
 
 	return <div className="whitespace-pre-wrap break-words">{parts}</div>;
+}
+
+function getRenderedToolMentionProvider({
+	label,
+	provider,
+}: {
+	label: string;
+	provider?: ChatAppSourceProvider;
+}) {
+	const explicitProvider = getMentionProvider(provider);
+	if (explicitProvider) {
+		return explicitProvider;
+	}
+
+	return (
+		CHAT_APP_SOURCE_PROVIDERS.find(
+			(sourceProvider) => label === getAppSourceLabel(sourceProvider),
+		) ?? null
+	);
 }
 
 function MessageSources({

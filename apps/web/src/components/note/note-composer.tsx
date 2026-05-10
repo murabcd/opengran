@@ -126,8 +126,8 @@ import {
 	getMentionAnchorRect,
 	getMentionPickerPosition,
 	INLINE_MENTION_CLASS,
-	INLINE_MENTION_LABEL_CLASS,
 	type MentionPickerPosition,
+	renderInlineMentionHTML,
 	TypedMention,
 } from "@/lib/tiptap-mention";
 import { formatTranscriptElapsed } from "@/lib/transcript";
@@ -2538,21 +2538,13 @@ function ChatInlinePopoverFooter({
 					return `@${node.attrs.label ?? node.attrs.id}`;
 				},
 				renderHTML({ node }) {
-					return [
-						"span",
-						{
-							"data-type": "mention",
-							class: INLINE_MENTION_CLASS,
-						},
-						"@",
-						[
-							"span",
-							{
-								class: INLINE_MENTION_LABEL_CLASS,
-							},
-							node.attrs.label ?? node.attrs.id,
-						],
-					];
+					const id = String(node.attrs.id);
+					const label = String(node.attrs.label ?? node.attrs.id);
+					return renderInlineMentionHTML({
+						id,
+						label,
+						type: "note",
+					});
 				},
 				suggestion: {
 					char: "@",

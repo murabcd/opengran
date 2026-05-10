@@ -23,7 +23,6 @@ import {
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field";
-import { Icons } from "@workspace/ui/components/icons";
 import { Input } from "@workspace/ui/components/input";
 import {
 	InputGroup,
@@ -51,16 +50,10 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { useQuery } from "convex/react";
-import {
-	Clock,
-	FileText,
-	Globe,
-	LayoutGrid,
-	Plus,
-	Settings2,
-} from "lucide-react";
+import { Clock, FileText, Globe, Plus, Settings2 } from "lucide-react";
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { AppSourceIcon } from "@/components/app-source-icon";
 import {
 	AUTOMATION_SCHEDULE_PERIODS,
 	type AutomationAppSource,
@@ -81,9 +74,10 @@ import { getNoteDisplayTitle } from "@/lib/note-title";
 import {
 	getMentionAnchorRect,
 	getMentionPickerPosition,
+	getMentionProvider,
 	INLINE_MENTION_CLASS,
-	INLINE_MENTION_LABEL_CLASS,
 	type MentionPickerPosition,
+	renderInlineMentionHTML,
 	TypedMention,
 } from "@/lib/tiptap-mention";
 import { api } from "../../../../../convex/_generated/api";
@@ -118,6 +112,7 @@ type AutomationPromptMention = {
 	from: number;
 	to: number;
 	type: "note" | "tool";
+	provider?: ChatAppSourceProvider;
 };
 
 type AutomationMentionPickerItem =
@@ -183,6 +178,10 @@ const getPromptMentionsFromContent = (
 					node.attrs.type === "tool" || mentionId.startsWith("app:")
 						? "tool"
 						: "note",
+				provider:
+					typeof node.attrs.provider === "string"
+						? (node.attrs.provider as ChatAppSourceProvider)
+						: undefined,
 			});
 			textOffset += text.length;
 			return;
@@ -240,6 +239,7 @@ const getPromptDocument = (
 				id: mention.id,
 				label: mention.label,
 				type: mention.type,
+				provider: mention.provider,
 			},
 		});
 		cursor = mention.to;
@@ -815,6 +815,7 @@ function AutomationPromptEditor({
 							id: item.source.id,
 							label: getAppSourceLabel(item.source.provider),
 							type: "tool" as const,
+							provider: item.source.provider,
 						}
 					: {
 							id: item.source.id,
@@ -882,21 +883,14 @@ function AutomationPromptEditor({
 					return `@${node.attrs.label ?? node.attrs.id}`;
 				},
 				renderHTML({ node }) {
-					return [
-						"span",
-						{
-							"data-type": "mention",
-							class: INLINE_MENTION_CLASS,
-						},
-						"@",
-						[
-							"span",
-							{
-								class: INLINE_MENTION_LABEL_CLASS,
-							},
-							node.attrs.label ?? node.attrs.id,
-						],
-					];
+					const id = String(node.attrs.id);
+					const label = String(node.attrs.label ?? node.attrs.id);
+					return renderInlineMentionHTML({
+						id,
+						label,
+						provider: getMentionProvider(node.attrs.provider) ?? undefined,
+						type: node.attrs.type === "tool" ? "tool" : "note",
+					});
 				},
 				suggestion: {
 					char: "@",
@@ -1138,7 +1132,7 @@ function AutomationMentionPicker({
 		<div
 			role="listbox"
 			aria-label="Mention suggestions"
-			className="fixed z-[70] flex w-72 flex-col rounded-lg bg-popover p-0 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 pointer-events-auto"
+			className="fixed z-[70] flex w-56 flex-col rounded-lg bg-popover p-0 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 pointer-events-auto"
 			style={{ top: position.top, left: position.left }}
 			onPointerDown={(event) => {
 				event.preventDefault();
@@ -1151,7 +1145,7 @@ function AutomationMentionPicker({
 						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
 							Tools
 						</div>
-						<div className="space-y-0.5">
+						<div>
 							{appSources.map((source, index) => {
 								const selected = index === selectedIndex;
 
@@ -1166,14 +1160,17 @@ function AutomationMentionPicker({
 											onSelectItem({ type: "tool", source });
 										}}
 										className={cn(
-											"flex h-9 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 text-left",
+											"flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 py-1.5 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground",
 											selected
 												? "bg-accent text-accent-foreground"
 												: "text-popover-foreground",
 										)}
 									>
-										<div className="flex size-6 shrink-0 items-center justify-center">
-											<ConnectedAppIcon provider={source.provider} />
+										<div className="flex size-4 shrink-0 items-center justify-center">
+											<AppSourceIcon
+												provider={source.provider}
+												className="size-4"
+											/>
 										</div>
 										<div className="min-w-0 flex-1 truncate">
 											{getAppSourceLabel(source.provider)}
@@ -1189,7 +1186,7 @@ function AutomationMentionPicker({
 						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
 							Tools
 						</div>
-						<div className="space-y-0.5">
+						<div>
 							{appSources.map((source, index) => {
 								const selected = index === selectedIndex;
 
@@ -1204,14 +1201,17 @@ function AutomationMentionPicker({
 											onSelectItem({ type: "tool", source });
 										}}
 										className={cn(
-											"flex h-9 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-1.5 text-left",
+											"flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 py-1.5 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground",
 											selected
 												? "bg-accent text-accent-foreground"
 												: "text-popover-foreground",
 										)}
 									>
-										<div className="flex size-6 shrink-0 items-center justify-center">
-											<ConnectedAppIcon provider={source.provider} />
+										<div className="flex size-4 shrink-0 items-center justify-center">
+											<AppSourceIcon
+												provider={source.provider}
+												className="size-4"
+											/>
 										</div>
 										<div className="min-w-0 flex-1 truncate">
 											{getAppSourceLabel(source.provider)}
@@ -1243,7 +1243,7 @@ function AutomationMentionPicker({
 							Notes
 						</div>
 						<div className="px-2 py-6 text-center text-sm text-muted-foreground">
-							No results found
+							No results found.
 						</div>
 					</div>
 				) : null}
@@ -1252,7 +1252,7 @@ function AutomationMentionPicker({
 						<div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
 							Notes
 						</div>
-						<div className="space-y-0.5">
+						<div>
 							{noteSources.map((source, index) => {
 								const itemIndex = appSources.length + index;
 								const selected = itemIndex === selectedIndex;
@@ -1268,13 +1268,13 @@ function AutomationMentionPicker({
 											onSelectItem({ type: "note", source });
 										}}
 										className={cn(
-											"flex h-9 w-full cursor-pointer items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-left",
+											"flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 py-1.5 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground",
 											selected
 												? "bg-accent text-accent-foreground"
 												: "text-popover-foreground",
 										)}
 									>
-										<div className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+										<div className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
 											<FileText className="size-4" />
 										</div>
 										<div className="min-w-0 flex-1 truncate">
@@ -1354,38 +1354,6 @@ function AppSourcesPicker({
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);
-}
-
-function ConnectedAppIcon({ provider }: { provider: ChatAppSourceProvider }) {
-	if (provider === "google-calendar") {
-		return <Icons.googleCalendarLogo className="size-4" />;
-	}
-
-	if (provider === "google-drive") {
-		return <Icons.googleDriveLogo className="size-4" />;
-	}
-
-	if (provider === "yandex-calendar") {
-		return <Icons.yandexCalendarLogo className="size-4" />;
-	}
-
-	if (provider === "yandex-tracker") {
-		return <Icons.yandexTrackerLogo className="size-4 text-blue-500" />;
-	}
-
-	if (provider === "jira") {
-		return <Icons.jiraLogo className="size-4" />;
-	}
-
-	if (provider === "notion") {
-		return <Icons.notionLogo className="size-4" />;
-	}
-
-	if (provider === "posthog") {
-		return <Icons.planeLogo className="size-4" />;
-	}
-
-	return <LayoutGrid className="size-4" />;
 }
 
 function SchedulePicker({

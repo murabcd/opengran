@@ -49,7 +49,6 @@ import {
 	FieldDescription,
 	FieldGroup,
 } from "@workspace/ui/components/field";
-import { Icons } from "@workspace/ui/components/icons";
 import { Input } from "@workspace/ui/components/input";
 import {
 	InputGroup,
@@ -105,6 +104,7 @@ import {
 	useState,
 } from "react";
 import { toast } from "sonner";
+import { AppSourceIcon } from "@/components/app-source-icon";
 import { writeTextToClipboard } from "@/components/note/share-note";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { useLinkedAccounts } from "@/hooks/use-linked-accounts";
@@ -1371,7 +1371,9 @@ function useCalendarSettingsController() {
 
 	const calendarProviders: CalendarProviderRowProps[] = [
 		{
-			icon: <Icons.googleCalendarLogo className="size-5 shrink-0" />,
+			icon: (
+				<AppSourceIcon provider="google-calendar" className="size-5 shrink-0" />
+			),
 			name: "Google Calendar",
 			checked:
 				isGoogleCalendarConnected && calendarVisibility.showGoogleCalendar,
@@ -1398,7 +1400,9 @@ function useCalendarSettingsController() {
 			) : null,
 		},
 		{
-			icon: <Icons.yandexCalendarLogo className="size-5 shrink-0" />,
+			icon: (
+				<AppSourceIcon provider="yandex-calendar" className="size-5 shrink-0" />
+			),
 			name: "Yandex Calendar",
 			checked:
 				isYandexCalendarConnected && calendarVisibility.showYandexCalendar,
@@ -2364,7 +2368,9 @@ function useConnectionsSettingsController() {
 
 	const toolConnections: ToolConnectionRowProps[] = [
 		{
-			icon: <Icons.googleCalendarLogo className="size-5 shrink-0" />,
+			icon: (
+				<AppSourceIcon provider="google-calendar" className="size-5 shrink-0" />
+			),
 			name: "Google Calendar",
 			buttonLabel: googleCalendarToolAction.buttonLabel,
 			buttonVariant: googleCalendarToolAction.buttonVariant,
@@ -2382,7 +2388,9 @@ function useConnectionsSettingsController() {
 			},
 		},
 		{
-			icon: <Icons.googleDriveLogo className="size-5 shrink-0" />,
+			icon: (
+				<AppSourceIcon provider="google-drive" className="size-5 shrink-0" />
+			),
 			name: "Google Drive",
 			buttonLabel: googleDriveToolAction.buttonLabel,
 			buttonVariant: googleDriveToolAction.buttonVariant,
@@ -2400,7 +2408,9 @@ function useConnectionsSettingsController() {
 			},
 		},
 		{
-			icon: <Icons.yandexCalendarLogo className="size-5 shrink-0" />,
+			icon: (
+				<AppSourceIcon provider="yandex-calendar" className="size-5 shrink-0" />
+			),
 			name: "Yandex Calendar",
 			buttonLabel: yandexCalendarConnection ? "Manage" : "Connect",
 			buttonVariant: "outline",
@@ -2411,7 +2421,7 @@ function useConnectionsSettingsController() {
 		},
 		{
 			icon: (
-				<Icons.yandexTrackerLogo className="size-5 shrink-0 text-blue-500" />
+				<AppSourceIcon provider="yandex-tracker" className="size-5 shrink-0" />
 			),
 			name: "Yandex Tracker",
 			buttonLabel: yandexTrackerConnection ? "Manage" : "Connect",
@@ -2419,21 +2429,21 @@ function useConnectionsSettingsController() {
 			onButtonClick: () => handleYandexTrackerDialogOpenChange(true),
 		},
 		{
-			icon: <Icons.jiraLogo className="size-5 shrink-0" />,
+			icon: <AppSourceIcon provider="jira" className="size-5 shrink-0" />,
 			name: "Jira",
 			buttonLabel: jiraConnection ? "Manage" : "Connect",
 			buttonVariant: "outline",
 			onButtonClick: () => handleJiraDialogOpenChange(true),
 		},
 		{
-			icon: <Icons.planeLogo className="size-5 shrink-0" />,
+			icon: <AppSourceIcon provider="posthog" className="size-5 shrink-0" />,
 			name: "PostHog",
 			buttonLabel: posthogConnection ? "Manage" : "Connect",
 			buttonVariant: "outline",
 			onButtonClick: () => handlePostHogDialogOpenChange(true),
 		},
 		{
-			icon: <Icons.notionLogo className="size-5 shrink-0" />,
+			icon: <AppSourceIcon provider="notion" className="size-5 shrink-0" />,
 			name: "Notion",
 			buttonLabel: notionConnection ? "Manage" : "Connect",
 			buttonVariant: "outline",
