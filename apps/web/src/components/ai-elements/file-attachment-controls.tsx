@@ -145,6 +145,25 @@ function hasDraggedFiles(event: React.DragEvent<HTMLElement>) {
 	return Array.from(event.dataTransfer.types).includes("Files");
 }
 
+function getPastedFiles(event: React.ClipboardEvent<HTMLElement>) {
+	const { clipboardData } = event;
+	if (!clipboardData) {
+		return [];
+	}
+
+	const files = Array.from(clipboardData.files);
+	if (files.length > 0) {
+		return files;
+	}
+
+	return Array.from(clipboardData.items)
+		.filter((item) => item.kind === "file")
+		.flatMap((item) => {
+			const file = item.getAsFile();
+			return file ? [file] : [];
+		});
+}
+
 export function useFileAttachmentDropzone({
 	disabled,
 	onFilesAdded,
@@ -242,6 +261,23 @@ export function useFileAttachmentDropzone({
 		[disabled, uploadFiles],
 	);
 
+	const handlePaste = React.useCallback(
+		(event: React.ClipboardEvent<HTMLElement>) => {
+			if (disabled) {
+				return;
+			}
+
+			const files = getPastedFiles(event);
+			if (files.length === 0) {
+				return;
+			}
+
+			event.preventDefault();
+			uploadFiles(files);
+		},
+		[disabled, uploadFiles],
+	);
+
 	return {
 		isDragOver,
 		uploadFiles,
@@ -250,6 +286,7 @@ export function useFileAttachmentDropzone({
 			onDragOver: handleDragOver,
 			onDragLeave: handleDragLeave,
 			onDrop: handleDrop,
+			onPaste: handlePaste,
 		},
 	};
 }
