@@ -22,6 +22,7 @@ import {
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
+	useSidebarShell,
 } from "@workspace/ui/components/sidebar";
 import { ChevronsUpDown, LoaderCircle, Plus } from "lucide-react";
 import * as React from "react";
@@ -42,6 +43,7 @@ export function WorkspaceSwitcher({
 	onSelect: (workspaceId: Id<"workspaces">) => void;
 	onCreateWorkspace: (input: { name: string }) => Promise<WorkspaceRecord>;
 }) {
+	const { isMobile } = useSidebarShell();
 	const [createOpen, setCreateOpen] = React.useState(false);
 	const [menuOpen, setMenuOpen] = React.useState(false);
 	const [name, setName] = React.useState("");
@@ -133,7 +135,7 @@ export function WorkspaceSwitcher({
 						</DropdownMenuTrigger>
 						<DropdownMenuContent
 							className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg [&>[data-slot=dropdown-menu-item]+[data-slot=dropdown-menu-item]]:mt-1"
-							side="bottom"
+							side={isMobile ? "bottom" : "right"}
 							align="start"
 							sideOffset={4}
 						>
