@@ -47,6 +47,7 @@ import { AppSourceIcon } from "@/components/app-source-icon";
 import {
 	type ChatModel,
 	ChatModelPicker,
+	type ReasoningEffort,
 } from "@/components/chat/model-picker";
 import {
 	type ChatAppSourceProvider,
@@ -256,9 +257,11 @@ type ChatComposerProps = {
 	onAttachedFilesChange: React.Dispatch<React.SetStateAction<ChatAttachment[]>>;
 	isLoading: boolean;
 	selectedModel: ChatModel | null;
+	reasoningEffort: ReasoningEffort;
 	modelPopoverOpen: boolean;
 	onModelPopoverOpenChange: (open: boolean) => void;
 	onSelectedModelChange: (model: ChatModel) => void;
+	onReasoningEffortChange: (value: ReasoningEffort) => void;
 	mentionableDocuments: ContextPage[];
 	isNotesLoading: boolean;
 	onMentionsChange: (mentions: ChatComposerMention[]) => void;
@@ -286,9 +289,11 @@ export function ChatComposer({
 	onAttachedFilesChange,
 	isLoading,
 	selectedModel,
+	reasoningEffort,
 	modelPopoverOpen,
 	onModelPopoverOpenChange,
 	onSelectedModelChange,
+	onReasoningEffortChange,
 	mentionableDocuments,
 	isNotesLoading,
 	onMentionsChange,
@@ -395,6 +400,8 @@ export function ChatComposer({
 								onOpenChange={onModelPopoverOpenChange}
 								selectedModel={selectedModel}
 								onSelectedModelChange={onSelectedModelChange}
+								reasoningEffort={reasoningEffort}
+								onReasoningEffortChange={onReasoningEffortChange}
 							/>
 						) : null
 					}

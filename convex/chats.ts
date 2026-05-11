@@ -15,6 +15,13 @@ const chatRoleValidator = v.union(
 	v.literal("assistant"),
 );
 
+const reasoningEffortValidator = v.union(
+	v.literal("low"),
+	v.literal("medium"),
+	v.literal("high"),
+	v.literal("xhigh"),
+);
+
 const chatFields = {
 	_id: v.id("chats"),
 	_creationTime: v.number(),
@@ -27,6 +34,7 @@ const chatFields = {
 	title: v.string(),
 	preview: v.string(),
 	model: v.optional(v.string()),
+	reasoningEffort: v.optional(reasoningEffortValidator),
 	isArchived: v.boolean(),
 	archivedAt: v.optional(v.number()),
 	createdAt: v.number(),
@@ -433,6 +441,7 @@ const saveMessageForOwnerInternal = async (
 		title?: string;
 		preview?: string;
 		model?: string;
+		reasoningEffort?: "low" | "medium" | "high" | "xhigh";
 		forceTitle?: boolean;
 		message: {
 			id: string;
@@ -485,6 +494,7 @@ const saveMessageForOwnerInternal = async (
 			title: normalizedTitle ?? "New chat",
 			preview: normalizedPreview,
 			model: args.model,
+			reasoningEffort: args.reasoningEffort,
 			isArchived: false,
 			archivedAt: undefined,
 			createdAt: now,
@@ -507,6 +517,7 @@ const saveMessageForOwnerInternal = async (
 			title: nextTitle,
 			preview: normalizedPreview,
 			model: args.model ?? existingChat.model,
+			reasoningEffort: args.reasoningEffort ?? existingChat.reasoningEffort,
 			isArchived: false,
 			archivedAt: undefined,
 			updatedAt: now,
@@ -921,6 +932,7 @@ export const saveMessage = mutation({
 		title: v.optional(v.string()),
 		preview: v.optional(v.string()),
 		model: v.optional(v.string()),
+		reasoningEffort: v.optional(reasoningEffortValidator),
 		forceTitle: v.optional(v.boolean()),
 		message: chatMessageInputValidator,
 	},
@@ -940,6 +952,7 @@ export const saveMessage = mutation({
 			title: args.title,
 			preview: args.preview,
 			model: args.model,
+			reasoningEffort: args.reasoningEffort,
 			message: args.message,
 		});
 	},
@@ -955,6 +968,7 @@ export const saveMessageForOwner = internalMutation({
 		title: v.optional(v.string()),
 		preview: v.optional(v.string()),
 		model: v.optional(v.string()),
+		reasoningEffort: v.optional(reasoningEffortValidator),
 		forceTitle: v.optional(v.boolean()),
 		message: chatMessageInputValidator,
 	},
@@ -1066,11 +1080,12 @@ export const updateTitle = mutation({
 	},
 });
 
-export const setModel = mutation({
+export const setChatSettings = mutation({
 	args: {
 		workspaceId: v.id("workspaces"),
 		chatId: v.string(),
-		model: v.string(),
+		model: v.optional(v.string()),
+		reasoningEffort: v.optional(reasoningEffortValidator),
 	},
 	returns: v.null(),
 	handler: async (ctx, args) => {
@@ -1088,7 +1103,11 @@ export const setModel = mutation({
 		}
 
 		await ctx.db.patch(chat._id, {
-			model: clampWhitespace(args.model) || chat.model,
+			model:
+				args.model === undefined
+					? chat.model
+					: clampWhitespace(args.model) || chat.model,
+			reasoningEffort: args.reasoningEffort ?? chat.reasoningEffort,
 			updatedAt: Date.now(),
 		});
 

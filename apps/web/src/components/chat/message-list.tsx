@@ -9,6 +9,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
 import { FileText, Paperclip, X } from "lucide-react";
 import * as React from "react";
+import { Reasoning } from "@/components/ai-elements/reasoning";
 import { ShimmerText } from "@/components/ai-elements/shimmer";
 import {
 	Source,
@@ -16,6 +17,12 @@ import {
 	SourcesContent,
 	SourcesTrigger,
 } from "@/components/ai-elements/sources";
+import { ToolGroup } from "@/components/ai-elements/tools/tool-group";
+import { getToolMeta } from "@/components/ai-elements/tools/tool-registry";
+import {
+	ToolRenderer,
+	toToolPartLike,
+} from "@/components/ai-elements/tools/tool-renderer";
 import { AppSourceIcon } from "@/components/app-source-icon";
 import { CollapsibleMessageContent } from "@/components/chat/collapsible-message-content";
 import {
@@ -27,6 +34,8 @@ import {
 import { ChatRecipeReceipt } from "@/components/chat/recipe-receipt";
 import {
 	extractFileParts,
+	extractReasoningParts,
+	extractToolParts,
 	getChatMessageMetadata,
 	getChatText,
 } from "@/lib/chat-message";
@@ -117,6 +126,8 @@ export function ChatMessageListContent({
 				(message) =>
 					getChatText(message).length > 0 ||
 					extractFileParts(message).length > 0 ||
+					extractReasoningParts(message).length > 0 ||
+					extractToolParts(message).length > 0 ||
 					(includeSources && collectMessageSources(message).length > 0),
 			));
 
@@ -192,6 +203,10 @@ function ChatMessageListItem({
 	textContainerClassName?: string;
 }) {
 	const fileParts = extractFileParts(message);
+	const toolParts =
+		message.role === "assistant" ? extractToolParts(message) : [];
+	const reasoningParts =
+		message.role === "assistant" ? extractReasoningParts(message) : [];
 	const metadata = getChatMessageMetadata(message);
 	const selectedRecipe = metadata?.recipe ?? null;
 	const displayText = metadata?.recipeOnly ? "" : getChatText(message);
@@ -210,6 +225,8 @@ function ChatMessageListItem({
 	if (
 		isEmpty &&
 		fileParts.length === 0 &&
+		reasoningParts.length === 0 &&
+		toolParts.length === 0 &&
 		!selectedRecipe &&
 		!isStreamingAssistantMessage
 	) {
@@ -241,6 +258,14 @@ function ChatMessageListItem({
 			>
 				{selectedRecipe ? <ChatRecipeReceipt recipe={selectedRecipe} /> : null}
 				<ChatMessageFileAttachments files={fileParts} />
+				<ChatMessageToolCalls
+					parts={toolParts}
+					chatStatus={isStreamingAssistantMessage ? "streaming" : "ready"}
+				/>
+				<ChatMessageReasoning
+					parts={reasoningParts}
+					isStreamingAssistantMessage={Boolean(isStreamingAssistantMessage)}
+				/>
 				<ChatMessageText
 					displayText={displayText}
 					isEmpty={isEmpty}
@@ -264,6 +289,126 @@ function ChatMessageListItem({
 		</div>
 	);
 }
+
+function ChatMessageReasoning({
+	isStreamingAssistantMessage,
+	parts,
+}: {
+	isStreamingAssistantMessage: boolean;
+	parts: UIMessage["parts"];
+}) {
+	if (parts.length === 0) {
+		return null;
+	}
+
+	return (
+		<div className="mb-3 flex w-full flex-col gap-2 first:mt-0">
+			{parts.map((part) => {
+				if (part.type !== "reasoning") {
+					return null;
+				}
+
+				return (
+					<Reasoning
+						key={getReasoningPartKey(part)}
+						text={part.text}
+						isStreaming={isStreamingAssistantMessage && part.state !== "done"}
+					/>
+				);
+			})}
+		</div>
+	);
+}
+
+const getReasoningPartKey = (
+	part: Extract<UIMessage["parts"][number], { type: "reasoning" }>,
+) => `reasoning:${part.text || part.state || "empty"}`;
+
+function ChatMessageToolCalls({
+	chatStatus,
+	parts,
+}: {
+	chatStatus: "streaming" | "ready";
+	parts: UIMessage["parts"];
+}) {
+	if (parts.length === 0) {
+		return null;
+	}
+
+	const groups = groupAdjacentToolParts(parts);
+
+	return (
+		<div className="mb-3 flex w-full flex-col gap-2 first:mt-0">
+			{groups.map((group) =>
+				group.groupLabel ? (
+					<ToolGroup
+						key={group.key}
+						parts={group.parts}
+						chatStatus={chatStatus}
+					/>
+				) : (
+					<ToolRenderer
+						key={group.key}
+						part={group.parts[0]}
+						chatStatus={chatStatus}
+					/>
+				),
+			)}
+		</div>
+	);
+}
+
+const getToolGroupInfo = (part: UIMessage["parts"][number]) => {
+	const groupKey = getToolMeta(toToolPartLike(part))?.groupKey;
+
+	if (groupKey === "posthog") {
+		return {
+			key: "posthog",
+			label: "PostHog",
+		};
+	}
+
+	if (groupKey === "search") {
+		return {
+			key: "search",
+			label: "Search",
+		};
+	}
+
+	return null;
+};
+
+const groupAdjacentToolParts = (parts: UIMessage["parts"]) => {
+	const groups: Array<{
+		groupKey: string;
+		groupLabel: string | null;
+		key: string;
+		parts: UIMessage["parts"];
+	}> = [];
+
+	for (const part of parts) {
+		const groupInfo = getToolGroupInfo(part);
+		const key = groupInfo?.key ?? `${part.type}:${groups.length}`;
+		const previousGroup = groups[groups.length - 1];
+
+		if (groupInfo && previousGroup?.groupKey === key) {
+			previousGroup.parts.push(part);
+			continue;
+		}
+
+		groups.push({
+			groupKey: key,
+			groupLabel: groupInfo?.label ?? null,
+			key:
+				"toolCallId" in part && typeof part.toolCallId === "string"
+					? `${key}:${part.toolCallId}`
+					: `${key}:${part.type}`,
+			parts: [part],
+		});
+	}
+
+	return groups;
+};
 
 function ChatMessageText({
 	displayText,

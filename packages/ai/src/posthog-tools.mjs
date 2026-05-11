@@ -3,6 +3,7 @@ import {
 	PostHogAgentToolkit,
 } from "@posthog/agent-toolkit";
 import { tool } from "ai";
+import { withToolTiming } from "./tool-timing.mjs";
 
 const POSTHOG_READONLY_TOOL_NAMES = new Set([
 	"dashboard-get",
@@ -286,11 +287,12 @@ const wrapToolkitTool = (connection, context, posthogTool) =>
 	tool({
 		description: posthogTool.description,
 		inputSchema: posthogTool.schema,
-		execute: async (input) => {
-			await pinProject(context, connection);
-			const value = await posthogTool.handler(context, input);
-			return buildToolResult(connection, posthogTool.name, value);
-		},
+		execute: async (input) =>
+			await withToolTiming(async () => {
+				await pinProject(context, connection);
+				const value = await posthogTool.handler(context, input);
+				return buildToolResult(connection, posthogTool.name, value);
+			}),
 	});
 
 export const buildPostHogTools = async (connection) => {

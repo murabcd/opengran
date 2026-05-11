@@ -4,6 +4,12 @@ import {
 	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuLabel,
+	DropdownMenuRadioGroup,
+	DropdownMenuRadioItem,
+	DropdownMenuSeparator,
+	DropdownMenuSub,
+	DropdownMenuSubContent,
+	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import { Icons } from "@workspace/ui/components/icons";
@@ -14,9 +20,10 @@ import {
 	TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
-import { chatModels } from "@/lib/ai/models";
+import { chatModels, reasoningEfforts } from "@/lib/ai/models";
 
 export type ChatModel = (typeof chatModels)[number];
+export type ReasoningEffort = (typeof reasoningEfforts)[number]["id"];
 
 type ChatModelPickerProps = {
 	open: boolean;
@@ -28,6 +35,8 @@ type ChatModelPickerProps = {
 	modelNameClassName?: string;
 	contentClassName?: string;
 	menuLabel?: string;
+	reasoningEffort?: ReasoningEffort;
+	onReasoningEffortChange?: (value: ReasoningEffort) => void;
 };
 
 export function ChatModelPicker({
@@ -40,7 +49,16 @@ export function ChatModelPicker({
 	modelNameClassName,
 	contentClassName,
 	menuLabel = "OpenAI",
+	reasoningEffort,
+	onReasoningEffortChange,
 }: ChatModelPickerProps) {
+	const showReasoningEffort = Boolean(
+		reasoningEffort && onReasoningEffortChange,
+	);
+	const selectedReasoningEffort = reasoningEfforts.find(
+		(effort) => effort.id === reasoningEffort,
+	);
+
 	return (
 		<DropdownMenu open={open} onOpenChange={onOpenChange}>
 			<Tooltip>
@@ -62,6 +80,11 @@ export function ChatModelPicker({
 								)}
 							/>
 							<span className={modelNameClassName}>{selectedModel.name}</span>
+							{showReasoningEffort ? (
+								<span className="text-muted-foreground">
+									{selectedReasoningEffort?.name}
+								</span>
+							) : null}
 						</InputGroupButton>
 					</DropdownMenuTrigger>
 				</TooltipTrigger>
@@ -94,6 +117,37 @@ export function ChatModelPicker({
 						</DropdownMenuCheckboxItem>
 					))}
 				</DropdownMenuGroup>
+				{showReasoningEffort ? (
+					<>
+						<DropdownMenuSeparator />
+						<DropdownMenuSub>
+							<DropdownMenuSubTrigger>
+								<span>{selectedReasoningEffort?.name}</span>
+							</DropdownMenuSubTrigger>
+							<DropdownMenuSubContent className="min-w-44">
+								<DropdownMenuLabel className="text-muted-foreground text-xs">
+									Reasoning
+								</DropdownMenuLabel>
+								<DropdownMenuRadioGroup
+									value={reasoningEffort}
+									onValueChange={(value) => {
+										onReasoningEffortChange?.(value as ReasoningEffort);
+									}}
+								>
+									{reasoningEfforts.map((effort) => (
+										<DropdownMenuRadioItem
+											key={effort.id}
+											value={effort.id}
+											className="pl-2 pr-8 *:[span:first-child]:right-2 *:[span:first-child]:left-auto"
+										>
+											{effort.name}
+										</DropdownMenuRadioItem>
+									))}
+								</DropdownMenuRadioGroup>
+							</DropdownMenuSubContent>
+						</DropdownMenuSub>
+					</>
+				) : null}
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);

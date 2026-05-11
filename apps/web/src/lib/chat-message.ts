@@ -34,6 +34,12 @@ export const extractFileParts = (message: UIMessage) =>
 			part.url.length > 0,
 	);
 
+export const extractToolParts = (message: UIMessage) =>
+	message.parts.filter((part) => part.type.startsWith("tool-"));
+
+export const extractReasoningParts = (message: UIMessage) =>
+	message.parts.filter((part) => part.type === "reasoning");
+
 export const getChatText = (message: UIMessage) =>
 	extractTextParts(message)
 		.map((part) => part.text)

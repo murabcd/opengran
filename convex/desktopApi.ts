@@ -21,7 +21,9 @@ import {
 import {
 	CHAT_SERVER_MODELS,
 	CHAT_TITLE_MODEL_ID,
+	getChatModelProviderOptions,
 	NOTE_GENERATION_MODEL_ID,
+	normalizeReasoningEffort,
 } from "../packages/ai/src/models.mjs";
 import { buildConnectedAppTools } from "../packages/ai/src/app-tools.mjs";
 import {
@@ -49,6 +51,7 @@ type ChatRequestBody = {
 	message?: UIMessage;
 	messages?: UIMessage[];
 	model?: string;
+	reasoningEffort?: "low" | "medium" | "high" | "xhigh";
 	webSearchEnabled?: boolean;
 	appsEnabled?: boolean;
 	mentions?: string[];
@@ -506,6 +509,7 @@ export const handleChatRequest = async (request: Request) => {
 		message,
 		messages = [],
 		model,
+		reasoningEffort,
 		workspaceId,
 		webSearchEnabled = false,
 		appsEnabled = true,
@@ -530,7 +534,6 @@ export const handleChatRequest = async (request: Request) => {
 		});
 	}
 
-	const selectedModel = resolveChatModel(model);
 	const convexClient =
 		convexToken && id && resolvedWorkspaceId
 			? getConvexClient(request, convexToken)
@@ -544,6 +547,15 @@ export const handleChatRequest = async (request: Request) => {
 					})
 					.catch(() => null)
 			: null;
+	const selectedModel = resolveChatModel(model ?? storedChat?.model);
+	const requestedReasoningEffort =
+		reasoningEffort ?? storedChat?.reasoningEffort ?? undefined;
+	const resolvedReasoningEffort = normalizeReasoningEffort(
+		requestedReasoningEffort,
+	);
+	const providerOptions = getChatModelProviderOptions(selectedModel.model, {
+		reasoningEffort: resolvedReasoningEffort,
+	});
 	const resolvedNoteId =
 		(noteContext?.noteId as Id<"notes"> | null | undefined) ??
 		storedChat?.noteId ??
@@ -584,6 +596,7 @@ export const handleChatRequest = async (request: Request) => {
 				noteId: resolvedNoteId ?? undefined,
 				preview: getChatPreviewFromMessage(lastUserMessage),
 				model: selectedModel.model,
+				reasoningEffort: resolvedReasoningEffort,
 				message: toStoredMessage(lastUserMessage),
 			});
 		} catch (error) {
@@ -672,6 +685,7 @@ export const handleChatRequest = async (request: Request) => {
 	});
 	const result = streamText({
 		model: openai(selectedModel.model),
+		providerOptions,
 		system: systemPrompt,
 		messages: await convertToModelMessages(chatMessages),
 		tools: Object.keys(tools).length > 0 ? tools : undefined,
@@ -682,6 +696,7 @@ export const handleChatRequest = async (request: Request) => {
 		originalMessages: chatMessages,
 		generateMessageId,
 		consumeSseStream: consumeStream,
+		sendReasoning: true,
 		onFinish: async ({ responseMessage }) => {
 			if (!convexClient || !id || !resolvedWorkspaceId) {
 				return;
@@ -702,6 +717,7 @@ export const handleChatRequest = async (request: Request) => {
 					title: generatedChatTitle,
 					preview: getChatPreviewFromMessage(responseMessage),
 					model: selectedModel.model,
+					reasoningEffort: resolvedReasoningEffort,
 					message: toStoredMessage(responseMessage),
 				});
 			} catch (error) {

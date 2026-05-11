@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { withToolTiming } from "./tool-timing.mjs";
 
 const NOTION_API_BASE_URL = "https://api.notion.com/v1";
 const NOTION_API_VERSION = "2026-03-11";
@@ -615,7 +616,9 @@ export const buildNotionTools = (connection) => ({
 			limit: z.number().int().min(1).max(MAX_SEARCH_RESULTS).optional(),
 		}),
 		execute: async ({ query, limit }) =>
-			await searchNotion(connection, query, limit ?? 5),
+			await withToolTiming(
+				async () => await searchNotion(connection, query, limit ?? 5),
+			),
 	}),
 	notion_fetch: tool({
 		description:
@@ -623,6 +626,9 @@ export const buildNotionTools = (connection) => ({
 		inputSchema: z.object({
 			idOrUrl: z.string().min(1),
 		}),
-		execute: async ({ idOrUrl }) => await fetchNotionItem(connection, idOrUrl),
+		execute: async ({ idOrUrl }) =>
+			await withToolTiming(
+				async () => await fetchNotionItem(connection, idOrUrl),
+			),
 	}),
 });

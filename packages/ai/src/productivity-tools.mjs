@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { withToolTiming } from "./tool-timing.mjs";
 
 export const buildGoogleCalendarTools = ({ listEvents, searchEvents }) => ({
 	google_calendar_list_events: tool({
@@ -10,7 +11,9 @@ export const buildGoogleCalendarTools = ({ listEvents, searchEvents }) => ({
 			meetingsOnly: z.boolean().optional(),
 		}),
 		execute: async ({ limit, meetingsOnly }) =>
-			await listEvents({ limit, meetingsOnly }),
+			await withToolTiming(
+				async () => await listEvents({ limit, meetingsOnly }),
+			),
 	}),
 	google_calendar_search_events: tool({
 		description:
@@ -21,7 +24,9 @@ export const buildGoogleCalendarTools = ({ listEvents, searchEvents }) => ({
 			meetingsOnly: z.boolean().optional(),
 		}),
 		execute: async ({ query, limit, meetingsOnly }) =>
-			await searchEvents({ query, limit, meetingsOnly }),
+			await withToolTiming(
+				async () => await searchEvents({ query, limit, meetingsOnly }),
+			),
 	}),
 });
 
@@ -34,7 +39,9 @@ export const buildYandexCalendarTools = ({ listEvents, searchEvents }) => ({
 			meetingsOnly: z.boolean().optional(),
 		}),
 		execute: async ({ limit, meetingsOnly }) =>
-			await listEvents({ limit, meetingsOnly }),
+			await withToolTiming(
+				async () => await listEvents({ limit, meetingsOnly }),
+			),
 	}),
 	yandex_calendar_search_events: tool({
 		description:
@@ -45,7 +52,9 @@ export const buildYandexCalendarTools = ({ listEvents, searchEvents }) => ({
 			meetingsOnly: z.boolean().optional(),
 		}),
 		execute: async ({ query, limit, meetingsOnly }) =>
-			await searchEvents({ query, limit, meetingsOnly }),
+			await withToolTiming(
+				async () => await searchEvents({ query, limit, meetingsOnly }),
+			),
 	}),
 });
 
@@ -57,7 +66,8 @@ export const buildGoogleDriveTools = ({ searchFiles, getFile }) => ({
 			query: z.string().min(1),
 			limit: z.number().int().min(1).max(10).optional(),
 		}),
-		execute: async ({ query, limit }) => await searchFiles({ query, limit }),
+		execute: async ({ query, limit }) =>
+			await withToolTiming(async () => await searchFiles({ query, limit })),
 	}),
 	google_drive_get_file: tool({
 		description:
@@ -65,6 +75,7 @@ export const buildGoogleDriveTools = ({ searchFiles, getFile }) => ({
 		inputSchema: z.object({
 			fileId: z.string().min(1),
 		}),
-		execute: async ({ fileId }) => await getFile({ fileId }),
+		execute: async ({ fileId }) =>
+			await withToolTiming(async () => await getFile({ fileId })),
 	}),
 });

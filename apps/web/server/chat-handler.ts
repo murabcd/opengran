@@ -25,7 +25,12 @@ import {
 	buildChatSystemPrompt,
 	CHAT_TITLE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
-import { CHAT_TITLE_MODEL_ID, findChatModel } from "../src/lib/ai/models";
+import {
+	CHAT_TITLE_MODEL_ID,
+	findChatModel,
+	getChatModelProviderOptions,
+	normalizeReasoningEffort,
+} from "../src/lib/ai/models";
 
 type ChatRequestBody = {
 	id?: string;
@@ -34,6 +39,7 @@ type ChatRequestBody = {
 	messageId?: string;
 	message?: UIMessage;
 	model?: string;
+	reasoningEffort?: "low" | "medium" | "high" | "xhigh";
 	webSearchEnabled?: boolean;
 	appsEnabled?: boolean;
 	mentions?: string[];
@@ -428,6 +434,7 @@ export const handleChatRequest = async (
 		messageId,
 		message,
 		model,
+		reasoningEffort,
 		workspaceId,
 		webSearchEnabled = false,
 		appsEnabled = true,
@@ -484,6 +491,14 @@ export const handleChatRequest = async (
 		});
 		return;
 	}
+	const requestedReasoningEffort =
+		reasoningEffort ?? storedChat?.reasoningEffort ?? undefined;
+	const resolvedReasoningEffort = normalizeReasoningEffort(
+		requestedReasoningEffort,
+	);
+	const providerOptions = getChatModelProviderOptions(resolvedModel.model, {
+		reasoningEffort: resolvedReasoningEffort,
+	});
 
 	const resolvedNoteId =
 		(noteContext?.noteId as Id<"notes"> | null | undefined) ??
@@ -684,6 +699,7 @@ export const handleChatRequest = async (
 				noteId: resolvedNoteId ?? undefined,
 				preview: getChatPreviewFromMessage(lastUserMessage),
 				model: resolvedModel.model,
+				reasoningEffort: resolvedReasoningEffort,
 				message: toStoredMessage(lastUserMessage),
 			});
 		} catch (error) {
@@ -693,6 +709,7 @@ export const handleChatRequest = async (
 
 	const agent = new ToolLoopAgent({
 		model: openai(resolvedModel.model),
+		providerOptions,
 		instructions: systemPrompt,
 		tools: hasEnabledTools ? enabledTools : undefined,
 		stopWhen: hasEnabledTools ? stepCountIs(5) : undefined,
@@ -705,6 +722,7 @@ export const handleChatRequest = async (
 		originalMessages: chatMessages,
 		generateMessageId,
 		consumeSseStream: consumeStream,
+		sendReasoning: true,
 		sendSources: true,
 		onFinish: async ({ responseMessage }) => {
 			if (!convexClient || !id || !resolvedWorkspaceId) {
@@ -726,6 +744,7 @@ export const handleChatRequest = async (
 					title: generatedChatTitle,
 					preview: getChatPreviewFromMessage(responseMessage),
 					model: resolvedModel.model,
+					reasoningEffort: resolvedReasoningEffort,
 					message: toStoredMessage(responseMessage),
 				});
 			} catch (error) {

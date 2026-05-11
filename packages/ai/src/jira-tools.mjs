@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { withToolTiming } from "./tool-timing.mjs";
 
 const buildJiraUrl = (baseUrl, pathname, query) => {
 	const url = new URL(baseUrl);
@@ -237,7 +238,9 @@ export const buildJiraTools = (connection) => ({
 			limit: z.number().int().min(1).max(10).optional(),
 		}),
 		execute: async ({ query, limit }) =>
-			await searchJiraIssues(connection, query, limit ?? 5),
+			await withToolTiming(
+				async () => await searchJiraIssues(connection, query, limit ?? 5),
+			),
 	}),
 	jira_get_issue: tool({
 		description:
@@ -245,6 +248,9 @@ export const buildJiraTools = (connection) => ({
 		inputSchema: z.object({
 			issueKey: z.string().min(1),
 		}),
-		execute: async ({ issueKey }) => await getJiraIssue(connection, issueKey),
+		execute: async ({ issueKey }) =>
+			await withToolTiming(
+				async () => await getJiraIssue(connection, issueKey),
+			),
 	}),
 });

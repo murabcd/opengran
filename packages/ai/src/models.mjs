@@ -54,3 +54,34 @@ export const getChatModel = (value) => {
 };
 
 export const isSupportedChatModel = (value) => Boolean(findChatModel(value));
+
+export const REASONING_EFFORTS = Object.freeze([
+	{ id: "low", name: "Low" },
+	{ id: "medium", name: "Medium" },
+	{ id: "high", name: "High" },
+	{ id: "xhigh", name: "Extra High" },
+]);
+
+export const DEFAULT_REASONING_EFFORT = "medium";
+
+export const findReasoningEffort = (value) =>
+	REASONING_EFFORTS.find((effort) => effort.id === value);
+
+export const normalizeReasoningEffort = (value) =>
+	findReasoningEffort(value)?.id ?? DEFAULT_REASONING_EFFORT;
+
+export const getChatModelProviderOptions = (
+	model,
+	{ reasoningEffort } = {},
+) => {
+	if (!model?.startsWith("gpt-5")) {
+		return undefined;
+	}
+
+	return {
+		openai: {
+			reasoningSummary: "auto",
+			reasoningEffort: normalizeReasoningEffort(reasoningEffort),
+		},
+	};
+};

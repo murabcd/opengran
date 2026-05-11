@@ -30,18 +30,34 @@ import {
 	OPEN_CHAT_SUMMARY_EVENT,
 } from "@/components/chat/chat-summary-sheet";
 import { ChatMessages } from "@/components/chat/messages";
-import type { ChatModel } from "@/components/chat/model-picker";
+import type {
+	ChatModel,
+	ReasoningEffort,
+} from "@/components/chat/model-picker";
 import { COMPOSER_DOCK_WRAPPER_CLASS } from "@/components/layout/composer-dock";
 import { PageTitle } from "@/components/layout/page-title";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
 import { useAppSources } from "@/hooks/use-app-sources";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
-import { chatModels, defaultChatModel, findChatModel } from "@/lib/ai/models";
+import {
+	getStoredChatModel as getStoredLocalChatModel,
+	storeChatModel,
+} from "@/lib/ai/chat-model";
+import {
+	chatModels,
+	findChatModel,
+	findReasoningEffort,
+} from "@/lib/ai/models";
+import {
+	getStoredReasoningEffort,
+	storeReasoningEffort,
+} from "@/lib/ai/reasoning-effort";
 import { getChatId } from "@/lib/chat";
 import { getChatText } from "@/lib/chat-message";
 import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
+import { ensureCssHighlightStyles } from "@/lib/css-highlight-styles";
 import { getNoteDisplayTitle } from "@/lib/note-title";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
@@ -88,6 +104,11 @@ const getLatestUserMessageText = (messages: UIMessage[]) => {
 
 const getStoredChatModel = (model: string | undefined): ChatModel | null =>
 	model ? (findChatModel(model) ?? null) : null;
+
+const getStoredChatReasoningEffort = (
+	reasoningEffort: string | undefined,
+): ReasoningEffort | null =>
+	reasoningEffort ? (findReasoningEffort(reasoningEffort)?.id ?? null) : null;
 
 const escapeRegExp = (value: string) =>
 	value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -244,6 +265,9 @@ const useChatPageController = ({
 		chatId: string;
 		model: ChatModel;
 	} | null>(null);
+	const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort>(
+		getStoredReasoningEffort,
+	);
 	const [mentions, setMentions] = React.useState<ChatComposerMention[]>([]);
 	const [modelPopoverOpen, setModelPopoverOpen] = React.useState(false);
 	const [sourcesOpen, setSourcesOpen] = React.useState(false);
@@ -269,7 +293,7 @@ const useChatPageController = ({
 		setSelectedSourceIds([]);
 	}, [activeWorkspaceId]);
 	const truncateFromMessage = useMutation(api.chats.truncateFromMessage);
-	const persistChatModel = useMutation(api.chats.setModel);
+	const persistChatSettings = useMutation(api.chats.setChatSettings);
 	const storedMessages = useQuery(
 		api.chats.getMessages,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId, chatId } : "skip",
@@ -384,18 +408,22 @@ const useChatPageController = ({
 			? selectedModelOverride.model
 			: null) ??
 		getStoredChatModel(currentChat?.model) ??
-		defaultChatModel ??
+		getStoredLocalChatModel() ??
 		chatModels[0];
+	const selectedReasoningEffort =
+		getStoredChatReasoningEffort(currentChat?.reasoningEffort) ??
+		reasoningEffort;
 	const isModelResolving = isChatsLoading && !currentChat;
 	const handleSelectedModelChange = React.useCallback(
 		(model: ChatModel) => {
 			setSelectedModelOverride({ chatId, model });
+			storeChatModel(model);
 
 			if (!activeWorkspaceId || currentChat?.model === model.model) {
 				return;
 			}
 
-			void persistChatModel({
+			void persistChatSettings({
 				workspaceId: activeWorkspaceId,
 				chatId,
 				model: model.model,
@@ -404,7 +432,32 @@ const useChatPageController = ({
 				toast.error("Failed to save model");
 			});
 		},
-		[activeWorkspaceId, chatId, currentChat?.model, persistChatModel],
+		[activeWorkspaceId, chatId, currentChat?.model, persistChatSettings],
+	);
+	const handleReasoningEffortChange = React.useCallback(
+		(value: ReasoningEffort) => {
+			setReasoningEffort(value);
+			storeReasoningEffort(value);
+
+			if (!activeWorkspaceId || currentChat?.reasoningEffort === value) {
+				return;
+			}
+
+			void persistChatSettings({
+				workspaceId: activeWorkspaceId,
+				chatId,
+				reasoningEffort: value,
+			}).catch((error) => {
+				console.error("Failed to persist chat reasoning effort", error);
+				toast.error("Failed to save reasoning");
+			});
+		},
+		[
+			activeWorkspaceId,
+			chatId,
+			currentChat?.reasoningEffort,
+			persistChatSettings,
+		],
 	);
 
 	const contextPages = React.useMemo(
@@ -471,6 +524,7 @@ const useChatPageController = ({
 				sendMessage(nextOutgoingMessage, {
 					body: {
 						model: selectedModel.model,
+						reasoningEffort: selectedReasoningEffort,
 						webSearchEnabled,
 						appsEnabled,
 						mentions: mentionIds,
@@ -500,6 +554,7 @@ const useChatPageController = ({
 		isLoading,
 		mentions,
 		onChatPersisted,
+		selectedReasoningEffort,
 		selectedModel.model,
 		sendMessage,
 		webSearchEnabled,
@@ -556,6 +611,7 @@ const useChatPageController = ({
 
 		return {
 			model: selectedModel.model,
+			reasoningEffort: selectedReasoningEffort,
 			webSearchEnabled,
 			appsEnabled,
 			mentions: mentionIds,
@@ -567,6 +623,7 @@ const useChatPageController = ({
 		activeWorkspaceId,
 		appsEnabled,
 		mentions,
+		selectedReasoningEffort,
 		selectedModel.model,
 		selectedSourceIds,
 		webSearchEnabled,
@@ -660,11 +717,13 @@ const useChatPageController = ({
 		messages,
 		modelPopoverOpen,
 		selectedModel: isModelResolving ? null : selectedModel,
+		reasoningEffort: selectedReasoningEffort,
 		selectedSourceIds,
 		setAppsEnabled,
 		setDraft,
 		setMentions,
 		setModelPopoverOpen,
+		setReasoningEffort: handleReasoningEffortChange,
 		setSelectedModel: handleSelectedModelChange,
 		setSourcesOpen,
 		setSummaryOpen,
@@ -869,6 +928,8 @@ export function ChatPage({
 			return;
 		}
 
+		ensureCssHighlightStyles();
+
 		const matchRanges: Range[] = [];
 		const activeMatchRanges: Range[] = [];
 
@@ -1019,9 +1080,11 @@ export function ChatPage({
 			onAttachedFilesChange={controller.setAttachedFiles}
 			isLoading={controller.isLoading}
 			selectedModel={controller.selectedModel}
+			reasoningEffort={controller.reasoningEffort}
 			modelPopoverOpen={controller.modelPopoverOpen}
 			onModelPopoverOpenChange={controller.setModelPopoverOpen}
 			onSelectedModelChange={controller.setSelectedModel}
+			onReasoningEffortChange={controller.setReasoningEffort}
 			mentionableDocuments={controller.contextPages}
 			isNotesLoading={controller.isNotesLoading}
 			onMentionsChange={controller.setMentions}

@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { withToolTiming } from "./tool-timing.mjs";
 
 const TRACKER_API_BASE_URL =
 	process.env.TRACKER_API_BASE_URL ?? "https://api.tracker.yandex.net";
@@ -157,7 +158,9 @@ export const buildTrackerTools = (connection) => ({
 			limit: z.number().int().min(1).max(10).optional(),
 		}),
 		execute: async ({ query, limit }) =>
-			await searchTrackerIssues(connection, query, limit ?? 5),
+			await withToolTiming(
+				async () => await searchTrackerIssues(connection, query, limit ?? 5),
+			),
 	}),
 	yandex_tracker_get_issue: tool({
 		description:
@@ -166,6 +169,8 @@ export const buildTrackerTools = (connection) => ({
 			issueKey: z.string().min(1),
 		}),
 		execute: async ({ issueKey }) =>
-			await getTrackerIssue(connection, issueKey),
+			await withToolTiming(
+				async () => await getTrackerIssue(connection, issueKey),
+			),
 	}),
 });

@@ -354,6 +354,14 @@ export default defineSchema({
 		title: v.string(),
 		preview: v.string(),
 		model: v.optional(v.string()),
+		reasoningEffort: v.optional(
+			v.union(
+				v.literal("low"),
+				v.literal("medium"),
+				v.literal("high"),
+				v.literal("xhigh"),
+			),
+		),
 		isArchived: v.boolean(),
 		archivedAt: v.optional(v.number()),
 		createdAt: v.number(),

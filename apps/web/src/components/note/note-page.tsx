@@ -22,6 +22,7 @@ import { ShimmerText } from "@/components/ai-elements/shimmer";
 import { MarkdownStream } from "@/components/chat/markdown-stream";
 import { COMPOSER_DOCK_WRAPPER_CLASS } from "@/components/layout/composer-dock";
 import { useActiveWorkspaceId } from "@/hooks/use-active-workspace";
+import { ensureCssHighlightStyles } from "@/lib/css-highlight-styles";
 import {
 	createNoteEditorExtensions,
 	EMPTY_DOCUMENT,
@@ -2025,6 +2026,8 @@ export function NotePage({
 			highlightRegistry?.delete(NOTE_SEARCH_ACTIVE_MATCH_HIGHLIGHT);
 			return;
 		}
+
+		ensureCssHighlightStyles();
 
 		const activeRangeIndex = Math.min(
 			noteSearchIndex,

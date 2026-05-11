@@ -26,6 +26,7 @@ body {
 	--note-comment-hover: oklch(0.82 0.1 86 / 40%);
 	--note-comment-active-underline: oklch(0.78 0.14 84 / 84%);
 	--note-comment-active-background: oklch(0.8 0.11 86 / 48%);
+	--an-tool-border-radius: 10px;
 }
 
 .dark {
@@ -160,16 +161,6 @@ body {
 
 .note-comment-anchor[data-active-thread="true"] {
 	border-bottom-color: var(--note-comment-active-underline);
-	background: var(--note-comment-active-background);
-}
-
-::highlight(chat-search-match),
-::highlight(note-search-match) {
-	background: var(--note-comment-background);
-}
-
-::highlight(chat-search-active-match),
-::highlight(note-search-active-match) {
 	background: var(--note-comment-active-background);
 }
 

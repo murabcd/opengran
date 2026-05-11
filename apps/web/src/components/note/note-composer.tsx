@@ -90,6 +90,7 @@ import { ChatMessageListContent } from "@/components/chat/message-list";
 import {
 	type ChatModel,
 	ChatModelPicker,
+	type ReasoningEffort,
 } from "@/components/chat/model-picker";
 import {
 	COMPOSER_DOCK_BOTTOM_OFFSET,
@@ -111,7 +112,15 @@ import {
 import { useNoteTranscriptSession } from "@/hooks/use-note-transcript-session";
 import { useStickyScrollToBottom } from "@/hooks/use-sticky-scroll-to-bottom";
 import { useTranscriptionSession } from "@/hooks/use-transcription-session";
-import { defaultChatModel, findChatModel } from "@/lib/ai/models";
+import {
+	getStoredChatModel as getStoredLocalChatModel,
+	storeChatModel,
+} from "@/lib/ai/chat-model";
+import { findChatModel, findReasoningEffort } from "@/lib/ai/models";
+import {
+	getStoredReasoningEffort,
+	storeReasoningEffort,
+} from "@/lib/ai/reasoning-effort";
 import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
@@ -196,6 +205,11 @@ const getNoteScopedStorageKey = ({
 
 const getStoredChatModel = (model: string | undefined): ChatModel | null =>
 	model ? (findChatModel(model) ?? null) : null;
+
+const getStoredChatReasoningEffort = (
+	reasoningEffort: string | undefined,
+): ReasoningEffort | null =>
+	reasoningEffort ? (findReasoningEffort(reasoningEffort)?.id ?? null) : null;
 
 const readStoredPanelHeight = (
 	storageKeys: string | string[],
@@ -460,6 +474,9 @@ const useNoteComposerController = ({
 		chatId: string;
 		model: ChatModel;
 	} | null>(null);
+	const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort>(
+		getStoredReasoningEffort,
+	);
 	const [selectedRecipeSlug, setSelectedRecipeSlug] =
 		React.useState<RecipeSlug | null>(null);
 	const [editingMessageId, setEditingMessageId] = React.useState<string | null>(
@@ -570,19 +587,24 @@ const useNoteComposerController = ({
 			? selectedModelOverride.model
 			: null) ??
 		getStoredChatModel(selectedNoteChat?.model ?? currentChatSession?.model) ??
-		defaultChatModel;
+		getStoredLocalChatModel();
+	const selectedReasoningEffort =
+		getStoredChatReasoningEffort(
+			selectedNoteChat?.reasoningEffort ?? currentChatSession?.reasoningEffort,
+		) ?? reasoningEffort;
 	const updateUserPreferences = useMutation(api.userPreferences.update);
 	const truncateFromMessage = useMutation(api.chats.truncateFromMessage);
-	const persistChatModel = useMutation(api.chats.setModel);
+	const persistChatSettings = useMutation(api.chats.setChatSettings);
 	const handleSelectedModelChange = React.useCallback(
 		(model: ChatModel) => {
 			setSelectedModelOverride({ chatId: currentChatId, model });
+			storeChatModel(model);
 
 			if (!activeWorkspaceId || currentChatSession?.model === model.model) {
 				return;
 			}
 
-			void persistChatModel({
+			void persistChatSettings({
 				workspaceId: activeWorkspaceId,
 				chatId: currentChatId,
 				model: model.model,
@@ -595,7 +617,32 @@ const useNoteComposerController = ({
 			activeWorkspaceId,
 			currentChatId,
 			currentChatSession?.model,
-			persistChatModel,
+			persistChatSettings,
+		],
+	);
+	const handleReasoningEffortChange = React.useCallback(
+		(value: ReasoningEffort) => {
+			setReasoningEffort(value);
+			storeReasoningEffort(value);
+
+			if (!activeWorkspaceId || currentChatSession?.reasoningEffort === value) {
+				return;
+			}
+
+			void persistChatSettings({
+				workspaceId: activeWorkspaceId,
+				chatId: currentChatId,
+				reasoningEffort: value,
+			}).catch((error) => {
+				console.error("Failed to persist note chat reasoning effort", error);
+				toast.error("Failed to save reasoning");
+			});
+		},
+		[
+			activeWorkspaceId,
+			currentChatId,
+			currentChatSession?.reasoningEffort,
+			persistChatSettings,
 		],
 	);
 	const recipeData = useQuery(
@@ -1351,6 +1398,7 @@ const useNoteComposerController = ({
 			const convexToken = await getCachedConvexToken();
 			const requestBody = {
 				model: selectedModel.model,
+				reasoningEffort: selectedReasoningEffort,
 				convexToken,
 				noteContext: {
 					noteId: currentNoteContext.noteId,
@@ -1406,6 +1454,7 @@ const useNoteComposerController = ({
 		readNoteContext,
 		resetTextareaHeight,
 		selectedRecipe,
+		selectedReasoningEffort,
 		editingMessageId,
 		selectedModel.model,
 		sendMessage,
@@ -1474,6 +1523,7 @@ const useNoteComposerController = ({
 
 		return {
 			model: selectedModel.model,
+			reasoningEffort: selectedReasoningEffort,
 			convexToken,
 			noteContext: {
 				noteId: currentNoteContext.noteId,
@@ -1482,7 +1532,12 @@ const useNoteComposerController = ({
 			},
 			recipeSlug: selectedRecipe?.slug ?? null,
 		};
-	}, [readNoteContext, selectedModel.model, selectedRecipe?.slug]);
+	}, [
+		readNoteContext,
+		selectedReasoningEffort,
+		selectedModel.model,
+		selectedRecipe?.slug,
+	]);
 
 	const handleDeleteMessage = React.useCallback(
 		(messageId: string) => {
@@ -1737,9 +1792,11 @@ const useNoteComposerController = ({
 		sidebarPanelWidthCss,
 		setPanelMode,
 		setModelPopoverOpen,
+		setReasoningEffort: handleReasoningEffortChange,
 		setSelectedModel: handleSelectedModelChange,
 		setRecipePopoverOpen,
 		setSelectedRecipeSlug,
+		reasoningEffort: selectedReasoningEffort,
 		selectedModel,
 		stop,
 		shouldShowInlinePanel,
@@ -2441,10 +2498,12 @@ function ChatInlinePopoverFooter({
 	onRecipeSelect,
 	onModelPopoverOpenChange,
 	onSelectedModelChange,
+	onReasoningEffortChange,
 	recipePopoverOpen,
 	recipes,
 	modelPopoverOpen,
 	selectedModel,
+	reasoningEffort,
 	speechControls,
 }: {
 	composerEditorRef: React.RefObject<HTMLDivElement | null>;
@@ -2469,10 +2528,12 @@ function ChatInlinePopoverFooter({
 	onRecipeSelect: (recipeSlug: RecipeSlug | null) => void;
 	onModelPopoverOpenChange: (open: boolean) => void;
 	onSelectedModelChange: (model: ChatModel) => void;
+	onReasoningEffortChange: (value: ReasoningEffort) => void;
 	recipePopoverOpen: boolean;
 	recipes: RecipePrompt[];
 	modelPopoverOpen: boolean;
 	selectedModel: ChatModel;
+	reasoningEffort: ReasoningEffort;
 	speechControls: React.ReactNode;
 }) {
 	const {
@@ -2837,6 +2898,8 @@ function ChatInlinePopoverFooter({
 								onOpenChange={onModelPopoverOpenChange}
 								selectedModel={selectedModel}
 								onSelectedModelChange={onSelectedModelChange}
+								reasoningEffort={reasoningEffort}
+								onReasoningEffortChange={onReasoningEffortChange}
 								triggerClassName="text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
 								triggerIconClassName="text-current"
 								modelNameClassName="max-w-[120px] truncate"
@@ -3213,10 +3276,12 @@ function ChatComposerForm({
 				}}
 				onModelPopoverOpenChange={controller.setModelPopoverOpen}
 				onSelectedModelChange={controller.setSelectedModel}
+				onReasoningEffortChange={controller.setReasoningEffort}
 				recipePopoverOpen={controller.recipePopoverOpen}
 				recipes={controller.recipes}
 				modelPopoverOpen={controller.modelPopoverOpen}
 				selectedModel={controller.selectedModel}
+				reasoningEffort={controller.reasoningEffort}
 				speechControls={speechControls}
 			/>
 		</form>

@@ -1,5 +1,6 @@
 import type { Editor, Range } from "@tiptap/core";
 import Mention from "@tiptap/extension-mention";
+import type { DOMOutputSpec } from "@tiptap/pm/model";
 import {
 	type ChatAppSourceProvider,
 	isChatAppSourceProvider,
@@ -59,16 +60,17 @@ const INLINE_TOOL_ICON_DATA_URIS: Record<ChatAppSourceProvider, string> = {
 		"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' aria-hidden='true' viewBox='0 0 16 16' fill='%233b82f6' stroke='none'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M2.75 2.5a.25.25 0 0 0-.25.25v2.17c0 .138.11.25.25.25h2.42V2.5zm3.92 0v2.67h2.67V2.5zm4.17 0v2.67h2.42a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25zm0 4.17h2.42A1.75 1.75 0 0 0 15 4.92V2.75A1.75 1.75 0 0 0 13.25 1H2.75A1.75 1.75 0 0 0 1 2.75v2.17c0 .966.78 1.75 1.75 1.75h2.42v6.58c0 .966.78 1.75 1.75 1.75h2.17a1.75 1.75 0 0 0 1.75-1.75zm-1.5 0H6.67v2.67h2.67zm0 4.17H6.67v2.42c0 .138.11.25.25.25h2.17a.25.25 0 0 0 .25-.25z'/%3E%3C/svg%3E",
 };
 
-const getInlineToolMentionIconHTML = (provider: ChatAppSourceProvider) => [
-	"img",
-	{
-		"aria-hidden": "true",
-		alt: "",
-		class: "inline-tool-mention-svg",
-		draggable: "false",
-		src: INLINE_TOOL_ICON_DATA_URIS[provider],
-	},
-];
+const getInlineToolMentionIconHTML = (provider: ChatAppSourceProvider) =>
+	[
+		"img",
+		{
+			"aria-hidden": "true",
+			alt: "",
+			class: "inline-tool-mention-svg",
+			draggable: "false",
+			src: INLINE_TOOL_ICON_DATA_URIS[provider],
+		},
+	] satisfies DOMOutputSpec;
 
 export const renderInlineMentionHTML = ({
 	id,
@@ -80,7 +82,7 @@ export const renderInlineMentionHTML = ({
 	label: string;
 	provider?: ChatAppSourceProvider;
 	type?: "note" | "tool" | null;
-}) => {
+}): DOMOutputSpec => {
 	if (type === "tool") {
 		if (!provider) {
 			throw new Error("Tool mentions require a known app source provider.");
