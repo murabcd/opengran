@@ -8,6 +8,11 @@ import {
 	mutation,
 	query,
 } from "./_generated/server";
+import {
+	moveLinkedAutomationToFreshChat,
+	pauseLinkedAutomationForChat,
+	resumeLinkedAutomationForChat,
+} from "./automations";
 
 const chatRoleValidator = v.union(
 	v.literal("system"),
@@ -202,6 +207,20 @@ const getOwnedActiveChatById = async (
 	}
 
 	return chat;
+};
+
+const moveAutomationToFreshChat = async (
+	ctx: MutationCtx,
+	chat: Doc<"chats">,
+	now = Date.now(),
+) => {
+	await moveLinkedAutomationToFreshChat(
+		ctx,
+		chat.ownerTokenIdentifier,
+		chat.workspaceId,
+		chat.chatId,
+		now,
+	);
 };
 
 const getStoredChatMessages = async (
@@ -806,6 +825,7 @@ export const removeMessagesAndDeleteChat = internalMutation({
 		const chat = await ctx.db.get(args.chatId);
 
 		if (chat) {
+			await moveAutomationToFreshChat(ctx, chat);
 			await ctx.db.delete(args.chatId);
 		}
 
@@ -1135,11 +1155,19 @@ export const moveToTrash = mutation({
 			return null;
 		}
 
+		const now = Date.now();
 		await ctx.db.patch(chat._id, {
 			isArchived: true,
-			archivedAt: Date.now(),
-			updatedAt: Date.now(),
+			archivedAt: now,
+			updatedAt: now,
 		});
+		await pauseLinkedAutomationForChat(
+			ctx,
+			ownerTokenIdentifier,
+			args.workspaceId,
+			chat.chatId,
+			now,
+		);
 
 		return null;
 	},
@@ -1165,11 +1193,19 @@ export const restore = mutation({
 			return null;
 		}
 
+		const now = Date.now();
 		await ctx.db.patch(chat._id, {
 			isArchived: false,
 			archivedAt: undefined,
-			updatedAt: Date.now(),
+			updatedAt: now,
 		});
+		await resumeLinkedAutomationForChat(
+			ctx,
+			ownerTokenIdentifier,
+			args.workspaceId,
+			chat.chatId,
+			now,
+		);
 
 		return null;
 	},
@@ -1208,6 +1244,7 @@ export const remove = mutation({
 			return null;
 		}
 
+		await moveAutomationToFreshChat(ctx, chat);
 		await ctx.db.delete(chat._id);
 
 		return null;

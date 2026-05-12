@@ -217,3 +217,192 @@ test("creating a note automation stores note mention metadata", async () => {
 		],
 	});
 });
+
+test("moving a chat to trash pauses its automation and restoring resumes it", async () => {
+	const { asOwner, workspaceId } = await createWorkspace();
+
+	await asOwner.mutation(api.chats.saveMessage, {
+		workspaceId,
+		chatId: "chat-with-automation",
+		title: "Automation chat",
+		preview: "Create an automation",
+		message: {
+			id: "msg-user",
+			role: "user",
+			partsJson: JSON.stringify([
+				{ type: "text", text: "Create an automation" },
+			]),
+			text: "Create an automation",
+			createdAt: 1_500,
+		},
+	});
+
+	const automation = await asOwner.mutation(api.automations.create, {
+		workspaceId,
+		title: "Daily review",
+		prompt: "Review the workspace.",
+		model: "gpt-5.4",
+		reasoningEffort: "medium",
+		webSearchEnabled: false,
+		appsEnabled: true,
+		appSources: [],
+		schedulePeriod: "daily",
+		scheduledAt: 2_000,
+		timezone: "UTC",
+		target: {
+			kind: "workspace",
+		},
+		chatId: "chat-with-automation",
+	});
+
+	expect(automation.isPaused).toBe(false);
+	expect(automation.nextRunAt).not.toBeNull();
+
+	await asOwner.mutation(api.chats.moveToTrash, {
+		workspaceId,
+		chatId: automation.chatId,
+	});
+
+	const automations = await asOwner.query(api.automations.list, {
+		workspaceId,
+	});
+	const trashedChatAutomation = automations.find(
+		(item) => item.id === automation.id,
+	);
+
+	expect(trashedChatAutomation).toMatchObject({
+		id: automation.id,
+		isPaused: true,
+		nextRunAt: null,
+	});
+
+	await asOwner.mutation(api.chats.restore, {
+		workspaceId,
+		chatId: automation.chatId,
+	});
+
+	const restoredAutomations = await asOwner.query(api.automations.list, {
+		workspaceId,
+	});
+	const restoredChatAutomation = restoredAutomations.find(
+		(item) => item.id === automation.id,
+	);
+
+	expect(restoredChatAutomation?.isPaused).toBe(false);
+	expect(restoredChatAutomation?.nextRunAt).not.toBeNull();
+});
+
+test("deleting a chat moves its automation to a fresh chat", async () => {
+	const { asOwner, workspaceId } = await createWorkspace();
+
+	await asOwner.mutation(api.chats.saveMessage, {
+		workspaceId,
+		chatId: "chat-to-delete",
+		title: "Automation chat",
+		preview: "Create an automation",
+		message: {
+			id: "msg-user",
+			role: "user",
+			partsJson: JSON.stringify([
+				{ type: "text", text: "Create an automation" },
+			]),
+			text: "Create an automation",
+			createdAt: 1_500,
+		},
+	});
+
+	const automation = await asOwner.mutation(api.automations.create, {
+		workspaceId,
+		title: "Daily review",
+		prompt: "Review the workspace.",
+		model: "gpt-5.4",
+		reasoningEffort: "medium",
+		webSearchEnabled: false,
+		appsEnabled: true,
+		appSources: [],
+		schedulePeriod: "daily",
+		scheduledAt: 2_000,
+		timezone: "UTC",
+		target: {
+			kind: "workspace",
+		},
+		chatId: "chat-to-delete",
+	});
+
+	await asOwner.mutation(api.chats.moveToTrash, {
+		workspaceId,
+		chatId: automation.chatId,
+	});
+	await asOwner.mutation(api.chats.remove, {
+		workspaceId,
+		chatId: automation.chatId,
+	});
+
+	const deletedChat = await asOwner.query(api.chats.getSession, {
+		workspaceId,
+		chatId: automation.chatId,
+	});
+	const automations = await asOwner.query(api.automations.list, {
+		workspaceId,
+	});
+	const movedAutomation = automations.find((item) => item.id === automation.id);
+
+	expect(deletedChat).toBeNull();
+	expect(movedAutomation?.chatId).not.toBe(automation.chatId);
+	expect(movedAutomation?.chatId).toMatch(/^automation-/);
+	expect(movedAutomation?.isPaused).toBe(false);
+	expect(movedAutomation?.nextRunAt).not.toBeNull();
+});
+
+test("deleting an automation leaves its chat", async () => {
+	const { asOwner, workspaceId } = await createWorkspace();
+
+	await asOwner.mutation(api.chats.saveMessage, {
+		workspaceId,
+		chatId: "chat-kept-after-automation-delete",
+		title: "Automation chat",
+		preview: "Create an automation",
+		message: {
+			id: "msg-user",
+			role: "user",
+			partsJson: JSON.stringify([
+				{ type: "text", text: "Create an automation" },
+			]),
+			text: "Create an automation",
+			createdAt: 1_500,
+		},
+	});
+
+	const automation = await asOwner.mutation(api.automations.create, {
+		workspaceId,
+		title: "Daily review",
+		prompt: "Review the workspace.",
+		model: "gpt-5.4",
+		reasoningEffort: "medium",
+		webSearchEnabled: false,
+		appsEnabled: true,
+		appSources: [],
+		schedulePeriod: "daily",
+		scheduledAt: 2_000,
+		timezone: "UTC",
+		target: {
+			kind: "workspace",
+		},
+		chatId: "chat-kept-after-automation-delete",
+	});
+
+	await asOwner.mutation(api.automations.remove, {
+		automationId: automation.id,
+	});
+
+	const chat = await asOwner.query(api.chats.getSession, {
+		workspaceId,
+		chatId: automation.chatId,
+	});
+	const automations = await asOwner.query(api.automations.list, {
+		workspaceId,
+	});
+
+	expect(chat).not.toBeNull();
+	expect(automations.some((item) => item.id === automation.id)).toBe(false);
+});

@@ -1178,6 +1178,134 @@ export const remove = mutation({
 	},
 });
 
+const getLinkedAutomationForChat = async (
+	ctx: MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+	chatId: string,
+) =>
+	await ctx.db
+		.query("automations")
+		.withIndex("by_ownerTokenIdentifier_and_workspaceId_and_chatId", (q) =>
+			q
+				.eq("ownerTokenIdentifier", ownerTokenIdentifier)
+				.eq("workspaceId", workspaceId)
+				.eq("chatId", chatId),
+		)
+		.unique();
+
+const scheduleNextAutomationRun = async (
+	ctx: MutationCtx,
+	automation: Doc<"automations">,
+	now: number,
+) => {
+	const nextRunAt = getNextRunAt({
+		from: now,
+		scheduledAt: automation.scheduledAt,
+		schedulePeriod: automation.schedulePeriod,
+	});
+	const scheduledFunctionId = await scheduleAutomationRun(
+		ctx,
+		automation._id,
+		nextRunAt,
+	);
+
+	return { nextRunAt, scheduledFunctionId };
+};
+
+export const pauseLinkedAutomationForChat = async (
+	ctx: MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+	chatId: string,
+	now: number,
+) => {
+	const automation = await getLinkedAutomationForChat(
+		ctx,
+		ownerTokenIdentifier,
+		workspaceId,
+		chatId,
+	);
+
+	if (!automation || automation.isPaused) {
+		return;
+	}
+
+	await cancelScheduledFunction(ctx, automation.scheduledFunctionId);
+	await ctx.db.patch(automation._id, {
+		isPaused: true,
+		nextRunAt: undefined,
+		scheduledFunctionId: undefined,
+		updatedAt: now,
+	});
+};
+
+export const resumeLinkedAutomationForChat = async (
+	ctx: MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+	chatId: string,
+	now: number,
+) => {
+	const automation = await getLinkedAutomationForChat(
+		ctx,
+		ownerTokenIdentifier,
+		workspaceId,
+		chatId,
+	);
+
+	if (!automation || !automation.isPaused) {
+		return;
+	}
+
+	const { nextRunAt, scheduledFunctionId } = await scheduleNextAutomationRun(
+		ctx,
+		automation,
+		now,
+	);
+
+	await ctx.db.patch(automation._id, {
+		isPaused: false,
+		nextRunAt,
+		scheduledFunctionId,
+		updatedAt: now,
+	});
+};
+
+export const moveLinkedAutomationToFreshChat = async (
+	ctx: MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+	chatId: string,
+	now: number,
+) => {
+	const automation = await getLinkedAutomationForChat(
+		ctx,
+		ownerTokenIdentifier,
+		workspaceId,
+		chatId,
+	);
+
+	if (!automation) {
+		return;
+	}
+
+	await cancelScheduledFunction(ctx, automation.scheduledFunctionId);
+	const { nextRunAt, scheduledFunctionId } = await scheduleNextAutomationRun(
+		ctx,
+		automation,
+		now,
+	);
+
+	await ctx.db.patch(automation._id, {
+		chatId: createAutomationChatId(),
+		isPaused: false,
+		nextRunAt,
+		scheduledFunctionId,
+		updatedAt: now,
+	});
+};
+
 export const beginRun = internalMutation({
 	args: {
 		automationId: v.id("automations"),
