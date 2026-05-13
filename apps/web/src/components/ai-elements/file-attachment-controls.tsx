@@ -156,12 +156,19 @@ function getPastedFiles(event: React.ClipboardEvent<HTMLElement>) {
 		return files;
 	}
 
-	return Array.from(clipboardData.items)
-		.filter((item) => item.kind === "file")
-		.flatMap((item) => {
-			const file = item.getAsFile();
-			return file ? [file] : [];
-		});
+	const pastedFiles: File[] = [];
+	for (const item of Array.from(clipboardData.items)) {
+		if (item.kind !== "file") {
+			continue;
+		}
+
+		const file = item.getAsFile();
+		if (file) {
+			pastedFiles.push(file);
+		}
+	}
+
+	return pastedFiles;
 }
 
 export function useFileAttachmentDropzone({

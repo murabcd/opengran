@@ -269,6 +269,9 @@ const getPromptDocument = (
 	};
 };
 
+const escapeRegExp = (value: string) =>
+	value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const findMentionRange = ({
 	label,
 	occupiedRanges,
@@ -279,14 +282,10 @@ const findMentionRange = ({
 	prompt: string;
 }) => {
 	const mentionText = `@${label}`;
-	let cursor = 0;
+	const mentionRegex = new RegExp(escapeRegExp(mentionText), "g");
 
-	while (cursor < prompt.length) {
-		const index = prompt.indexOf(mentionText, cursor);
-		if (index < 0) {
-			return null;
-		}
-
+	for (const match of prompt.matchAll(mentionRegex)) {
+		const index = match.index;
 		const end = index + mentionText.length;
 		const overlaps = occupiedRanges.some(
 			(range) => index < range.to && end > range.from,
@@ -297,8 +296,6 @@ const findMentionRange = ({
 				to: end,
 			};
 		}
-
-		cursor = end;
 	}
 
 	return null;
