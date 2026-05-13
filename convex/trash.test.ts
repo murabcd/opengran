@@ -25,9 +25,13 @@ test("trash cleanup removes expired archived items without touching recent trash
 	const {
 		cleanupWorkspaceId,
 		expiredLinkedChatId,
+		expiredRecentlyUpdatedNoteId,
+		expiredRecentlyUpdatedStandaloneChatId,
 		expiredNoteId,
 		expiredStandaloneChatId,
 		otherWorkspaceExpiredNoteId,
+		recentOldUpdatedNoteId,
+		recentOldUpdatedStandaloneChatId,
 		recentNoteId,
 		recentStandaloneChatId,
 	} = await t.run(async (ctx) => {
@@ -128,6 +132,30 @@ test("trash cleanup removes expired archived items without touching recent trash
 			createdAt: 1_000,
 			updatedAt: 15_000,
 		});
+		const recentOldUpdatedNoteId = await ctx.db.insert("notes", {
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			workspaceId: cleanupWorkspaceId,
+			title: "Recently archived old note",
+			content: "Body",
+			searchableText: "Body",
+			visibility: "private",
+			isArchived: true,
+			archivedAt: 15_000,
+			createdAt: 1_000,
+			updatedAt: 5_000,
+		});
+		const expiredRecentlyUpdatedNoteId = await ctx.db.insert("notes", {
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			workspaceId: cleanupWorkspaceId,
+			title: "Expired recently updated note",
+			content: "Body",
+			searchableText: "Body",
+			visibility: "private",
+			isArchived: true,
+			archivedAt: 5_000,
+			createdAt: 1_000,
+			updatedAt: 15_000,
+		});
 
 		const expiredStandaloneChatId = await ctx.db.insert("chats", {
 			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
@@ -163,6 +191,30 @@ test("trash cleanup removes expired archived items without touching recent trash
 			updatedAt: 15_000,
 			lastMessageAt: 15_000,
 		});
+		const recentOldUpdatedStandaloneChatId = await ctx.db.insert("chats", {
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			workspaceId: cleanupWorkspaceId,
+			chatId: "recent-old-updated-standalone-chat",
+			title: "Recently archived old updated standalone chat",
+			preview: "Recently archived old updated standalone chat",
+			isArchived: true,
+			archivedAt: 15_000,
+			createdAt: 1_000,
+			updatedAt: 5_000,
+			lastMessageAt: 5_000,
+		});
+		const expiredRecentlyUpdatedStandaloneChatId = await ctx.db.insert("chats", {
+			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
+			workspaceId: cleanupWorkspaceId,
+			chatId: "expired-recently-updated-standalone-chat",
+			title: "Expired recently updated standalone chat",
+			preview: "Expired recently updated standalone chat",
+			isArchived: true,
+			archivedAt: 5_000,
+			createdAt: 1_000,
+			updatedAt: 15_000,
+			lastMessageAt: 15_000,
+		});
 		await ctx.db.insert("chatMessages", {
 			chatId: recentStandaloneChatId,
 			ownerTokenIdentifier: ownerIdentity.tokenIdentifier,
@@ -189,9 +241,13 @@ test("trash cleanup removes expired archived items without touching recent trash
 			cleanupWorkspaceId,
 			expiredNoteId,
 			expiredLinkedChatId,
+			expiredRecentlyUpdatedNoteId,
+			expiredRecentlyUpdatedStandaloneChatId,
 			recentNoteId,
+			recentOldUpdatedNoteId,
 			expiredStandaloneChatId,
 			recentStandaloneChatId,
+			recentOldUpdatedStandaloneChatId,
 			otherWorkspaceExpiredNoteId,
 		};
 	});
@@ -206,8 +262,8 @@ test("trash cleanup removes expired archived items without touching recent trash
 	);
 
 	expect(result).toEqual({
-		deletedNoteCount: 1,
-		scheduledChatCount: 1,
+		deletedNoteCount: 2,
+		scheduledChatCount: 2,
 		hasMore: false,
 	});
 
@@ -223,10 +279,18 @@ test("trash cleanup removes expired archived items without touching recent trash
 
 		return {
 			expiredNote: await ctx.db.get(expiredNoteId),
+			expiredRecentlyUpdatedNote: await ctx.db.get(expiredRecentlyUpdatedNoteId),
 			recentNote: await ctx.db.get(recentNoteId),
+			recentOldUpdatedNote: await ctx.db.get(recentOldUpdatedNoteId),
 			expiredLinkedChat: await ctx.db.get(expiredLinkedChatId),
 			expiredStandaloneChat: await ctx.db.get(expiredStandaloneChatId),
+			expiredRecentlyUpdatedStandaloneChat: await ctx.db.get(
+				expiredRecentlyUpdatedStandaloneChatId,
+			),
 			recentStandaloneChat: await ctx.db.get(recentStandaloneChatId),
+			recentOldUpdatedStandaloneChat: await ctx.db.get(
+				recentOldUpdatedStandaloneChatId,
+			),
 			otherWorkspaceExpiredNote: await ctx.db.get(otherWorkspaceExpiredNoteId),
 			transcriptSessions: (await ctx.db.query("transcriptSessions").take(10))
 				.length,
@@ -257,10 +321,14 @@ test("trash cleanup removes expired archived items without touching recent trash
 	});
 
 	expect(remaining.expiredNote).toBeNull();
+	expect(remaining.expiredRecentlyUpdatedNote).toBeNull();
 	expect(remaining.recentNote).not.toBeNull();
+	expect(remaining.recentOldUpdatedNote).not.toBeNull();
 	expect(remaining.expiredLinkedChat).toBeNull();
 	expect(remaining.expiredStandaloneChat).toBeNull();
+	expect(remaining.expiredRecentlyUpdatedStandaloneChat).toBeNull();
 	expect(remaining.recentStandaloneChat).not.toBeNull();
+	expect(remaining.recentOldUpdatedStandaloneChat).not.toBeNull();
 	expect(remaining.otherWorkspaceExpiredNote).not.toBeNull();
 	expect(remaining.transcriptSessions).toBe(0);
 	expect(remaining.transcriptSessionStates).toBe(0);
