@@ -22,6 +22,11 @@ import {
 } from "../../../packages/ai/src/chat-titles.mjs";
 import { buildConvexConnectedAppTools } from "../../../packages/ai/src/convex-app-tool-adapters.mjs";
 import {
+	buildImageGenerationInstruction,
+	createConvexGeneratedImageUploader,
+	createImageGenerationTool,
+} from "../../../packages/ai/src/image-generation-tool.mjs";
+import {
 	buildChatSystemPrompt,
 	CHAT_TITLE_SYSTEM_PROMPT,
 } from "../../../packages/ai/src/prompts.mjs";
@@ -629,7 +634,7 @@ export const handleChatRequest = async (
 		recipeContext,
 		userProfileContext: userProfileContext ?? undefined,
 		webSearchEnabled,
-	})}${
+	})}\n\n${buildImageGenerationInstruction()}${
 		trackerConnection
 			? `\n\nThe selected app source for this chat is Yandex Tracker (${trackerConnection.displayName}). Treat it as the preferred source for project history, integrations, tickets, tasks, comments, assignees, and status. If the user's request could be answered from Tracker, search Tracker first before saying the context is unavailable.`
 			: ""
@@ -667,6 +672,15 @@ export const handleChatRequest = async (
 				type: "approximate",
 				country: "US",
 			},
+		});
+	}
+
+	if (convexClient) {
+		enabledTools.generate_image = createImageGenerationTool({
+			uploadGeneratedImage: createConvexGeneratedImageUploader({
+				chatAttachmentsApi: api.chatAttachments,
+				client: convexClient,
+			}),
 		});
 	}
 

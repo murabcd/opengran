@@ -18,6 +18,12 @@ export type ChatMessageMetadata = {
 	}>;
 };
 
+export type ChatGeneratedArtifact = {
+	filename?: string;
+	mediaType: string;
+	url: string;
+};
+
 const extractTextParts = (message: UIMessage) =>
 	message.parts.filter(
 		(part): part is Extract<(typeof message.parts)[number], { type: "text" }> =>
@@ -36,6 +42,47 @@ export const extractFileParts = (message: UIMessage) =>
 
 export const extractToolParts = (message: UIMessage) =>
 	message.parts.filter((part) => part.type.startsWith("tool-"));
+
+export const extractGeneratedArtifacts = (
+	message: UIMessage,
+): ChatGeneratedArtifact[] =>
+	extractToolParts(message).flatMap((part) => {
+		if (part.type !== "tool-generate_image") {
+			return [];
+		}
+
+		if (!("state" in part) || part.state !== "output-available") {
+			return [];
+		}
+
+		const output = "output" in part ? part.output : null;
+		if (!output || typeof output !== "object") {
+			return [];
+		}
+
+		const { filename, mediaType, url } = output as {
+			filename?: unknown;
+			mediaType?: unknown;
+			url?: unknown;
+		};
+
+		if (
+			typeof mediaType !== "string" ||
+			typeof url !== "string" ||
+			mediaType.length === 0 ||
+			url.length === 0
+		) {
+			return [];
+		}
+
+		return [
+			{
+				filename: typeof filename === "string" ? filename : undefined,
+				mediaType,
+				url,
+			},
+		];
+	});
 
 export const extractReasoningParts = (message: UIMessage) =>
 	message.parts.filter((part) => part.type === "reasoning");

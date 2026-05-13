@@ -85,7 +85,11 @@ import {
 	SearchCommand,
 	type SearchCommandItem,
 } from "@/components/search/search-command";
-import { extractFileParts, getChatMessageMetadata } from "@/lib/chat-message";
+import {
+	extractFileParts,
+	extractGeneratedArtifacts,
+	getChatMessageMetadata,
+} from "@/lib/chat-message";
 import {
 	CHAT_APP_SOURCE_PROVIDERS,
 	type ChatAppSourceProvider,
@@ -128,6 +132,9 @@ type SummaryArtifact = {
 
 type SummarySource =
 	| ({ kind: "link" } & ToolSource)
+	| ({
+			kind: "file";
+	  } & SummaryArtifact)
 	| {
 			id: string;
 			kind: "tool";
@@ -191,26 +198,35 @@ const collectChatSources = (messages: UIMessage[]): SummarySource[] => {
 			}));
 		}
 
-		return (getChatMessageMetadata(message)?.mentionPositions ?? []).flatMap(
-			(mention) =>
-				mention.type === "tool" || mention.id.startsWith("app:")
-					? [
-							{
-								id: mention.id,
-								kind: "tool",
-								title: mention.label,
-							} satisfies SummarySource,
-						]
-					: [],
+		const fileSources = extractFileParts(message).map(
+			(file) =>
+				({
+					filename: file.filename,
+					kind: "file",
+					mediaType: file.mediaType,
+					url: file.url,
+				}) satisfies SummarySource,
 		);
+		const mentionSources = (
+			getChatMessageMetadata(message)?.mentionPositions ?? []
+		).flatMap((mention) =>
+			mention.type === "tool" || mention.id.startsWith("app:")
+				? [
+						{
+							id: mention.id,
+							kind: "tool",
+							title: mention.label,
+						} satisfies SummarySource,
+					]
+				: [],
+		);
+
+		return [...fileSources, ...mentionSources];
 	});
 	const seen = new Set<string>();
 
 	return sources.filter((source) => {
-		const key =
-			source.kind === "link"
-				? `${source.kind}:${source.href}::${source.title}`
-				: `${source.kind}:${source.id}`;
+		const key = getSummarySourceKey(source);
 
 		if (seen.has(key)) {
 			return false;
@@ -222,7 +238,16 @@ const collectChatSources = (messages: UIMessage[]): SummarySource[] => {
 };
 
 const collectChatArtifacts = (messages: UIMessage[]): SummaryArtifact[] => {
-	const artifacts = messages.flatMap((message) => extractFileParts(message));
+	const artifacts = messages.flatMap((message) => {
+		if (message.role !== "assistant") {
+			return [];
+		}
+
+		return [
+			...extractFileParts(message),
+			...extractGeneratedArtifacts(message),
+		];
+	});
 	const seen = new Set<string>();
 
 	return artifacts.filter((artifact) => {
@@ -1106,9 +1131,15 @@ function SummaryDefaultContent({
 }
 
 function getSummarySourceKey(source: SummarySource) {
-	return source.kind === "link"
-		? `${source.kind}:${source.href}:${source.title}`
-		: `${source.kind}:${source.id}`;
+	if (source.kind === "link") {
+		return `${source.kind}:${source.href}:${source.title}`;
+	}
+
+	if (source.kind === "file") {
+		return `${source.kind}:${source.url}`;
+	}
+
+	return `${source.kind}:${source.id}`;
 }
 
 function SummarySourceRow({ source }: { source: SummarySource }) {
@@ -1116,6 +1147,46 @@ function SummarySourceRow({ source }: { source: SummarySource }) {
 		"group/source flex h-8 w-full min-w-0 max-w-full cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 text-sm text-muted-foreground transition-colors",
 		"hover:bg-accent/50 hover:text-foreground",
 	);
+
+	if (source.kind === "file") {
+		return (
+			<HoverCard openDelay={150}>
+				<HoverCardTrigger asChild>
+					<button
+						type="button"
+						className={className}
+						title={source.filename || "Attached file"}
+					>
+						<Paperclip className="size-3.5 shrink-0" />
+						<span className="min-w-0 flex-1 basis-0 truncate">
+							{source.filename || "Attached file"}
+						</span>
+					</button>
+				</HoverCardTrigger>
+				<HoverCardContent
+					align="start"
+					side="left"
+					className={
+						source.mediaType.startsWith("image/")
+							? "w-auto max-w-80 border-0 bg-transparent p-0 shadow-none ring-0"
+							: "w-64"
+					}
+				>
+					{source.mediaType.startsWith("image/") ? (
+						<img
+							src={source.url}
+							alt={source.filename || "Attached image"}
+							className="block max-h-80 max-w-80 rounded-lg object-contain shadow-md ring-1 ring-foreground/10"
+						/>
+					) : (
+						<div className="flex h-28 items-center justify-center bg-muted/40 text-muted-foreground">
+							<Paperclip className="size-6" />
+						</div>
+					)}
+				</HoverCardContent>
+			</HoverCard>
+		);
+	}
 
 	if (source.kind === "tool") {
 		return (

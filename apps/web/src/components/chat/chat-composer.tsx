@@ -335,7 +335,6 @@ export function ChatComposer({
 		[onAttachedFilesChange],
 	);
 	const attachmentDropzone = useFileAttachmentDropzone({
-		disabled: isLoading,
 		onFileUploadFailed: handleAttachmentUploadFailed,
 		onFileUploaded: handleAttachmentUploaded,
 		onFilesAdded: handleAttachmentsAdded,
@@ -1210,7 +1209,6 @@ function ChatComposerFooter({
 			className="min-w-0 flex-wrap gap-1 px-2 pt-1 pb-2"
 		>
 			<FileAttachmentButton
-				disabled={isLoading}
 				onFileUploadFailed={onAttachmentUploadFailed}
 				onFileUploaded={onAttachmentUploaded}
 				onFilesAdded={onAttachmentsAdded}

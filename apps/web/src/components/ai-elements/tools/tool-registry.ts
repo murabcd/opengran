@@ -1,4 +1,11 @@
-import { Calendar, Database, FileSearch, Globe, Search } from "lucide-react";
+import {
+	Calendar,
+	Database,
+	FileImage,
+	FileSearch,
+	Globe,
+	Search,
+} from "lucide-react";
 import type React from "react";
 
 export type ToolMeta = {
@@ -69,6 +76,13 @@ const makeToolMeta = ({
 });
 
 const toolRegistry: Record<string, ToolMeta> = {
+	"tool-generate_image": makeToolMeta({
+		groupKey: "image",
+		icon: FileImage,
+		running: "Generating image",
+		complete: "Generated image",
+		subtitleKeys: ["prompt"],
+	}),
 	"tool-google_calendar_list_events": makeToolMeta({
 		icon: Calendar,
 		running: "Reading calendar",

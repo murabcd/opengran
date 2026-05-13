@@ -47,10 +47,11 @@
     "packages/*"
   ],
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.41",
+    "@ai-sdk/openai": "3.0.63",
+    "@ai-sdk/react": "3.0.184",
     "@convex-dev/better-auth": "^0.11.3",
     "@posthog/agent-toolkit": "^0.2.4",
-    "ai": "^6.0.116",
+    "ai": "6.0.182",
     "better-auth": "1.5.5",
     "canvas-confetti": "^1.9.4",
     "convex": "^1.37.0",

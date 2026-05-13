@@ -19,6 +19,11 @@ import {
 	finalizeGeneratedChatTitle,
 } from "../packages/ai/src/chat-titles.mjs";
 import {
+	buildImageGenerationInstruction,
+	createConvexGeneratedImageUploader,
+	createImageGenerationTool,
+} from "../packages/ai/src/image-generation-tool.mjs";
+import {
 	CHAT_SERVER_MODELS,
 	CHAT_TITLE_MODEL_ID,
 	getChatModelProviderOptions,
@@ -647,6 +652,16 @@ export const handleChatRequest = async (request: Request) => {
 					}),
 				}
 			: {}),
+		...(convexClient
+			? {
+					generate_image: createImageGenerationTool({
+						uploadGeneratedImage: createConvexGeneratedImageUploader({
+							chatAttachmentsApi: api.chatAttachments,
+							client: convexClient,
+						}),
+					}),
+				}
+			: {}),
 		...appTools,
 	};
 
@@ -655,13 +670,13 @@ export const handleChatRequest = async (request: Request) => {
 		(await convexClient
 			.query(api.userPreferences.getAiProfileContext, {})
 			.catch(() => null));
-	const systemPrompt = buildChatSystemPrompt({
+	const systemPrompt = `${buildChatSystemPrompt({
 		notesContext,
 		attachedNoteContext,
 		recipeContext,
 		userProfileContext: userProfileContext ?? undefined,
 		webSearchEnabled,
-	});
+	})}\n\n${buildImageGenerationInstruction()}`;
 	const result = streamText({
 		model: openai(selectedModel.model),
 		providerOptions,

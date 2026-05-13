@@ -25,9 +25,9 @@
     "typecheck": "node scripts/check-syntax.mjs"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.41",
+    "@ai-sdk/openai": "3.0.63",
     "@posthog/agent-toolkit": "^0.2.4",
-    "ai": "^6.0.116",
+    "ai": "6.0.182",
     "conf": "^15.0.2",
     "convex": "^1.34.0",
     "electron-updater": "^6.6.2",
