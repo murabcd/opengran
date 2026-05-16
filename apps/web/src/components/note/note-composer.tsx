@@ -2807,6 +2807,7 @@ function ChatInlinePopoverFooter({
 			attributes: {
 				class:
 					"chat-composer-tiptap min-h-full max-h-[24rem] w-full flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent pt-3 pr-3 pb-0 pl-3.5 text-left text-[14px] leading-[1.6] font-normal shadow-none ring-0 outline-none focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent",
+				"data-slot": "input-group-control",
 			},
 			handleDOMEvents: {
 				pointerdown: () => {
@@ -2999,7 +3000,7 @@ function ChatInlinePopoverFooter({
 		};
 	}, [activateInlineOnFocus, composerEditorRef, handleComposerPointerDown]);
 	const attachmentDropzone = useFileAttachmentDropzone({
-		disabled: isChatLoading || !shouldShowRecipeControls,
+		disabled: isChatLoading,
 		onFileUploadFailed: handleAttachmentUploadFailed,
 		onFileUploaded: handleAttachmentUploaded,
 		onFilesAdded: handleAttachmentsAdded,
@@ -3012,7 +3013,7 @@ function ChatInlinePopoverFooter({
 				{...attachmentDropzone.dropzoneProps}
 				onPointerDown={handleInputGroupPointerDown}
 			>
-				{shouldShowRecipeControls && attachedFiles.length > 0 ? (
+				{attachedFiles.length > 0 ? (
 					<InputGroupAddon
 						align="block-start"
 						className={cn(
