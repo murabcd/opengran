@@ -92,7 +92,6 @@ describe("desktop platform bridge", () => {
 			candidateStartedAt: null,
 			confidence: 0,
 			dismissedUntil: null,
-			hasBrowserMeetingSignal: false,
 			hasMeetingSignal: false,
 			isMicrophoneActive: false,
 			isSuppressed: false,

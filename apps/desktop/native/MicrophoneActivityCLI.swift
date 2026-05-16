@@ -1,3 +1,4 @@
+import AppKit
 import AudioToolbox
 import CoreAudio
 import Dispatch
@@ -37,11 +38,18 @@ final class StderrLogger: @unchecked Sendable {
 }
 
 final class MicrophoneActivityMonitor: @unchecked Sendable {
+	private struct ActiveInputClient {
+		let bundleID: String?
+		let name: String
+		let pid: pid_t
+	}
+
 	private let emitter: StdoutEmitter
 	private let logger: StderrLogger
 	private let queue = DispatchQueue(label: "com.opengran.microphone-activity.listener")
 	private var deviceIDs: [AudioDeviceID] = []
 	private var lastActive = false
+	private var lastSourceName: String?
 
 	init(emitter: StdoutEmitter, logger: StderrLogger) {
 		self.emitter = emitter
@@ -63,11 +71,10 @@ final class MicrophoneActivityMonitor: @unchecked Sendable {
 				AudioObjectAddPropertyListener(deviceID, &address, Self.listenerCallback, selfPtr)
 			}
 
-			lastActive = deviceIDs.contains { Self.isDeviceRunning($0) }
-			emitter.send(event: [
-				"type": "ready",
-				"active": lastActive,
-			])
+			let snapshot = Self.inputActivitySnapshot(deviceIDs: deviceIDs)
+			lastActive = snapshot.active
+			lastSourceName = snapshot.sourceName
+			emitter.send(event: Self.eventPayload(type: "ready", active: lastActive, sourceName: lastSourceName))
 		}
 	}
 
@@ -110,17 +117,195 @@ final class MicrophoneActivityMonitor: @unchecked Sendable {
 				return
 			}
 
-			let nextActive = self.deviceIDs.contains { Self.isDeviceRunning($0) }
-			guard nextActive != self.lastActive else {
+			let snapshot = Self.inputActivitySnapshot(deviceIDs: self.deviceIDs)
+			guard snapshot.active != self.lastActive || snapshot.sourceName != self.lastSourceName else {
 				return
 			}
 
-			self.lastActive = nextActive
-			self.emitter.send(event: [
-				"type": "active-changed",
-				"active": nextActive,
-			])
+			self.lastActive = snapshot.active
+			self.lastSourceName = snapshot.sourceName
+			self.emitter.send(event: Self.eventPayload(type: "active-changed", active: snapshot.active, sourceName: snapshot.sourceName))
 		}
+	}
+
+	private static func eventPayload(type: String, active: Bool, sourceName: String?) -> [String: Any] {
+		var payload: [String: Any] = [
+			"type": type,
+			"active": active,
+		]
+
+		if let sourceName, !sourceName.isEmpty {
+			payload["sourceName"] = sourceName
+		}
+
+		return payload
+	}
+
+	private static func inputActivitySnapshot(deviceIDs: [AudioDeviceID]) -> (active: Bool, sourceName: String?) {
+		let active = deviceIDs.contains { Self.isDeviceRunning($0) }
+		guard active else {
+			return (false, nil)
+		}
+
+		return (true, Self.preferredActiveInputClientName(matching: Set(deviceIDs)))
+	}
+
+	private static func preferredActiveInputClientName(matching inputDeviceIDs: Set<AudioDeviceID>) -> String? {
+		let clients = activeInputClients().filter { client in
+			!Self.isOpenGranClient(client) && Self.clientUsesInputDevice(client.pid, matching: inputDeviceIDs)
+		}
+
+		return clients.sorted { left, right in
+			Self.clientRank(left) < Self.clientRank(right)
+		}.first?.name
+	}
+
+	private static func activeInputClients() -> [ActiveInputClient] {
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioHardwarePropertyProcessObjectList,
+			mScope: kAudioObjectPropertyScopeGlobal,
+			mElement: kAudioObjectPropertyElementMain
+		)
+		var dataSize: UInt32 = 0
+		guard AudioObjectGetPropertyDataSize(
+			AudioObjectID(kAudioObjectSystemObject),
+			&address,
+			0,
+			nil,
+			&dataSize
+		) == kAudioHardwareNoError else {
+			return []
+		}
+
+		let count = Int(dataSize) / MemoryLayout<AudioObjectID>.size
+		var processIDs = [AudioObjectID](repeating: 0, count: count)
+		guard AudioObjectGetPropertyData(
+			AudioObjectID(kAudioObjectSystemObject),
+			&address,
+			0,
+			nil,
+			&dataSize,
+			&processIDs
+		) == kAudioHardwareNoError else {
+			return []
+		}
+
+		return processIDs.compactMap { processID in
+			guard Self.isProcessRunningInput(processID), let pid = Self.processPID(processID) else {
+				return nil
+			}
+
+			let application = NSRunningApplication(processIdentifier: pid)
+			let bundleID = Self.processBundleID(processID) ?? application?.bundleIdentifier
+			let name = application?.localizedName?.trimmingCharacters(in: .whitespacesAndNewlines)
+			let fallbackName = bundleID?.split(separator: ".").last.map(String.init)
+			guard let resolvedName = (name?.isEmpty == false ? name : fallbackName), !resolvedName.isEmpty else {
+				return nil
+			}
+
+			return ActiveInputClient(bundleID: bundleID, name: resolvedName, pid: pid)
+		}
+	}
+
+	private static func isProcessRunningInput(_ processID: AudioObjectID) -> Bool {
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioProcessPropertyIsRunningInput,
+			mScope: kAudioObjectPropertyScopeGlobal,
+			mElement: kAudioObjectPropertyElementMain
+		)
+		var isRunning: UInt32 = 0
+		var size = UInt32(MemoryLayout<UInt32>.size)
+		let status = AudioObjectGetPropertyData(processID, &address, 0, nil, &size, &isRunning)
+		return status == kAudioHardwareNoError && isRunning != 0
+	}
+
+	private static func processPID(_ processID: AudioObjectID) -> pid_t? {
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioProcessPropertyPID,
+			mScope: kAudioObjectPropertyScopeGlobal,
+			mElement: kAudioObjectPropertyElementMain
+		)
+		var pid = pid_t(0)
+		var size = UInt32(MemoryLayout<pid_t>.size)
+		let status = AudioObjectGetPropertyData(processID, &address, 0, nil, &size, &pid)
+		return status == kAudioHardwareNoError && pid > 0 ? pid : nil
+	}
+
+	private static func processBundleID(_ processID: AudioObjectID) -> String? {
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioProcessPropertyBundleID,
+			mScope: kAudioObjectPropertyScopeGlobal,
+			mElement: kAudioObjectPropertyElementMain
+		)
+		var bundleID: Unmanaged<CFString>?
+		var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+		let status = AudioObjectGetPropertyData(processID, &address, 0, nil, &size, &bundleID)
+		guard status == kAudioHardwareNoError else {
+			return nil
+		}
+
+		return bundleID?.takeRetainedValue() as String?
+	}
+
+	private static func clientUsesInputDevice(_ pid: pid_t, matching inputDeviceIDs: Set<AudioDeviceID>) -> Bool {
+		guard let processID = Self.processObjectID(for: pid) else {
+			return true
+		}
+
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioProcessPropertyDevices,
+			mScope: kAudioObjectPropertyScopeInput,
+			mElement: kAudioObjectPropertyElementMain
+		)
+		var dataSize: UInt32 = 0
+		guard AudioObjectGetPropertyDataSize(processID, &address, 0, nil, &dataSize) == kAudioHardwareNoError else {
+			return true
+		}
+
+		let count = Int(dataSize) / MemoryLayout<AudioObjectID>.size
+		var processDeviceIDs = [AudioObjectID](repeating: 0, count: count)
+		guard AudioObjectGetPropertyData(processID, &address, 0, nil, &dataSize, &processDeviceIDs) == kAudioHardwareNoError else {
+			return true
+		}
+
+		return processDeviceIDs.contains { inputDeviceIDs.contains($0) }
+	}
+
+	private static func processObjectID(for pid: pid_t) -> AudioObjectID? {
+		var address = AudioObjectPropertyAddress(
+			mSelector: kAudioHardwarePropertyTranslatePIDToProcessObject,
+			mScope: kAudioObjectPropertyScopeGlobal,
+			mElement: kAudioObjectPropertyElementMain
+		)
+		var processID = AudioObjectID(kAudioObjectUnknown)
+		var qualifier = pid
+		var size = UInt32(MemoryLayout<AudioObjectID>.size)
+		let status = AudioObjectGetPropertyData(
+			AudioObjectID(kAudioObjectSystemObject),
+			&address,
+			UInt32(MemoryLayout<pid_t>.size),
+			&qualifier,
+			&size,
+			&processID
+		)
+
+		return status == kAudioHardwareNoError && processID != AudioObjectID(kAudioObjectUnknown) ? processID : nil
+	}
+
+	private static func isOpenGranClient(_ client: ActiveInputClient) -> Bool {
+		client.bundleID?.hasPrefix("com.opengran") == true || client.name == "OpenGran"
+	}
+
+	private static func clientRank(_ client: ActiveInputClient) -> Int {
+		let normalizedName = client.name.lowercased()
+		let normalizedBundleID = client.bundleID?.lowercased() ?? ""
+		let preferredTokens = ["zoom", "teams", "slack", "facetime", "whatsapp", "chrome", "safari", "arc", "brave", "edge", "firefox"]
+
+		if preferredTokens.contains(where: { normalizedName.contains($0) || normalizedBundleID.contains($0) }) {
+			return 0
+		}
+
+		return 1
 	}
 
 	private static func physicalInputDeviceIDs() -> [AudioDeviceID] {

@@ -119,7 +119,7 @@ export const useNoteTranscriptSession = ({
 	const lastQueuedAutoStartKeyRef = React.useRef<string | null>(null);
 	const hasHandledAutoStartRef = React.useRef(false);
 	const shouldStopWhenMeetingEndsRef = React.useRef(false);
-	const hasSeenBrowserMeetingSignalRef = React.useRef(false);
+	const hasSeenMeetingSignalRef = React.useRef(false);
 	const hasRequestedAutomaticStopRef = React.useRef(false);
 	const hasRestoredTranscriptDraftRef = React.useRef(false);
 	const hasHydratedStoredTranscriptSessionRef = React.useRef(false);
@@ -389,15 +389,15 @@ export const useNoteTranscriptSession = ({
 		}
 
 		return onDesktopMeetingDetectionState((state) => {
-			if (state.hasBrowserMeetingSignal) {
-				hasSeenBrowserMeetingSignalRef.current = true;
+			if (state.hasMeetingSignal) {
+				hasSeenMeetingSignalRef.current = true;
 				shouldStopWhenMeetingEndsRef.current = true;
 				return;
 			}
 
 			if (
 				!shouldStopWhenMeetingEndsRef.current ||
-				!hasSeenBrowserMeetingSignalRef.current ||
+				!hasSeenMeetingSignalRef.current ||
 				!isSpeechListening ||
 				hasRequestedAutomaticStopRef.current ||
 				state.hasMeetingSignal
@@ -507,7 +507,7 @@ export const useNoteTranscriptSession = ({
 
 	const markSpeechListeningStopped = React.useCallback(() => {
 		shouldStopWhenMeetingEndsRef.current = false;
-		hasSeenBrowserMeetingSignalRef.current = false;
+		hasSeenMeetingSignalRef.current = false;
 		hasRequestedAutomaticStopRef.current = false;
 		const completedTranscript = createTranscriptText(
 			transcriptUtterancesRef.current,
@@ -802,7 +802,7 @@ export const useNoteTranscriptSession = ({
 			}
 
 			shouldStopWhenMeetingEndsRef.current = false;
-			hasSeenBrowserMeetingSignalRef.current = false;
+			hasSeenMeetingSignalRef.current = false;
 			hasRequestedAutomaticStopRef.current = true;
 			void transcriptionSessionManager.controller.stop();
 		}, granolaIdleCheckIntervalMs);

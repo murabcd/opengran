@@ -46,6 +46,7 @@ import {
 import { getDesktopAuthClient } from "./auth-client.mjs";
 import { loadRootEnv } from "./env.mjs";
 import { startLocalServer } from "./local-server.mjs";
+import { resolveNativeMeetingDetectionSourceName } from "./meeting-source.mjs";
 import { toErrorLogDetails } from "./network.mjs";
 import { getRuntimeConfig, hydrateRuntimeConfig } from "./runtime-config.mjs";
 
@@ -100,7 +101,6 @@ const trayCalendarIdleRefreshMs = 5 * 60 * 1000;
 const trayCalendarUnavailableRefreshMs = 15 * 60 * 1000;
 const trayCalendarUpcomingRefreshWindowMs = 30 * 60 * 1000;
 const trayCalendarMenuEventLimit = 5;
-const browserMeetingSignalFreshMs = 30 * 1000;
 const shouldLogDesktopTurnDebug =
 	app.isPackaged !== true ||
 	process.env.OPENGRAN_ENABLE_TRANSCRIPTION_DEBUG === "1";
@@ -189,7 +189,6 @@ const createInitialMeetingDetectionState = () => ({
 	candidateStartedAt: null,
 	confidence: 0,
 	dismissedUntil: null,
-	hasBrowserMeetingSignal: false,
 	hasMeetingSignal: false,
 	isMicrophoneActive: false,
 	isSuppressed: false,
@@ -260,6 +259,7 @@ let hasConfiguredDisplayMediaHandler = false;
 let microphoneCaptureSession = null;
 let microphoneCaptureStartRequestId = 0;
 let microphoneActivitySession = null;
+let microphoneActivityEventSequence = 0;
 let systemAudioCaptureSession = null;
 let systemAudioCaptureStartRequestId = 0;
 let systemAudioPermissionState = "prompt";
@@ -303,13 +303,6 @@ let transcriptionPendingStopPromise = null;
 let currentTranscriptionSessionCorrelationId = null;
 let meetingDetectionDebounceTimeoutId = null;
 let lastNavigation = { ...defaultLastNavigation };
-let latestBrowserMeetingSignal = {
-	active: false,
-	lastSeenAt: 0,
-	sourceName: null,
-	tabTitle: null,
-	urlHost: null,
-};
 const areDesktopTestHooksEnabled =
 	app.isPackaged !== true || process.env.OPENGRAN_ENABLE_TEST_HOOKS === "1";
 
@@ -867,27 +860,6 @@ const refreshTrayCalendar = async () => {
 	return await trayCalendarRefreshPromise;
 };
 
-const getCurrentBrowserMeetingSignal = () => {
-	if (!latestBrowserMeetingSignal.active) {
-		return null;
-	}
-
-	if (
-		Date.now() - latestBrowserMeetingSignal.lastSeenAt >
-		browserMeetingSignalFreshMs
-	) {
-		return null;
-	}
-
-	return latestBrowserMeetingSignal;
-};
-
-const getCurrentBrowserMeetingSourceName = () =>
-	getCurrentBrowserMeetingSignal()?.sourceName ?? null;
-
-const hasFreshBrowserMeetingSignal = () =>
-	getCurrentBrowserMeetingSignal() !== null;
-
 const createScheduledMeetingNotificationKey = (workspaceId, event) =>
 	`${workspaceId}:${event.id}:${event.startAt}`;
 
@@ -1024,8 +996,6 @@ const updateMeetingWidgetWindowSize = (size) => {
 };
 
 const syncMeetingDetectionState = (patch) => {
-	const hasBrowserMeetingSignal =
-		patch?.hasBrowserMeetingSignal ?? hasFreshBrowserMeetingSignal();
 	const isMicrophoneActive = Boolean(
 		patch?.isMicrophoneActive ?? latestMeetingDetectionState.isMicrophoneActive,
 	);
@@ -1033,8 +1003,7 @@ const syncMeetingDetectionState = (patch) => {
 	latestMeetingDetectionState = {
 		...latestMeetingDetectionState,
 		...patch,
-		hasBrowserMeetingSignal,
-		hasMeetingSignal: isMicrophoneActive || hasBrowserMeetingSignal,
+		hasMeetingSignal: isMicrophoneActive,
 	};
 
 	broadcastToDesktopWindows({
@@ -1114,15 +1083,12 @@ const ensureMeetingWidgetWindow = async () => {
 const autoHideMeetingWidgetPrompt = () => {
 	hideMeetingWidgetWindow();
 
-	const hasBrowserSignal = hasFreshBrowserMeetingSignal();
-	const hasMeetingSignal =
-		latestMeetingDetectionState.isMicrophoneActive || hasBrowserSignal;
+	const hasMeetingSignal = latestMeetingDetectionState.isMicrophoneActive;
 
 	if (!hasMeetingSignal || isMeetingDetectionSuppressed()) {
 		syncMeetingDetectionState({
 			candidateStartedAt: null,
 			confidence: 0,
-			hasBrowserMeetingSignal: hasBrowserSignal,
 			isSuppressed: isMeetingDetectionSuppressed(),
 			sourceName: null,
 			status: "idle",
@@ -1131,10 +1097,9 @@ const autoHideMeetingWidgetPrompt = () => {
 	}
 
 	syncMeetingDetectionState({
-		confidence: hasBrowserSignal ? 0.68 : 0.35,
-		hasBrowserMeetingSignal: hasBrowserSignal,
+		confidence: 0.35,
 		isSuppressed: false,
-		sourceName: getCurrentBrowserMeetingSourceName(),
+		sourceName: null,
 		status: "monitoring",
 	});
 };
@@ -1710,36 +1675,11 @@ const isMeetingDetectionSuppressed = () =>
 		latestTranscriptionSessionState.phase,
 	) || (latestMeetingDetectionState.dismissedUntil ?? 0) > Date.now();
 
-const handleBrowserMeetingSignal = (payload) => {
-	latestBrowserMeetingSignal = {
-		active: payload?.active === true,
-		lastSeenAt: Date.now(),
-		sourceName:
-			typeof payload?.sourceName === "string" && payload.sourceName.trim()
-				? payload.sourceName.trim()
-				: null,
-		tabTitle:
-			typeof payload?.tabTitle === "string" && payload.tabTitle.trim()
-				? payload.tabTitle.trim()
-				: null,
-		urlHost:
-			typeof payload?.urlHost === "string" && payload.urlHost.trim()
-				? payload.urlHost.trim()
-				: null,
-	};
-
-	reevaluateMeetingDetection();
-};
-
 const reevaluateMeetingDetection = () => {
 	const isSuppressed = isMeetingDetectionSuppressed();
-	const sourceName = getCurrentBrowserMeetingSourceName();
-	const hasBrowserSignal = hasFreshBrowserMeetingSignal();
-	const hasMeetingSignal =
-		latestMeetingDetectionState.isMicrophoneActive || hasBrowserSignal;
-	const confidence = hasBrowserSignal ? 0.68 : 0.35;
-	const promptConfidence = hasBrowserSignal ? 0.96 : 0.82;
-	const debounceMs = hasBrowserSignal ? 1_200 : meetingDetectionDebounceMs;
+	const hasMeetingSignal = latestMeetingDetectionState.isMicrophoneActive;
+	const confidence = 0.35;
+	const promptConfidence = 0.82;
 
 	if (!hasMeetingSignal || isSuppressed) {
 		clearMeetingDetectionDebounceTimeout();
@@ -1747,7 +1687,6 @@ const reevaluateMeetingDetection = () => {
 		syncMeetingDetectionState({
 			candidateStartedAt: null,
 			confidence: 0,
-			hasBrowserMeetingSignal: hasBrowserSignal,
 			isSuppressed,
 			sourceName: null,
 			status: "idle",
@@ -1757,9 +1696,8 @@ const reevaluateMeetingDetection = () => {
 
 	syncMeetingDetectionState({
 		confidence,
-		hasBrowserMeetingSignal: hasBrowserSignal,
 		isSuppressed: false,
-		sourceName,
+		sourceName: latestMeetingDetectionState.sourceName,
 		status: "monitoring",
 	});
 
@@ -1777,10 +1715,7 @@ const reevaluateMeetingDetection = () => {
 		meetingDetectionDebounceTimeoutId = null;
 
 		if (
-			!(
-				latestMeetingDetectionState.isMicrophoneActive ||
-				hasFreshBrowserMeetingSignal()
-			) ||
+			!latestMeetingDetectionState.isMicrophoneActive ||
 			isMeetingDetectionSuppressed()
 		) {
 			reevaluateMeetingDetection();
@@ -1790,13 +1725,12 @@ const reevaluateMeetingDetection = () => {
 		syncMeetingDetectionState({
 			candidateStartedAt: Date.now(),
 			confidence: promptConfidence,
-			hasBrowserMeetingSignal: hasFreshBrowserMeetingSignal(),
 			isSuppressed: false,
-			sourceName: getCurrentBrowserMeetingSourceName(),
+			sourceName: latestMeetingDetectionState.sourceName,
 			status: "prompting",
 		});
 		void showMeetingWidgetWindow();
-	}, debounceMs);
+	}, meetingDetectionDebounceMs);
 };
 
 const dismissDetectedMeetingWidget = () => {
@@ -2050,7 +1984,6 @@ const ensureLocalServer = async () => {
 	if (!localServer) {
 		localServer = await startLocalServer({
 			onAuthCallback: handleDesktopAuthCallback,
-			onBrowserMeetingSignal: handleBrowserMeetingSignal,
 		});
 	}
 
@@ -4012,27 +3945,53 @@ const startMicrophoneActivityMonitor = async () => {
 				return;
 			}
 
-			if (event?.type === "ready") {
-				clearTimeout(startupTimeout);
-				session.cleanupTimeout = null;
-				syncMeetingDetectionState({
-					dismissedUntil: latestMeetingDetectionState.dismissedUntil ?? null,
-					isMicrophoneActive: event.active === true,
-				});
-				reevaluateMeetingDetection();
-				if (!didResolve) {
-					didResolve = true;
-					resolvePromise(true);
-				}
+			if (event?.type !== "ready" && event?.type !== "active-changed") {
 				return;
 			}
 
-			if (event?.type === "active-changed") {
+			const eventSequence = ++microphoneActivityEventSequence;
+			void (async () => {
+				const isActive = event.active === true;
+				const sourceName = isActive
+					? await resolveNativeMeetingDetectionSourceName(event.sourceName)
+					: null;
+
+				if (
+					microphoneActivitySession !== session ||
+					eventSequence !== microphoneActivityEventSequence
+				) {
+					return;
+				}
+
 				syncMeetingDetectionState({
-					isMicrophoneActive: event.active === true,
+					...(event.type === "ready"
+						? {
+								dismissedUntil:
+									latestMeetingDetectionState.dismissedUntil ?? null,
+							}
+						: {}),
+					isMicrophoneActive: isActive,
+					sourceName,
 				});
 				reevaluateMeetingDetection();
-			}
+
+				if (event.type === "ready") {
+					clearTimeout(startupTimeout);
+					session.cleanupTimeout = null;
+					if (!didResolve) {
+						didResolve = true;
+						resolvePromise(true);
+					}
+				}
+			})().catch((error) => {
+				console.error(
+					"[meeting-detection] failed to handle microphone activity event",
+					error,
+				);
+				if (event?.type === "ready" && !didResolve) {
+					failStart(error);
+				}
+			});
 		});
 
 		child.on("error", (error) => {

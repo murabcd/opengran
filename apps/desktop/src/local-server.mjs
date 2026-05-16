@@ -71,7 +71,7 @@ const MAX_CHAT_TITLE_LENGTH = 80;
 const MAX_NOTE_CONTEXT_LENGTH = 16_000;
 const chatModels = CHAT_SERVER_MODELS;
 const fallbackChatModel = chatModels[0];
-const preferredExtensionBridgePorts = Array.from(
+const preferredLocalServerPorts = Array.from(
 	{ length: 20 },
 	(_value, index) => 42831 + index,
 );
@@ -594,13 +594,6 @@ const isAuthorizedLocalAppRequest = (request, allowedOrigin) => {
 	}
 
 	return getRequestOrigin(request) === allowedOrigin;
-};
-
-const setExtensionBridgeHeaders = (response) => {
-	response.setHeader("Access-Control-Allow-Origin", "*");
-	response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-	response.setHeader("Access-Control-Allow-Headers", "Content-Type");
-	response.setHeader("Cache-Control", "no-store");
 };
 
 const handleChatRequest = async (request, response) => {
@@ -1182,10 +1175,7 @@ const serveStaticAsset = async (request, response, options = {}) => {
 	serveFile(response, join(distDir, "index.html"));
 };
 
-export const startLocalServer = async ({
-	onAuthCallback,
-	onBrowserMeetingSignal,
-} = {}) => {
+export const startLocalServer = async ({ onAuthCallback } = {}) => {
 	let localServerOrigin = null;
 	const server = createServer((request, response) => {
 		const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -1288,55 +1278,6 @@ export const startLocalServer = async ({
 			return;
 		}
 
-		if (requestUrl.pathname === "/api/browser-meeting-bridge-info") {
-			setExtensionBridgeHeaders(response);
-
-			if (request.method === "OPTIONS") {
-				response.statusCode = 204;
-				response.end();
-				return;
-			}
-
-			if (request.method !== "GET") {
-				sendJson(response, 405, { error: "Method not allowed." });
-				return;
-			}
-
-			sendJson(response, 200, {
-				app: "OpenGran",
-				bridge: "browser-meeting",
-				version: 1,
-			});
-			return;
-		}
-
-		if (requestUrl.pathname === "/api/browser-meeting-signal") {
-			setExtensionBridgeHeaders(response);
-
-			if (request.method === "OPTIONS") {
-				response.statusCode = 204;
-				response.end();
-				return;
-			}
-
-			if (request.method !== "POST") {
-				sendJson(response, 405, { error: "Method not allowed." });
-				return;
-			}
-
-			void readJsonBody(request)
-				.then(async (payload) => {
-					await onBrowserMeetingSignal?.(payload);
-					sendJson(response, 200, { ok: true });
-				})
-				.catch((error) => {
-					const message =
-						error instanceof Error ? error.message : "Unexpected server error.";
-					sendJson(response, 500, { error: message });
-				});
-			return;
-		}
-
 		if (request.method !== "GET" && request.method !== "HEAD") {
 			response.statusCode = 405;
 			response.end("Method not allowed");
@@ -1353,7 +1294,7 @@ export const startLocalServer = async ({
 
 	let lastListenError = null;
 
-	for (const port of preferredExtensionBridgePorts) {
+	for (const port of preferredLocalServerPorts) {
 		try {
 			await new Promise((resolvePromise, rejectPromise) => {
 				server.once("error", rejectPromise);

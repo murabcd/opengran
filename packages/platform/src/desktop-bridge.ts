@@ -59,7 +59,6 @@ export type DesktopMeetingDetectionState = {
 	candidateStartedAt: number | null;
 	confidence: number;
 	dismissedUntil: number | null;
-	hasBrowserMeetingSignal: boolean;
 	hasMeetingSignal: boolean;
 	isMicrophoneActive: boolean;
 	isSuppressed: boolean;

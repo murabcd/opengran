@@ -25,7 +25,6 @@
 - Workspace organization for keeping teams, notes, and context aligned
 - Desktop meeting workflow with quick capture during active calls
 - Calendar-aware setup that prepares notes around scheduled meetings
-- Browser extension integration for collecting context directly from the web
 
 ## Built with
 
@@ -60,8 +59,6 @@
   - Browser app and shared renderer
 - `apps/desktop`
   - Electron desktop app for native transcription and packaged releases
-- `apps/extension`
-  - Browser extension for in-browser meeting detection and desktop integration
 
 ## Model providers
 
