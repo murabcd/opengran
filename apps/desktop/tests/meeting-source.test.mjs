@@ -4,6 +4,7 @@ import {
 	getBrowserActiveTabUrlScript,
 	getMeetingProviderNameFromUrl,
 	normalizeMeetingDetectionSourceName,
+	resolveNativeMeetingDetectionSourceName,
 } from "../src/meeting-source.mjs";
 
 test("maps supported meeting URLs to provider labels", () => {
@@ -53,4 +54,8 @@ test("normalizes source names", () => {
 	assert.equal(normalizeMeetingDetectionSourceName(" Zoom "), "Zoom");
 	assert.equal(normalizeMeetingDetectionSourceName(""), null);
 	assert.equal(normalizeMeetingDetectionSourceName(null), null);
+});
+
+test("does not expose generic helper process names", async () => {
+	assert.equal(await resolveNativeMeetingDetectionSourceName("helper"), null);
 });

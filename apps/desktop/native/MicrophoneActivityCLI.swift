@@ -197,7 +197,10 @@ final class MicrophoneActivityMonitor: @unchecked Sendable {
 
 			let application = NSRunningApplication(processIdentifier: pid)
 			let bundleID = Self.processBundleID(processID) ?? application?.bundleIdentifier
-			let name = application?.localizedName?.trimmingCharacters(in: .whitespacesAndNewlines)
+			let name = Self.canonicalClientName(
+				bundleID: bundleID,
+				localizedName: application?.localizedName
+			)
 			let fallbackName = bundleID?.split(separator: ".").last.map(String.init)
 			guard let resolvedName = (name?.isEmpty == false ? name : fallbackName), !resolvedName.isEmpty else {
 				return nil
@@ -294,6 +297,40 @@ final class MicrophoneActivityMonitor: @unchecked Sendable {
 
 	private static func isOpenGranClient(_ client: ActiveInputClient) -> Bool {
 		client.bundleID?.hasPrefix("com.opengran") == true || client.name == "OpenGran"
+	}
+
+	private static func canonicalClientName(bundleID: String?, localizedName: String?) -> String? {
+		let normalizedBundleID = bundleID?.lowercased() ?? ""
+
+		if normalizedBundleID.contains("company.thebrowser") {
+			return "Arc"
+		}
+
+		if normalizedBundleID.contains("com.google.chrome") {
+			return "Google Chrome"
+		}
+
+		if normalizedBundleID.contains("com.brave.browser") {
+			return "Brave Browser"
+		}
+
+		if normalizedBundleID.contains("com.microsoft.edgemac") {
+			return "Microsoft Edge"
+		}
+
+		if normalizedBundleID.contains("org.chromium.chromium") {
+			return "Chromium"
+		}
+
+		if normalizedBundleID.contains("com.apple.safari") {
+			return "Safari"
+		}
+
+		if normalizedBundleID.contains("us.zoom") || normalizedBundleID.contains("zoom.us") {
+			return "zoom.us"
+		}
+
+		return localizedName?.trimmingCharacters(in: .whitespacesAndNewlines)
 	}
 
 	private static func clientRank(_ client: ActiveInputClient) -> Int {

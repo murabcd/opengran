@@ -8,6 +8,14 @@ const browserAppNames = new Set([
 	"Microsoft Edge",
 	"Safari",
 ]);
+const browserProviderLookupOrder = [
+	"Arc",
+	"Google Chrome",
+	"Safari",
+	"Brave Browser",
+	"Microsoft Edge",
+	"Chromium",
+];
 
 const desktopSourceNames = new Map([
 	["FaceTime", "FaceTime"],
@@ -128,6 +136,10 @@ export const resolveNativeMeetingDetectionSourceName = async (value) => {
 	}
 
 	if (!browserAppNames.has(sourceName)) {
+		if (sourceName.toLowerCase() === "helper") {
+			return await resolveActiveBrowserMeetingProviderName();
+		}
+
 		return sourceName;
 	}
 
@@ -135,4 +147,18 @@ export const resolveNativeMeetingDetectionSourceName = async (value) => {
 		getBrowserActiveTabUrlScript(sourceName),
 	);
 	return getMeetingProviderNameFromUrl(activeTabUrl) ?? null;
+};
+
+const resolveActiveBrowserMeetingProviderName = async () => {
+	for (const appName of browserProviderLookupOrder) {
+		const activeTabUrl = await runAppleScript(
+			getBrowserActiveTabUrlScript(appName),
+		);
+		const providerName = getMeetingProviderNameFromUrl(activeTabUrl);
+		if (providerName) {
+			return providerName;
+		}
+	}
+
+	return null;
 };
