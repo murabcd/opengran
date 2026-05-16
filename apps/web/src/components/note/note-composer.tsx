@@ -3651,9 +3651,7 @@ function NoteComposerChatPanelContent({
 			controller={controller}
 			formClassName={
 				controller.isSidebarPresentation
-					? controller.isMobile
-						? "w-full max-w-full min-w-0"
-						: "-mx-[2px] w-[calc(100%+4px)]"
+					? "w-full max-w-full min-w-0"
 					: undefined
 			}
 			speechControls={null}
