@@ -343,6 +343,50 @@ const getRecipeSlugFromComposerContent = (
 const escapeRegExp = (value: string) =>
 	value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const getComposerContentFromMessage = (
+	value: string,
+	recipe: Pick<RecipePrompt, "name" | "slug"> | null | undefined,
+): JSONContent | string => {
+	if (!recipe) {
+		return value;
+	}
+
+	const recipeMentionPrefixes = [`@${recipe.name}`, recipe.name];
+	const recipeMentionText = recipeMentionPrefixes.find((prefix) =>
+		value.startsWith(prefix),
+	);
+	if (!recipeMentionText) {
+		return value;
+	}
+
+	const trailingText = value.slice(recipeMentionText.length);
+	return {
+		type: "doc",
+		content: [
+			{
+				type: "paragraph",
+				content: [
+					{
+						type: "mention",
+						attrs: {
+							id: recipe.slug,
+							label: recipe.name,
+						},
+					},
+					...(trailingText
+						? [
+								{
+									type: "text",
+									text: trailingText,
+								},
+							]
+						: []),
+				],
+			},
+		],
+	};
+};
+
 const getMessageTextWithoutRecipeMention = (
 	value: string,
 	recipe: Pick<RecipePrompt, "name"> | null | undefined,
@@ -355,7 +399,7 @@ const getMessageTextWithoutRecipeMention = (
 
 	return nextValue
 		.replace(
-			new RegExp(`(^|\\s)@${escapeRegExp(recipe.name)}(?=\\s|$)`, "u"),
+			new RegExp(`(^|\\s)@?${escapeRegExp(recipe.name)}(?=\\s|$)`, "u"),
 			" ",
 		)
 		.replace(/\s+/g, " ")
@@ -1695,17 +1739,15 @@ const useNoteComposerController = ({
 	};
 
 	const openInlineChatFromComposer = React.useCallback(() => {
-		if (!latestNoteChat) {
-			return;
-		}
-
 		if (isChatLoading) {
 			stop();
 		}
 
 		closeComposerPopovers();
-		handlePrefetchNoteChat(latestNoteChat.chatId);
-		setCurrentChatId(latestNoteChat.chatId);
+		if (latestNoteChat) {
+			handlePrefetchNoteChat(latestNoteChat.chatId);
+			setCurrentChatId(latestNoteChat.chatId);
+		}
 
 		closeRightSidebar();
 		setPresentationMode("inline");
@@ -1834,7 +1876,7 @@ const useNoteComposerController = ({
 		sidebarPanelWidth,
 		sidebarPanelWidthCss,
 		setPanelMode,
-		canActivateInlineFromComposer: Boolean(latestNoteChat),
+		canActivateInlineFromComposer: true,
 		setModelPopoverOpen,
 		setReasoningEffort: handleReasoningEffortChange,
 		setSelectedModel: handleSelectedModelChange,
@@ -2269,6 +2311,15 @@ function NoteChatHeader({
 		);
 	const isDesktopSidebarHeader = sidebarCompact && !isMobile;
 	const isMobileSidebarHeader = sidebarCompact && isMobile;
+	const hasNoteChats = (noteChats?.length ?? 0) > 0;
+	const chatTitleClassName = cn(
+		"min-w-0 max-w-full justify-start gap-0.5 border-0 !bg-transparent text-left shadow-none",
+		isDesktopSidebarHeader
+			? "h-9 px-2.5 pr-1.5 text-sm"
+			: "h-8 px-2 pr-1.5 text-sm",
+		sidebarCompact ? "max-w-[min(100%,18rem)]" : "max-w-[min(100%,36rem)]",
+		sidebarCompact ? "-ml-1" : "-ml-2",
+	);
 
 	return (
 		<CardHeader
@@ -2294,79 +2345,72 @@ function NoteChatHeader({
 						],
 				)}
 			>
-				<Select value={currentChatId} onValueChange={onSelectChat}>
-					<SelectTrigger
-						size="sm"
-						title={chatTitle}
-						aria-label="Select note chat"
-						className={cn(
-							"min-w-0 max-w-full cursor-pointer justify-start gap-0.5 border-0 !bg-transparent text-left shadow-none hover:!bg-accent/50 focus-visible:!bg-accent/50 focus-visible:ring-0 data-[state=open]:!bg-accent/50 dark:!bg-transparent dark:hover:!bg-accent/50 dark:data-[state=open]:!bg-accent/50",
-							isDesktopSidebarHeader
-								? "h-9 px-2.5 pr-1.5 text-sm"
-								: "h-8 px-2 pr-1.5 text-sm",
-							sidebarCompact
-								? "max-w-[min(100%,18rem)]"
-								: "max-w-[min(100%,36rem)]",
-							sidebarCompact ? "-ml-1" : "-ml-2",
-						)}
-					>
+				{hasNoteChats ? (
+					<Select value={currentChatId} onValueChange={onSelectChat}>
+						<SelectTrigger
+							size="sm"
+							title={chatTitle}
+							aria-label="Select note chat"
+							className={cn(
+								chatTitleClassName,
+								"cursor-pointer hover:!bg-accent/50 focus-visible:!bg-accent/50 focus-visible:ring-0 data-[state=open]:!bg-accent/50 dark:!bg-transparent dark:hover:!bg-accent/50 dark:data-[state=open]:!bg-accent/50",
+							)}
+						>
+							<span className="min-w-0 truncate text-sm text-foreground">
+								{chatTitle}
+							</span>
+						</SelectTrigger>
+						<SelectContent
+							align="start"
+							className="min-w-[var(--radix-select-trigger-width)] max-w-[90vw]"
+						>
+							{groupedNoteChats.today.length > 0 ? (
+								<SelectGroup>
+									<SelectLabel>Today</SelectLabel>
+									{groupedNoteChats.today.map((chat) => (
+										<SelectItem
+											key={chat._id}
+											value={chat.chatId}
+											className="min-w-0"
+											onFocus={() => handlePrefetchNoteChat(chat.chatId)}
+											onMouseEnter={() => handlePrefetchNoteChat(chat.chatId)}
+											onPointerDown={() => handlePrefetchNoteChat(chat.chatId)}
+										>
+											<span className="block min-w-0 max-w-full truncate">
+												{chat.title}
+											</span>
+										</SelectItem>
+									))}
+								</SelectGroup>
+							) : null}
+							{groupedNoteChats.previous.length > 0 ? (
+								<SelectGroup>
+									<SelectLabel>Previous</SelectLabel>
+									{groupedNoteChats.previous.map((chat) => (
+										<SelectItem
+											key={chat._id}
+											value={chat.chatId}
+											className="min-w-0"
+											onFocus={() => handlePrefetchNoteChat(chat.chatId)}
+											onMouseEnter={() => handlePrefetchNoteChat(chat.chatId)}
+											onPointerDown={() => handlePrefetchNoteChat(chat.chatId)}
+										>
+											<span className="block min-w-0 max-w-full truncate">
+												{chat.title}
+											</span>
+										</SelectItem>
+									))}
+								</SelectGroup>
+							) : null}
+						</SelectContent>
+					</Select>
+				) : (
+					<div className={cn(chatTitleClassName, "flex items-center")}>
 						<span className="min-w-0 truncate text-sm text-foreground">
-							{chatTitle}
+							New chat
 						</span>
-					</SelectTrigger>
-					<SelectContent align="start" className="w-72 max-w-[90vw] p-1">
-						{(noteChats?.length ?? 0) === 0 ? (
-							<div className="px-2 py-3 text-sm text-muted-foreground">
-								Send a message to start a note chat.
-							</div>
-						) : (
-							<>
-								{groupedNoteChats.today.length > 0 ? (
-									<SelectGroup>
-										<SelectLabel>Today</SelectLabel>
-										{groupedNoteChats.today.map((chat) => (
-											<SelectItem
-												key={chat._id}
-												value={chat.chatId}
-												className="min-w-0"
-												onFocus={() => handlePrefetchNoteChat(chat.chatId)}
-												onMouseEnter={() => handlePrefetchNoteChat(chat.chatId)}
-												onPointerDown={() =>
-													handlePrefetchNoteChat(chat.chatId)
-												}
-											>
-												<span className="block min-w-0 truncate">
-													{chat.title}
-												</span>
-											</SelectItem>
-										))}
-									</SelectGroup>
-								) : null}
-								{groupedNoteChats.previous.length > 0 ? (
-									<SelectGroup>
-										<SelectLabel>Previous</SelectLabel>
-										{groupedNoteChats.previous.map((chat) => (
-											<SelectItem
-												key={chat._id}
-												value={chat.chatId}
-												className="min-w-0"
-												onFocus={() => handlePrefetchNoteChat(chat.chatId)}
-												onMouseEnter={() => handlePrefetchNoteChat(chat.chatId)}
-												onPointerDown={() =>
-													handlePrefetchNoteChat(chat.chatId)
-												}
-											>
-												<span className="block min-w-0 truncate">
-													{chat.title}
-												</span>
-											</SelectItem>
-										))}
-									</SelectGroup>
-								) : null}
-							</>
-						)}
-					</SelectContent>
-				</Select>
+					</div>
+				)}
 			</div>
 
 			<div
@@ -2537,6 +2581,7 @@ function ChatInlinePopoverFooter({
 	onStop,
 	status,
 	message,
+	selectedRecipe,
 	attachedFiles,
 	onAttachedFilesChange,
 	onRecipePopoverOpenChange,
@@ -2568,6 +2613,7 @@ function ChatInlinePopoverFooter({
 		showModelPicker: boolean;
 	};
 	message: string;
+	selectedRecipe: RecipePrompt | null;
 	attachedFiles: ChatAttachment[];
 	onAttachedFilesChange: React.Dispatch<React.SetStateAction<ChatAttachment[]>>;
 	onRecipePopoverOpenChange: (open: boolean) => void;
@@ -2823,7 +2869,13 @@ function ChatInlinePopoverFooter({
 		}
 
 		const currentText = composerEditor.getText({ blockSeparator: "\n" });
-		if (currentText === message) {
+		const currentRecipeSlug = getRecipeSlugFromComposerContent(
+			composerEditor.getJSON(),
+		);
+		if (
+			currentText === message &&
+			currentRecipeSlug === (selectedRecipe?.slug ?? null)
+		) {
 			return;
 		}
 
@@ -2831,8 +2883,11 @@ function ChatInlinePopoverFooter({
 			return;
 		}
 
-		composerEditor.commands.setContent(message, { emitUpdate: false });
-	}, [composerEditor, message]);
+		composerEditor.commands.setContent(
+			getComposerContentFromMessage(message, selectedRecipe),
+			{ emitUpdate: false },
+		);
+	}, [composerEditor, message, selectedRecipe]);
 	const handleRecipeSelect = React.useCallback(
 		(recipeSlug: RecipeSlug) => {
 			const recipe = recipes.find((item) => item.slug === recipeSlug);
@@ -3407,6 +3462,7 @@ function ChatComposerForm({
 					showModelPicker: controller.isChatOpen && !activateInlineOnFocus,
 				}}
 				message={controller.message}
+				selectedRecipe={controller.selectedRecipe}
 				attachedFiles={controller.attachedFiles}
 				onAttachedFilesChange={controller.setAttachedFiles}
 				onRecipePopoverOpenChange={controller.setRecipePopoverOpen}
