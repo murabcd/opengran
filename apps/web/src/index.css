@@ -19,7 +19,47 @@ body {
 	overscroll-behavior-y: none;
 }
 
+* {
+	scrollbar-color: transparent transparent;
+}
+
+*::-webkit-scrollbar {
+	width: var(--scroll-rail-size);
+	height: var(--scroll-rail-size);
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+	background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+	border: var(--scroll-rail-thumb-inset) solid transparent;
+	border-radius: 999px;
+	background-color: transparent;
+	background-clip: content-box;
+}
+
+*[data-scroll-rail-active="true"] {
+	scrollbar-color: color-mix(in oklab, var(--border) 82%, transparent)
+		transparent;
+}
+
+*[data-scroll-rail-active="true"]::-webkit-scrollbar-thumb {
+	background-color: color-mix(in oklab, var(--border) 82%, transparent);
+}
+
+*[data-scroll-rail-active="true"]::-webkit-scrollbar-thumb:hover {
+	background-color: color-mix(
+		in oklab,
+		var(--muted-foreground) 52%,
+		transparent
+	);
+}
+
 :root {
+	--scroll-rail-size: 0.625rem;
+	--scroll-rail-thumb-inset: 0.1875rem;
 	--note-selection-background: oklch(0.809 0.105 251.813 / 32%);
 	--note-comment-underline: oklch(0.8 0.11 85 / 76%);
 	--note-comment-background: oklch(0.84 0.08 86 / 30%);

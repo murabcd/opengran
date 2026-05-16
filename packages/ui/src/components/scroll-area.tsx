@@ -1,6 +1,7 @@
 import { cn } from "@workspace/ui/lib/utils";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
 import * as React from "react";
+import { SCROLL_RAIL_HIDE_DELAY_MS } from "../lib/scroll-rail";
 
 function ScrollArea({
 	className,
@@ -115,6 +116,8 @@ function ScrollArea({
 	return (
 		<ScrollAreaPrimitive.Root
 			data-slot="scroll-area"
+			type="scroll"
+			scrollHideDelay={SCROLL_RAIL_HIDE_DELAY_MS}
 			className={cn("relative overflow-hidden", className)}
 			{...props}
 		>

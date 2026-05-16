@@ -10,6 +10,7 @@ import {
 	ThemeProvider,
 	useTheme,
 } from "@workspace/ui/components/theme-provider";
+import { ScrollRailVisibilityProvider } from "@workspace/ui/lib/scroll-rail";
 import App from "./App.tsx";
 import { MeetingWidgetScreen } from "./components/desktop/meeting-widget-screen";
 import { initializeAuthClient } from "./lib/auth-client";
@@ -51,6 +52,7 @@ async function bootstrap() {
 			<StrictMode>
 				<ThemeProvider>
 					<DesktopNativeThemeSync />
+					<ScrollRailVisibilityProvider />
 					<MeetingWidgetScreen />
 				</ThemeProvider>
 			</StrictMode>,
@@ -71,6 +73,7 @@ async function bootstrap() {
 			<ConvexBetterAuthProvider client={convex} authClient={authClient}>
 				<ThemeProvider>
 					<DesktopNativeThemeSync />
+					<ScrollRailVisibilityProvider />
 					<App />
 					<Toaster />
 				</ThemeProvider>
