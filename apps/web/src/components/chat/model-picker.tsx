@@ -25,6 +25,8 @@ import { chatModels, reasoningEfforts } from "@/lib/ai/models";
 export type ChatModel = (typeof chatModels)[number];
 export type ReasoningEffort = (typeof reasoningEfforts)[number]["id"];
 
+const getSelectedModelDisplayName = (name: string) => name.replace(/^GPT-/, "");
+
 type ChatModelPickerProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -58,6 +60,9 @@ export function ChatModelPicker({
 	const selectedReasoningEffort = reasoningEfforts.find(
 		(effort) => effort.id === reasoningEffort,
 	);
+	const selectedModelDisplayName = getSelectedModelDisplayName(
+		selectedModel.name,
+	);
 
 	return (
 		<DropdownMenu open={open} onOpenChange={onOpenChange}>
@@ -71,7 +76,7 @@ export function ChatModelPicker({
 								"group rounded-full gap-2 font-normal",
 								triggerClassName,
 							)}
-							aria-label={`Model: ${selectedModel.name}`}
+							aria-label={`Model: ${selectedModelDisplayName}`}
 						>
 							<Icons.codexLogo
 								className={cn(
@@ -79,7 +84,9 @@ export function ChatModelPicker({
 									triggerIconClassName,
 								)}
 							/>
-							<span className={modelNameClassName}>{selectedModel.name}</span>
+							<span className={modelNameClassName}>
+								{selectedModelDisplayName}
+							</span>
 							{showReasoningEffort ? (
 								<span className="text-muted-foreground">
 									{selectedReasoningEffort?.name}

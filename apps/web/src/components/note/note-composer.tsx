@@ -3073,7 +3073,7 @@ function ChatInlinePopoverFooter({
 					align="block-end"
 					className={cn(
 						NOTE_COMPOSER_FOOTER_BOTTOM_ROW_CLASS,
-						isSidebarCompact ? "pl-3.5 pr-2.5" : "px-2",
+						isSidebarCompact ? "flex-nowrap pl-3.5 pr-2.5" : "px-2",
 					)}
 				>
 					{shouldShowRecipeControls ? (
@@ -3086,7 +3086,7 @@ function ChatInlinePopoverFooter({
 					) : null}
 					{speechControls}
 					{showModelPicker ? (
-						<div className="ml-auto flex min-w-0 items-center gap-1">
+						<div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1">
 							<ChatModelPicker
 								open={modelPopoverOpen}
 								onOpenChange={onModelPopoverOpenChange}
@@ -3094,9 +3094,9 @@ function ChatInlinePopoverFooter({
 								onSelectedModelChange={onSelectedModelChange}
 								reasoningEffort={reasoningEffort}
 								onReasoningEffortChange={onReasoningEffortChange}
-								triggerClassName="text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
+								triggerClassName="min-w-0 max-w-full text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
 								triggerIconClassName="text-current"
-								modelNameClassName="max-w-[120px] truncate"
+								modelNameClassName="min-w-0 max-w-[120px] truncate"
 							/>
 						</div>
 					) : null}
