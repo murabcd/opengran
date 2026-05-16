@@ -106,22 +106,26 @@
 }
 
 .note-comment-anchor {
-	border-bottom: 2px solid var(--note-comment-underline);
 	box-decoration-break: clone;
-	background: var(--note-comment-background);
+	background: var(--note-comment-hover);
 	cursor: pointer;
+	text-decoration-line: underline;
+	text-decoration-style: dotted;
+	text-decoration-color: transparent;
+	text-decoration-thickness: auto;
+	text-underline-offset: 4px;
 	transition:
 		background-color 120ms ease,
-		border-color 120ms ease;
+		text-decoration-color 120ms ease;
 }
 
 .note-comment-anchor:hover {
-	background: var(--note-comment-hover);
+	text-decoration-color: var(--note-comment-underline);
 }
 
 .note-comment-anchor[data-active-thread="true"] {
-	border-bottom-color: var(--note-comment-active-underline);
 	background: var(--note-comment-active-background);
+	text-decoration-color: var(--note-comment-active-underline);
 }
 
 .shared-note-page-content .note-comment-anchor,
@@ -130,9 +134,9 @@
 .summary-note-preview-content .note-comment-anchor,
 .summary-note-preview-content .note-comment-anchor:hover,
 .summary-note-preview-content .note-comment-anchor[data-active-thread="true"] {
-	border-bottom-color: transparent;
 	background: transparent;
 	cursor: text;
+	text-decoration-color: transparent;
 }
 
 :where(.note-tiptap.ProseMirror, .note-streamdown) > :first-child {
