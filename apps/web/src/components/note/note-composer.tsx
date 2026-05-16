@@ -1897,7 +1897,7 @@ function TranscriptLanguageSelector({
 			<SelectTrigger
 				size="sm"
 				className={cn(
-					"h-7 w-fit min-w-0 cursor-pointer gap-1 rounded-full border-transparent !bg-transparent pr-2 text-xs text-muted-foreground shadow-none hover:!bg-muted",
+					"w-fit min-w-0 cursor-pointer gap-1 rounded-full border-transparent !bg-transparent pr-2 text-sm text-muted-foreground shadow-none hover:!bg-muted",
 					className,
 				)}
 				aria-label="Select transcription language"
@@ -3146,7 +3146,7 @@ function TranscriptInlinePopoverFooter({
 					/>
 					<InputGroupAddon
 						align="block-end"
-						className={NOTE_COMPOSER_FOOTER_BOTTOM_ROW_CLASS}
+						className={cn(NOTE_COMPOSER_FOOTER_BOTTOM_ROW_CLASS, "!px-2")}
 					>
 						{speechControls}
 						<TranscriptLanguageSelector
