@@ -1,6 +1,6 @@
-import { tool } from "ai";
 import { z } from "zod";
-import { withToolTiming } from "./tool-timing.mjs";
+import { buildAiToolSet, defineAiTool } from "./ai-tool-definition.mjs";
+import { toolUiMetadata } from "./tool-ui-metadata.mjs";
 
 const NOTION_API_BASE_URL = "https://api.notion.com/v1";
 const NOTION_API_VERSION = "2026-03-11";
@@ -607,28 +607,43 @@ export const fetchNotionItem = async (connection, idOrUrl) => {
 	}
 };
 
-export const buildNotionTools = (connection) => ({
-	notion_search: tool({
+export const buildNotionToolDefinitions = (connection) => [
+	defineAiTool({
+		name: "notion_search",
 		description:
 			"Search the connected Notion workspace for pages and databases by title when the user's request could plausibly be answered from Notion.",
 		inputSchema: z.object({
 			query: z.string().min(1),
 			limit: z.number().int().min(1).max(MAX_SEARCH_RESULTS).optional(),
 		}),
+		policy: {
+			access: "read",
+			capability: "search",
+			provider: "notion",
+			requiresConnection: true,
+		},
+		ui: toolUiMetadata.notion_search,
 		execute: async ({ query, limit }) =>
-			await withToolTiming(
-				async () => await searchNotion(connection, query, limit ?? 5),
-			),
+			await searchNotion(connection, query, limit ?? 5),
 	}),
-	notion_fetch: tool({
+	defineAiTool({
+		name: "notion_fetch",
 		description:
 			"Fetch a specific Notion page, database, or data source by URL or ID. Use this when the user shares a Notion link or clearly points to a known page or database.",
 		inputSchema: z.object({
 			idOrUrl: z.string().min(1),
 		}),
+		policy: {
+			access: "read",
+			capability: "read",
+			provider: "notion",
+			requiresConnection: true,
+		},
+		ui: toolUiMetadata.notion_fetch,
 		execute: async ({ idOrUrl }) =>
-			await withToolTiming(
-				async () => await fetchNotionItem(connection, idOrUrl),
-			),
+			await fetchNotionItem(connection, idOrUrl),
 	}),
-});
+];
+
+export const buildNotionTools = (connection) =>
+	buildAiToolSet(buildNotionToolDefinitions(connection));

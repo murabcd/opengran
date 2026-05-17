@@ -3,7 +3,7 @@
 import { openai } from "@ai-sdk/openai";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { v } from "convex/values";
-import { buildConnectedAppTools } from "../packages/ai/src/app-tools.mjs";
+import { buildWorkspaceToolSet } from "../packages/ai/src/workspace-tool-registry.mjs";
 import { getChatModelProviderOptions } from "../packages/ai/src/models.mjs";
 import { buildPostHogTools } from "../packages/ai/src/posthog-tools.mjs";
 import { BASE_CHAT_SYSTEM_PROMPT } from "../packages/ai/src/prompts.mjs";
@@ -67,7 +67,7 @@ const getAutomationAppTools = async (
 					workspaceId: run.workspaceId,
 				});
 
-	return await buildConnectedAppTools(connections, {
+	return await buildWorkspaceToolSet(connections, {
 		posthog: {
 			buildTools: buildPostHogTools,
 		},

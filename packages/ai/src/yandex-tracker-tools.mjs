@@ -1,16 +1,16 @@
-import { tool } from "ai";
 import { z } from "zod";
-import { withToolTiming } from "./tool-timing.mjs";
+import { buildAiToolSet, defineAiTool } from "./ai-tool-definition.mjs";
+import { toolUiMetadata } from "./tool-ui-metadata.mjs";
 
 const TRACKER_API_BASE_URL =
 	process.env.TRACKER_API_BASE_URL ?? "https://api.tracker.yandex.net";
 const TRACKER_HOST_BASE_URL =
 	process.env.TRACKER_HOST_BASE_URL ?? "https://tracker.yandex.ru";
 
-const getTrackerOrgHeader = (orgType) =>
+const getYandexTrackerOrgHeader = (orgType) =>
 	orgType === "x-cloud-org-id" ? "X-Cloud-Org-Id" : "X-Org-Id";
 
-const buildTrackerUrl = (baseUrl, pathname, query) => {
+const buildYandexTrackerUrl = (baseUrl, pathname, query) => {
 	const url = new URL(pathname, baseUrl);
 
 	if (query) {
@@ -26,11 +26,11 @@ const buildTrackerUrl = (baseUrl, pathname, query) => {
 
 const trackerHeaders = (connection) => ({
 	Authorization: `OAuth ${connection.token}`,
-	[getTrackerOrgHeader(connection.orgType)]: connection.orgId,
+	[getYandexTrackerOrgHeader(connection.orgType)]: connection.orgId,
 });
 
 const toIssueUrl = (key) =>
-	buildTrackerUrl(
+	buildYandexTrackerUrl(
 		TRACKER_HOST_BASE_URL,
 		`/issue/${encodeURIComponent(key)}`,
 	).toString();
@@ -73,7 +73,7 @@ const normalizeIssue = (issue) => {
 
 const trackerRequest = async (connection, method, pathname, options = {}) => {
 	const response = await fetch(
-		buildTrackerUrl(TRACKER_API_BASE_URL, pathname, options.query),
+		buildYandexTrackerUrl(TRACKER_API_BASE_URL, pathname, options.query),
 		{
 			method,
 			headers: {
@@ -96,7 +96,7 @@ const trackerRequest = async (connection, method, pathname, options = {}) => {
 	return await response.json();
 };
 
-export const searchTrackerIssues = async (connection, query, limit = 5) => {
+export const searchYandexTrackerIssues = async (connection, query, limit = 5) => {
 	const issues = await trackerRequest(
 		connection,
 		"POST",
@@ -123,7 +123,7 @@ export const searchTrackerIssues = async (connection, query, limit = 5) => {
 	};
 };
 
-export const getTrackerIssue = async (connection, issueKey) => {
+export const getYandexTrackerIssue = async (connection, issueKey) => {
 	const issue = normalizeIssue(
 		await trackerRequest(
 			connection,
@@ -149,28 +149,43 @@ export const getTrackerIssue = async (connection, issueKey) => {
 	};
 };
 
-export const buildTrackerTools = (connection) => ({
-	yandex_tracker_search: tool({
+export const buildYandexTrackerToolDefinitions = (connection) => [
+	defineAiTool({
+		name: "yandex_tracker_search",
 		description:
 			"Search the selected Yandex Tracker connection for project history, integrations, tickets, tasks, queues, comments, assignees, and status. Use this before saying context is unavailable when the request could plausibly be answered from Tracker.",
 		inputSchema: z.object({
 			query: z.string().min(1),
 			limit: z.number().int().min(1).max(10).optional(),
 		}),
+		policy: {
+			access: "read",
+			capability: "search",
+			provider: "yandex-tracker",
+			requiresConnection: true,
+		},
+		ui: toolUiMetadata.yandex_tracker_search,
 		execute: async ({ query, limit }) =>
-			await withToolTiming(
-				async () => await searchTrackerIssues(connection, query, limit ?? 5),
-			),
+			await searchYandexTrackerIssues(connection, query, limit ?? 5),
 	}),
-	yandex_tracker_get_issue: tool({
+	defineAiTool({
+		name: "yandex_tracker_get_issue",
 		description:
 			"Fetch a specific Yandex Tracker issue by key when the user mentions a ticket like PROJ-123 or clearly refers to a known issue key.",
 		inputSchema: z.object({
 			issueKey: z.string().min(1),
 		}),
+		policy: {
+			access: "read",
+			capability: "read",
+			provider: "yandex-tracker",
+			requiresConnection: true,
+		},
+		ui: toolUiMetadata.yandex_tracker_get_issue,
 		execute: async ({ issueKey }) =>
-			await withToolTiming(
-				async () => await getTrackerIssue(connection, issueKey),
-			),
+			await getYandexTrackerIssue(connection, issueKey),
 	}),
-});
+];
+
+export const buildYandexTrackerTools = (connection) =>
+	buildAiToolSet(buildYandexTrackerToolDefinitions(connection));

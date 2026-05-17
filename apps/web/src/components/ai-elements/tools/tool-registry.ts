@@ -7,6 +7,7 @@ import {
 	Search,
 } from "lucide-react";
 import type React from "react";
+import { toolUiMetadata } from "../../../../../../packages/ai/src/tool-ui-metadata.mjs";
 
 export type ToolMeta = {
 	groupKey?: string;
@@ -54,125 +55,45 @@ const getFirstString = (
 const clamp = (value: string, maxLength = 54) =>
 	value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 
+const toolIconRegistry = {
+	calendar: Calendar,
+	database: Database,
+	"file-image": FileImage,
+	"file-search": FileSearch,
+	globe: Globe,
+	search: Search,
+} satisfies Record<string, React.ComponentType<{ className?: string }>>;
+
 const makeToolMeta = ({
-	groupKey,
-	icon,
-	running,
 	complete,
+	groupKey,
+	icon: iconKey,
+	running,
 	subtitleKeys,
 }: {
 	complete: string;
 	groupKey?: string;
-	icon: React.ComponentType<{ className?: string }>;
+	icon: keyof typeof toolIconRegistry;
 	running: string;
 	subtitleKeys?: string[];
 }): ToolMeta => ({
 	groupKey,
-	icon,
+	icon: toolIconRegistry[iconKey],
 	title: (part) => (isPending(part) ? running : complete),
 	subtitle: subtitleKeys
 		? (part) => clamp(getFirstString(part.input, subtitleKeys))
 		: undefined,
 });
 
-const toolRegistry: Record<string, ToolMeta> = {
-	"tool-generate_image": makeToolMeta({
-		groupKey: "image",
-		icon: FileImage,
-		running: "Generating image",
-		complete: "Generated image",
-		subtitleKeys: ["prompt"],
-	}),
-	"tool-google_calendar_list_events": makeToolMeta({
-		icon: Calendar,
-		running: "Reading calendar",
-		complete: "Read calendar",
-	}),
-	"tool-google_calendar_search_events": makeToolMeta({
-		groupKey: "search",
-		icon: Calendar,
-		running: "Searching calendar",
-		complete: "Searched calendar",
-		subtitleKeys: ["query", "q"],
-	}),
-	"tool-google_drive_get_file": makeToolMeta({
-		icon: FileSearch,
-		running: "Reading Drive file",
-		complete: "Read Drive file",
-		subtitleKeys: ["fileId", "id", "name"],
-	}),
-	"tool-google_drive_search_files": makeToolMeta({
-		groupKey: "search",
-		icon: Search,
-		running: "Searching Drive",
-		complete: "Searched Drive",
-		subtitleKeys: ["query", "q"],
-	}),
-	"tool-jira_get_issue": makeToolMeta({
-		icon: Database,
-		running: "Reading Jira issue",
-		complete: "Read Jira issue",
-		subtitleKeys: ["issueKey", "key", "id"],
-	}),
-	"tool-jira_search": makeToolMeta({
-		groupKey: "search",
-		icon: Search,
-		running: "Searching Jira",
-		complete: "Searched Jira",
-		subtitleKeys: ["query", "jql", "q"],
-	}),
-	"tool-notion_fetch": makeToolMeta({
-		icon: FileSearch,
-		running: "Reading Notion",
-		complete: "Read Notion",
-		subtitleKeys: ["id", "pageId", "url"],
-	}),
-	"tool-notion_search": makeToolMeta({
-		groupKey: "search",
-		icon: Search,
-		running: "Searching Notion",
-		complete: "Searched Notion",
-		subtitleKeys: ["query", "q"],
-	}),
-	"tool-web_search": makeToolMeta({
-		groupKey: "search",
-		icon: Globe,
-		running: "Searching web",
-		complete: "Searched web",
-		subtitleKeys: ["query", "q"],
-	}),
-	"tool-yandex_calendar_list_events": makeToolMeta({
-		icon: Calendar,
-		running: "Reading calendar",
-		complete: "Read calendar",
-	}),
-	"tool-yandex_calendar_search_events": makeToolMeta({
-		groupKey: "search",
-		icon: Calendar,
-		running: "Searching calendar",
-		complete: "Searched calendar",
-		subtitleKeys: ["query", "q"],
-	}),
-	"tool-yandex_tracker_get_issue": makeToolMeta({
-		icon: Database,
-		running: "Reading Tracker issue",
-		complete: "Read Tracker issue",
-		subtitleKeys: ["issueKey", "key", "id"],
-	}),
-	"tool-yandex_tracker_search": makeToolMeta({
-		groupKey: "search",
-		icon: Search,
-		running: "Searching Tracker",
-		complete: "Searched Tracker",
-		subtitleKeys: ["query", "q"],
-	}),
-	"tool-posthog_query_generate_hogql_from_question": makeToolMeta({
-		icon: Database,
-		running: "Querying PostHog",
-		complete: "Queried PostHog",
-		subtitleKeys: ["question"],
-	}),
-};
+const toolRegistry = Object.fromEntries(
+	Object.entries(toolUiMetadata).map(([toolName, metadata]) => [
+		`tool-${toolName}`,
+		makeToolMeta({
+			...metadata,
+			icon: metadata.icon as keyof typeof toolIconRegistry,
+		}),
+	]),
+) as Record<string, ToolMeta>;
 
 function getPostHogToolMeta(part: ToolPartLike): ToolMeta | null {
 	if (!part.type.startsWith("tool-posthog_")) {

@@ -1,12 +1,10 @@
 import { listYandexUpcomingEvents } from "../../../convex/yandexCalendar.ts";
+import { buildGoogleCalendarTools } from "./google-calendar-tools.mjs";
+import { buildGoogleDriveTools } from "./google-drive-tools.mjs";
 import { buildJiraTools } from "./jira-tools.mjs";
 import { buildNotionTools } from "./notion-tools.mjs";
-import {
-	buildGoogleCalendarTools,
-	buildGoogleDriveTools,
-	buildYandexCalendarTools,
-} from "./productivity-tools.mjs";
-import { buildTrackerTools } from "./tracker-tools.mjs";
+import { buildYandexCalendarTools } from "./yandex-calendar-tools.mjs";
+import { buildYandexTrackerTools } from "./yandex-tracker-tools.mjs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CALENDAR_LOOKAHEAD_MS = 30 * DAY_MS;
@@ -87,7 +85,7 @@ const defaultYandexCalendarAdapter = (connection) => ({
 		}),
 });
 
-export const buildConnectedAppTools = async (connections, adapters = {}) => {
+export const buildWorkspaceToolSet = async (connections, adapters = {}) => {
 	const tools = {};
 
 	for (const connection of connections) {
@@ -122,7 +120,7 @@ export const buildConnectedAppTools = async (connections, adapters = {}) => {
 		}
 
 		if (connection.provider === "yandex-tracker") {
-			Object.assign(tools, buildTrackerTools(connection));
+			Object.assign(tools, buildYandexTrackerTools(connection));
 		}
 	}
 

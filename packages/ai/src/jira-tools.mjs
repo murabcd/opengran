@@ -1,6 +1,6 @@
-import { tool } from "ai";
 import { z } from "zod";
-import { withToolTiming } from "./tool-timing.mjs";
+import { buildAiToolSet, defineAiTool } from "./ai-tool-definition.mjs";
+import { toolUiMetadata } from "./tool-ui-metadata.mjs";
 
 const buildJiraUrl = (baseUrl, pathname, query) => {
 	const url = new URL(baseUrl);
@@ -229,28 +229,43 @@ export const getJiraIssue = async (connection, issueKey) => {
 	};
 };
 
-export const buildJiraTools = (connection) => ({
-	jira_search: tool({
+export const buildJiraToolDefinitions = (connection) => [
+	defineAiTool({
+		name: "jira_search",
 		description:
 			"Search the selected Jira connection for project history, tickets, tasks, comments, assignees, status, and technical context when the request could plausibly be answered from Jira.",
 		inputSchema: z.object({
 			query: z.string().min(1),
 			limit: z.number().int().min(1).max(10).optional(),
 		}),
+		policy: {
+			access: "read",
+			capability: "search",
+			provider: "jira",
+			requiresConnection: true,
+		},
+		ui: toolUiMetadata.jira_search,
 		execute: async ({ query, limit }) =>
-			await withToolTiming(
-				async () => await searchJiraIssues(connection, query, limit ?? 5),
-			),
+			await searchJiraIssues(connection, query, limit ?? 5),
 	}),
-	jira_get_issue: tool({
+	defineAiTool({
+		name: "jira_get_issue",
 		description:
 			"Fetch a specific Jira issue by key when the user mentions a ticket like PROJ-123 or clearly refers to a known issue key.",
 		inputSchema: z.object({
 			issueKey: z.string().min(1),
 		}),
+		policy: {
+			access: "read",
+			capability: "read",
+			provider: "jira",
+			requiresConnection: true,
+		},
+		ui: toolUiMetadata.jira_get_issue,
 		execute: async ({ issueKey }) =>
-			await withToolTiming(
-				async () => await getJiraIssue(connection, issueKey),
-			),
+			await getJiraIssue(connection, issueKey),
 	}),
-});
+];
+
+export const buildJiraTools = (connection) =>
+	buildAiToolSet(buildJiraToolDefinitions(connection));

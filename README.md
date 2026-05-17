@@ -59,6 +59,8 @@
   - Browser app and shared renderer
 - `apps/desktop`
   - Electron desktop app for native transcription and packaged releases
+- `apps/marketing`
+  - Marketing site for the public OpenGran website
 
 ## Model providers
 

@@ -1,4 +1,5 @@
 import type { ToolSet } from "ai";
+import type { AiToolDefinition } from "./ai-tool-definition.mjs";
 
 export type JiraToolConnection = {
 	sourceId: string;
@@ -46,3 +47,6 @@ export declare function getJiraIssue(
 }>;
 
 export declare function buildJiraTools(connection: JiraToolConnection): ToolSet;
+export declare function buildJiraToolDefinitions(
+	connection: JiraToolConnection,
+): AiToolDefinition[];

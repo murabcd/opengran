@@ -1,7 +1,8 @@
 import { openai } from "@ai-sdk/openai";
-import { generateImage, tool } from "ai";
+import { generateImage } from "ai";
 import { z } from "zod";
-import { withToolTiming } from "./tool-timing.mjs";
+import { defineAiTool } from "./ai-tool-definition.mjs";
+import { toolUiMetadata } from "./tool-ui-metadata.mjs";
 
 const IMAGE_GENERATION_MODEL_ID = "gpt-image-2";
 const GENERATED_IMAGE_MEDIA_TYPE = "image/png";
@@ -60,7 +61,8 @@ export const createConvexGeneratedImageUploader =
 	};
 
 export const createImageGenerationTool = ({ uploadGeneratedImage }) =>
-	tool({
+	defineAiTool({
+		name: "generate_image",
 		description:
 			"Generate an image artifact from a text prompt. Use this when the user asks to create, generate, draw, render, or make an image.",
 		inputSchema: z.object({
@@ -69,13 +71,18 @@ export const createImageGenerationTool = ({ uploadGeneratedImage }) =>
 				.min(1)
 				.describe("The detailed prompt for the image to generate."),
 		}),
-		execute: async ({ prompt }) =>
-			await withToolTiming(async () => {
-				const { image } = await generateImage({
-					model: openai.image(IMAGE_GENERATION_MODEL_ID),
-					prompt,
-				});
+		policy: {
+			access: "write",
+			capability: "generate",
+			provider: "openai",
+		},
+		ui: toolUiMetadata.generate_image,
+		execute: async ({ prompt }) => {
+			const { image } = await generateImage({
+				model: openai.image(IMAGE_GENERATION_MODEL_ID),
+				prompt,
+			});
 
-				return await uploadGeneratedImage(image.uint8Array);
-			}),
-	});
+			return await uploadGeneratedImage(image.uint8Array);
+		},
+	}).toAITool();

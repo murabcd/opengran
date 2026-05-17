@@ -2,7 +2,7 @@ import type { ToolSet } from "ai";
 import type { JiraToolConnection } from "./jira-tools.mjs";
 import type { NotionToolConnection } from "./notion-tools.mjs";
 import type { PostHogToolConnection } from "./posthog-tools.mjs";
-import type { TrackerToolConnection } from "./tracker-tools.mjs";
+import type { YandexTrackerToolConnection } from "./yandex-tracker-tools.mjs";
 
 export type YandexCalendarToolConnection = {
 	sourceId: string;
@@ -28,16 +28,16 @@ export type GoogleDriveToolConnection = {
 	preview: string;
 };
 
-export type ConnectedAppToolConnection =
+export type WorkspaceToolConnection =
 	| JiraToolConnection
 	| NotionToolConnection
 	| PostHogToolConnection
-	| TrackerToolConnection
+	| YandexTrackerToolConnection
 	| YandexCalendarToolConnection
 	| GoogleCalendarToolConnection
 	| GoogleDriveToolConnection;
 
-export type ConnectedAppToolAdapters = {
+export type WorkspaceToolAdapters = {
 	posthog?: {
 		buildTools(connection: PostHogToolConnection): Promise<ToolSet>;
 	};
@@ -69,7 +69,7 @@ export type ConnectedAppToolAdapters = {
 	};
 };
 
-export declare function buildConnectedAppTools(
-	connections: ConnectedAppToolConnection[],
-	adapters?: ConnectedAppToolAdapters,
+export declare function buildWorkspaceToolSet(
+	connections: WorkspaceToolConnection[],
+	adapters?: WorkspaceToolAdapters,
 ): Promise<ToolSet>;

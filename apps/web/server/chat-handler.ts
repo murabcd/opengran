@@ -20,7 +20,7 @@ import {
 	deriveFallbackChatTitle,
 	finalizeGeneratedChatTitle,
 } from "../../../packages/ai/src/chat-titles.mjs";
-import { buildConvexConnectedAppTools } from "../../../packages/ai/src/convex-app-tool-adapters.mjs";
+import { buildConvexWorkspaceToolSet } from "../../../packages/ai/src/convex-workspace-tools.mjs";
 import {
 	buildImageGenerationInstruction,
 	createConvexGeneratedImageUploader,
@@ -623,7 +623,7 @@ export const handleChatRequest = async (
 		selectedAppConnections.find(
 			(connection) => connection.provider === "notion",
 		) ?? null;
-	const appTools = await buildConvexConnectedAppTools({
+	const appTools = await buildConvexWorkspaceToolSet({
 		connections: selectedAppConnections,
 		convexClient,
 		workspaceId: resolvedWorkspaceId,

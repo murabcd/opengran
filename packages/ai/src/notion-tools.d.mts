@@ -1,4 +1,5 @@
 import type { ToolSet } from "ai";
+import type { AiToolDefinition } from "./ai-tool-definition.mjs";
 
 export type NotionToolConnection = {
 	sourceId: string;
@@ -45,3 +46,7 @@ export declare function fetchNotionItem(
 export declare function buildNotionTools(
 	connection: NotionToolConnection,
 ): ToolSet;
+
+export declare function buildNotionToolDefinitions(
+	connection: NotionToolConnection,
+): AiToolDefinition[];

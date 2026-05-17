@@ -30,7 +30,7 @@ import {
 	NOTE_GENERATION_MODEL_ID,
 	normalizeReasoningEffort,
 } from "../packages/ai/src/models.mjs";
-import { buildConnectedAppTools } from "../packages/ai/src/app-tools.mjs";
+import { buildWorkspaceToolSet } from "../packages/ai/src/workspace-tool-registry.mjs";
 import {
 	parseTemplateStreamToStructuredNote,
 	validateTemplateStream,
@@ -638,7 +638,7 @@ export const handleChatRequest = async (request: Request) => {
 					: []
 			: [];
 	const appTools = appsEnabled
-		? await buildConnectedAppTools(appConnections)
+		? await buildWorkspaceToolSet(appConnections)
 		: {};
 	const tools = {
 		...(webSearchEnabled

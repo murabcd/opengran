@@ -2,8 +2,7 @@ import {
 	getToolsFromContext,
 	PostHogAgentToolkit,
 } from "@posthog/agent-toolkit";
-import { tool } from "ai";
-import { withToolTiming } from "./tool-timing.mjs";
+import { defineAiTool } from "./ai-tool-definition.mjs";
 
 const POSTHOG_READONLY_TOOL_NAMES = new Set([
 	"dashboard-get",
@@ -284,16 +283,29 @@ const createToolkit = (connection) =>
 	});
 
 const wrapToolkitTool = (connection, context, posthogTool) =>
-	tool({
+	defineAiTool({
+		name: toLocalToolName(posthogTool.name),
 		description: posthogTool.description,
 		inputSchema: posthogTool.schema,
-		execute: async (input) =>
-			await withToolTiming(async () => {
-				await pinProject(context, connection);
-				const value = await posthogTool.handler(context, input);
-				return buildToolResult(connection, posthogTool.name, value);
-			}),
-	});
+		policy: {
+			access: "read",
+			capability: "read",
+			provider: "posthog",
+			requiresConnection: true,
+		},
+		ui: {
+			groupKey: "posthog",
+			icon: "database",
+			running: "Querying PostHog",
+			complete: "Queried PostHog",
+			subtitleKeys: ["query", "question", "insightId", "event", "name"],
+		},
+		execute: async (input) => {
+			await pinProject(context, connection);
+			const value = await posthogTool.handler(context, input);
+			return buildToolResult(connection, posthogTool.name, value);
+		},
+	}).toAITool();
 
 export const buildPostHogTools = async (connection) => {
 	const toolkit = createToolkit(connection);
