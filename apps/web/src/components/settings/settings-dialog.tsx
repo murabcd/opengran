@@ -351,19 +351,13 @@ type PreferencesSettingsAction =
 	  };
 
 type CalendarSettingsState = {
-	isConnectingGoogle: boolean;
 	isSavingCalendarPreferences: boolean;
 };
 
-type CalendarSettingsAction =
-	| {
-			type: "setIsConnectingGoogle";
-			value: boolean;
-	  }
-	| {
-			type: "setIsSavingCalendarPreferences";
-			value: boolean;
-	  };
+type CalendarSettingsAction = {
+	type: "setIsSavingCalendarPreferences";
+	value: boolean;
+};
 
 type CalendarVisibilityPreferences = {
 	showGoogleCalendar: boolean;
@@ -371,17 +365,13 @@ type CalendarVisibilityPreferences = {
 	showYandexCalendar: boolean;
 };
 
-type CalendarProviderRowProps = {
+type VisibleCalendarRowProps = {
+	id: string;
 	icon: React.ReactNode;
 	name: string;
 	checked: boolean;
-	switchDisabled: boolean;
+	disabled: boolean;
 	onCheckedChange: (checked: boolean) => void;
-	buttonVariant: "default" | "outline";
-	onButtonClick: () => void;
-	buttonDisabled: boolean;
-	buttonLabel: string;
-	buttonIcon?: React.ReactNode;
 };
 
 type ToolConnectionRowProps = {
@@ -650,7 +640,6 @@ const getInitialPreferencesSettingsState = (): PreferencesSettingsState => ({
 });
 
 const initialCalendarSettingsState: CalendarSettingsState = {
-	isConnectingGoogle: false,
 	isSavingCalendarPreferences: false,
 };
 
@@ -707,8 +696,6 @@ const calendarSettingsReducer = (
 	action: CalendarSettingsAction,
 ): CalendarSettingsState => {
 	switch (action.type) {
-		case "setIsConnectingGoogle":
-			return { ...state, isConnectingGoogle: action.value };
 		case "setIsSavingCalendarPreferences":
 			return { ...state, isSavingCalendarPreferences: action.value };
 	}
@@ -1316,18 +1303,8 @@ function SettingsSwitchRow({
 }
 
 function CalendarSettings() {
-	const {
-		activeWorkspaceId,
-		calendarProviders,
-		handleConnectYandexCalendar,
-		handleYandexCalendarDialogOpenChange,
-		isSavingYandexCalendarConnection,
-		isYandexCalendarDialogOpen,
-		isYandexCalendarFormValid,
-		setYandexCalendarEmail,
-		setYandexCalendarPassword,
-		yandexCalendarFormState,
-	} = useCalendarSettingsController();
+	const { activeWorkspaceId, visibleCalendars } =
+		useCalendarSettingsController();
 
 	if (!activeWorkspaceId) {
 		return (
@@ -1339,19 +1316,7 @@ function CalendarSettings() {
 
 	return (
 		<div className="py-4">
-			<CalendarProvidersSection providers={calendarProviders} />
-			<YandexCalendarDialog
-				open={isYandexCalendarDialogOpen}
-				onOpenChange={handleYandexCalendarDialogOpenChange}
-				formState={yandexCalendarFormState}
-				onEmailChange={setYandexCalendarEmail}
-				onPasswordChange={setYandexCalendarPassword}
-				onConnect={() => {
-					void handleConnectYandexCalendar();
-				}}
-				isFormValid={isYandexCalendarFormValid}
-				isSaving={isSavingYandexCalendarConnection}
-			/>
+			<VisibleCalendarsSection calendars={visibleCalendars} />
 		</div>
 	);
 }
@@ -1384,10 +1349,8 @@ function useCalendarSettingsController() {
 		calendarSettingsReducer,
 		initialCalendarSettingsState,
 	);
-	const { accounts, isLoadingAccounts, loadAccounts } = useLinkedAccounts(
-		session?.user,
-	);
-	const { isConnectingGoogle, isSavingCalendarPreferences } = state;
+	const { accounts, isLoadingAccounts } = useLinkedAccounts(session?.user);
+	const { isSavingCalendarPreferences } = state;
 
 	const calendarVisibility: CalendarVisibilityPreferences = {
 		showGoogleCalendar: calendarPreferences?.showGoogleCalendar ?? false,
@@ -1398,91 +1361,6 @@ function useCalendarSettingsController() {
 	const hasCalendarScope = hasGoogleScope(googleAccount, GOOGLE_CALENDAR_SCOPE);
 	const isGoogleCalendarConnected = Boolean(googleAccount && hasCalendarScope);
 	const isYandexCalendarConnected = Boolean(yandexCalendarConnection);
-	const googleCalendarAction = getGoogleCalendarAction({
-		googleAccount,
-		hasCalendarScope,
-		isGoogleCalendarEnabledForWorkspace: calendarVisibility.showGoogleCalendar,
-	});
-
-	const enableCalendarForWorkspace = async (provider: "google" | "yandex") => {
-		if (!activeWorkspaceId) {
-			return;
-		}
-
-		await updateCalendarPreferences({
-			workspaceId: activeWorkspaceId,
-			showGoogleCalendar:
-				provider === "google" ? true : calendarVisibility.showGoogleCalendar,
-			showGoogleDrive: calendarVisibility.showGoogleDrive,
-			showYandexCalendar:
-				provider === "yandex" ? true : calendarVisibility.showYandexCalendar,
-		});
-	};
-
-	const yandexCalendarDialog = useYandexCalendarConnectionDialog({
-		activeWorkspaceId,
-		defaultEmail: session?.user?.email,
-		onConnected: async () => {
-			await enableCalendarForWorkspace("yandex");
-		},
-		yandexCalendarConnection,
-	});
-
-	const handleConnectGoogleCalendar = async () => {
-		dispatch({ type: "setIsConnectingGoogle", value: true });
-
-		try {
-			const callbackURL = await getDesktopAuthCallbackUrl(window.location.href);
-			const result = await authClient.$fetch("/link-social", {
-				method: "POST",
-				throw: true,
-				body: {
-					provider: "google",
-					callbackURL,
-					errorCallbackURL: callbackURL,
-					disableRedirect: true,
-					scopes: [...GOOGLE_CALENDAR_SCOPES],
-				},
-			});
-			const resultObject = result && typeof result === "object" ? result : null;
-			const url =
-				resultObject && "url" in resultObject
-					? String(resultObject.url ?? "")
-					: "";
-			const linkedWithoutRedirect =
-				resultObject !== null &&
-				"status" in resultObject &&
-				Boolean(resultObject.status) &&
-				"redirect" in resultObject &&
-				resultObject.redirect === false;
-
-			if (!url) {
-				if (linkedWithoutRedirect) {
-					await enableCalendarForWorkspace("google");
-					await loadAccounts();
-					toast.success("Google account linked");
-					return;
-				}
-
-				throw new Error("Google calendar auth URL was not returned.");
-			}
-
-			if (await openDesktopExternalUrl(url)) {
-				return;
-			}
-
-			window.location.assign(url);
-		} catch (error) {
-			console.error("Failed to connect Google Calendar", error);
-			toast.error(
-				error instanceof Error
-					? withoutTrailingPeriod(error.message)
-					: "Failed to connect Google Calendar",
-			);
-		} finally {
-			dispatch({ type: "setIsConnectingGoogle", value: false });
-		}
-	};
 
 	const handleCalendarVisibilityChange = async (
 		nextPreferences: CalendarVisibilityPreferences,
@@ -1506,19 +1384,19 @@ function useCalendarSettingsController() {
 		}
 	};
 
-	const calendarProviders: CalendarProviderRowProps[] = [
+	const visibleCalendars: VisibleCalendarRowProps[] = [
 		{
+			id: "visible-google-calendar",
 			icon: (
 				<AppSourceIcon provider="google-calendar" className="size-5 shrink-0" />
 			),
 			name: "Google Calendar",
 			checked:
 				isGoogleCalendarConnected && calendarVisibility.showGoogleCalendar,
-			switchDisabled:
+			disabled:
 				isSavingCalendarPreferences ||
 				isLoadingAccounts ||
-				!isGoogleCalendarConnected ||
-				!calendarVisibility.showGoogleCalendar,
+				!isGoogleCalendarConnected,
 			onCheckedChange: (checked) => {
 				void handleCalendarVisibilityChange({
 					showGoogleCalendar: checked,
@@ -1526,24 +1404,16 @@ function useCalendarSettingsController() {
 					showYandexCalendar: calendarVisibility.showYandexCalendar,
 				});
 			},
-			buttonVariant: googleCalendarAction.buttonVariant,
-			onButtonClick: () => {
-				void handleConnectGoogleCalendar();
-			},
-			buttonDisabled: isConnectingGoogle || !session?.user,
-			buttonLabel: googleCalendarAction.buttonLabel,
-			buttonIcon: isConnectingGoogle ? (
-				<LoaderCircle className="animate-spin" />
-			) : null,
 		},
 		{
+			id: "visible-yandex-calendar",
 			icon: (
 				<AppSourceIcon provider="yandex-calendar" className="size-5 shrink-0" />
 			),
 			name: "Yandex Calendar",
 			checked:
 				isYandexCalendarConnected && calendarVisibility.showYandexCalendar,
-			switchDisabled: isSavingCalendarPreferences || !isYandexCalendarConnected,
+			disabled: isSavingCalendarPreferences || !isYandexCalendarConnected,
 			onCheckedChange: (checked) => {
 				void handleCalendarVisibilityChange({
 					showGoogleCalendar: calendarVisibility.showGoogleCalendar,
@@ -1551,41 +1421,14 @@ function useCalendarSettingsController() {
 					showYandexCalendar: checked,
 				});
 			},
-			buttonVariant: "outline",
-			onButtonClick: () =>
-				yandexCalendarDialog.handleYandexCalendarDialogOpenChange(true),
-			buttonDisabled:
-				!session?.user || yandexCalendarDialog.isSavingYandexCalendarConnection,
-			buttonLabel: yandexCalendarConnection ? "Manage" : "Connect",
 		},
 	];
 
 	return {
 		activeWorkspaceId,
-		calendarProviders,
-		...yandexCalendarDialog,
+		visibleCalendars,
 	};
 }
-
-const getGoogleCalendarAction = ({
-	googleAccount,
-	hasCalendarScope,
-	isGoogleCalendarEnabledForWorkspace,
-}: {
-	googleAccount: LinkedAccount | undefined;
-	hasCalendarScope: boolean;
-	isGoogleCalendarEnabledForWorkspace: boolean;
-}) => ({
-	buttonLabel: !googleAccount
-		? "Connect"
-		: !hasCalendarScope
-			? "Grant access"
-			: "Manage",
-	buttonVariant:
-		googleAccount && hasCalendarScope && isGoogleCalendarEnabledForWorkspace
-			? ("outline" as const)
-			: ("default" as const),
-});
 
 const getGoogleToolAction = ({
 	account,
@@ -1598,18 +1441,18 @@ const getGoogleToolAction = ({
 	buttonVariant: hasScope ? ("outline" as const) : ("default" as const),
 });
 
-function CalendarProvidersSection({
-	providers,
+function VisibleCalendarsSection({
+	calendars,
 }: {
-	providers: CalendarProviderRowProps[];
+	calendars: VisibleCalendarRowProps[];
 }) {
 	return (
 		<FieldGroup className="gap-6">
 			<Field>
-				<Label className={SETTINGS_LABEL_CLASSNAME}>Calendars</Label>
+				<Label className={SETTINGS_LABEL_CLASSNAME}>Display</Label>
 				<div className="space-y-4">
-					{providers.map((provider) => (
-						<CalendarProviderRow key={provider.name} {...provider} />
+					{calendars.map((calendar) => (
+						<CalendarVisibilityRow key={calendar.id} {...calendar} />
 					))}
 				</div>
 			</Field>
@@ -1617,43 +1460,31 @@ function CalendarProvidersSection({
 	);
 }
 
-function CalendarProviderRow({
+function CalendarVisibilityRow({
+	id,
 	icon,
 	name,
 	checked,
-	switchDisabled,
+	disabled,
 	onCheckedChange,
-	buttonVariant,
-	onButtonClick,
-	buttonDisabled,
-	buttonLabel,
-	buttonIcon,
-}: CalendarProviderRowProps) {
+}: VisibleCalendarRowProps) {
 	return (
 		<div className="flex items-center justify-between gap-4">
 			<div className="flex min-w-0 items-center gap-3">
 				{icon}
-				<div className="min-w-0">
-					<Label className="text-sm font-medium text-foreground">{name}</Label>
-				</div>
-			</div>
-			<div className="flex shrink-0 items-center gap-3">
-				<Switch
-					checked={checked}
-					disabled={switchDisabled}
-					onCheckedChange={onCheckedChange}
-				/>
-				<Button
-					type="button"
-					variant={buttonVariant}
-					size="default"
-					onClick={onButtonClick}
-					disabled={buttonDisabled}
+				<Label
+					htmlFor={id}
+					className="min-w-0 text-sm font-medium text-foreground"
 				>
-					{buttonIcon}
-					{buttonLabel}
-				</Button>
+					{name}
+				</Label>
 			</div>
+			<Switch
+				id={id}
+				checked={checked}
+				disabled={disabled}
+				onCheckedChange={onCheckedChange}
+			/>
 		</div>
 	);
 }
