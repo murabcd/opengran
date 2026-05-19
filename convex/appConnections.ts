@@ -66,6 +66,7 @@ const notionConnectionSettingsValidator = v.object({
 	provider: notionProviderValidator,
 	status: appConnectionStatusValidator,
 	displayName: v.string(),
+	endpoint: v.string(),
 });
 
 const zoomConnectionSettingsValidator = v.object({
@@ -145,7 +146,10 @@ const notionChatToolConnectionValidator = v.object({
 	sourceId: v.string(),
 	provider: notionProviderValidator,
 	displayName: v.string(),
-	token: v.string(),
+	baseUrl: v.string(),
+	env: v.optional(v.record(v.string(), v.string())),
+	oauthClientId: v.optional(v.string()),
+	oauthAccessToken: v.string(),
 });
 
 const zoomChatToolConnectionValidator = v.object({
@@ -190,6 +194,17 @@ const zoomOAuthConnectionValidator = v.object({
 	baseUrl: v.string(),
 	oauthClientId: v.string(),
 	oauthClientSecret: v.string(),
+	oauthRefreshToken: v.string(),
+	tokenExpiresAt: v.optional(v.number()),
+});
+
+const notionOAuthConnectionValidator = v.object({
+	connectionId: v.id("appConnections"),
+	ownerTokenIdentifier: v.string(),
+	workspaceId: v.id("workspaces"),
+	baseUrl: v.string(),
+	oauthClientId: v.string(),
+	oauthClientSecret: v.optional(v.string()),
 	oauthRefreshToken: v.string(),
 	tokenExpiresAt: v.optional(v.number()),
 });
@@ -241,6 +256,7 @@ type NotionConnectionSettings = {
 	provider: "notion";
 	status: "connected" | "disconnected";
 	displayName: string;
+	endpoint: string;
 };
 
 type ZoomConnectionSettings = {
@@ -309,7 +325,10 @@ export type ChatToolConnection =
 			sourceId: string;
 			provider: "notion";
 			displayName: string;
-			token: string;
+			baseUrl: string;
+			env?: Record<string, string>;
+			oauthClientId?: string;
+			oauthAccessToken: string;
 	  }
 	| {
 			sourceId: string;
@@ -361,7 +380,7 @@ const getProviderPreview = (connection: Doc<"appConnections">) =>
 			: connection.provider === "posthog"
 				? getPostHogPreview(connection)
 				: connection.provider === "notion"
-					? (connection.email ?? "Notion workspace")
+					? (connection.baseUrl ?? "Notion workspace")
 					: connection.provider === "zoom"
 						? getZoomPreview(connection)
 						: `${connection.orgType === "x-org-id" ? "Yandex 360" : "Yandex Cloud"} • Org ${connection.orgId}`;
@@ -630,12 +649,19 @@ const toChatToolConnection = (
 		};
 	}
 
-	if (connection.provider === "notion" && connection.token) {
+	if (connection.provider === "notion" && connection.baseUrl && connection.token) {
 		return {
 			sourceId: toAppSourceId(connection._id),
 			provider: "notion",
 			displayName: connection.displayName,
-			token: connection.token,
+			baseUrl: connection.baseUrl,
+			...(connection.envJson
+				? { env: JSON.parse(connection.envJson) as Record<string, string> }
+				: {}),
+			...(connection.accountId
+				? { oauthClientId: connection.accountId }
+				: {}),
+			oauthAccessToken: connection.token,
 		};
 	}
 
@@ -895,7 +921,7 @@ export const getNotion = query({
 			args.workspaceId,
 		);
 
-		if (!connection) {
+		if (!connection?.baseUrl) {
 			return null;
 		}
 
@@ -904,6 +930,7 @@ export const getNotion = query({
 			provider: "notion" as const,
 			status: connection.status,
 			displayName: connection.displayName,
+			endpoint: connection.baseUrl,
 		};
 	},
 });
@@ -1055,6 +1082,50 @@ export const getZoomOAuthConnectionsForWorkspace = internalQuery({
 	},
 });
 
+export const getNotionOAuthConnectionsForWorkspace = internalQuery({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+	},
+	returns: v.array(notionOAuthConnectionValidator),
+	handler: async (ctx, args) => {
+		const connections = await ctx.db
+			.query("appConnections")
+			.withIndex(
+				"by_ownerTokenIdentifier_and_workspaceId_and_provider",
+				(q) =>
+					q
+						.eq("ownerTokenIdentifier", args.ownerTokenIdentifier)
+						.eq("workspaceId", args.workspaceId)
+						.eq("provider", "notion"),
+			)
+			.collect();
+
+		return connections
+			.filter(
+				(connection) =>
+					connection.status === "connected" &&
+					connection.baseUrl &&
+					connection.accountId &&
+					connection.oauthRefreshToken,
+			)
+			.map((connection) => ({
+				connectionId: connection._id,
+				ownerTokenIdentifier: connection.ownerTokenIdentifier,
+				workspaceId: connection.workspaceId,
+				baseUrl: connection.baseUrl as string,
+				oauthClientId: connection.accountId as string,
+				...(connection.oauthClientSecret
+					? { oauthClientSecret: connection.oauthClientSecret }
+					: {}),
+				oauthRefreshToken: connection.oauthRefreshToken as string,
+				...(connection.tokenExpiresAt
+					? { tokenExpiresAt: connection.tokenExpiresAt }
+					: {}),
+			}));
+	},
+});
+
 export const updateZoomOAuthTokens = internalMutation({
 	args: {
 		connectionId: v.id("appConnections"),
@@ -1071,6 +1142,41 @@ export const updateZoomOAuthTokens = internalMutation({
 		if (
 			!connection ||
 			connection.provider !== "zoom" ||
+			connection.ownerTokenIdentifier !== args.ownerTokenIdentifier ||
+			connection.workspaceId !== args.workspaceId
+		) {
+			return null;
+		}
+
+		await ctx.db.patch(connection._id, {
+			token: args.oauthAccessToken,
+			...(args.oauthRefreshToken
+				? { oauthRefreshToken: args.oauthRefreshToken }
+				: {}),
+			...(args.tokenExpiresAt ? { tokenExpiresAt: args.tokenExpiresAt } : {}),
+			updatedAt: Date.now(),
+		});
+
+		return null;
+	},
+});
+
+export const updateNotionOAuthTokens = internalMutation({
+	args: {
+		connectionId: v.id("appConnections"),
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		oauthAccessToken: v.string(),
+		oauthRefreshToken: v.optional(v.string()),
+		tokenExpiresAt: v.optional(v.number()),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const connection = await ctx.db.get(args.connectionId);
+
+		if (
+			!connection ||
+			connection.provider !== "notion" ||
 			connection.ownerTokenIdentifier !== args.ownerTokenIdentifier ||
 			connection.workspaceId !== args.workspaceId
 		) {
@@ -1724,8 +1830,13 @@ export const upsertNotion = internalMutation({
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),
 		displayName: v.string(),
-		token: v.string(),
-		email: v.optional(v.string()),
+		baseUrl: v.string(),
+		env: v.optional(v.record(v.string(), v.string())),
+		oauthClientId: v.optional(v.string()),
+		oauthClientSecret: v.optional(v.string()),
+		oauthAccessToken: v.string(),
+		oauthRefreshToken: v.optional(v.string()),
+		tokenExpiresAt: v.optional(v.number()),
 	},
 	returns: notionConnectionSettingsValidator,
 	handler: async (ctx, args): Promise<NotionConnectionSettings> => {
@@ -1736,8 +1847,11 @@ export const upsertNotion = internalMutation({
 		);
 		const now = Date.now();
 		const displayName = args.displayName.trim() || "Notion";
-		const token = args.token.trim();
-		const email = args.email?.trim().toLowerCase() || undefined;
+		const baseUrl = args.baseUrl.trim();
+		const envJson = args.env ? JSON.stringify(args.env) : undefined;
+		const oauthClientId = args.oauthClientId?.trim() || undefined;
+		const oauthClientSecret = args.oauthClientSecret?.trim() || undefined;
+		const oauthRefreshToken = args.oauthRefreshToken?.trim() || undefined;
 		const existingConnection = await getOwnedNotionConnection(
 			ctx,
 			args.ownerTokenIdentifier,
@@ -1748,8 +1862,13 @@ export const upsertNotion = internalMutation({
 			await ctx.db.patch(existingConnection._id, {
 				status: "connected",
 				displayName,
-				token,
-				...(email ? { email } : {}),
+				baseUrl,
+				envJson,
+				...(oauthClientId ? { accountId: oauthClientId } : {}),
+				...(oauthClientSecret ? { oauthClientSecret } : {}),
+				token: args.oauthAccessToken,
+				...(oauthRefreshToken ? { oauthRefreshToken } : {}),
+				tokenExpiresAt: args.tokenExpiresAt,
 				updatedAt: now,
 			});
 
@@ -1758,6 +1877,7 @@ export const upsertNotion = internalMutation({
 				provider: "notion" as const,
 				status: "connected" as const,
 				displayName,
+				endpoint: baseUrl,
 			};
 		}
 
@@ -1767,8 +1887,13 @@ export const upsertNotion = internalMutation({
 			provider: "notion",
 			status: "connected",
 			displayName,
-			token,
-			...(email ? { email } : {}),
+			baseUrl,
+			...(envJson ? { envJson } : {}),
+			...(oauthClientId ? { accountId: oauthClientId } : {}),
+			...(oauthClientSecret ? { oauthClientSecret } : {}),
+			token: args.oauthAccessToken,
+			...(oauthRefreshToken ? { oauthRefreshToken } : {}),
+			...(args.tokenExpiresAt ? { tokenExpiresAt: args.tokenExpiresAt } : {}),
 			createdAt: now,
 			updatedAt: now,
 		});
@@ -1778,6 +1903,7 @@ export const upsertNotion = internalMutation({
 			provider: "notion" as const,
 			status: "connected" as const,
 			displayName,
+			endpoint: baseUrl,
 		};
 	},
 });
@@ -1863,6 +1989,98 @@ export const upsertZoom = internalMutation({
 			displayName,
 			endpoint: baseUrl,
 			...(oauthClientId ? { oauthClientId } : {}),
+		};
+	},
+});
+
+export const createNotionOAuthState = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		displayName: v.string(),
+		baseUrl: v.string(),
+		env: v.optional(v.record(v.string(), v.string())),
+		oauthClientId: v.string(),
+		oauthClientSecret: v.optional(v.string()),
+		oauthTokenEndpoint: v.string(),
+		codeVerifier: v.string(),
+		state: v.string(),
+		expiresAt: v.number(),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		await requireOwnedWorkspace(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+		const now = Date.now();
+
+		await ctx.db.insert("notionOAuthStates", {
+			state: args.state,
+			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
+			displayName: args.displayName.trim() || "Notion",
+			baseUrl: args.baseUrl.trim(),
+			...(args.env ? { envJson: JSON.stringify(args.env) } : {}),
+			oauthClientId: args.oauthClientId.trim(),
+			...(args.oauthClientSecret
+				? { oauthClientSecret: args.oauthClientSecret.trim() }
+				: {}),
+			oauthTokenEndpoint: args.oauthTokenEndpoint.trim(),
+			codeVerifier: args.codeVerifier,
+			expiresAt: args.expiresAt,
+			createdAt: now,
+		});
+
+		return null;
+	},
+});
+
+export const consumeNotionOAuthState = internalMutation({
+	args: {
+		state: v.string(),
+	},
+	returns: v.union(
+		v.object({
+			ownerTokenIdentifier: v.string(),
+			workspaceId: v.id("workspaces"),
+			displayName: v.string(),
+			baseUrl: v.string(),
+			envJson: v.optional(v.string()),
+			oauthClientId: v.string(),
+			oauthClientSecret: v.optional(v.string()),
+			oauthTokenEndpoint: v.string(),
+			codeVerifier: v.string(),
+			expiresAt: v.number(),
+		}),
+		v.null(),
+	),
+	handler: async (ctx, args) => {
+		const state = await ctx.db
+			.query("notionOAuthStates")
+			.withIndex("by_state", (q) => q.eq("state", args.state))
+			.unique();
+
+		if (!state) {
+			return null;
+		}
+
+		await ctx.db.delete(state._id);
+
+		return {
+			ownerTokenIdentifier: state.ownerTokenIdentifier,
+			workspaceId: state.workspaceId,
+			displayName: state.displayName,
+			baseUrl: state.baseUrl,
+			...(state.envJson ? { envJson: state.envJson } : {}),
+			oauthClientId: state.oauthClientId,
+			...(state.oauthClientSecret
+				? { oauthClientSecret: state.oauthClientSecret }
+				: {}),
+			oauthTokenEndpoint: state.oauthTokenEndpoint,
+			codeVerifier: state.codeVerifier,
+			expiresAt: state.expiresAt,
 		};
 	},
 });

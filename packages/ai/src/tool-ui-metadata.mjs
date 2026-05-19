@@ -99,19 +99,6 @@ export const toolUiMetadata = {
 		complete: "Explored local snapshot",
 		subtitleKeys: ["command"],
 	},
-	notion_fetch: {
-		icon: "file-search",
-		running: "Reading Notion",
-		complete: "Read Notion",
-		subtitleKeys: ["id", "pageId", "url"],
-	},
-	notion_search: {
-		groupKey: "search",
-		icon: "search",
-		running: "Searching Notion",
-		complete: "Searched Notion",
-		subtitleKeys: ["query", "q"],
-	},
 	web_search: {
 		groupKey: "search",
 		icon: "globe",

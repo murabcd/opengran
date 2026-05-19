@@ -1,52 +1,24 @@
 import type { ToolSet } from "ai";
-import type { AiToolDefinition } from "./ai-tool-definition.mjs";
 
-export type NotionToolConnection = {
+export declare const DEFAULT_NOTION_MCP_ENDPOINT: string;
+
+export type NotionMcpToolConnection = {
 	sourceId: string;
 	provider: "notion";
 	displayName: string;
-	token: string;
+	baseUrl: string;
+	env?: Record<string, string>;
+	oauthClientId?: string;
+	oauthAccessToken: string;
 };
 
-export type NotionSearchResult = {
-	id: string;
-	object: "page" | "data_source";
-	title: string;
-	url?: string | null;
-	lastEditedTime?: string | null;
-};
-
-export declare function searchNotion(
-	connection: NotionToolConnection,
-	query: string,
-	limit?: number,
-): Promise<{
-	connection: string;
-	results: NotionSearchResult[];
-	sources: Array<{
-		type: "url";
-		url: string;
-		title: string;
-	}>;
-}>;
-
-export declare function fetchNotionItem(
-	connection: NotionToolConnection,
-	idOrUrl: string,
-): Promise<{
-	connection: string;
-	object: "page" | "data_source" | "database";
-	sources: Array<{
-		type: "url";
-		url: string;
-		title: string;
-	}>;
-}>;
+export declare function validateNotionMcpConnection(
+	connection: Pick<
+		NotionMcpToolConnection,
+		"baseUrl" | "env" | "oauthClientId" | "oauthAccessToken"
+	>,
+): Promise<unknown[]>;
 
 export declare function buildNotionTools(
-	connection: NotionToolConnection,
-): ToolSet;
-
-export declare function buildNotionToolDefinitions(
-	connection: NotionToolConnection,
-): AiToolDefinition[];
+	connection: NotionMcpToolConnection,
+): Promise<ToolSet>;

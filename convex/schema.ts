@@ -619,6 +619,26 @@ export default defineSchema({
 			"workspaceId",
 		])
 		.index("by_expiresAt", ["expiresAt"]),
+	notionOAuthStates: defineTable({
+		state: v.string(),
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		displayName: v.string(),
+		baseUrl: v.string(),
+		envJson: v.optional(v.string()),
+		oauthClientId: v.string(),
+		oauthClientSecret: v.optional(v.string()),
+		oauthTokenEndpoint: v.string(),
+		codeVerifier: v.string(),
+		expiresAt: v.number(),
+		createdAt: v.number(),
+	})
+		.index("by_state", ["state"])
+		.index("by_ownerTokenIdentifier_and_workspaceId", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+		])
+		.index("by_expiresAt", ["expiresAt"]),
 	appConnectionActivities: defineTable({
 		connectionId: v.id("appConnections"),
 		ownerTokenIdentifier: v.string(),

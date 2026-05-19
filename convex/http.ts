@@ -8,6 +8,7 @@ import {
 	handleRealtimeTranscriptionSessionRequest,
 } from "./desktopApi";
 import { handleJiraWebhookRequest } from "./jiraWebhook";
+import { handleNotionOAuthCallbackRequest } from "./notionOAuth";
 import { handleZoomOAuthCallbackRequest } from "./zoomOAuth";
 
 const http = httpRouter();
@@ -58,6 +59,14 @@ http.route({
 	method: "GET",
 	handler: httpAction(
 		async (ctx, request) => await handleZoomOAuthCallbackRequest(ctx, request),
+	),
+});
+
+http.route({
+	path: "/api/oauth/notion/callback",
+	method: "GET",
+	handler: httpAction(
+		async (ctx, request) => await handleNotionOAuthCallbackRequest(ctx, request),
 	),
 });
 

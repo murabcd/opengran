@@ -1,5 +1,6 @@
 "use node";
 
+import { createHash, randomBytes } from "node:crypto";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -61,14 +62,11 @@ const posthogConnectionResultValidator = v.object({
 	projectName: v.string(),
 });
 
-const notionConnectionResultValidator = v.object({
-	sourceId: v.string(),
-	provider: v.literal("notion"),
-	status: v.union(v.literal("connected"), v.literal("disconnected")),
-	displayName: v.string(),
+const zoomOAuthStartResultValidator = v.object({
+	authorizationUrl: v.string(),
 });
 
-const zoomOAuthStartResultValidator = v.object({
+const notionOAuthStartResultValidator = v.object({
 	authorizationUrl: v.string(),
 });
 
@@ -114,26 +112,24 @@ type PostHogConnectionResult = {
 	projectName: string;
 };
 
-type NotionConnectionResult = {
-	sourceId: string;
-	provider: "notion";
-	status: "connected" | "disconnected";
-	displayName: string;
-};
-
 type ZoomOAuthStartResult = {
 	authorizationUrl: string;
 };
 
+type NotionOAuthStartResult = {
+	authorizationUrl: string;
+};
+
 const ZOOM_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+const NOTION_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 const getConvexSiteUrl = () => {
 	const siteUrl = process.env.CONVEX_SITE_URL?.trim();
 
 	if (!siteUrl) {
 		throw new ConvexError({
-			code: "ZOOM_OAUTH_NOT_CONFIGURED",
-			message: "Zoom OAuth is not configured.",
+			code: "OAUTH_NOT_CONFIGURED",
+			message: "OAuth redirect URL is not configured.",
 		});
 	}
 
@@ -144,6 +140,10 @@ const getZoomOAuthRedirectUri = () =>
 	`${getConvexSiteUrl()}/api/oauth/zoom/callback`;
 
 const createZoomOAuthState = () => crypto.randomUUID();
+const createNotionOAuthState = () => randomBytes(32).toString("hex");
+
+const getNotionOAuthRedirectUri = () =>
+	`${getConvexSiteUrl()}/api/oauth/notion/callback`;
 
 const getZoomOAuthConfig = (overrides: {
 	oauthClientId?: string;
@@ -259,6 +259,249 @@ const refreshZoomTokensForWorkspace = async (
 	);
 };
 
+type OAuthMetadata = {
+	authorization_endpoint?: unknown;
+	token_endpoint?: unknown;
+	registration_endpoint?: unknown;
+};
+
+type ProtectedResourceMetadata = {
+	authorization_servers?: unknown;
+};
+
+type DynamicClientRegistrationResponse = {
+	client_id?: unknown;
+	client_secret?: unknown;
+};
+
+type NotionTokenResponse = {
+	access_token?: unknown;
+	refresh_token?: unknown;
+	expires_in?: unknown;
+};
+
+const base64UrlEncode = (value: Buffer) =>
+	value
+		.toString("base64")
+		.replaceAll("+", "-")
+		.replaceAll("/", "_")
+		.replaceAll("=", "");
+
+const createPkceVerifier = () => base64UrlEncode(randomBytes(32));
+
+const createPkceChallenge = (verifier: string) =>
+	base64UrlEncode(createHash("sha256").update(verifier).digest());
+
+const discoverNotionOAuthMetadata = async (baseUrl: string) => {
+	const mcpUrl = new URL(baseUrl);
+	const resourceMetadataUrl = new URL(
+		"/.well-known/oauth-protected-resource",
+		mcpUrl,
+	);
+	resourceMetadataUrl.searchParams.set("resource", baseUrl);
+
+	const resourceResponse = await fetch(resourceMetadataUrl, {
+		headers: { Accept: "application/json" },
+	});
+
+	if (!resourceResponse.ok) {
+		throw new Error(
+			`Notion MCP OAuth resource discovery failed (${resourceResponse.status}).`,
+		);
+	}
+
+	const protectedResource =
+		(await resourceResponse.json()) as ProtectedResourceMetadata;
+	const authServerUrl =
+		Array.isArray(protectedResource.authorization_servers) &&
+		typeof protectedResource.authorization_servers[0] === "string"
+			? protectedResource.authorization_servers[0]
+			: "";
+
+	if (!authServerUrl) {
+		throw new Error("Notion MCP OAuth discovery did not return an auth server.");
+	}
+
+	const metadataUrl = new URL(
+		"/.well-known/oauth-authorization-server",
+		authServerUrl,
+	);
+	const metadataResponse = await fetch(metadataUrl, {
+		headers: { Accept: "application/json" },
+	});
+
+	if (!metadataResponse.ok) {
+		throw new Error(
+			`Notion MCP OAuth metadata discovery failed (${metadataResponse.status}).`,
+		);
+	}
+
+	const metadata = (await metadataResponse.json()) as OAuthMetadata;
+
+	if (
+		typeof metadata.authorization_endpoint !== "string" ||
+		typeof metadata.token_endpoint !== "string" ||
+		typeof metadata.registration_endpoint !== "string"
+	) {
+		throw new Error("Notion MCP OAuth metadata is missing required endpoints.");
+	}
+
+	return {
+		authorizationEndpoint: metadata.authorization_endpoint,
+		tokenEndpoint: metadata.token_endpoint,
+		registrationEndpoint: metadata.registration_endpoint,
+	};
+};
+
+const registerNotionOAuthClient = async ({
+	registrationEndpoint,
+	redirectUri,
+}: {
+	registrationEndpoint: string;
+	redirectUri: string;
+}) => {
+	const response = await fetch(registrationEndpoint, {
+		method: "POST",
+		headers: {
+			Accept: "application/json",
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			client_name: "OpenGran",
+			redirect_uris: [redirectUri],
+			grant_types: ["authorization_code", "refresh_token"],
+			response_types: ["code"],
+			token_endpoint_auth_method: "none",
+		}),
+	});
+
+	if (!response.ok) {
+		const responseText = await response.text().catch(() => "");
+		throw new Error(
+			`Notion MCP OAuth client registration failed (${response.status}).${responseText ? ` ${responseText}` : ""}`,
+		);
+	}
+
+	const registration =
+		(await response.json()) as DynamicClientRegistrationResponse;
+
+	if (typeof registration.client_id !== "string") {
+		throw new Error(
+			"Notion MCP OAuth client registration did not return a client ID.",
+		);
+	}
+
+	return {
+		clientId: registration.client_id,
+		clientSecret:
+			typeof registration.client_secret === "string"
+				? registration.client_secret
+				: undefined,
+	};
+};
+
+const refreshNotionOAuthToken = async ({
+	baseUrl,
+	clientId,
+	clientSecret,
+	refreshToken,
+}: {
+	baseUrl: string;
+	clientId: string;
+	clientSecret?: string;
+	refreshToken: string;
+}) => {
+	const { tokenEndpoint } = await discoverNotionOAuthMetadata(baseUrl);
+	const params = new URLSearchParams({
+		grant_type: "refresh_token",
+		refresh_token: refreshToken,
+		client_id: clientId,
+	});
+
+	if (clientSecret) {
+		params.set("client_secret", clientSecret);
+	}
+
+	const response = await fetch(tokenEndpoint, {
+		method: "POST",
+		headers: {
+			Accept: "application/json",
+			"Content-Type": "application/x-www-form-urlencoded",
+			"User-Agent": "OpenGran-MCP-Client/1.0",
+		},
+		body: params.toString(),
+	});
+
+	if (!response.ok) {
+		const responseText = await response.text().catch(() => "");
+		throw new Error(
+			`Notion MCP OAuth refresh failed (${response.status}).${responseText ? ` ${responseText}` : ""}`,
+		);
+	}
+
+	const tokenResponse = (await response.json()) as NotionTokenResponse;
+
+	if (typeof tokenResponse.access_token !== "string") {
+		throw new Error("Notion MCP OAuth refresh did not return an access token.");
+	}
+
+	return {
+		accessToken: tokenResponse.access_token,
+		refreshToken:
+			typeof tokenResponse.refresh_token === "string"
+				? tokenResponse.refresh_token
+				: undefined,
+		expiresIn:
+			typeof tokenResponse.expires_in === "number"
+				? tokenResponse.expires_in
+				: undefined,
+	};
+};
+
+const refreshNotionTokensForWorkspace = async (
+	ctx: ActionCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+) => {
+	const refreshSkewMs = 2 * 60 * 1000;
+	const connections = await ctx.runQuery(
+		internal.appConnections.getNotionOAuthConnectionsForWorkspace,
+		{ ownerTokenIdentifier, workspaceId },
+	);
+
+	await Promise.all(
+		connections
+			.filter(
+				(connection) =>
+					!connection.tokenExpiresAt ||
+					connection.tokenExpiresAt <= Date.now() + refreshSkewMs,
+			)
+			.map(async (connection) => {
+				const tokens = await refreshNotionOAuthToken({
+					baseUrl: connection.baseUrl,
+					clientId: connection.oauthClientId,
+					...(connection.oauthClientSecret
+						? { clientSecret: connection.oauthClientSecret }
+						: {}),
+					refreshToken: connection.oauthRefreshToken,
+				});
+
+				await ctx.runMutation(internal.appConnections.updateNotionOAuthTokens, {
+					connectionId: connection.connectionId,
+					ownerTokenIdentifier: connection.ownerTokenIdentifier,
+					workspaceId: connection.workspaceId,
+					oauthAccessToken: tokens.accessToken,
+					...(tokens.refreshToken
+						? { oauthRefreshToken: tokens.refreshToken }
+						: {}),
+					...(tokens.expiresIn
+						? { tokenExpiresAt: Date.now() + tokens.expiresIn * 1000 }
+						: {}),
+				});
+			}),
+	);
+};
+
 type JiraCurrentUserResponse = {
 	accountId?: unknown;
 };
@@ -270,27 +513,6 @@ type PostHogProjectResponse = {
 
 const TRACKER_API_BASE_URL =
 	process.env.TRACKER_API_BASE_URL ?? "https://api.tracker.yandex.net";
-const NOTION_API_BASE_URL = "https://api.notion.com/v1";
-const NOTION_API_VERSION = "2026-03-11";
-
-type NotionSelfResponse = {
-	name?: unknown;
-	type?: unknown;
-	person?: {
-		email?: unknown;
-	} | null;
-	bot?: {
-		workspace_name?: unknown;
-		owner?: {
-			type?: unknown;
-			user?: {
-				person?: {
-					email?: unknown;
-				} | null;
-			} | null;
-		} | null;
-	} | null;
-};
 
 const normalizeJiraBaseUrl = (value: string) => {
 	const trimmedValue = value.trim();
@@ -360,6 +582,38 @@ const normalizeZoomMcpEndpoint = (value: string) => {
 	return url.toString();
 };
 
+const normalizeNotionMcpEndpoint = (value: string) => {
+	const trimmedValue = value.trim();
+
+	if (!trimmedValue) {
+		throw new ConvexError({
+			code: "NOTION_MCP_ENDPOINT_REQUIRED",
+			message: "Notion MCP endpoint is required.",
+		});
+	}
+
+	let url: URL;
+
+	try {
+		url = new URL(trimmedValue);
+	} catch {
+		throw new ConvexError({
+			code: "NOTION_MCP_ENDPOINT_INVALID",
+			message: "Notion MCP endpoint must be a valid URL.",
+		});
+	}
+
+	if (url.protocol !== "https:") {
+		throw new ConvexError({
+			code: "NOTION_MCP_ENDPOINT_INVALID",
+			message: "Notion MCP endpoint must use HTTPS.",
+		});
+	}
+
+	url.hash = "";
+	return url.toString();
+};
+
 const getJiraAuthHeader = (email: string, token: string) =>
 	`Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`;
 
@@ -367,32 +621,6 @@ const getTrackerHeaderName = (
 	orgType: "x-org-id" | "x-cloud-org-id",
 ): "X-Org-Id" | "X-Cloud-Org-Id" =>
 	orgType === "x-cloud-org-id" ? "X-Cloud-Org-Id" : "X-Org-Id";
-
-const getNotionHeaders = (token: string, hasBody = false) => ({
-	Authorization: `Bearer ${token}`,
-	Accept: "application/json",
-	"Notion-Version": NOTION_API_VERSION,
-	...(hasBody ? { "Content-Type": "application/json" } : {}),
-});
-
-const readNotionEmail = (self: NotionSelfResponse | null) => {
-	const personEmail =
-		self?.person && typeof self.person.email === "string"
-			? self.person.email.trim().toLowerCase()
-			: "";
-
-	if (personEmail) {
-		return personEmail;
-	}
-
-	const ownerEmail =
-		self?.bot?.owner?.user?.person &&
-		typeof self.bot.owner.user.person.email === "string"
-			? self.bot.owner.user.person.email.trim().toLowerCase()
-			: "";
-
-	return ownerEmail || undefined;
-};
 
 const requireIdentity = async (ctx: ActionCtx) => {
 	const identity = await ctx.auth.getUserIdentity();
@@ -623,73 +851,75 @@ export const connectPostHog = action({
 export const connectNotion = action({
 	args: {
 		workspaceId: v.id("workspaces"),
-		token: v.string(),
+		displayName: v.string(),
+		baseUrl: v.string(),
+		env: v.optional(v.record(v.string(), v.string())),
 	},
-	returns: notionConnectionResultValidator,
-	handler: async (ctx, args): Promise<NotionConnectionResult> => {
+	returns: notionOAuthStartResultValidator,
+	handler: async (ctx, args): Promise<NotionOAuthStartResult> => {
 		const identity = await requireIdentity(ctx);
-		const token = args.token.trim();
+		const redirectUri = getNotionOAuthRedirectUri();
+		const baseUrl = normalizeNotionMcpEndpoint(args.baseUrl);
+		const displayName = args.displayName.trim() || "Notion";
+		const env = Object.fromEntries(
+			Object.entries(args.env ?? {}).filter(
+				([key, value]) => key.trim().length > 0 && value.length > 0,
+			),
+		);
 
-		if (!token) {
+		if (!redirectUri.startsWith("http")) {
 			throw new ConvexError({
-				code: "INVALID_CONNECTION_DETAILS",
-				message: "Notion integration token is required.",
+				code: "NOTION_OAUTH_NOT_CONFIGURED",
+				message: "Notion OAuth is not configured.",
 			});
 		}
 
-		const [selfResponse, searchResponse] = await Promise.all([
-			fetch(`${NOTION_API_BASE_URL}/users/me`, {
-				headers: getNotionHeaders(token),
-			}),
-			fetch(`${NOTION_API_BASE_URL}/search`, {
-				method: "POST",
-				headers: getNotionHeaders(token, true),
-				body: JSON.stringify({
-					query: "",
-					page_size: 1,
-				}),
-			}),
-		]);
-
-		if (!selfResponse.ok) {
-			const responseText = await selfResponse.text().catch(() => "");
+		let metadata: Awaited<ReturnType<typeof discoverNotionOAuthMetadata>>;
+		let client: Awaited<ReturnType<typeof registerNotionOAuthClient>>;
+		try {
+			metadata = await discoverNotionOAuthMetadata(baseUrl);
+			client = await registerNotionOAuthClient({
+				registrationEndpoint: metadata.registrationEndpoint,
+				redirectUri,
+			});
+		} catch (error) {
+			console.error("Failed to prepare Notion MCP OAuth connection", error);
 			throw new ConvexError({
-				code: "NOTION_CONNECTION_FAILED",
-				message: responseText.trim()
-					? `Failed to connect Notion: ${responseText.trim()}`
-					: `Failed to connect Notion (${selfResponse.status}).`,
+				code: "NOTION_OAUTH_NOT_CONFIGURED",
+				message: "Failed to start Notion OAuth.",
 			});
 		}
 
-		if (!searchResponse.ok) {
-			const responseText = await searchResponse.text().catch(() => "");
-			throw new ConvexError({
-				code: "NOTION_CONNECTION_FAILED",
-				message: responseText.trim()
-					? `Failed to access Notion content: ${responseText.trim()}`
-					: `Failed to access Notion content (${searchResponse.status}).`,
-			});
-		}
+		const codeVerifier = createPkceVerifier();
+		const codeChallenge = createPkceChallenge(codeVerifier);
+		const state = createNotionOAuthState();
 
-		const self = (await selfResponse
-			.json()
-			.catch(() => null)) as NotionSelfResponse | null;
-		const workspaceName =
-			self?.bot && typeof self.bot.workspace_name === "string"
-				? self.bot.workspace_name.trim()
-				: "";
-		const integrationName =
-			typeof self?.name === "string" ? self.name.trim() : "";
-		const displayName = workspaceName || integrationName || "Notion";
-		const email = readNotionEmail(self);
-
-		return await ctx.runMutation(internal.appConnections.upsertNotion, {
+		await ctx.runMutation(internal.appConnections.createNotionOAuthState, {
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,
 			displayName,
-			token,
-			...(email ? { email } : {}),
+			baseUrl,
+			...(Object.keys(env).length > 0 ? { env } : {}),
+			oauthClientId: client.clientId,
+			...(client.clientSecret
+				? { oauthClientSecret: client.clientSecret }
+				: {}),
+			oauthTokenEndpoint: metadata.tokenEndpoint,
+			codeVerifier,
+			state,
+			expiresAt: Date.now() + NOTION_OAUTH_STATE_TTL_MS,
 		});
+
+		const authorizationUrl = new URL(metadata.authorizationEndpoint);
+		authorizationUrl.searchParams.set("response_type", "code");
+		authorizationUrl.searchParams.set("client_id", client.clientId);
+		authorizationUrl.searchParams.set("redirect_uri", redirectUri);
+		authorizationUrl.searchParams.set("state", state);
+		authorizationUrl.searchParams.set("code_challenge", codeChallenge);
+		authorizationUrl.searchParams.set("code_challenge_method", "S256");
+		authorizationUrl.searchParams.set("prompt", "consent");
+
+		return { authorizationUrl: authorizationUrl.toString() };
 	},
 });
 
@@ -747,11 +977,18 @@ export const getAllForChatWithFreshTokens = action({
 	returns: v.array(chatToolConnectionValidator),
 	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
 		const identity = await requireIdentity(ctx);
-		await refreshZoomTokensForWorkspace(
-			ctx,
-			identity.tokenIdentifier,
-			args.workspaceId,
-		);
+		await Promise.all([
+			refreshNotionTokensForWorkspace(
+				ctx,
+				identity.tokenIdentifier,
+				args.workspaceId,
+			),
+			refreshZoomTokensForWorkspace(
+				ctx,
+				identity.tokenIdentifier,
+				args.workspaceId,
+			),
+		]);
 		return await ctx.runQuery(
 			internal.appConnections.getAllForChatInternal,
 			{
@@ -770,11 +1007,18 @@ export const getSelectedForChatWithFreshTokens = action({
 	returns: v.array(chatToolConnectionValidator),
 	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
 		const identity = await requireIdentity(ctx);
-		await refreshZoomTokensForWorkspace(
-			ctx,
-			identity.tokenIdentifier,
-			args.workspaceId,
-		);
+		await Promise.all([
+			refreshNotionTokensForWorkspace(
+				ctx,
+				identity.tokenIdentifier,
+				args.workspaceId,
+			),
+			refreshZoomTokensForWorkspace(
+				ctx,
+				identity.tokenIdentifier,
+				args.workspaceId,
+			),
+		]);
 		return await ctx.runQuery(
 			internal.appConnections.getSelectedForChatInternal,
 			{

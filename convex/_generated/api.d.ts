@@ -27,6 +27,7 @@ import type * as jiraWebhook from "../jiraWebhook.js";
 import type * as noteComments from "../noteComments.js";
 import type * as notes from "../notes.js";
 import type * as notificationPreferences from "../notificationPreferences.js";
+import type * as notionOAuth from "../notionOAuth.js";
 import type * as onboarding from "../onboarding.js";
 import type * as projects from "../projects.js";
 import type * as recipes from "../recipes.js";
@@ -65,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   noteComments: typeof noteComments;
   notes: typeof notes;
   notificationPreferences: typeof notificationPreferences;
+  notionOAuth: typeof notionOAuth;
   onboarding: typeof onboarding;
   projects: typeof projects;
   recipes: typeof recipes;

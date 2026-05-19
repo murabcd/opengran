@@ -522,6 +522,7 @@ const useAppBootstrapState = () => {
 		isCompletingDesktopPermissions,
 		isConvexAuthenticated,
 		isCreatingWorkspace,
+		isDesktopApp,
 		isDesktopMac,
 		isRefreshingDesktopPermissions,
 		isSessionPending,
@@ -556,7 +557,12 @@ function MainApp() {
 		controller.isSessionPending ||
 		(controller.session?.user && !controller.isConvexAuthenticated)
 	) {
-		return <AuthBootstrapScreen isDesktopMac={controller.isDesktopMac} />;
+		return (
+			<AuthBootstrapScreen
+				isDesktopApp={controller.isDesktopApp}
+				isDesktopMac={controller.isDesktopMac}
+			/>
+		);
 	}
 
 	if (!controller.session?.user) {
@@ -573,11 +579,21 @@ function MainApp() {
 	}
 
 	if (controller.workspaces === undefined) {
-		return <AuthBootstrapScreen isDesktopMac={controller.isDesktopMac} />;
+		return (
+			<AuthBootstrapScreen
+				isDesktopApp={controller.isDesktopApp}
+				isDesktopMac={controller.isDesktopMac}
+			/>
+		);
 	}
 
 	if (controller.onboardingStatus === undefined) {
-		return <AuthBootstrapScreen isDesktopMac={controller.isDesktopMac} />;
+		return (
+			<AuthBootstrapScreen
+				isDesktopApp={controller.isDesktopApp}
+				isDesktopMac={controller.isDesktopMac}
+			/>
+		);
 	}
 
 	if (controller.workspaces.length === 0) {
@@ -607,7 +623,12 @@ function MainApp() {
 		controller.shouldLoadDesktopPermissions &&
 		controller.desktopPermissionsStatus === null
 	) {
-		return <AuthBootstrapScreen isDesktopMac={controller.isDesktopMac} />;
+		return (
+			<AuthBootstrapScreen
+				isDesktopApp={controller.isDesktopApp}
+				isDesktopMac={controller.isDesktopMac}
+			/>
+		);
 	}
 
 	if (controller.shouldShowDesktopPermissionsScreen) {
@@ -637,6 +658,7 @@ function MainApp() {
 				isSessionPending: controller.isSessionPending,
 				isConvexAuthenticated: controller.isConvexAuthenticated,
 				isAuthenticating: controller.isAuthenticating,
+				isDesktopApp: controller.isDesktopApp,
 				isDesktopMac: controller.isDesktopMac,
 			}}
 			session={controller.session}
@@ -717,6 +739,7 @@ function AppGate({
 		isSessionPending: boolean;
 		isConvexAuthenticated: boolean;
 		isAuthenticating: boolean;
+		isDesktopApp: boolean;
 		isDesktopMac: boolean;
 	};
 	session: AuthSession | null | undefined;
@@ -760,6 +783,7 @@ function AppGate({
 		isSessionPending,
 		isConvexAuthenticated,
 		isAuthenticating,
+		isDesktopApp,
 		isDesktopMac,
 	} = authState;
 	const { isCreatingWorkspace } = workspaceState;
@@ -779,7 +803,12 @@ function AppGate({
 	}
 
 	if (isSessionPending || (session?.user && !isConvexAuthenticated)) {
-		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
+		return (
+			<AuthBootstrapScreen
+				isDesktopApp={isDesktopApp}
+				isDesktopMac={isDesktopMac}
+			/>
+		);
 	}
 
 	if (!session?.user) {
@@ -796,7 +825,12 @@ function AppGate({
 	}
 
 	if (workspaces === undefined || onboardingStatus == null) {
-		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
+		return (
+			<AuthBootstrapScreen
+				isDesktopApp={isDesktopApp}
+				isDesktopMac={isDesktopMac}
+			/>
+		);
 	}
 
 	if (workspaces.length === 0) {
@@ -823,7 +857,12 @@ function AppGate({
 	}
 
 	if (shouldLoadDesktopPermissions && desktopPermissionsStatus === null) {
-		return <AuthBootstrapScreen isDesktopMac={isDesktopMac} />;
+		return (
+			<AuthBootstrapScreen
+				isDesktopApp={isDesktopApp}
+				isDesktopMac={isDesktopMac}
+			/>
+		);
 	}
 
 	if (shouldShowDesktopPermissionsScreen) {
@@ -1044,7 +1083,13 @@ function WelcomeCelebrationScreen({
 	);
 }
 
-function AuthBootstrapScreen({ isDesktopMac }: { isDesktopMac: boolean }) {
+function AuthBootstrapScreen({
+	isDesktopApp,
+	isDesktopMac,
+}: {
+	isDesktopApp: boolean;
+	isDesktopMac: boolean;
+}) {
 	return (
 		<div
 			data-app-region={isDesktopMac ? "drag" : undefined}
@@ -1052,10 +1097,12 @@ function AuthBootstrapScreen({ isDesktopMac }: { isDesktopMac: boolean }) {
 			role="status"
 			aria-label="Loading OpenGran"
 		>
-			<OpenGranMark
-				className="app-loading-mark block size-[42px] text-foreground"
-				data-app-region={isDesktopMac ? "no-drag" : undefined}
-			/>
+			{isDesktopApp ? (
+				<OpenGranMark
+					className="app-loading-mark block size-[42px] text-foreground"
+					data-app-region={isDesktopMac ? "no-drag" : undefined}
+				/>
+			) : null}
 		</div>
 	);
 }

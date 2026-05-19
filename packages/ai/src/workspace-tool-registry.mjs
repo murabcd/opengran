@@ -95,7 +95,7 @@ export const buildWorkspaceToolSet = async (connections, adapters = {}) => {
 		}
 
 		if (connection.provider === "notion") {
-			Object.assign(tools, buildNotionTools(connection));
+			Object.assign(tools, await buildNotionTools(connection));
 		}
 
 		if (connection.provider === "posthog" && adapters.posthog) {

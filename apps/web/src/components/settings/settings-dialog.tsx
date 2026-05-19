@@ -223,6 +223,32 @@ const getConnectionErrorMessage = (error: unknown, fallback: string) => {
 		: fallback;
 };
 
+const createOAuthNavigationTarget = () =>
+	isDesktopRuntime() ? null : window.open("about:blank", "_blank");
+
+const navigateToOAuthUrl = async (
+	authorizationUrl: string,
+	target: Window | null,
+) => {
+	if (target) {
+		target.opener = null;
+		target.location.href = authorizationUrl;
+		return;
+	}
+
+	if (await openDesktopExternalUrl(authorizationUrl)) {
+		return;
+	}
+
+	const oauthWindow = window.open(authorizationUrl, "_blank");
+	if (oauthWindow) {
+		oauthWindow.opener = null;
+		return;
+	}
+
+	window.location.assign(authorizationUrl);
+};
+
 type WorkspaceFormState = {
 	name: string;
 	iconStorageId: Id<"_storage"> | null;
@@ -275,7 +301,9 @@ type PostHogConnectionFormState = {
 };
 
 type NotionConnectionFormState = {
-	token: string;
+	name: string;
+	baseUrl: string;
+	envVars: Array<{ id: string; key: string; value: string }>;
 };
 
 type ZoomConnectionFormState = {
@@ -411,6 +439,7 @@ type NotionConnectionSettings = {
 	provider: "notion";
 	status: AppConnectionStatus;
 	displayName: string;
+	endpoint: string;
 };
 
 type ZoomConnectionSettings = {
@@ -593,7 +622,9 @@ const initialPostHogConnectionFormState: PostHogConnectionFormState = {
 };
 
 const initialNotionConnectionFormState: NotionConnectionFormState = {
-	token: "",
+	name: "Notion",
+	baseUrl: "https://mcp.notion.com/mcp",
+	envVars: [],
 };
 
 const initialZoomConnectionFormState: ZoomConnectionFormState = {
@@ -1845,7 +1876,8 @@ function ConnectionsSettings() {
 		setJiraBaseUrl,
 		setJiraEmail,
 		setJiraToken,
-		setNotionToken,
+		setNotionBaseUrl,
+		setNotionName,
 		setPostHogBaseUrl,
 		setPostHogProjectId,
 		setPostHogToken,
@@ -1853,8 +1885,11 @@ function ConnectionsSettings() {
 		setZoomName,
 		setZoomOAuthClientId,
 		setZoomOAuthClientSecret,
+		addNotionEnvVar,
 		addZoomEnvVar,
+		removeNotionEnvVar,
 		removeZoomEnvVar,
+		updateNotionEnvVar,
 		updateZoomEnvVar,
 		setYandexCalendarEmail,
 		setYandexCalendarPassword,
@@ -1938,7 +1973,11 @@ function ConnectionsSettings() {
 				open={isNotionDialogOpen}
 				onOpenChange={handleNotionDialogOpenChange}
 				formState={notionFormState}
-				onTokenChange={setNotionToken}
+				onNameChange={setNotionName}
+				onBaseUrlChange={setNotionBaseUrl}
+				onAddEnvVar={addNotionEnvVar}
+				onRemoveEnvVar={removeNotionEnvVar}
+				onUpdateEnvVar={updateNotionEnvVar}
 				onConnect={() => {
 					void handleConnectNotion();
 				}}
@@ -2368,7 +2407,11 @@ function useConnectionsSettingsController() {
 			dispatch({
 				type: "setNotionFormState",
 				value: {
-					token: "",
+					name: notionConnection?.displayName ?? "Notion",
+					baseUrl:
+						notionConnection?.endpoint ??
+						initialNotionConnectionFormState.baseUrl,
+					envVars: [],
 				},
 			});
 		} else {
@@ -2380,32 +2423,76 @@ function useConnectionsSettingsController() {
 	};
 
 	const handleConnectNotion = async () => {
-		if (!activeWorkspaceId || !notionFormState.token.trim()) {
+		if (
+			!activeWorkspaceId ||
+			!notionFormState.name.trim() ||
+			!notionFormState.baseUrl.trim()
+		) {
 			return;
 		}
 
 		dispatch({ type: "setIsSavingNotionConnection", value: true });
+		const oauthWindow = createOAuthNavigationTarget();
 
 		try {
-			await connectNotion({
+			const result = await connectNotion({
 				workspaceId: activeWorkspaceId,
-				token: notionFormState.token.trim(),
+				displayName: notionFormState.name.trim(),
+				baseUrl: notionFormState.baseUrl.trim(),
+				env: Object.fromEntries(
+					notionFormState.envVars
+						.map((envVar) => [envVar.key.trim(), envVar.value])
+						.filter(([key]) => key.length > 0),
+				),
 			});
-			toast.success("Notion connected");
+			await navigateToOAuthUrl(result.authorizationUrl, oauthWindow);
+			toast.success("Continue in Notion to finish connecting");
 			handleNotionDialogOpenChange(false);
 		} catch (error) {
+			oauthWindow?.close();
 			console.error("Failed to connect Notion", error);
-			toast.error(
-				error instanceof Error
-					? withoutTrailingPeriod(error.message)
-					: "Failed to connect Notion",
-			);
+			toast.error(getConnectionErrorMessage(error, "Failed to connect Notion"));
 		} finally {
 			dispatch({ type: "setIsSavingNotionConnection", value: false });
 		}
 	};
 
-	const isNotionFormValid = notionFormState.token.trim().length > 0;
+	const isNotionFormValid =
+		notionFormState.name.trim().length > 0 &&
+		notionFormState.baseUrl.trim().length > 0;
+
+	const addNotionEnvVar = () =>
+		dispatch({
+			type: "patchNotionFormState",
+			value: {
+				envVars: [
+					...notionFormState.envVars,
+					{ id: crypto.randomUUID(), key: "", value: "" },
+				],
+			},
+		});
+
+	const removeNotionEnvVar = (id: string) =>
+		dispatch({
+			type: "patchNotionFormState",
+			value: {
+				envVars: notionFormState.envVars.filter((envVar) => envVar.id !== id),
+			},
+		});
+
+	const updateNotionEnvVar = (
+		id: string,
+		key: "key" | "value",
+		value: string,
+	) =>
+		dispatch({
+			type: "patchNotionFormState",
+			value: {
+				envVars: notionFormState.envVars.map((envVar) =>
+					envVar.id === id ? { ...envVar, [key]: value } : envVar,
+				),
+			},
+		});
 
 	const handleZoomDialogOpenChange = (open: boolean) => {
 		dispatch({ type: "setIsZoomDialogOpen", value: open });
@@ -2440,6 +2527,7 @@ function useConnectionsSettingsController() {
 		}
 
 		dispatch({ type: "setIsSavingZoomConnection", value: true });
+		const oauthWindow = createOAuthNavigationTarget();
 
 		try {
 			const result = await connectZoom({
@@ -2458,20 +2546,11 @@ function useConnectionsSettingsController() {
 					? { oauthClientSecret: zoomFormState.oauthClientSecret.trim() }
 					: {}),
 			});
-			if (!(await openDesktopExternalUrl(result.authorizationUrl))) {
-				const zoomOAuthWindow = window.open(
-					result.authorizationUrl,
-					"_blank",
-					"noopener,noreferrer",
-				);
-
-				if (!zoomOAuthWindow) {
-					window.location.assign(result.authorizationUrl);
-				}
-			}
+			await navigateToOAuthUrl(result.authorizationUrl, oauthWindow);
 			toast.success("Continue in Zoom to finish connecting");
 			handleZoomDialogOpenChange(false);
 		} catch (error) {
+			oauthWindow?.close();
 			console.error("Failed to connect Zoom", error);
 			toast.error(getConnectionErrorMessage(error, "Failed to connect Zoom"));
 		} finally {
@@ -2761,8 +2840,11 @@ function useConnectionsSettingsController() {
 		handlePostHogDialogOpenChange,
 		handleYandexTrackerDialogOpenChange,
 		handleZoomDialogOpenChange,
+		addNotionEnvVar,
 		addZoomEnvVar,
+		removeNotionEnvVar,
 		removeZoomEnvVar,
+		updateNotionEnvVar,
 		updateZoomEnvVar,
 		isJiraDialogOpen,
 		isJiraFormValid,
@@ -2801,11 +2883,6 @@ function useConnectionsSettingsController() {
 				type: "patchJiraFormState",
 				value: { token },
 			}),
-		setNotionToken: (token: string) =>
-			dispatch({
-				type: "patchNotionFormState",
-				value: { token },
-			}),
 		setPostHogBaseUrl: (baseUrl: string) =>
 			dispatch({
 				type: "patchPostHogFormState",
@@ -2820,6 +2897,16 @@ function useConnectionsSettingsController() {
 			dispatch({
 				type: "patchPostHogFormState",
 				value: { token },
+			}),
+		setNotionBaseUrl: (baseUrl: string) =>
+			dispatch({
+				type: "patchNotionFormState",
+				value: { baseUrl },
+			}),
+		setNotionName: (name: string) =>
+			dispatch({
+				type: "patchNotionFormState",
+				value: { name },
 			}),
 		setZoomBaseUrl: (baseUrl: string) =>
 			dispatch({
@@ -3302,7 +3389,11 @@ function NotionDialog({
 	open,
 	onOpenChange,
 	formState,
-	onTokenChange,
+	onNameChange,
+	onBaseUrlChange,
+	onAddEnvVar,
+	onRemoveEnvVar,
+	onUpdateEnvVar,
 	onConnect,
 	isFormValid,
 	isSaving,
@@ -3310,34 +3401,120 @@ function NotionDialog({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	formState: NotionConnectionFormState;
-	onTokenChange: (token: string) => void;
+	onNameChange: (name: string) => void;
+	onBaseUrlChange: (baseUrl: string) => void;
+	onAddEnvVar: () => void;
+	onRemoveEnvVar: (id: string) => void;
+	onUpdateEnvVar: (id: string, key: "key" | "value", value: string) => void;
 	onConnect: () => void;
 	isFormValid: boolean;
 	isSaving: boolean;
 }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md">
+			<DialogContent className="sm:max-w-lg">
 				<DialogHeader>
 					<DialogTitle>Connect Notion</DialogTitle>
 					<DialogDescription>
-						Enter the credentials OpenGran should use for your Notion
-						connection.
+						Enter the Notion MCP connection details OpenGran should use for
+						workspace context.
 					</DialogDescription>
 				</DialogHeader>
 				<FieldGroup className="gap-4">
 					<Field>
-						<Label htmlFor="notion-token" className={SETTINGS_LABEL_CLASSNAME}>
-							Integration secret
+						<Label
+							htmlFor="notion-mcp-name"
+							className={SETTINGS_LABEL_CLASSNAME}
+						>
+							Name
 						</Label>
 						<Input
-							id="notion-token"
-							type="password"
-							value={formState.token}
-							onChange={(event) => onTokenChange(event.target.value)}
-							placeholder="ntn_..."
+							id="notion-mcp-name"
+							value={formState.name}
+							onChange={(event) => onNameChange(event.target.value)}
+							placeholder="Notion"
 						/>
 					</Field>
+					<Field>
+						<Label
+							htmlFor="notion-mcp-base-url"
+							className={SETTINGS_LABEL_CLASSNAME}
+						>
+							Base URL
+						</Label>
+						<Input
+							id="notion-mcp-base-url"
+							value={formState.baseUrl}
+							onChange={(event) => onBaseUrlChange(event.target.value)}
+							placeholder="https://mcp.notion.com/mcp"
+						/>
+					</Field>
+					<Field>
+						<div className="flex items-center justify-between gap-3">
+							<Label className={SETTINGS_LABEL_CLASSNAME}>
+								Headers (optional)
+							</Label>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={onAddEnvVar}
+							>
+								<Plus />
+								Add variable
+							</Button>
+						</div>
+						{formState.envVars.length > 0 ? (
+							<div className="space-y-2">
+								{formState.envVars.map((envVar) => (
+									<div key={envVar.id} className="flex gap-2">
+										<Input
+											value={envVar.key}
+											onChange={(event) =>
+												onUpdateEnvVar(envVar.id, "key", event.target.value)
+											}
+											placeholder="key"
+										/>
+										<Input
+											type="password"
+											value={envVar.value}
+											onChange={(event) =>
+												onUpdateEnvVar(envVar.id, "value", event.target.value)
+											}
+											placeholder="value"
+										/>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											onClick={() => onRemoveEnvVar(envVar.id)}
+											aria-label="Remove variable"
+										>
+											<X />
+										</Button>
+									</div>
+								))}
+							</div>
+						) : null}
+					</Field>
+					<Collapsible>
+						<CollapsibleTrigger asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								className="w-full justify-between bg-transparent aria-expanded:bg-transparent"
+							>
+								Advanced settings
+								<ChevronDown className="size-4" />
+							</Button>
+						</CollapsibleTrigger>
+						<CollapsibleContent className="space-y-4 pt-4">
+							<FieldDescription>
+								Notion MCP uses OAuth with dynamic client registration, so there
+								are no additional client credentials to enter.
+							</FieldDescription>
+						</CollapsibleContent>
+					</Collapsible>
 				</FieldGroup>
 				<div className="flex justify-end gap-2 pt-2">
 					<Button
