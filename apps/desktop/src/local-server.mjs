@@ -598,12 +598,45 @@ const getRequestOrigin = (request) => {
 	}
 };
 
-const isAuthorizedLocalAppRequest = (request, allowedOrigin) => {
-	if (!allowedOrigin) {
+const getAllowedLocalAppOrigins = (allowedOrigins) =>
+	new Set(
+		allowedOrigins
+			.map((origin) => (typeof origin === "string" ? origin.trim() : ""))
+			.filter(Boolean)
+			.map((origin) => origin.replace(/\/$/, "")),
+	);
+
+const isAuthorizedLocalAppRequest = (request, allowedOrigins) => {
+	const origins = getAllowedLocalAppOrigins(allowedOrigins);
+	if (origins.size === 0) {
 		return false;
 	}
 
-	return getRequestOrigin(request) === allowedOrigin;
+	const requestOrigin = getRequestOrigin(request);
+	return requestOrigin !== null && origins.has(requestOrigin);
+};
+
+const setCorsHeadersForLocalAppRequest = (
+	request,
+	response,
+	allowedOrigins,
+) => {
+	const origins = getAllowedLocalAppOrigins(allowedOrigins);
+	const requestOrigin = getRequestOrigin(request);
+
+	if (requestOrigin === null || !origins.has(requestOrigin)) {
+		return false;
+	}
+
+	response.setHeader("Access-Control-Allow-Origin", requestOrigin);
+	response.setHeader("Vary", "Origin");
+	response.setHeader("Access-Control-Allow-Credentials", "true");
+	response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+	response.setHeader(
+		"Access-Control-Allow-Headers",
+		request.headers["access-control-request-headers"] ?? "content-type",
+	);
+	return true;
 };
 
 const handleChatRequest = async ({
@@ -829,6 +862,10 @@ const handleChatRequest = async ({
 	}${
 		notionConnection
 			? `\n\nThe selected app source for this chat is Notion (${notionConnection.displayName}). Treat it as the preferred source for workspace pages, specs, meeting notes, project docs, and databases. If the user's request could plausibly be answered from Notion, use the Notion tools before saying the context is unavailable. When the user provides a Notion URL or an exact Notion page or database reference, fetch it directly.`
+			: ""
+	}${
+		localFolderContext
+			? "\n\nLocal folder priority: if the user's request is about a local path, shared folder, local file, local audio, local video, local transcript, or local recording, use the local folder tools first and do not use connected app tools unless the user explicitly asks for connected app data."
 			: ""
 	}`;
 	const enabledTools = {
@@ -1208,6 +1245,7 @@ const serveStaticAsset = async (request, response, options = {}) => {
 };
 
 export const startLocalServer = async ({
+	getAllowedOrigins,
 	getSharedLocalFolders,
 	onAuthCallback,
 } = {}) => {
@@ -1215,6 +1253,10 @@ export const startLocalServer = async ({
 	const server = createServer((request, response) => {
 		const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
 		const requestPath = requestUrl.pathname;
+		const allowedOrigins = [
+			localServerOrigin,
+			...(typeof getAllowedOrigins === "function" ? getAllowedOrigins() : []),
+		];
 
 		if (requestPath === "/auth/callback") {
 			void Promise.resolve(onAuthCallback?.(requestUrl.toString()))
@@ -1239,12 +1281,24 @@ export const startLocalServer = async ({
 			requestPath === "/api/realtime-transcription-session" ||
 			requestPath === "/api/enhance-note"
 		) {
-			if (!isAuthorizedLocalAppRequest(request, localServerOrigin)) {
+			if (request.method === "OPTIONS") {
+				if (
+					setCorsHeadersForLocalAppRequest(request, response, allowedOrigins)
+				) {
+					response.statusCode = 204;
+					response.end();
+					return;
+				}
+			}
+
+			if (!isAuthorizedLocalAppRequest(request, allowedOrigins)) {
 				sendJson(response, 403, {
 					error: "Forbidden",
 				});
 				return;
 			}
+
+			setCorsHeadersForLocalAppRequest(request, response, allowedOrigins);
 		}
 
 		if (requestPath === "/api/chat") {

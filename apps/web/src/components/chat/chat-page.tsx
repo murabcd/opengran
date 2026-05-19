@@ -59,8 +59,14 @@ import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
 import { ensureCssHighlightStyles } from "@/lib/css-highlight-styles";
-import { shareLocalFoldersFromText } from "@/lib/local-folder-sharing";
+import {
+	loadStoredSharedLocalFolders,
+	rehydrateSharedLocalFolders,
+	shareLocalFoldersFromText,
+	storeSharedLocalFolders,
+} from "@/lib/local-folder-sharing";
 import { getNoteDisplayTitle } from "@/lib/note-title";
+import { getChatApiUrl } from "@/lib/runtime-config";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
 import { ChatComposer, type ChatComposerMention } from "./chat-composer";
@@ -285,6 +291,10 @@ const useChatPageController = ({
 	const [sharedLocalFolders, setSharedLocalFolders] = React.useState<
 		DesktopLocalFolder[]
 	>([]);
+	const localFolderStorageScope = React.useMemo(
+		() => `chat:${chatId}`,
+		[chatId],
+	);
 	const [selectedSourceIds, setSelectedSourceIds] = React.useState<string[]>(
 		[],
 	);
@@ -297,6 +307,23 @@ const useChatPageController = ({
 		void activeWorkspaceId;
 		setSelectedSourceIds([]);
 	}, [activeWorkspaceId]);
+	React.useEffect(() => {
+		let isCurrent = true;
+		const storedFolders = loadStoredSharedLocalFolders(localFolderStorageScope);
+		setSharedLocalFolders(storedFolders);
+
+		void rehydrateSharedLocalFolders(localFolderStorageScope).then(
+			(folders) => {
+				if (isCurrent) {
+					setSharedLocalFolders(folders);
+				}
+			},
+		);
+
+		return () => {
+			isCurrent = false;
+		};
+	}, [localFolderStorageScope]);
 	const truncateFromMessage = useMutation(api.chats.truncateFromMessage);
 	const persistChatSettings = useMutation(api.chats.setChatSettings);
 	const storedMessages = useQuery(
@@ -307,34 +334,34 @@ const useChatPageController = ({
 		api.automations.getRunningRunForChat,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId, chatId } : "skip",
 	);
-	const transport = React.useMemo(
-		() =>
-			new DefaultChatTransport({
-				api: "/api/chat",
-				prepareSendMessagesRequest: ({
+	const transport = React.useMemo(() => {
+		const chatApiUrl = getChatApiUrl();
+
+		return new DefaultChatTransport({
+			api: chatApiUrl,
+			prepareSendMessagesRequest: ({
+				id,
+				messages,
+				body,
+				headers,
+				credentials,
+				trigger,
+				messageId,
+			}) => ({
+				api: chatApiUrl,
+				headers,
+				credentials,
+				body: {
+					...body,
 					id,
-					messages,
-					body,
-					headers,
-					credentials,
+					message: messages[messages.length - 1],
 					trigger,
 					messageId,
-				}) => ({
-					api: "/api/chat",
-					headers,
-					credentials,
-					body: {
-						...body,
-						id,
-						message: messages[messages.length - 1],
-						trigger,
-						messageId,
-						workspaceId: activeWorkspaceId,
-					},
-				}),
+					workspaceId: activeWorkspaceId,
+				},
 			}),
-		[activeWorkspaceId],
-	);
+		});
+	}, [activeWorkspaceId]);
 	const {
 		messages,
 		setMessages,
@@ -503,14 +530,16 @@ const useChatPageController = ({
 
 		try {
 			const convexToken = await getCachedConvexToken();
-			const { allFolders: nextSharedLocalFolders, newFolders } =
+			const currentSharedLocalFolders = await rehydrateSharedLocalFolders(
+				localFolderStorageScope,
+			);
+			const { allFolders: nextSharedLocalFolders } =
 				await shareLocalFoldersFromText({
-					currentFolders: sharedLocalFolders,
+					currentFolders: currentSharedLocalFolders,
 					text: value,
 				});
-			if (newFolders.length > 0) {
-				setSharedLocalFolders(nextSharedLocalFolders);
-			}
+			setSharedLocalFolders(nextSharedLocalFolders);
+			storeSharedLocalFolders(localFolderStorageScope, nextSharedLocalFolders);
 			onChatPersisted?.(chatId);
 			const readyFiles = getReadyFileParts(attachedFiles);
 			const filePayload = readyFiles.length > 0 ? { files: readyFiles } : {};
@@ -566,11 +595,11 @@ const useChatPageController = ({
 		draft,
 		editingMessageId,
 		isLoading,
+		localFolderStorageScope,
 		mentions,
 		onChatPersisted,
 		selectedReasoningEffort,
 		selectedModel.model,
-		sharedLocalFolders,
 		sendMessage,
 		webSearchEnabled,
 		selectedSourceIds,

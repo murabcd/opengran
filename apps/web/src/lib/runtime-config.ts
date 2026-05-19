@@ -4,7 +4,10 @@ type AppRuntimeConfig = {
 	convexUrl: string;
 	convexSiteUrl: string;
 	isDesktop: boolean;
+	localApiOrigin?: string;
 };
+
+let runtimeConfigSnapshot: AppRuntimeConfig | null = null;
 
 function getEnv(...names: Array<keyof ImportMetaEnv>) {
 	for (const name of names) {
@@ -26,15 +29,23 @@ export async function loadRuntimeConfig(): Promise<AppRuntimeConfig> {
 	if (desktopBridge?.getRuntimeConfig) {
 		const config = await desktopBridge.getRuntimeConfig();
 
-		return {
+		runtimeConfigSnapshot = {
 			...config,
 			isDesktop: true,
 		};
+		return runtimeConfigSnapshot;
 	}
 
-	return {
+	runtimeConfigSnapshot = {
 		convexUrl: getEnv("VITE_CONVEX_URL"),
 		convexSiteUrl: getEnv("VITE_CONVEX_SITE_URL"),
 		isDesktop: false,
 	};
+	return runtimeConfigSnapshot;
+}
+
+export function getChatApiUrl() {
+	return runtimeConfigSnapshot?.localApiOrigin
+		? `${runtimeConfigSnapshot.localApiOrigin}/api/chat`
+		: "/api/chat";
 }

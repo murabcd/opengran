@@ -126,13 +126,19 @@ import { getUIMessageSeedKey, toStoredChatMessages } from "@/lib/chat-snapshot";
 import { getMessagesBefore } from "@/lib/chat-thread";
 import { getCachedConvexToken, prefetchConvexToken } from "@/lib/convex-token";
 import { DESKTOP_MAIN_HEADER_CONTENT_CLASS } from "@/lib/desktop-chrome";
-import { shareLocalFoldersFromText } from "@/lib/local-folder-sharing";
+import {
+	loadStoredSharedLocalFolders,
+	rehydrateSharedLocalFolders,
+	shareLocalFoldersFromText,
+	storeSharedLocalFolders,
+} from "@/lib/local-folder-sharing";
 import { ENHANCED_NOTE_TEMPLATE_SLUG } from "@/lib/note-templates";
 import {
 	getRecipeIcon,
 	type RecipePrompt,
 	type RecipeSlug,
 } from "@/lib/recipes";
+import { getChatApiUrl } from "@/lib/runtime-config";
 import {
 	getMentionAnchorRect,
 	getMentionPickerPosition,
@@ -460,6 +466,10 @@ const useNoteComposerController = ({
 	const [sharedLocalFolders, setSharedLocalFolders] = React.useState<
 		DesktopLocalFolder[]
 	>([]);
+	const localFolderStorageScope = React.useMemo(
+		() => `note-chat:${currentChatId}`,
+		[currentChatId],
+	);
 	const [, startTranscriptPanelTransition] = React.useTransition();
 	const noteId = (noteContext.noteId as Id<"notes"> | null) ?? null;
 	const noteStorageScopeKey = getNoteStorageScopeKey(noteId);
@@ -584,6 +594,24 @@ const useNoteComposerController = ({
 	const suppressRecipePickerUntilUserActionRef = React.useRef(false);
 	const panelMode = panelModeState;
 	const presentationMode = presentationModeState;
+
+	React.useEffect(() => {
+		let isCurrent = true;
+		const storedFolders = loadStoredSharedLocalFolders(localFolderStorageScope);
+		setSharedLocalFolders(storedFolders);
+
+		void rehydrateSharedLocalFolders(localFolderStorageScope).then(
+			(folders) => {
+				if (isCurrent) {
+					setSharedLocalFolders(folders);
+				}
+			},
+		);
+
+		return () => {
+			isCurrent = false;
+		};
+	}, [localFolderStorageScope]);
 
 	const readNoteContext = React.useCallback(
 		() =>
@@ -789,34 +817,34 @@ const useNoteComposerController = ({
 		transcriptionSessionState.scopeKey,
 	]);
 
-	const transport = React.useMemo(
-		() =>
-			new DefaultChatTransport({
-				api: "/api/chat",
-				prepareSendMessagesRequest: ({
+	const transport = React.useMemo(() => {
+		const chatApiUrl = getChatApiUrl();
+
+		return new DefaultChatTransport({
+			api: chatApiUrl,
+			prepareSendMessagesRequest: ({
+				id,
+				messages,
+				body,
+				headers,
+				credentials,
+				trigger,
+				messageId,
+			}) => ({
+				api: chatApiUrl,
+				headers,
+				credentials,
+				body: {
+					...body,
 					id,
-					messages,
-					body,
-					headers,
-					credentials,
+					message: messages[messages.length - 1],
 					trigger,
 					messageId,
-				}) => ({
-					api: "/api/chat",
-					headers,
-					credentials,
-					body: {
-						...body,
-						id,
-						message: messages[messages.length - 1],
-						trigger,
-						messageId,
-						workspaceId: activeWorkspaceId,
-					},
-				}),
+					workspaceId: activeWorkspaceId,
+				},
 			}),
-		[activeWorkspaceId],
-	);
+		});
+	}, [activeWorkspaceId]);
 
 	const initialMessages = React.useMemo(
 		() => toStoredChatMessages(storedMessages ?? []),
@@ -1475,14 +1503,16 @@ const useNoteComposerController = ({
 			const currentNoteContext = readNoteContext();
 			const convexToken = await getCachedConvexToken();
 			const outgoingText = nextMessage || selectedRecipe?.name || "";
-			const { allFolders: nextSharedLocalFolders, newFolders } =
+			const currentSharedLocalFolders = await rehydrateSharedLocalFolders(
+				localFolderStorageScope,
+			);
+			const { allFolders: nextSharedLocalFolders } =
 				await shareLocalFoldersFromText({
-					currentFolders: sharedLocalFolders,
+					currentFolders: currentSharedLocalFolders,
 					text: outgoingText,
 				});
-			if (newFolders.length > 0) {
-				setSharedLocalFolders(nextSharedLocalFolders);
-			}
+			setSharedLocalFolders(nextSharedLocalFolders);
+			storeSharedLocalFolders(localFolderStorageScope, nextSharedLocalFolders);
 			const requestBody = {
 				model: selectedModel.model,
 				reasoningEffort: selectedReasoningEffort,
@@ -1535,6 +1565,7 @@ const useNoteComposerController = ({
 	}, [
 		isChatLoading,
 		attachedFiles,
+		localFolderStorageScope,
 		message,
 		openRightSidebar,
 		presentationMode,
@@ -1544,7 +1575,6 @@ const useNoteComposerController = ({
 		selectedReasoningEffort,
 		editingMessageId,
 		selectedModel.model,
-		sharedLocalFolders,
 		sendMessage,
 		setPanelMode,
 	]);

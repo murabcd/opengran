@@ -693,6 +693,10 @@ export const handleChatRequest = async (
 		notionConnection
 			? `\n\nThe selected app source for this chat is Notion (${notionConnection.displayName}). Treat it as the preferred source for workspace pages, specs, meeting notes, project docs, and databases. If the user's request could plausibly be answered from Notion, use the Notion tools before saying the context is unavailable. When the user provides a Notion URL or an exact Notion page or database reference, fetch it directly.`
 			: ""
+	}${
+		localFolderContext
+			? "\n\nLocal folder priority: if the user's request is about a local path, shared folder, local file, local audio, local video, local transcript, or local recording, use the local folder tools first and do not use connected app tools unless the user explicitly asks for connected app data."
+			: ""
 	}`;
 	const enabledTools: ToolSet = {};
 

@@ -78,6 +78,13 @@ export const toolUiMetadata = {
 		complete: "Searched local files",
 		subtitleKeys: ["query"],
 	},
+	run_local_bash: {
+		groupKey: "local-folder",
+		icon: "terminal",
+		running: "Exploring local snapshot",
+		complete: "Explored local snapshot",
+		subtitleKeys: ["command"],
+	},
 	notion_fetch: {
 		icon: "file-search",
 		running: "Reading Notion",

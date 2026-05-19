@@ -2,9 +2,28 @@ import { mkdtemp, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildLocalFolderTools } from "../../../packages/ai/src/local-folder-tools.mjs";
+import {
+	buildLocalFolderSystemContext,
+	buildLocalFolderTools,
+	getTranscriptionMediaType,
+} from "../../../packages/ai/src/local-folder-tools.mjs";
 
 describe("local folder tools", () => {
+	it("instructs the model to use tools for shared local path questions", () => {
+		const context = buildLocalFolderSystemContext([
+			{
+				name: "shared",
+				path: "/Users/test/Documents/shared",
+			},
+		]);
+
+		expect(context).toContain("use the local folder tools before answering");
+		expect(context).toContain("do not ask the user to run terminal commands");
+		expect(context).toContain("Do not use connected app tools");
+		expect(context).toContain("local audio");
+		expect(context).toContain("run_local_bash");
+	});
+
 	it("exposes a sandboxed local audio transcription tool", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "opengran-local-tools-"));
 		try {
@@ -38,12 +57,12 @@ describe("local folder tools", () => {
 		}
 	});
 
-	it("rejects local audio files that exceed the direct transcription size cap", async () => {
+	it("rejects local audio files that exceed the source transcription size cap", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "opengran-local-tools-"));
 		try {
 			const filePath = join(directory, "large.m4a");
 			await writeFile(filePath, "");
-			await truncate(filePath, 25_000_001);
+			await truncate(filePath, 250_000_001);
 
 			const tools = buildLocalFolderTools([
 				{
@@ -64,6 +83,47 @@ describe("local folder tools", () => {
 					},
 				),
 			).rejects.toThrow("Audio file is too large to transcribe directly");
+		} finally {
+			await rm(directory, { force: true, recursive: true });
+		}
+	});
+
+	it("uses explicit media types for OpenAI transcription uploads", () => {
+		expect(getTranscriptionMediaType("meeting.m4a")).toBe("audio/mp4");
+		expect(getTranscriptionMediaType("meeting.mp4")).toBe("video/mp4");
+		expect(getTranscriptionMediaType("meeting.mp3")).toBe("audio/mpeg");
+		expect(getTranscriptionMediaType("meeting.wav")).toBe("audio/wav");
+	});
+
+	it("runs bash commands against a text-only virtual snapshot", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "opengran-local-tools-"));
+		try {
+			await writeFile(join(directory, "notes.txt"), "alpha\nbeta\nalpha\n");
+			await writeFile(join(directory, "image.png"), "not mounted as text");
+
+			const tools = buildLocalFolderTools([
+				{
+					name: "shared",
+					path: directory,
+				},
+			]);
+
+			expect(Object.keys(tools)).toContain("run_local_bash");
+			const result = await tools.run_local_bash.execute?.(
+				{
+					rootIndex: 0,
+					command: "cat notes.txt",
+				},
+				{
+					messages: [],
+					toolCallId: "test",
+				},
+			);
+
+			expect(result?.stdout).toContain("alpha");
+			expect(result?.stdout).not.toContain("image.png");
+			expect(result?.snapshot.mountedFileCount).toBe(1);
+			expect(result?.snapshot.skippedFileCount).toBe(1);
 		} finally {
 			await rm(directory, { force: true, recursive: true });
 		}

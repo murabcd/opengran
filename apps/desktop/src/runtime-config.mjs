@@ -63,6 +63,7 @@ const createRuntimeConfig = (value) => {
 const toPublicRuntimeConfig = (value) => ({
 	convexUrl: value.convexUrl,
 	convexSiteUrl: value.convexSiteUrl,
+	...(value.localApiOrigin ? { localApiOrigin: value.localApiOrigin } : {}),
 });
 
 const resolveRuntimeConfig = async () => {
@@ -109,5 +110,8 @@ export const hydrateRuntimeConfig = async () => {
 	return runtimeConfig;
 };
 
-export const getRuntimeConfig = async () =>
-	toPublicRuntimeConfig(await resolveRuntimeConfig());
+export const getRuntimeConfig = async (extra = {}) =>
+	toPublicRuntimeConfig({
+		...(await resolveRuntimeConfig()),
+		...extra,
+	});

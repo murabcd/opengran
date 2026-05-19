@@ -2049,6 +2049,18 @@ const closeLocalServer = async () => {
 const ensureLocalServer = async () => {
 	if (!localServer) {
 		localServer = await startLocalServer({
+			getAllowedOrigins: () => {
+				const developmentUrl = process.env.OPENGRAN_RENDERER_URL?.trim();
+				if (!developmentUrl) {
+					return [];
+				}
+
+				try {
+					return [new URL(developmentUrl).origin];
+				} catch {
+					return [];
+				}
+			},
 			getSharedLocalFolders: (ids) =>
 				ids
 					.map((id) => sharedLocalFolders.get(id))
@@ -5051,7 +5063,8 @@ ipcMain.handle("app:get-meta", () => ({
 }));
 
 ipcMain.handle("app:get-runtime-config", async () => {
-	return await getRuntimeConfig();
+	const server = await ensureLocalServer();
+	return await getRuntimeConfig({ localApiOrigin: server.origin });
 });
 
 ipcMain.handle("app:get-preferences", async () => {

@@ -1,9 +1,11 @@
 import { existsSync } from "node:fs";
 import { cp, mkdir, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import "./build-system-audio-helper.mjs";
 
+const require = createRequire(import.meta.url);
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceDir = resolve(packageRoot, "src");
 const distDir = resolve(packageRoot, "dist");
@@ -15,6 +17,23 @@ const bundleConvexGeneratedDir = resolve(bundleRootDir, "convex", "_generated");
 const packageAiSrcDir = resolve(packageRoot, "../../packages/ai/src");
 const bundleAiSrcDir = resolve(bundleRootDir, "packages", "ai", "src");
 const desktopAssetsDir = resolve(sourceDir, "assets");
+
+const resolveOptionalPackageBinary = (packageName) => {
+	try {
+		return require(packageName).path;
+	} catch {
+		return null;
+	}
+};
+
+const copyOptionalExecutable = async ({ from, to }) => {
+	if (!from || !existsSync(from)) {
+		return false;
+	}
+
+	await cp(from, to);
+	return true;
+};
 
 if (!existsSync(resolve(webDistDir, "index.html"))) {
 	throw new Error(
@@ -53,6 +72,15 @@ if (process.platform === "darwin") {
 			resolve(distDir, "bin", helperName),
 		);
 	}
+
+	await copyOptionalExecutable({
+		from: resolveOptionalPackageBinary("@ffmpeg-installer/ffmpeg"),
+		to: resolve(distDir, "bin", "ffmpeg"),
+	});
+	await copyOptionalExecutable({
+		from: resolveOptionalPackageBinary("@ffprobe-installer/ffprobe"),
+		to: resolve(distDir, "bin", "ffprobe"),
+	});
 }
 
 await mkdir(bundleDesktopDistDir, { recursive: true });

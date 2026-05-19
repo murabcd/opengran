@@ -179,6 +179,7 @@ export interface OpenGranDesktopBridge {
 	getRuntimeConfig: () => Promise<{
 		convexUrl: string;
 		convexSiteUrl: string;
+		localApiOrigin?: string;
 	}>;
 	authFetch: (request: {
 		path: string;
