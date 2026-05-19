@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildLocalFolderSystemContext,
 	buildLocalFolderTools,
+	getImageMediaType,
 	getTranscriptionMediaType,
 } from "../../../packages/ai/src/local-folder-tools.mjs";
 
@@ -21,6 +22,7 @@ describe("local folder tools", () => {
 		expect(context).toContain("do not ask the user to run terminal commands");
 		expect(context).toContain("Do not use connected app tools");
 		expect(context).toContain("local audio");
+		expect(context).toContain("For local images");
 		expect(context).toContain("run_local_bash");
 	});
 
@@ -93,6 +95,39 @@ describe("local folder tools", () => {
 		expect(getTranscriptionMediaType("meeting.mp4")).toBe("video/mp4");
 		expect(getTranscriptionMediaType("meeting.mp3")).toBe("audio/mpeg");
 		expect(getTranscriptionMediaType("meeting.wav")).toBe("audio/wav");
+	});
+
+	it("exposes local image inspection and semantic search tools", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "opengran-local-tools-"));
+		try {
+			await writeFile(join(directory, "notes.txt"), "not an image");
+
+			const tools = buildLocalFolderTools([
+				{
+					name: "shared",
+					path: directory,
+				},
+			]);
+
+			expect(Object.keys(tools)).toContain("inspect_local_image");
+			expect(Object.keys(tools)).toContain("search_local_images");
+			expect(getImageMediaType("screen.png")).toBe("image/png");
+			expect(getImageMediaType("photo.jpg")).toBe("image/jpeg");
+			await expect(
+				tools.inspect_local_image.execute?.(
+					{
+						rootIndex: 0,
+						relativePath: "notes.txt",
+					},
+					{
+						messages: [],
+						toolCallId: "test",
+					},
+				),
+			).rejects.toThrow("Only supported image files can be inspected");
+		} finally {
+			await rm(directory, { force: true, recursive: true });
+		}
 	});
 
 	it("runs bash commands against a text-only virtual snapshot", async () => {

@@ -12,6 +12,8 @@ export declare const resolveLocalFolderRoots: (
 	references: string[],
 ) => Promise<LocalFolderRoot[]>;
 
+export declare const getImageMediaType: (path: string) => string;
+
 export declare const buildLocalFolderSystemContext: (
 	roots: LocalFolderRoot[],
 ) => string;

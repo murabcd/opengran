@@ -71,6 +71,20 @@ export const toolUiMetadata = {
 		complete: "Transcribed local audio",
 		subtitleKeys: ["relativePath"],
 	},
+	inspect_local_image: {
+		groupKey: "local-folder",
+		icon: "file-image",
+		running: "Inspecting local image",
+		complete: "Inspected local image",
+		subtitleKeys: ["relativePath"],
+	},
+	search_local_images: {
+		groupKey: "local-folder",
+		icon: "file-image",
+		running: "Searching local images",
+		complete: "Searched local images",
+		subtitleKeys: ["query"],
+	},
 	search_local_files: {
 		groupKey: "local-folder",
 		icon: "file-search",

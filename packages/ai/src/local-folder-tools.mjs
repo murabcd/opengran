@@ -19,10 +19,16 @@ import {
 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { experimental_transcribe as transcribe, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
+import {
+	embed,
+	generateText,
+	tool,
+	experimental_transcribe as transcribe,
+} from "ai";
 import { createBashTool } from "bash-tool";
 import { z } from "zod";
+import { DEFAULT_CHAT_MODEL_ID } from "./models.mjs";
 import { TRANSCRIPTION_MODEL } from "./transcription.mjs";
 
 export { extractTextFromUIMessage } from "./local-path-references.mjs";
@@ -37,6 +43,10 @@ const MAX_BASH_SNAPSHOT_FILES = 500;
 const MAX_BASH_SNAPSHOT_FILE_BYTES = 250_000;
 const MAX_BASH_SNAPSHOT_BYTES = 3_000_000;
 const MAX_BASH_OUTPUT_LENGTH = 20_000;
+const MAX_IMAGE_BYTES = 20_000_000;
+const MAX_IMAGE_ANALYSIS_PROMPT_LENGTH = 1_000;
+const MAX_IMAGE_SEARCH_FILES = 12;
+const MAX_IMAGE_SEARCH_RESULTS = 10;
 const MAX_TRANSCRIPTION_SOURCE_BYTES = 250_000_000;
 const MAX_TRANSCRIPTION_CHUNK_BYTES = 25_000_000;
 const MAX_TRANSCRIPTION_SECONDS = 1_380;
@@ -44,6 +54,7 @@ const TRANSCRIPTION_CHUNK_SECONDS = 1_200;
 const MAX_TRANSCRIPTION_PROMPT_LENGTH = 1_000;
 const transcriptionCache = new Map();
 const bashToolCache = new Map();
+const imageMetadataCache = new Map();
 const execFileAsync = promisify(execFile);
 const aiRuntimeDir = dirname(fileURLToPath(import.meta.url));
 const IGNORED_DIRECTORY_NAMES = new Set([
@@ -103,6 +114,22 @@ const LOCAL_TRANSCRIPTION_EXTENSIONS = new Set([
 	".wav",
 	".webm",
 ]);
+const LOCAL_IMAGE_EXTENSIONS = new Set([
+	".gif",
+	".heic",
+	".jpeg",
+	".jpg",
+	".png",
+	".webp",
+]);
+const IMAGE_MEDIA_TYPES = {
+	".gif": "image/gif",
+	".heic": "image/heic",
+	".jpeg": "image/jpeg",
+	".jpg": "image/jpeg",
+	".png": "image/png",
+	".webp": "image/webp",
+};
 const TRANSCRIPTION_MEDIA_TYPES = {
 	".m4a": "audio/mp4",
 	".mov": "video/quicktime",
@@ -204,8 +231,16 @@ const isProbablyTextFile = (path) => {
 const isSupportedTranscriptionFile = (path) =>
 	LOCAL_TRANSCRIPTION_EXTENSIONS.has(getExtension(path));
 
+const isSupportedImageFile = (path) =>
+	LOCAL_IMAGE_EXTENSIONS.has(getExtension(path));
+
+export const getImageMediaType = (path) =>
+	IMAGE_MEDIA_TYPES[getExtension(path)] ?? "image/png";
+
 export const getTranscriptionMediaType = (path) =>
 	TRANSCRIPTION_MEDIA_TYPES[getExtension(path)] ?? "audio/wav";
+
+const imageEmbeddingModel = openai.embedding("text-embedding-3-small");
 
 const createTranscriptionModel = (mediaType) => {
 	const model = openai.transcription(TRANSCRIPTION_MODEL);
@@ -324,6 +359,18 @@ const withDuration = async (operation) => {
 	};
 };
 
+const logLocalToolEvent = (event, payload = {}) => {
+	if (
+		process.env.OPENGRAN_LOCAL_TOOLS_DEBUG !== "1" &&
+		!event.startsWith("image_search_") &&
+		!event.startsWith("image_metadata_")
+	) {
+		return;
+	}
+
+	console.info("[local-tools]", event, payload);
+};
+
 const toRootSummary = (root, index) => ({
 	index,
 	name: root.name,
@@ -418,6 +465,378 @@ const readLocalFile = async ({ relativePath, root }) => {
 		sizeBytes: fileStat.size,
 		truncated,
 		content,
+	};
+};
+
+const buildImageCacheKey = ({ filePath, fileStat }) =>
+	[filePath, fileStat.size, fileStat.mtimeMs].join(":");
+
+const cosineSimilarity = (left, right) => {
+	let dot = 0;
+	let leftMagnitude = 0;
+	let rightMagnitude = 0;
+	const length = Math.min(left.length, right.length);
+
+	for (let index = 0; index < length; index += 1) {
+		dot += left[index] * right[index];
+		leftMagnitude += left[index] * left[index];
+		rightMagnitude += right[index] * right[index];
+	}
+
+	if (leftMagnitude === 0 || rightMagnitude === 0) {
+		return 0;
+	}
+
+	return dot / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
+};
+
+const tokenizeSearchQuery = (query) =>
+	query
+		.toLowerCase()
+		.split(/[^\p{L}\p{N}]+/u)
+		.map((token) => token.trim())
+		.filter((token) => token.length >= 3);
+
+const scoreImagePathCandidate = ({
+	imagePath,
+	queryTokens,
+	rootRelativePath,
+}) => {
+	const normalizedPath = imagePath.toLowerCase();
+	const normalizedName = basename(imagePath).toLowerCase();
+	const depth = imagePath.split("/").length - 1;
+	const tokenHits = queryTokens.filter((token) =>
+		normalizedPath.includes(token),
+	).length;
+	const screenshotBoost =
+		normalizedName.includes("screenshot") ||
+		normalizedName.includes("screen shot")
+			? 4
+			: 0;
+	const rootFolderBoost = rootRelativePath === "." && depth === 0 ? 3 : 0;
+	const shallowBoost = Math.max(0, 3 - depth);
+
+	return tokenHits * 5 + screenshotBoost + rootFolderBoost + shallowBoost;
+};
+
+const scoreImageDescriptionCandidate = ({ description, queryTokens }) => {
+	const normalizedDescription = description.toLowerCase();
+	const tokenHits = queryTokens.filter((token) =>
+		normalizedDescription.includes(token),
+	).length;
+	const explicitMatchBoost =
+		/\b(appears to match|matches|match: yes|yes[, -]|relevant)\b/iu.test(
+			description,
+		)
+			? 0.35
+			: 0;
+	const explicitNonMatchPenalty =
+		/\b(does not match|not a match|match: no|not relevant)\b/iu.test(
+			description,
+		)
+			? 0.6
+			: 0;
+
+	return tokenHits * 0.08 + explicitMatchBoost - explicitNonMatchPenalty;
+};
+
+const createImageDetailProviderOptions = (detail) =>
+	detail === "low" || detail === "high"
+		? {
+				openai: {
+					imageDetail: detail,
+				},
+			}
+		: undefined;
+
+const inspectLocalImage = async ({
+	detail = "auto",
+	prompt,
+	relativePath,
+	root,
+}) => {
+	const filePath = resolveInsideRoot({ relativePath, root });
+	const fileStat = await stat(filePath);
+
+	if (!fileStat.isFile()) {
+		throw new Error("Path is not a file.");
+	}
+
+	if (!isSupportedImageFile(filePath)) {
+		throw new Error("Only supported image files can be inspected.");
+	}
+
+	if (fileStat.size > MAX_IMAGE_BYTES) {
+		throw new Error(
+			`Image file is too large to inspect directly. Maximum size is ${MAX_IMAGE_BYTES} bytes.`,
+		);
+	}
+
+	const normalizedPrompt =
+		typeof prompt === "string"
+			? prompt.trim().slice(0, MAX_IMAGE_ANALYSIS_PROMPT_LENGTH)
+			: "";
+	const image = await readFile(filePath);
+	const { text } = await generateText({
+		model: openai(DEFAULT_CHAT_MODEL_ID),
+		messages: [
+			{
+				role: "user",
+				content: [
+					{
+						type: "text",
+						text:
+							normalizedPrompt ||
+							"Inspect this local image. Describe what is visible, extract any readable text, and mention notable UI, document, chart, or scene details.",
+					},
+					{
+						type: "image",
+						image,
+						mediaType: getImageMediaType(filePath),
+						providerOptions: createImageDetailProviderOptions(detail),
+					},
+				],
+			},
+		],
+	});
+
+	return {
+		path: relative(root.path, filePath),
+		sizeBytes: fileStat.size,
+		mediaType: getImageMediaType(filePath),
+		analysis: text,
+	};
+};
+
+const describeImageForSearch = async ({ filePath, fileStat, query }) => {
+	const cacheKey = buildImageCacheKey({ filePath, fileStat });
+	const cached = imageMetadataCache.get(cacheKey);
+	if (cached) {
+		logLocalToolEvent("image_metadata_cache_hit", {
+			path: filePath,
+			sizeBytes: fileStat.size,
+		});
+		return {
+			...cached,
+			cached: true,
+		};
+	}
+
+	if (fileStat.size > MAX_IMAGE_BYTES) {
+		throw new Error("Image file is too large to index.");
+	}
+
+	const image = await readFile(filePath);
+	const startedAt = Date.now();
+	logLocalToolEvent("image_metadata_start", {
+		path: filePath,
+		sizeBytes: fileStat.size,
+	});
+	const { text } = await generateText({
+		model: openai(DEFAULT_CHAT_MODEL_ID),
+		messages: [
+			{
+				role: "user",
+				content: [
+					{
+						type: "text",
+						text: [
+							"Create searchable metadata for this image.",
+							"Include a concise title, a factual description, visible text/OCR if present, objects, people, UI elements, colors, and likely document/screenshot context.",
+							query
+								? `The user's image search query is: ${query}. Explicitly say whether the image appears to match it and why.`
+								: "",
+							"Do not invent details that are not visible.",
+						]
+							.filter(Boolean)
+							.join(" "),
+					},
+					{
+						type: "image",
+						image,
+						mediaType: getImageMediaType(filePath),
+						providerOptions: createImageDetailProviderOptions("low"),
+					},
+				],
+			},
+		],
+	});
+	logLocalToolEvent("image_metadata_generated", {
+		durationMs: Date.now() - startedAt,
+		path: filePath,
+		textLength: text.length,
+	});
+	const embeddingStartedAt = Date.now();
+	const { embedding } = await embed({
+		model: imageEmbeddingModel,
+		value: text.replaceAll("\n", " "),
+	});
+	logLocalToolEvent("image_metadata_embedded", {
+		durationMs: Date.now() - embeddingStartedAt,
+		path: filePath,
+	});
+	const metadata = {
+		description: text,
+		embedding,
+	};
+
+	imageMetadataCache.set(cacheKey, metadata);
+
+	return {
+		...metadata,
+		cached: false,
+	};
+};
+
+const searchLocalImages = async ({
+	maxResults = 5,
+	query,
+	relativePath = ".",
+	root,
+}) => {
+	const needle = query.trim();
+
+	if (!needle) {
+		throw new Error("Search query is required.");
+	}
+
+	const directoryPath = resolveInsideRoot({ relativePath, root });
+	const directoryStat = await stat(directoryPath);
+
+	if (!directoryStat.isDirectory()) {
+		throw new Error("Search path is not a directory.");
+	}
+
+	const files = [];
+	const walkStartedAt = Date.now();
+	await walkFiles({ directory: directoryPath, files, root });
+	logLocalToolEvent("image_search_walk_complete", {
+		durationMs: Date.now() - walkStartedAt,
+		fileCount: files.length,
+		path: directoryPath,
+		query: needle,
+	});
+
+	const rootRelativePath = relative(root.path, directoryPath) || ".";
+	const queryTokens = tokenizeSearchQuery(needle);
+	const imageCandidates = files
+		.filter(isSupportedImageFile)
+		.map((imagePath) => ({
+			path: imagePath,
+			pathScore: scoreImagePathCandidate({
+				imagePath,
+				queryTokens,
+				rootRelativePath,
+			}),
+		}))
+		.sort(
+			(left, right) =>
+				right.pathScore - left.pathScore ||
+				left.path.split("/").length - right.path.split("/").length ||
+				left.path.localeCompare(right.path),
+		);
+	const totalImageCount = imageCandidates.length;
+	const imagePaths = imageCandidates
+		.slice(0, MAX_IMAGE_SEARCH_FILES)
+		.map((candidate) => candidate.path);
+	logLocalToolEvent("image_search_candidates", {
+		candidateCount: imagePaths.length,
+		candidates: imageCandidates
+			.slice(0, MAX_IMAGE_SEARCH_FILES)
+			.map((candidate) => ({
+				path: candidate.path,
+				pathScore: candidate.pathScore,
+			})),
+		maxCandidates: MAX_IMAGE_SEARCH_FILES,
+		query: needle,
+		queryTokens,
+		totalImageCount,
+		truncated: imagePaths.length < totalImageCount,
+	});
+	const queryEmbeddingStartedAt = Date.now();
+	const { embedding: queryEmbedding } = await embed({
+		model: imageEmbeddingModel,
+		value: needle,
+	});
+	logLocalToolEvent("image_search_query_embedded", {
+		durationMs: Date.now() - queryEmbeddingStartedAt,
+		query: needle,
+	});
+	const results = [];
+	let cachedMetadataCount = 0;
+
+	for (const imagePath of imagePaths) {
+		const imageStartedAt = Date.now();
+		const absolutePath = resolveInsideRoot({ relativePath: imagePath, root });
+		const fileStat = await stat(absolutePath).catch(() => null);
+
+		if (!fileStat?.isFile() || fileStat.size > MAX_IMAGE_BYTES) {
+			logLocalToolEvent("image_search_candidate_skipped", {
+				path: imagePath,
+				reason: !fileStat?.isFile() ? "not a file" : "too large",
+				sizeBytes: fileStat?.size,
+			});
+			continue;
+		}
+
+		const metadata = await describeImageForSearch({
+			filePath: absolutePath,
+			fileStat,
+			query: needle,
+		});
+		if (metadata.cached) {
+			cachedMetadataCount += 1;
+		}
+
+		const pathSimilarity = imagePath
+			.toLowerCase()
+			.includes(needle.toLowerCase())
+			? 0.25
+			: 0;
+		const pathCandidateScore =
+			imageCandidates.find((candidate) => candidate.path === imagePath)
+				?.pathScore ?? 0;
+		const descriptionScore = scoreImageDescriptionCandidate({
+			description: metadata.description,
+			queryTokens,
+		});
+		results.push({
+			path: imagePath,
+			sizeBytes: fileStat.size,
+			score:
+				cosineSimilarity(queryEmbedding, metadata.embedding) +
+				pathSimilarity +
+				pathCandidateScore / 100 +
+				descriptionScore,
+			description: metadata.description,
+		});
+		logLocalToolEvent("image_search_candidate_complete", {
+			cached: metadata.cached,
+			durationMs: Date.now() - imageStartedAt,
+			path: imagePath,
+			score: results.at(-1)?.score,
+			sizeBytes: fileStat.size,
+		});
+	}
+
+	const normalizedMaxResults = Math.min(
+		Math.max(Number.parseInt(String(maxResults), 10) || 5, 1),
+		MAX_IMAGE_SEARCH_RESULTS,
+	);
+
+	return {
+		path: rootRelativePath,
+		indexedImageCount: imagePaths.length,
+		cachedMetadataCount,
+		truncated:
+			files.length >= MAX_WALK_FILES || imagePaths.length < totalImageCount,
+		results: results
+			.sort((left, right) => right.score - left.score)
+			.slice(0, normalizedMaxResults)
+			.map((result) => ({
+				...result,
+				score: Number(result.score.toFixed(4)),
+			})),
 	};
 };
 
@@ -567,7 +986,9 @@ const transcribeLocalAudio = async ({
 		};
 	}
 
-	const durationInSeconds = await probeMediaDuration(filePath).catch(() => null);
+	const durationInSeconds = await probeMediaDuration(filePath).catch(
+		() => null,
+	);
 
 	let result;
 	try {
@@ -762,7 +1183,9 @@ const normalizeBashOutput = (output) => {
 		.split(",")
 		.map((value) => Number.parseInt(value, 10));
 
-	if (bytes.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) {
+	if (
+		bytes.some((value) => !Number.isInteger(value) || value < 0 || value > 255)
+	) {
 		return output;
 	}
 
@@ -934,6 +1357,7 @@ export const buildLocalFolderSystemContext = (roots) =>
 				"When the user asks about a shared local path, folder contents, local file, local audio, local video, transcript, recording, or media inside a shared folder, use the local folder tools before answering. Do not use connected app tools such as Notion for local filesystem questions unless the user explicitly asks about those connected apps.",
 				"Do not say you cannot access the folder, and do not ask the user to run terminal commands, unless a local folder tool fails or the needed path is outside the shared folders.",
 				"For broad text exploration, use run_local_bash. It runs only inside a virtual snapshot of text-like files from one shared folder, not on the user's real filesystem. Use structured local tools for direct folder listing, direct file reads, and media transcription.",
+				"For local images, use inspect_local_image for a specific image and search_local_images when the user asks to find images by visual meaning, OCR text, screenshots, diagrams, or image contents.",
 				"Shared local folders:",
 				...roots.map((root, index) => `${index}: ${root.name} (${root.path})`),
 			].join("\n");
@@ -1003,7 +1427,9 @@ export const buildLocalFolderTools = (roots) => {
 				relativePath: z
 					.string()
 					.min(1)
-					.describe("Audio or video file path relative to the shared folder root."),
+					.describe(
+						"Audio or video file path relative to the shared folder root.",
+					),
 				language: z
 					.string()
 					.optional()
@@ -1018,6 +1444,69 @@ export const buildLocalFolderTools = (roots) => {
 					transcribeLocalAudio({
 						language,
 						prompt,
+						relativePath,
+						root: getRoot(rootIndex),
+					}),
+				),
+		}),
+		inspect_local_image: tool({
+			description:
+				"Inspect an image inside a local folder explicitly shared by the desktop user. Use this to describe a screenshot/photo/image, extract visible text, read charts, or answer questions about a specific image file.",
+			inputSchema: z.object({
+				rootIndex: rootSchema.describe(
+					"Shared folder index from the system context.",
+				),
+				relativePath: z
+					.string()
+					.min(1)
+					.describe("Image file path relative to the shared folder root."),
+				prompt: z
+					.string()
+					.optional()
+					.describe("Optional specific question to answer about the image."),
+				detail: z
+					.enum(["auto", "low", "high"])
+					.default("auto")
+					.describe("Image detail level. Use high for OCR or small UI text."),
+			}),
+			execute: async ({ detail, prompt, rootIndex, relativePath }) =>
+				withDuration(() =>
+					inspectLocalImage({
+						detail,
+						prompt,
+						relativePath,
+						root: getRoot(rootIndex),
+					}),
+				),
+		}),
+		search_local_images: tool({
+			description:
+				"Semantically search images inside a local folder explicitly shared by the desktop user. Use this when the user asks to find screenshots, photos, diagrams, images containing text, or images matching a visual description.",
+			inputSchema: z.object({
+				rootIndex: rootSchema.describe(
+					"Shared folder index from the system context.",
+				),
+				relativePath: z
+					.string()
+					.default(".")
+					.describe("Directory path relative to the shared folder root."),
+				query: z
+					.string()
+					.min(1)
+					.describe("Semantic image search query or visible text to find."),
+				maxResults: z
+					.number()
+					.int()
+					.min(1)
+					.max(MAX_IMAGE_SEARCH_RESULTS)
+					.default(5)
+					.describe("Maximum number of matching images to return."),
+			}),
+			execute: async ({ maxResults, query, relativePath, rootIndex }) =>
+				withDuration(() =>
+					searchLocalImages({
+						maxResults,
+						query,
 						relativePath,
 						root: getRoot(rootIndex),
 					}),
