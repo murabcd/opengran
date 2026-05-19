@@ -7,8 +7,10 @@ import {
 	relative,
 	resolve,
 } from "node:path";
-import { tool } from "ai";
+import { experimental_transcribe as transcribe, tool } from "ai";
+import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { TRANSCRIPTION_MODEL } from "./transcription.mjs";
 
 export { extractTextFromUIMessage } from "./local-path-references.mjs";
 
@@ -18,6 +20,9 @@ const MAX_WALK_FILES = 1000;
 const MAX_FILE_BYTES = 120_000;
 const MAX_SEARCH_MATCHES = 40;
 const MAX_SEARCH_FILE_BYTES = 250_000;
+const MAX_TRANSCRIPTION_AUDIO_BYTES = 25_000_000;
+const MAX_TRANSCRIPTION_PROMPT_LENGTH = 1_000;
+const transcriptionCache = new Map();
 const IGNORED_DIRECTORY_NAMES = new Set([
 	".cache",
 	".git",
@@ -65,6 +70,15 @@ const TEXT_FILE_EXTENSIONS = new Set([
 	".yaml",
 	".yml",
 ]);
+const LOCAL_TRANSCRIPTION_EXTENSIONS = new Set([
+	".m4a",
+	".mp3",
+	".mp4",
+	".mpeg",
+	".mpga",
+	".wav",
+	".webm",
+]);
 
 const isIgnoredDirectory = (name) => IGNORED_DIRECTORY_NAMES.has(name);
 
@@ -83,6 +97,9 @@ const isProbablyTextFile = (path) => {
 		name === "license"
 	);
 };
+
+const isSupportedTranscriptionFile = (path) =>
+	LOCAL_TRANSCRIPTION_EXTENSIONS.has(getExtension(path));
 
 const resolveInsideRoot = ({ relativePath = ".", root }) => {
 	const candidate = resolve(root.path, relativePath);
@@ -204,6 +221,83 @@ const readLocalFile = async ({ relativePath, root }) => {
 		truncated,
 		content,
 	};
+};
+
+const buildTranscriptionCacheKey = ({ filePath, fileStat }) =>
+	[filePath, fileStat.size, fileStat.mtimeMs].join(":");
+
+const transcribeLocalAudio = async ({
+	language,
+	prompt,
+	relativePath,
+	root,
+}) => {
+	const filePath = resolveInsideRoot({ relativePath, root });
+	const fileStat = await stat(filePath);
+
+	if (!fileStat.isFile()) {
+		throw new Error("Path is not a file.");
+	}
+
+	if (!isSupportedTranscriptionFile(filePath)) {
+		throw new Error("Only supported audio or video files can be transcribed.");
+	}
+
+	if (fileStat.size > MAX_TRANSCRIPTION_AUDIO_BYTES) {
+		throw new Error(
+			`Audio file is too large to transcribe directly. Maximum size is ${MAX_TRANSCRIPTION_AUDIO_BYTES} bytes.`,
+		);
+	}
+
+	const cacheKey = buildTranscriptionCacheKey({ filePath, fileStat });
+	const cached = transcriptionCache.get(cacheKey);
+	if (cached) {
+		return {
+			...cached,
+			cached: true,
+		};
+	}
+
+	const audio = await readFile(filePath);
+	const openaiOptions = {};
+	const normalizedLanguage =
+		typeof language === "string" ? language.trim().toLowerCase() : "";
+	const normalizedPrompt =
+		typeof prompt === "string"
+			? prompt.trim().slice(0, MAX_TRANSCRIPTION_PROMPT_LENGTH)
+			: "";
+
+	if (normalizedLanguage) {
+		openaiOptions.language = normalizedLanguage;
+	}
+
+	if (normalizedPrompt) {
+		openaiOptions.prompt = normalizedPrompt;
+	}
+
+	const transcript = await transcribe({
+		model: openai.transcription(TRANSCRIPTION_MODEL),
+		audio,
+		providerOptions:
+			Object.keys(openaiOptions).length > 0
+				? {
+						openai: openaiOptions,
+					}
+				: undefined,
+	});
+	const result = {
+		path: relative(root.path, filePath),
+		sizeBytes: fileStat.size,
+		cached: false,
+		text: transcript.text,
+		language: transcript.language,
+		durationInSeconds: transcript.durationInSeconds,
+		segments: transcript.segments,
+	};
+
+	transcriptionCache.set(cacheKey, result);
+
+	return result;
 };
 
 const walkFiles = async ({ directory, files, root }) => {
@@ -366,6 +460,36 @@ export const buildLocalFolderTools = (roots) => {
 			execute: async ({ rootIndex, relativePath }) =>
 				withDuration(() =>
 					readLocalFile({ relativePath, root: getRoot(rootIndex) }),
+				),
+		}),
+		transcribe_local_audio: tool({
+			description:
+				"Transcribe an audio or video file inside a local folder explicitly shared by the desktop user. Use this when the user asks what an audio or video recording says or what a meeting recording was about.",
+			inputSchema: z.object({
+				rootIndex: rootSchema.describe(
+					"Shared folder index from the system context.",
+				),
+				relativePath: z
+					.string()
+					.min(1)
+					.describe("Audio or video file path relative to the shared folder root."),
+				language: z
+					.string()
+					.optional()
+					.describe("Optional ISO-639-1 language hint, for example en or ru."),
+				prompt: z
+					.string()
+					.optional()
+					.describe("Optional short transcription context or vocabulary hint."),
+			}),
+			execute: async ({ rootIndex, relativePath, language, prompt }) =>
+				withDuration(() =>
+					transcribeLocalAudio({
+						language,
+						prompt,
+						relativePath,
+						root: getRoot(rootIndex),
+					}),
 				),
 		}),
 		search_local_files: tool({

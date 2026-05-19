@@ -1,4 +1,5 @@
 import {
+	AudioLines,
 	Calendar,
 	Database,
 	FileImage,
@@ -59,6 +60,7 @@ const clamp = (value: string, maxLength = 54) =>
 	value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 
 const toolIconRegistry = {
+	"audio-lines": AudioLines,
 	calendar: Calendar,
 	database: Database,
 	"file-image": FileImage,

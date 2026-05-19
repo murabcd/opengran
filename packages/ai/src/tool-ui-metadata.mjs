@@ -64,6 +64,13 @@ export const toolUiMetadata = {
 		complete: "Read local file",
 		subtitleKeys: ["relativePath"],
 	},
+	transcribe_local_audio: {
+		groupKey: "local-folder",
+		icon: "audio-lines",
+		running: "Transcribing local audio",
+		complete: "Transcribed local audio",
+		subtitleKeys: ["relativePath"],
+	},
 	search_local_files: {
 		groupKey: "local-folder",
 		icon: "file-search",
