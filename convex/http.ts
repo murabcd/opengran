@@ -8,6 +8,7 @@ import {
 	handleRealtimeTranscriptionSessionRequest,
 } from "./desktopApi";
 import { handleJiraWebhookRequest } from "./jiraWebhook";
+import { handleZoomOAuthCallbackRequest } from "./zoomOAuth";
 
 const http = httpRouter();
 
@@ -49,6 +50,14 @@ http.route({
 	method: "POST",
 	handler: httpAction(
 		async (ctx, request) => await handleJiraWebhookRequest(ctx, request),
+	),
+});
+
+http.route({
+	path: "/api/oauth/zoom/callback",
+	method: "GET",
+	handler: httpAction(
+		async (ctx, request) => await handleZoomOAuthCallbackRequest(ctx, request),
 	),
 });
 

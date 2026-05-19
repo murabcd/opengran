@@ -297,9 +297,12 @@ const getSelectedAppConnections = async ({
 		.catch(() => []);
 
 	if (allSelectedSourceIds.length === 0) {
-		const connections = await client.query(api.appConnections.getAllForChat, {
-			workspaceId,
-		});
+		const connections = await client.action(
+			api.appConnectionActions.getAllForChatWithFreshTokens,
+			{
+				workspaceId,
+			},
+		);
 		return [...connections, ...googleSources];
 	}
 
@@ -309,8 +312,8 @@ const getSelectedAppConnections = async ({
 		);
 	}
 
-	const connections = await client.query(
-		api.appConnections.getSelectedForChat,
+	const connections = await client.action(
+		api.appConnectionActions.getSelectedForChatWithFreshTokens,
 		{
 			workspaceId,
 			sourceIds,

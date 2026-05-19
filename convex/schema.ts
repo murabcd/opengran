@@ -27,6 +27,7 @@ const appConnectionProviderValidator = v.union(
 	v.literal("jira"),
 	v.literal("posthog"),
 	v.literal("notion"),
+	v.literal("zoom"),
 );
 
 const automationAppSourceProviderValidator = v.union(
@@ -568,6 +569,10 @@ export default defineSchema({
 		accountId: v.optional(v.string()),
 		password: v.optional(v.string()),
 		baseUrl: v.optional(v.string()),
+		envJson: v.optional(v.string()),
+		oauthRefreshToken: v.optional(v.string()),
+		oauthClientSecret: v.optional(v.string()),
+		tokenExpiresAt: v.optional(v.number()),
 		projectId: v.optional(v.string()),
 		projectName: v.optional(v.string()),
 		webhookSecret: v.optional(v.string()),
@@ -596,6 +601,24 @@ export default defineSchema({
 			"status",
 			"updatedAt",
 		]),
+	zoomOAuthStates: defineTable({
+		state: v.string(),
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		displayName: v.string(),
+		baseUrl: v.string(),
+		envJson: v.optional(v.string()),
+		oauthClientId: v.string(),
+		oauthClientSecret: v.string(),
+		expiresAt: v.number(),
+		createdAt: v.number(),
+	})
+		.index("by_state", ["state"])
+		.index("by_ownerTokenIdentifier_and_workspaceId", [
+			"ownerTokenIdentifier",
+			"workspaceId",
+		])
+		.index("by_expiresAt", ["expiresAt"]),
 	appConnectionActivities: defineTable({
 		connectionId: v.id("appConnections"),
 		ownerTokenIdentifier: v.string(),

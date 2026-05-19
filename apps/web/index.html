@@ -46,20 +46,6 @@
         margin: 0;
       }
 
-      .app-initial-loader {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        background: #ffffff;
-        color: #18181b;
-      }
-
-      .dark .app-initial-loader {
-        background: #09090b;
-        color: #f4f4f5;
-      }
-
       .app-loading-mark {
         width: 42px;
         height: 42px;
@@ -69,24 +55,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      (() => {
-        const root = document.getElementById("root");
-        const loaderStorageKey = "opengran.desktop-initial-loader-shown";
-
-        if (
-          !root ||
-          !window.openGranDesktop ||
-          sessionStorage.getItem(loaderStorageKey) === "true"
-        ) {
-          return;
-        }
-
-        sessionStorage.setItem(loaderStorageKey, "true");
-        root.dataset.initialLoader = "desktop";
-        root.innerHTML = `<div class="app-initial-loader" aria-label="Loading OpenGran"><svg class="app-loading-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></div>`;
-      })();
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -9,6 +9,7 @@ const yandexCalendarProviderValidator = v.literal("yandex-calendar");
 const jiraProviderValidator = v.literal("jira");
 const posthogProviderValidator = v.literal("posthog");
 const notionProviderValidator = v.literal("notion");
+const zoomProviderValidator = v.literal("zoom");
 const appConnectionStatusValidator = v.union(
 	v.literal("connected"),
 	v.literal("disconnected"),
@@ -67,6 +68,15 @@ const notionConnectionSettingsValidator = v.object({
 	displayName: v.string(),
 });
 
+const zoomConnectionSettingsValidator = v.object({
+	sourceId: v.string(),
+	provider: zoomProviderValidator,
+	status: appConnectionStatusValidator,
+	displayName: v.string(),
+	endpoint: v.string(),
+	oauthClientId: v.optional(v.string()),
+});
+
 const yandexCalendarCredentialsValidator = v.union(
 	v.object({
 		provider: yandexCalendarProviderValidator,
@@ -89,6 +99,7 @@ const appConnectionSourceValidator = v.object({
 		jiraProviderValidator,
 		posthogProviderValidator,
 		notionProviderValidator,
+		zoomProviderValidator,
 	),
 });
 
@@ -137,12 +148,23 @@ const notionChatToolConnectionValidator = v.object({
 	token: v.string(),
 });
 
-const chatToolConnectionValidator = v.union(
+const zoomChatToolConnectionValidator = v.object({
+	sourceId: v.string(),
+	provider: zoomProviderValidator,
+	displayName: v.string(),
+	baseUrl: v.string(),
+	env: v.optional(v.record(v.string(), v.string())),
+	oauthClientId: v.optional(v.string()),
+	oauthAccessToken: v.string(),
+});
+
+export const chatToolConnectionValidator = v.union(
 	yandexCalendarChatToolConnectionValidator,
 	yandexTrackerChatToolConnectionValidator,
 	jiraChatToolConnectionValidator,
 	posthogChatToolConnectionValidator,
 	notionChatToolConnectionValidator,
+	zoomChatToolConnectionValidator,
 );
 
 const APP_SOURCE_PREFIX = "app:";
@@ -160,6 +182,17 @@ const jiraWebhookConnectionValidator = v.union(
 	}),
 	v.null(),
 );
+
+const zoomOAuthConnectionValidator = v.object({
+	connectionId: v.id("appConnections"),
+	ownerTokenIdentifier: v.string(),
+	workspaceId: v.id("workspaces"),
+	baseUrl: v.string(),
+	oauthClientId: v.string(),
+	oauthClientSecret: v.string(),
+	oauthRefreshToken: v.string(),
+	tokenExpiresAt: v.optional(v.number()),
+});
 
 type YandexTrackerConnectionSettings = {
 	sourceId: string;
@@ -210,6 +243,15 @@ type NotionConnectionSettings = {
 	displayName: string;
 };
 
+type ZoomConnectionSettings = {
+	sourceId: string;
+	provider: "zoom";
+	status: "connected" | "disconnected";
+	displayName: string;
+	endpoint: string;
+	oauthClientId?: string;
+};
+
 type ConnectionActivitySnapshot = {
 	lastWebhookReceivedAt?: number;
 	lastMentionSyncAt?: number;
@@ -223,11 +265,12 @@ type AppConnectionSource = {
 		| "jira"
 		| "notion"
 		| "posthog"
+		| "zoom"
 		| "yandex-calendar"
 		| "yandex-tracker";
 };
 
-type ChatToolConnection =
+export type ChatToolConnection =
 	| {
 			sourceId: string;
 			provider: "yandex-calendar";
@@ -267,6 +310,15 @@ type ChatToolConnection =
 			provider: "notion";
 			displayName: string;
 			token: string;
+	  }
+	| {
+			sourceId: string;
+			provider: "zoom";
+			displayName: string;
+			baseUrl: string;
+			env?: Record<string, string>;
+			oauthClientId?: string;
+			oauthAccessToken: string;
 	  };
 
 const requireIdentity = async (ctx: QueryCtx | MutationCtx) => {
@@ -310,7 +362,9 @@ const getProviderPreview = (connection: Doc<"appConnections">) =>
 				? getPostHogPreview(connection)
 				: connection.provider === "notion"
 					? (connection.email ?? "Notion workspace")
-				: `${connection.orgType === "x-org-id" ? "Yandex 360" : "Yandex Cloud"} • Org ${connection.orgId}`;
+					: connection.provider === "zoom"
+						? getZoomPreview(connection)
+						: `${connection.orgType === "x-org-id" ? "Yandex 360" : "Yandex Cloud"} • Org ${connection.orgId}`;
 
 const getJiraPreview = (connection: Doc<"appConnections">) => {
 	if (!connection.baseUrl) {
@@ -344,6 +398,18 @@ const getPostHogPreview = (connection: Doc<"appConnections">) => {
 	}
 };
 
+const getZoomPreview = (connection: Doc<"appConnections">) => {
+	if (!connection.baseUrl) {
+		return "Zoom MCP";
+	}
+
+	try {
+		return new URL(connection.baseUrl).hostname;
+	} catch {
+		return connection.baseUrl;
+	}
+};
+
 const generateWebhookSecret = () =>
 	`${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
 
@@ -355,6 +421,7 @@ const getOwnedConnection = async (
 		| "jira"
 		| "notion"
 		| "posthog"
+		| "zoom"
 		| "yandex-calendar"
 		| "yandex-tracker",
 ) =>
@@ -411,6 +478,12 @@ const getOwnedNotionConnection = async (
 	workspaceId: Id<"workspaces">,
 ) =>
 	await getOwnedConnection(ctx, ownerTokenIdentifier, workspaceId, "notion");
+
+const getOwnedZoomConnection = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+) => await getOwnedConnection(ctx, ownerTokenIdentifier, workspaceId, "zoom");
 
 const getConnectionActivity = async (
 	ctx: QueryCtx | MutationCtx,
@@ -566,6 +639,22 @@ const toChatToolConnection = (
 		};
 	}
 
+	if (connection.provider === "zoom" && connection.baseUrl && connection.token) {
+		return {
+			sourceId: toAppSourceId(connection._id),
+			provider: "zoom",
+			displayName: connection.displayName,
+			baseUrl: connection.baseUrl,
+			...(connection.envJson
+				? { env: JSON.parse(connection.envJson) as Record<string, string> }
+				: {}),
+			...(connection.accountId
+				? { oauthClientId: connection.accountId }
+				: {}),
+			oauthAccessToken: connection.token,
+		};
+	}
+
 	return null;
 };
 
@@ -616,7 +705,8 @@ export const listSources = query({
 				connection.provider !== "yandex-tracker" &&
 				connection.provider !== "jira" &&
 				connection.provider !== "posthog" &&
-				connection.provider !== "notion"
+				connection.provider !== "notion" &&
+				connection.provider !== "zoom"
 			) {
 				continue;
 			}
@@ -818,6 +908,41 @@ export const getNotion = query({
 	},
 });
 
+export const getZoom = query({
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
+	returns: v.union(zoomConnectionSettingsValidator, v.null()),
+	handler: async (ctx, args) => {
+		const identity = await requireIdentity(ctx);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
+		const connection = await getOwnedZoomConnection(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
+
+		if (!connection?.baseUrl) {
+			return null;
+		}
+
+		return {
+			sourceId: toAppSourceId(connection._id),
+			provider: "zoom" as const,
+			status: connection.status,
+			displayName: connection.displayName,
+			endpoint: connection.baseUrl,
+			...(connection.accountId
+				? { oauthClientId: connection.accountId }
+				: {}),
+		};
+	},
+});
+
 export const getOwnedJiraConnectionInternal = internalQuery({
 	args: {
 		ownerTokenIdentifier: v.string(),
@@ -884,6 +1009,84 @@ export const getJiraWebhookConnection = internalQuery({
 			token: connection.token,
 			...(connection.accountId ? { accountId: connection.accountId } : {}),
 		};
+	},
+});
+
+export const getZoomOAuthConnectionsForWorkspace = internalQuery({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+	},
+	returns: v.array(zoomOAuthConnectionValidator),
+	handler: async (ctx, args) => {
+		const connections = await ctx.db
+			.query("appConnections")
+			.withIndex(
+				"by_ownerTokenIdentifier_and_workspaceId_and_provider",
+				(q) =>
+					q
+						.eq("ownerTokenIdentifier", args.ownerTokenIdentifier)
+						.eq("workspaceId", args.workspaceId)
+						.eq("provider", "zoom"),
+			)
+			.collect();
+
+		return connections
+			.filter(
+				(connection) =>
+					connection.status === "connected" &&
+					connection.baseUrl &&
+					connection.accountId &&
+					connection.oauthClientSecret &&
+					connection.oauthRefreshToken,
+			)
+			.map((connection) => ({
+				connectionId: connection._id,
+				ownerTokenIdentifier: connection.ownerTokenIdentifier,
+				workspaceId: connection.workspaceId,
+				baseUrl: connection.baseUrl as string,
+				oauthClientId: connection.accountId as string,
+				oauthClientSecret: connection.oauthClientSecret as string,
+				oauthRefreshToken: connection.oauthRefreshToken as string,
+				...(connection.tokenExpiresAt
+					? { tokenExpiresAt: connection.tokenExpiresAt }
+					: {}),
+			}));
+	},
+});
+
+export const updateZoomOAuthTokens = internalMutation({
+	args: {
+		connectionId: v.id("appConnections"),
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		oauthAccessToken: v.string(),
+		oauthRefreshToken: v.optional(v.string()),
+		tokenExpiresAt: v.optional(v.number()),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const connection = await ctx.db.get(args.connectionId);
+
+		if (
+			!connection ||
+			connection.provider !== "zoom" ||
+			connection.ownerTokenIdentifier !== args.ownerTokenIdentifier ||
+			connection.workspaceId !== args.workspaceId
+		) {
+			return null;
+		}
+
+		await ctx.db.patch(connection._id, {
+			token: args.oauthAccessToken,
+			...(args.oauthRefreshToken
+				? { oauthRefreshToken: args.oauthRefreshToken }
+				: {}),
+			...(args.tokenExpiresAt ? { tokenExpiresAt: args.tokenExpiresAt } : {}),
+			updatedAt: Date.now(),
+		});
+
+		return null;
 	},
 });
 
@@ -1575,6 +1778,171 @@ export const upsertNotion = internalMutation({
 			provider: "notion" as const,
 			status: "connected" as const,
 			displayName,
+		};
+	},
+});
+
+export const upsertZoom = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		displayName: v.string(),
+		baseUrl: v.string(),
+		env: v.optional(v.record(v.string(), v.string())),
+		oauthClientId: v.optional(v.string()),
+		oauthClientSecret: v.optional(v.string()),
+		oauthAccessToken: v.string(),
+		oauthRefreshToken: v.optional(v.string()),
+		tokenExpiresAt: v.optional(v.number()),
+	},
+	returns: zoomConnectionSettingsValidator,
+	handler: async (ctx, args): Promise<ZoomConnectionSettings> => {
+		await requireOwnedWorkspace(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+		const now = Date.now();
+		const displayName = args.displayName.trim() || "Zoom";
+		const baseUrl = args.baseUrl.trim();
+		const envJson = args.env ? JSON.stringify(args.env) : undefined;
+		const oauthClientId = args.oauthClientId?.trim() || undefined;
+		const oauthClientSecret = args.oauthClientSecret?.trim() || undefined;
+		const oauthRefreshToken = args.oauthRefreshToken?.trim() || undefined;
+		const existingConnection = await getOwnedZoomConnection(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+
+		if (existingConnection) {
+			await ctx.db.patch(existingConnection._id, {
+				status: "connected",
+				displayName,
+				baseUrl,
+				envJson,
+				accountId: oauthClientId,
+				oauthClientSecret,
+				token: args.oauthAccessToken,
+				oauthRefreshToken,
+				tokenExpiresAt: args.tokenExpiresAt,
+				updatedAt: now,
+			});
+
+			return {
+				sourceId: toAppSourceId(existingConnection._id),
+				provider: "zoom" as const,
+				status: "connected" as const,
+				displayName,
+				endpoint: baseUrl,
+				...(oauthClientId ? { oauthClientId } : {}),
+			};
+		}
+
+		const id = await ctx.db.insert("appConnections", {
+			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
+			provider: "zoom",
+			status: "connected",
+			displayName,
+			baseUrl,
+			...(envJson ? { envJson } : {}),
+			...(oauthClientId ? { accountId: oauthClientId } : {}),
+			...(oauthClientSecret ? { oauthClientSecret } : {}),
+			token: args.oauthAccessToken,
+			...(oauthRefreshToken ? { oauthRefreshToken } : {}),
+			...(args.tokenExpiresAt ? { tokenExpiresAt: args.tokenExpiresAt } : {}),
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		return {
+			sourceId: toAppSourceId(id),
+			provider: "zoom" as const,
+			status: "connected" as const,
+			displayName,
+			endpoint: baseUrl,
+			...(oauthClientId ? { oauthClientId } : {}),
+		};
+	},
+});
+
+export const createZoomOAuthState = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		displayName: v.string(),
+		baseUrl: v.string(),
+		env: v.optional(v.record(v.string(), v.string())),
+		oauthClientId: v.string(),
+		oauthClientSecret: v.string(),
+		state: v.string(),
+		expiresAt: v.number(),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		await requireOwnedWorkspace(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+		const now = Date.now();
+
+		await ctx.db.insert("zoomOAuthStates", {
+			state: args.state,
+			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
+			displayName: args.displayName.trim() || "Zoom",
+			baseUrl: args.baseUrl.trim(),
+			...(args.env ? { envJson: JSON.stringify(args.env) } : {}),
+			oauthClientId: args.oauthClientId.trim(),
+			oauthClientSecret: args.oauthClientSecret.trim(),
+			expiresAt: args.expiresAt,
+			createdAt: now,
+		});
+
+		return null;
+	},
+});
+
+export const consumeZoomOAuthState = internalMutation({
+	args: {
+		state: v.string(),
+	},
+	returns: v.union(
+		v.object({
+			ownerTokenIdentifier: v.string(),
+			workspaceId: v.id("workspaces"),
+			displayName: v.string(),
+			baseUrl: v.string(),
+			envJson: v.optional(v.string()),
+			oauthClientId: v.string(),
+			oauthClientSecret: v.string(),
+			expiresAt: v.number(),
+		}),
+		v.null(),
+	),
+	handler: async (ctx, args) => {
+		const state = await ctx.db
+			.query("zoomOAuthStates")
+			.withIndex("by_state", (q) => q.eq("state", args.state))
+			.unique();
+
+		if (!state) {
+			return null;
+		}
+
+		await ctx.db.delete(state._id);
+
+		return {
+			ownerTokenIdentifier: state.ownerTokenIdentifier,
+			workspaceId: state.workspaceId,
+			displayName: state.displayName,
+			baseUrl: state.baseUrl,
+			...(state.envJson ? { envJson: state.envJson } : {}),
+			oauthClientId: state.oauthClientId,
+			oauthClientSecret: state.oauthClientSecret,
+			expiresAt: state.expiresAt,
 		};
 	},
 });

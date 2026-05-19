@@ -19,6 +19,8 @@ export function AppSourceIcon({
 			return <Icons.notionLogo className={className} />;
 		case "posthog":
 			return <Icons.planeLogo className={className} />;
+		case "zoom":
+			return <Icons.zoomLogo className={className} />;
 		case "yandex-calendar":
 			return <Icons.yandexCalendarLogo className={className} />;
 		case "yandex-tracker":

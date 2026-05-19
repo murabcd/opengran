@@ -37,6 +37,7 @@ import type * as trash from "../trash.js";
 import type * as userPreferences from "../userPreferences.js";
 import type * as workspaces from "../workspaces.js";
 import type * as yandexCalendar from "../yandexCalendar.js";
+import type * as zoomOAuth from "../zoomOAuth.js";
 
 import type {
   ApiFromModules,
@@ -74,6 +75,7 @@ declare const fullApi: ApiFromModules<{
   userPreferences: typeof userPreferences;
   workspaces: typeof workspaces;
   yandexCalendar: typeof yandexCalendar;
+  zoomOAuth: typeof zoomOAuth;
 }>;
 
 /**

@@ -4,6 +4,7 @@ export type ChatAppSourceProvider =
 	| "jira"
 	| "notion"
 	| "posthog"
+	| "zoom"
 	| "yandex-calendar"
 	| "yandex-tracker";
 
@@ -13,6 +14,7 @@ export const CHAT_APP_SOURCE_PROVIDERS = [
 	"jira",
 	"notion",
 	"posthog",
+	"zoom",
 	"yandex-calendar",
 	"yandex-tracker",
 ] as const satisfies readonly ChatAppSourceProvider[];
@@ -29,6 +31,7 @@ const APP_SOURCE_LABELS: Record<ChatAppSourceProvider, string> = {
 	jira: "Jira",
 	notion: "Notion",
 	posthog: "PostHog",
+	zoom: "Zoom",
 	"yandex-calendar": "Yandex Calendar",
 	"yandex-tracker": "Yandex Tracker",
 };

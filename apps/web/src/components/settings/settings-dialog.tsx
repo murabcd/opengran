@@ -91,9 +91,11 @@ import {
 	ImageUp,
 	LoaderCircle,
 	Paintbrush,
+	Plus,
 	SlidersHorizontal,
 	UserRound,
 	Workflow,
+	X,
 } from "lucide-react";
 import {
 	useCallback,
@@ -187,6 +189,40 @@ const MAX_PROFILE_AVATAR_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const withoutTrailingPeriod = (message: string) =>
 	message.trimEnd().replace(/\.+$/u, "");
 
+const getConvexErrorDataMessage = (error: unknown) => {
+	if (!(error instanceof Error)) {
+		return "";
+	}
+
+	const match = error.message.match(/Uncaught ConvexError:\s*(\{.*?\})\s+at/su);
+	if (!match?.[1]) {
+		return "";
+	}
+
+	try {
+		const data = JSON.parse(match[1]) as unknown;
+		return data &&
+			typeof data === "object" &&
+			"message" in data &&
+			typeof data.message === "string"
+			? data.message
+			: "";
+	} catch {
+		return "";
+	}
+};
+
+const getConnectionErrorMessage = (error: unknown, fallback: string) => {
+	const convexMessage = getConvexErrorDataMessage(error);
+	if (convexMessage) {
+		return withoutTrailingPeriod(convexMessage);
+	}
+
+	return error instanceof Error
+		? withoutTrailingPeriod(error.message)
+		: fallback;
+};
+
 type WorkspaceFormState = {
 	name: string;
 	iconStorageId: Id<"_storage"> | null;
@@ -240,6 +276,14 @@ type PostHogConnectionFormState = {
 
 type NotionConnectionFormState = {
 	token: string;
+};
+
+type ZoomConnectionFormState = {
+	name: string;
+	baseUrl: string;
+	envVars: Array<{ id: string; key: string; value: string }>;
+	oauthClientId: string;
+	oauthClientSecret: string;
 };
 
 type YandexCalendarConnectionFormState = {
@@ -369,12 +413,22 @@ type NotionConnectionSettings = {
 	displayName: string;
 };
 
+type ZoomConnectionSettings = {
+	sourceId: string;
+	provider: "zoom";
+	status: AppConnectionStatus;
+	displayName: string;
+	endpoint: string;
+	oauthClientId?: string;
+};
+
 type StableConnectionSettings = {
 	yandexTracker: YandexTrackerConnectionSettings | null;
 	yandexCalendar: YandexCalendarConnectionSettings | null;
 	jira: JiraConnectionSettings | null;
 	posthog: PostHogConnectionSettings | null;
 	notion: NotionConnectionSettings | null;
+	zoom: ZoomConnectionSettings | null;
 };
 
 const stableConnectionSettingsByWorkspace = new Map<
@@ -387,14 +441,17 @@ type ConnectionsSettingsState = {
 	isJiraDialogOpen: boolean;
 	isPostHogDialogOpen: boolean;
 	isNotionDialogOpen: boolean;
+	isZoomDialogOpen: boolean;
 	isSavingYandexTrackerConnection: boolean;
 	isSavingJiraConnection: boolean;
 	isSavingPostHogConnection: boolean;
 	isSavingNotionConnection: boolean;
+	isSavingZoomConnection: boolean;
 	yandexTrackerFormState: YandexTrackerConnectionFormState;
 	jiraFormState: JiraConnectionFormState;
 	posthogFormState: PostHogConnectionFormState;
 	notionFormState: NotionConnectionFormState;
+	zoomFormState: ZoomConnectionFormState;
 };
 
 type ConnectionsSettingsAction =
@@ -415,6 +472,10 @@ type ConnectionsSettingsAction =
 			value: boolean;
 	  }
 	| {
+			type: "setIsZoomDialogOpen";
+			value: boolean;
+	  }
+	| {
 			type: "setIsSavingYandexTrackerConnection";
 			value: boolean;
 	  }
@@ -428,6 +489,10 @@ type ConnectionsSettingsAction =
 	  }
 	| {
 			type: "setIsSavingNotionConnection";
+			value: boolean;
+	  }
+	| {
+			type: "setIsSavingZoomConnection";
 			value: boolean;
 	  }
 	| {
@@ -461,6 +526,14 @@ type ConnectionsSettingsAction =
 	| {
 			type: "patchNotionFormState";
 			value: Partial<NotionConnectionFormState>;
+	  }
+	| {
+			type: "setZoomFormState";
+			value: ZoomConnectionFormState;
+	  }
+	| {
+			type: "patchZoomFormState";
+			value: Partial<ZoomConnectionFormState>;
 	  };
 
 const getWorkspaceFormState = (
@@ -523,6 +596,14 @@ const initialNotionConnectionFormState: NotionConnectionFormState = {
 	token: "",
 };
 
+const initialZoomConnectionFormState: ZoomConnectionFormState = {
+	name: "Zoom",
+	baseUrl: "https://mcp.zoom.us/mcp/zoom/streamable",
+	envVars: [],
+	oauthClientId: "",
+	oauthClientSecret: "",
+};
+
 const getInitialPreferencesSettingsState = (): PreferencesSettingsState => ({
 	preferences: null,
 	isLoadingPreferences: isDesktopRuntime(),
@@ -539,14 +620,17 @@ const initialConnectionsSettingsState: ConnectionsSettingsState = {
 	isJiraDialogOpen: false,
 	isPostHogDialogOpen: false,
 	isNotionDialogOpen: false,
+	isZoomDialogOpen: false,
 	isSavingYandexTrackerConnection: false,
 	isSavingJiraConnection: false,
 	isSavingPostHogConnection: false,
 	isSavingNotionConnection: false,
+	isSavingZoomConnection: false,
 	yandexTrackerFormState: initialYandexTrackerConnectionFormState,
 	jiraFormState: initialJiraConnectionFormState,
 	posthogFormState: initialPostHogConnectionFormState,
 	notionFormState: initialNotionConnectionFormState,
+	zoomFormState: initialZoomConnectionFormState,
 };
 
 const preferencesSettingsReducer = (
@@ -604,6 +688,8 @@ const connectionsSettingsReducer = (
 			return { ...state, isPostHogDialogOpen: action.value };
 		case "setIsNotionDialogOpen":
 			return { ...state, isNotionDialogOpen: action.value };
+		case "setIsZoomDialogOpen":
+			return { ...state, isZoomDialogOpen: action.value };
 		case "setIsSavingYandexTrackerConnection":
 			return { ...state, isSavingYandexTrackerConnection: action.value };
 		case "setIsSavingJiraConnection":
@@ -612,6 +698,8 @@ const connectionsSettingsReducer = (
 			return { ...state, isSavingPostHogConnection: action.value };
 		case "setIsSavingNotionConnection":
 			return { ...state, isSavingNotionConnection: action.value };
+		case "setIsSavingZoomConnection":
+			return { ...state, isSavingZoomConnection: action.value };
 		case "setYandexTrackerFormState":
 			return { ...state, yandexTrackerFormState: action.value };
 		case "patchYandexTrackerFormState":
@@ -649,6 +737,16 @@ const connectionsSettingsReducer = (
 				...state,
 				notionFormState: {
 					...state.notionFormState,
+					...action.value,
+				},
+			};
+		case "setZoomFormState":
+			return { ...state, zoomFormState: action.value };
+		case "patchZoomFormState":
+			return {
+				...state,
+				zoomFormState: {
+					...state.zoomFormState,
 					...action.value,
 				},
 			};
@@ -1713,18 +1811,22 @@ function ConnectionsSettings() {
 		handleConnectNotion,
 		handleConnectPostHog,
 		handleCopyJiraWebhookUrl,
+		handleConnectZoom,
 		handleConnectYandexTracker,
 		handleJiraDialogOpenChange,
 		handleNotionDialogOpenChange,
 		handlePostHogDialogOpenChange,
 		handleYandexCalendarDialogOpenChange,
 		handleYandexTrackerDialogOpenChange,
+		handleZoomDialogOpenChange,
 		isJiraDialogOpen,
 		isJiraFormValid,
 		isNotionDialogOpen,
 		isNotionFormValid,
 		isPostHogDialogOpen,
 		isPostHogFormValid,
+		isZoomDialogOpen,
+		isZoomFormValid,
 		isSavingYandexCalendarConnection,
 		isYandexCalendarDialogOpen,
 		isYandexCalendarFormValid,
@@ -1732,6 +1834,7 @@ function ConnectionsSettings() {
 		isSavingNotionConnection,
 		isSavingPostHogConnection,
 		isSavingYandexTrackerConnection,
+		isSavingZoomConnection,
 		isYandexTrackerDialogOpen,
 		isYandexTrackerFormValid,
 		jiraConnection,
@@ -1746,6 +1849,13 @@ function ConnectionsSettings() {
 		setPostHogBaseUrl,
 		setPostHogProjectId,
 		setPostHogToken,
+		setZoomBaseUrl,
+		setZoomName,
+		setZoomOAuthClientId,
+		setZoomOAuthClientSecret,
+		addZoomEnvVar,
+		removeZoomEnvVar,
+		updateZoomEnvVar,
 		setYandexCalendarEmail,
 		setYandexCalendarPassword,
 		setYandexTrackerOrgId,
@@ -1754,6 +1864,7 @@ function ConnectionsSettings() {
 		toolConnections,
 		yandexCalendarFormState,
 		yandexTrackerFormState,
+		zoomFormState,
 	} = useConnectionsSettingsController();
 
 	if (!activeWorkspaceId) {
@@ -1834,6 +1945,23 @@ function ConnectionsSettings() {
 				isFormValid={isNotionFormValid}
 				isSaving={isSavingNotionConnection}
 			/>
+			<ZoomDialog
+				open={isZoomDialogOpen}
+				onOpenChange={handleZoomDialogOpenChange}
+				formState={zoomFormState}
+				onNameChange={setZoomName}
+				onBaseUrlChange={setZoomBaseUrl}
+				onAddEnvVar={addZoomEnvVar}
+				onRemoveEnvVar={removeZoomEnvVar}
+				onUpdateEnvVar={updateZoomEnvVar}
+				onOAuthClientIdChange={setZoomOAuthClientId}
+				onOAuthClientSecretChange={setZoomOAuthClientSecret}
+				onConnect={() => {
+					void handleConnectZoom();
+				}}
+				isFormValid={isZoomFormValid}
+				isSaving={isSavingZoomConnection}
+			/>
 		</div>
 	);
 }
@@ -1871,6 +1999,10 @@ function useConnectionsSettingsController() {
 		api.appConnections.getNotion,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
+	const zoomConnectionResult = useQuery(
+		api.appConnections.getZoom,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const stableConnectionSettings = stableConnectionSettingsKey
 		? stableConnectionSettingsByWorkspace.get(stableConnectionSettingsKey)
 		: undefined;
@@ -1894,12 +2026,17 @@ function useConnectionsSettingsController() {
 		notionConnectionResult === undefined
 			? (stableConnectionSettings?.notion ?? null)
 			: notionConnectionResult;
+	const zoomConnection =
+		zoomConnectionResult === undefined
+			? (stableConnectionSettings?.zoom ?? null)
+			: zoomConnectionResult;
 	const connectYandexTracker = useAction(
 		api.appConnectionActions.connectYandexTracker,
 	);
 	const connectJira = useAction(api.appConnectionActions.connectJira);
 	const connectPostHog = useAction(api.appConnectionActions.connectPostHog);
 	const connectNotion = useAction(api.appConnectionActions.connectNotion);
+	const connectZoom = useAction(api.appConnectionActions.connectZoom);
 	const prepareJiraMentionSync = useAction(
 		api.appConnectionActions.prepareJiraMentionSync,
 	);
@@ -1920,14 +2057,17 @@ function useConnectionsSettingsController() {
 		isJiraDialogOpen,
 		isPostHogDialogOpen,
 		isNotionDialogOpen,
+		isZoomDialogOpen,
 		isSavingYandexTrackerConnection,
 		isSavingJiraConnection,
 		isSavingPostHogConnection,
 		isSavingNotionConnection,
+		isSavingZoomConnection,
 		yandexTrackerFormState,
 		jiraFormState,
 		posthogFormState,
 		notionFormState,
+		zoomFormState,
 	} = state;
 	const googleAccount = getGoogleLinkedAccount(accounts);
 	const hasGoogleCalendarToolScope = hasGoogleScope(
@@ -1961,6 +2101,7 @@ function useConnectionsSettingsController() {
 			jira: null,
 			posthog: null,
 			notion: null,
+			zoom: null,
 		};
 
 		stableConnectionSettingsByWorkspace.set(stableConnectionSettingsKey, {
@@ -1984,6 +2125,10 @@ function useConnectionsSettingsController() {
 				notionConnectionResult === undefined
 					? previous.notion
 					: notionConnectionResult,
+			zoom:
+				zoomConnectionResult === undefined
+					? previous.zoom
+					: zoomConnectionResult,
 		});
 	}, [
 		jiraConnectionResult,
@@ -1992,6 +2137,7 @@ function useConnectionsSettingsController() {
 		stableConnectionSettingsKey,
 		yandexCalendarConnectionResult,
 		yandexTrackerConnectionResult,
+		zoomConnectionResult,
 	]);
 
 	useEffect(() => {
@@ -2261,6 +2407,111 @@ function useConnectionsSettingsController() {
 
 	const isNotionFormValid = notionFormState.token.trim().length > 0;
 
+	const handleZoomDialogOpenChange = (open: boolean) => {
+		dispatch({ type: "setIsZoomDialogOpen", value: open });
+
+		if (open) {
+			dispatch({
+				type: "setZoomFormState",
+				value: {
+					name: zoomConnection?.displayName ?? "Zoom",
+					baseUrl:
+						zoomConnection?.endpoint ?? initialZoomConnectionFormState.baseUrl,
+					envVars: [],
+					oauthClientId: zoomConnection?.oauthClientId ?? "",
+					oauthClientSecret: "",
+				},
+			});
+		} else {
+			dispatch({
+				type: "setZoomFormState",
+				value: initialZoomConnectionFormState,
+			});
+		}
+	};
+
+	const handleConnectZoom = async () => {
+		if (
+			!activeWorkspaceId ||
+			!zoomFormState.name.trim() ||
+			!zoomFormState.baseUrl.trim()
+		) {
+			return;
+		}
+
+		dispatch({ type: "setIsSavingZoomConnection", value: true });
+
+		try {
+			const result = await connectZoom({
+				workspaceId: activeWorkspaceId,
+				displayName: zoomFormState.name.trim(),
+				baseUrl: zoomFormState.baseUrl.trim(),
+				env: Object.fromEntries(
+					zoomFormState.envVars
+						.map((envVar) => [envVar.key.trim(), envVar.value])
+						.filter(([key]) => key.length > 0),
+				),
+				...(zoomFormState.oauthClientId.trim()
+					? { oauthClientId: zoomFormState.oauthClientId.trim() }
+					: {}),
+				...(zoomFormState.oauthClientSecret.trim()
+					? { oauthClientSecret: zoomFormState.oauthClientSecret.trim() }
+					: {}),
+			});
+			if (!(await openDesktopExternalUrl(result.authorizationUrl))) {
+				const zoomOAuthWindow = window.open(
+					result.authorizationUrl,
+					"_blank",
+					"noopener,noreferrer",
+				);
+
+				if (!zoomOAuthWindow) {
+					window.location.assign(result.authorizationUrl);
+				}
+			}
+			toast.success("Continue in Zoom to finish connecting");
+			handleZoomDialogOpenChange(false);
+		} catch (error) {
+			console.error("Failed to connect Zoom", error);
+			toast.error(getConnectionErrorMessage(error, "Failed to connect Zoom"));
+		} finally {
+			dispatch({ type: "setIsSavingZoomConnection", value: false });
+		}
+	};
+
+	const isZoomFormValid =
+		zoomFormState.name.trim().length > 0 &&
+		zoomFormState.baseUrl.trim().length > 0;
+
+	const addZoomEnvVar = () =>
+		dispatch({
+			type: "patchZoomFormState",
+			value: {
+				envVars: [
+					...zoomFormState.envVars,
+					{ id: crypto.randomUUID(), key: "", value: "" },
+				],
+			},
+		});
+
+	const removeZoomEnvVar = (id: string) =>
+		dispatch({
+			type: "patchZoomFormState",
+			value: {
+				envVars: zoomFormState.envVars.filter((envVar) => envVar.id !== id),
+			},
+		});
+
+	const updateZoomEnvVar = (id: string, key: "key" | "value", value: string) =>
+		dispatch({
+			type: "patchZoomFormState",
+			value: {
+				envVars: zoomFormState.envVars.map((envVar) =>
+					envVar.id === id ? { ...envVar, [key]: value } : envVar,
+				),
+			},
+		});
+
 	const connectGoogleTool = async ({
 		enableForWorkspace,
 		scopes,
@@ -2449,6 +2700,18 @@ function useConnectionsSettingsController() {
 			buttonVariant: "outline",
 			onButtonClick: () => handleNotionDialogOpenChange(true),
 		},
+		{
+			icon: <AppSourceIcon provider="zoom" className="size-5 shrink-0" />,
+			name: "Zoom",
+			buttonLabel:
+				zoomConnection?.status === "connected" ? "Manage" : "Connect",
+			buttonVariant: "outline",
+			buttonDisabled: isSavingZoomConnection || !session?.user,
+			buttonIcon: isSavingZoomConnection ? (
+				<LoaderCircle className="animate-spin" />
+			) : null,
+			onButtonClick: () => handleZoomDialogOpenChange(true),
+		},
 	];
 
 	const handleCopyJiraWebhookUrl = async () => {
@@ -2489,6 +2752,7 @@ function useConnectionsSettingsController() {
 		handleConnectJira,
 		handleConnectNotion,
 		handleConnectPostHog,
+		handleConnectZoom,
 		handleCopyJiraWebhookUrl,
 		handleConnectYandexTracker,
 		handleJiraDialogOpenChange,
@@ -2496,6 +2760,10 @@ function useConnectionsSettingsController() {
 		handleOpenJiraWebhookSettings,
 		handlePostHogDialogOpenChange,
 		handleYandexTrackerDialogOpenChange,
+		handleZoomDialogOpenChange,
+		addZoomEnvVar,
+		removeZoomEnvVar,
+		updateZoomEnvVar,
 		isJiraDialogOpen,
 		isJiraFormValid,
 		isNotionDialogOpen,
@@ -2507,13 +2775,17 @@ function useConnectionsSettingsController() {
 		isSavingNotionConnection,
 		isSavingPostHogConnection,
 		isSavingYandexTrackerConnection,
+		isSavingZoomConnection,
 		isYandexTrackerDialogOpen,
 		isYandexTrackerFormValid,
+		isZoomDialogOpen,
+		isZoomFormValid,
 		jiraConnection,
 		jiraFormState,
 		jiraWebhookUrl,
 		notionFormState,
 		posthogFormState,
+		zoomFormState,
 		setJiraBaseUrl: (baseUrl: string) =>
 			dispatch({
 				type: "patchJiraFormState",
@@ -2548,6 +2820,26 @@ function useConnectionsSettingsController() {
 			dispatch({
 				type: "patchPostHogFormState",
 				value: { token },
+			}),
+		setZoomBaseUrl: (baseUrl: string) =>
+			dispatch({
+				type: "patchZoomFormState",
+				value: { baseUrl },
+			}),
+		setZoomName: (name: string) =>
+			dispatch({
+				type: "patchZoomFormState",
+				value: { name },
+			}),
+		setZoomOAuthClientId: (oauthClientId: string) =>
+			dispatch({
+				type: "patchZoomFormState",
+				value: { oauthClientId },
+			}),
+		setZoomOAuthClientSecret: (oauthClientSecret: string) =>
+			dispatch({
+				type: "patchZoomFormState",
+				value: { oauthClientSecret },
 			}),
 		setYandexTrackerOrgId: (orgId: string) =>
 			dispatch({
@@ -3046,6 +3338,196 @@ function NotionDialog({
 							placeholder="ntn_..."
 						/>
 					</Field>
+				</FieldGroup>
+				<div className="flex justify-end gap-2 pt-2">
+					<Button
+						type="button"
+						variant="ghost"
+						onClick={() => onOpenChange(false)}
+						disabled={isSaving}
+					>
+						Cancel
+					</Button>
+					<Button
+						type="button"
+						onClick={onConnect}
+						disabled={!isFormValid || isSaving}
+					>
+						{isSaving ? (
+							<>
+								<LoaderCircle className="animate-spin" />
+								Connecting
+							</>
+						) : (
+							"Connect"
+						)}
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+function ZoomDialog({
+	open,
+	onOpenChange,
+	formState,
+	onNameChange,
+	onBaseUrlChange,
+	onAddEnvVar,
+	onRemoveEnvVar,
+	onUpdateEnvVar,
+	onOAuthClientIdChange,
+	onOAuthClientSecretChange,
+	onConnect,
+	isFormValid,
+	isSaving,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	formState: ZoomConnectionFormState;
+	onNameChange: (name: string) => void;
+	onBaseUrlChange: (baseUrl: string) => void;
+	onAddEnvVar: () => void;
+	onRemoveEnvVar: (id: string) => void;
+	onUpdateEnvVar: (id: string, key: "key" | "value", value: string) => void;
+	onOAuthClientIdChange: (oauthClientId: string) => void;
+	onOAuthClientSecretChange: (oauthClientSecret: string) => void;
+	onConnect: () => void;
+	isFormValid: boolean;
+	isSaving: boolean;
+}) {
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="sm:max-w-lg">
+				<DialogHeader>
+					<DialogTitle>Connect Zoom</DialogTitle>
+					<DialogDescription>
+						Enter the Zoom MCP connection details OpenGran should use for
+						meeting context.
+					</DialogDescription>
+				</DialogHeader>
+				<FieldGroup className="gap-4">
+					<Field>
+						<Label htmlFor="zoom-mcp-name" className={SETTINGS_LABEL_CLASSNAME}>
+							Name
+						</Label>
+						<Input
+							id="zoom-mcp-name"
+							value={formState.name}
+							onChange={(event) => onNameChange(event.target.value)}
+							placeholder="Zoom"
+						/>
+					</Field>
+					<Field>
+						<Label
+							htmlFor="zoom-mcp-base-url"
+							className={SETTINGS_LABEL_CLASSNAME}
+						>
+							Base URL
+						</Label>
+						<Input
+							id="zoom-mcp-base-url"
+							value={formState.baseUrl}
+							onChange={(event) => onBaseUrlChange(event.target.value)}
+							placeholder="https://mcp.zoom.us/mcp/zoom/streamable"
+						/>
+					</Field>
+					<Field>
+						<div className="flex items-center justify-between gap-3">
+							<Label className={SETTINGS_LABEL_CLASSNAME}>
+								Headers (optional)
+							</Label>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={onAddEnvVar}
+							>
+								<Plus />
+								Add variable
+							</Button>
+						</div>
+						{formState.envVars.length > 0 ? (
+							<div className="space-y-2">
+								{formState.envVars.map((envVar) => (
+									<div key={envVar.id} className="flex gap-2">
+										<Input
+											value={envVar.key}
+											onChange={(event) =>
+												onUpdateEnvVar(envVar.id, "key", event.target.value)
+											}
+											placeholder="key"
+										/>
+										<Input
+											type="password"
+											value={envVar.value}
+											onChange={(event) =>
+												onUpdateEnvVar(envVar.id, "value", event.target.value)
+											}
+											placeholder="value"
+										/>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											onClick={() => onRemoveEnvVar(envVar.id)}
+											aria-label="Remove variable"
+										>
+											<X />
+										</Button>
+									</div>
+								))}
+							</div>
+						) : null}
+					</Field>
+					<Collapsible>
+						<CollapsibleTrigger asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								className="w-full justify-between bg-transparent aria-expanded:bg-transparent"
+							>
+								Advanced settings
+								<ChevronDown className="size-4" />
+							</Button>
+						</CollapsibleTrigger>
+						<CollapsibleContent className="space-y-4 pt-4">
+							<Field>
+								<Label
+									htmlFor="zoom-oauth-client-id"
+									className={SETTINGS_LABEL_CLASSNAME}
+								>
+									OAuth Client ID
+								</Label>
+								<Input
+									id="zoom-oauth-client-id"
+									value={formState.oauthClientId}
+									onChange={(event) =>
+										onOAuthClientIdChange(event.target.value)
+									}
+									placeholder="OAuth Client ID"
+								/>
+							</Field>
+							<Field>
+								<Label
+									htmlFor="zoom-oauth-client-secret"
+									className={SETTINGS_LABEL_CLASSNAME}
+								>
+									OAuth Client Secret
+								</Label>
+								<Input
+									id="zoom-oauth-client-secret"
+									type="password"
+									value={formState.oauthClientSecret}
+									onChange={(event) =>
+										onOAuthClientSecretChange(event.target.value)
+									}
+									placeholder="OAuth Client Secret"
+								/>
+							</Field>
+						</CollapsibleContent>
+					</Collapsible>
 				</FieldGroup>
 				<div className="flex justify-end gap-2 pt-2">
 					<Button

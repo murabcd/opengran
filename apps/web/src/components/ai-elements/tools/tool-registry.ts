@@ -9,6 +9,7 @@ import {
 	FolderOpen,
 	Globe,
 	Search,
+	Video,
 } from "lucide-react";
 import type React from "react";
 import { toolUiMetadata } from "../../../../../../packages/ai/src/tool-ui-metadata.mjs";
@@ -29,6 +30,7 @@ export type ToolPartLike = {
 	state?: string;
 	startedAt?: unknown;
 	toolCallId?: string;
+	toolName?: string;
 	type: string;
 };
 
@@ -70,6 +72,7 @@ const toolIconRegistry = {
 	"folder-open": FolderOpen,
 	globe: Globe,
 	search: Search,
+	video: Video,
 } satisfies Record<string, React.ComponentType<{ className?: string }>>;
 
 const makeToolMeta = ({
@@ -125,5 +128,34 @@ function getPostHogToolMeta(part: ToolPartLike): ToolMeta | null {
 	};
 }
 
+const getRenderableToolName = (part: ToolPartLike) =>
+	typeof part.toolName === "string" && part.toolName.length > 0
+		? part.toolName
+		: part.type.replace(/^tool-/, "");
+
+function getZoomToolMeta(part: ToolPartLike): ToolMeta | null {
+	const toolName = getRenderableToolName(part);
+
+	if (!toolName.startsWith("zoom_")) {
+		return null;
+	}
+
+	return {
+		groupKey: toolName.includes("search") ? "search" : undefined,
+		icon: Video,
+		title: () => (isPending(part) ? "Using Zoom" : "Used Zoom"),
+		subtitle: (currentPart) =>
+			clamp(
+				getFirstString(currentPart.input, [
+					"query",
+					"q",
+					"meetingId",
+					"meeting_id",
+					"id",
+				]) || toolName.replace(/^zoom_/, ""),
+			),
+	};
+}
+
 export const getToolMeta = (part: ToolPartLike) =>
-	toolRegistry[part.type] ?? getPostHogToolMeta(part);
+	toolRegistry[part.type] ?? getPostHogToolMeta(part) ?? getZoomToolMeta(part);

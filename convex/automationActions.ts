@@ -3,7 +3,10 @@
 import { openai } from "@ai-sdk/openai";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { v } from "convex/values";
-import { buildWorkspaceToolSet } from "../packages/ai/src/workspace-tool-registry.mjs";
+import {
+	buildWorkspaceToolSet,
+	type WorkspaceToolConnection,
+} from "../packages/ai/src/workspace-tool-registry.mjs";
 import { getChatModelProviderOptions } from "../packages/ai/src/models.mjs";
 import { buildPostHogTools } from "../packages/ai/src/posthog-tools.mjs";
 import { BASE_CHAT_SYSTEM_PROMPT } from "../packages/ai/src/prompts.mjs";
@@ -55,19 +58,26 @@ const getAutomationAppTools = async (
 
 	const connections =
 		run.appSources.length > 0
-			? await ctx.runQuery(internal.appConnections.getSelectedForChatInternal, {
-					ownerTokenIdentifier: run.ownerTokenIdentifier,
-					workspaceId: run.workspaceId,
-					sourceIds: run.appSources
-						.map((source) => source.id)
-						.filter((sourceId) => sourceId.startsWith("app:")),
-				})
-			: await ctx.runQuery(internal.appConnections.getAllForChatInternal, {
-					ownerTokenIdentifier: run.ownerTokenIdentifier,
-					workspaceId: run.workspaceId,
-				});
+			? await ctx.runAction(
+					internal.appConnectionActions
+						.getSelectedForChatInternalWithFreshTokens,
+					{
+						ownerTokenIdentifier: run.ownerTokenIdentifier,
+						workspaceId: run.workspaceId,
+						sourceIds: run.appSources
+							.map((source) => source.id)
+							.filter((sourceId) => sourceId.startsWith("app:")),
+					},
+				)
+			: await ctx.runAction(
+					internal.appConnectionActions.getAllForChatInternalWithFreshTokens,
+					{
+						ownerTokenIdentifier: run.ownerTokenIdentifier,
+						workspaceId: run.workspaceId,
+					},
+				);
 
-	return await buildWorkspaceToolSet(connections, {
+	return await buildWorkspaceToolSet(connections as WorkspaceToolConnection[], {
 		posthog: {
 			buildTools: buildPostHogTools,
 		},

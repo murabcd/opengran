@@ -82,10 +82,6 @@ const DESKTOP_PERMISSION_BUTTON_LABELS: Record<DesktopPermissionId, string> = {
 	systemAudio: "Enable",
 };
 
-const shouldShowDesktopInitialLoader = () =>
-	typeof document !== "undefined" &&
-	document.getElementById("root")?.dataset.initialLoader === "desktop";
-
 const useAppBootstrapState = () => {
 	const { data: session, isPending: isSessionPending } =
 		authClient.useSession();
@@ -1049,24 +1045,6 @@ function WelcomeCelebrationScreen({
 }
 
 function AuthBootstrapScreen({ isDesktopMac }: { isDesktopMac: boolean }) {
-	const [showInitialLoader] = React.useState(shouldShowDesktopInitialLoader);
-
-	React.useEffect(() => {
-		document.getElementById("root")?.removeAttribute("data-initial-loader");
-	}, []);
-
-	if (!showInitialLoader) {
-		return (
-			<div
-				data-app-region={isDesktopMac ? "drag" : undefined}
-				className={cn(
-					"min-h-svh bg-background",
-					isDesktopMac && DESKTOP_AUTH_SAFE_TOP_CLASS,
-				)}
-			/>
-		);
-	}
-
 	return (
 		<div
 			data-app-region={isDesktopMac ? "drag" : undefined}

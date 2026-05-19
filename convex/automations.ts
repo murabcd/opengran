@@ -37,6 +37,7 @@ const automationAppSourceProviderValidator = v.union(
 	v.literal("jira"),
 	v.literal("posthog"),
 	v.literal("notion"),
+	v.literal("zoom"),
 );
 
 const automationAppSourceValidator = v.object({
@@ -55,7 +56,8 @@ type AutomationAppSource = {
 		| "yandex-tracker"
 		| "jira"
 		| "posthog"
-		| "notion";
+		| "notion"
+		| "zoom";
 };
 
 const automationListItemValidator = v.object({

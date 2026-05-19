@@ -31,7 +31,10 @@ import {
 	NOTE_GENERATION_MODEL_ID,
 	normalizeReasoningEffort,
 } from "../packages/ai/src/models.mjs";
-import { buildWorkspaceToolSet } from "../packages/ai/src/workspace-tool-registry.mjs";
+import {
+	buildWorkspaceToolSet,
+	type WorkspaceToolConnection,
+} from "../packages/ai/src/workspace-tool-registry.mjs";
 import {
 	parseTemplateStreamToStructuredNote,
 	validateTemplateStream,
@@ -632,13 +635,13 @@ export const handleChatRequest = async (request: Request) => {
 		convexClient && resolvedWorkspaceId && appsEnabled
 			? selectedSourceIds?.length === 0
 				? await convexClient
-						.query(api.appConnections.getAllForChat, {
+						.action(api.appConnectionActions.getAllForChatWithFreshTokens, {
 							workspaceId: resolvedWorkspaceId,
 						})
 						.catch(() => [])
 				: appSourceIds.length > 0
 					? await convexClient
-							.query(api.appConnections.getSelectedForChat, {
+							.action(api.appConnectionActions.getSelectedForChatWithFreshTokens, {
 								workspaceId: resolvedWorkspaceId,
 								sourceIds: appSourceIds,
 							})
@@ -646,7 +649,7 @@ export const handleChatRequest = async (request: Request) => {
 					: []
 			: [];
 	const appTools = appsEnabled
-		? await buildWorkspaceToolSet(appConnections)
+		? await buildWorkspaceToolSet(appConnections as WorkspaceToolConnection[])
 		: {};
 	const imageGenerationRequested = shouldEnableImageGeneration(lastUserMessage);
 	const imageGenerationEnabled = Boolean(

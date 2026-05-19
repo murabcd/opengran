@@ -5,6 +5,7 @@ import { buildJiraTools } from "./jira-tools.mjs";
 import { buildNotionTools } from "./notion-tools.mjs";
 import { buildYandexCalendarTools } from "./yandex-calendar-tools.mjs";
 import { buildYandexTrackerTools } from "./yandex-tracker-tools.mjs";
+import { buildZoomMcpTools } from "./zoom-mcp-tools.mjs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CALENDAR_LOOKAHEAD_MS = 30 * DAY_MS;
@@ -121,6 +122,10 @@ export const buildWorkspaceToolSet = async (connections, adapters = {}) => {
 
 		if (connection.provider === "yandex-tracker") {
 			Object.assign(tools, buildYandexTrackerTools(connection));
+		}
+
+		if (connection.provider === "zoom") {
+			Object.assign(tools, await buildZoomMcpTools(connection));
 		}
 	}
 

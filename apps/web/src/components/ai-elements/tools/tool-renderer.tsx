@@ -27,6 +27,7 @@ export const toToolPartLike = (
 		result?: unknown;
 		state?: string;
 		toolCallId?: string;
+		toolName?: string;
 		type: string;
 	};
 

@@ -192,9 +192,12 @@ const getSelectedAppConnections = async ({
 		.catch(() => []);
 
 	if (allSelectedSourceIds.length === 0) {
-		const connections = await client.query(api.appConnections.getAllForChat, {
-			workspaceId: workspaceId as Id<"workspaces">,
-		});
+		const connections = await client.action(
+			api.appConnectionActions.getAllForChatWithFreshTokens,
+			{
+				workspaceId: workspaceId as Id<"workspaces">,
+			},
+		);
 		return [...connections, ...googleSources];
 	}
 
@@ -205,7 +208,7 @@ const getSelectedAppConnections = async ({
 	}
 
 	const [connections] = await Promise.all([
-		client.query(api.appConnections.getSelectedForChat, {
+		client.action(api.appConnectionActions.getSelectedForChatWithFreshTokens, {
 			workspaceId: workspaceId as Id<"workspaces">,
 			sourceIds,
 		}),
