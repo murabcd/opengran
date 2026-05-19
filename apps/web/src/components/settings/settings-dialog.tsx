@@ -295,9 +295,9 @@ type JiraConnectionFormState = {
 };
 
 type PostHogConnectionFormState = {
+	name: string;
 	baseUrl: string;
-	projectId: string;
-	token: string;
+	envVars: Array<{ id: string; key: string; value: string }>;
 };
 
 type NotionConnectionFormState = {
@@ -429,9 +429,7 @@ type PostHogConnectionSettings = {
 	provider: "posthog";
 	status: AppConnectionStatus;
 	displayName: string;
-	baseUrl: string;
-	projectId: string;
-	projectName: string;
+	endpoint: string;
 };
 
 type NotionConnectionSettings = {
@@ -616,9 +614,9 @@ const initialJiraConnectionFormState: JiraConnectionFormState = {
 };
 
 const initialPostHogConnectionFormState: PostHogConnectionFormState = {
-	baseUrl: "",
-	projectId: "",
-	token: "",
+	name: "PostHog",
+	baseUrl: "https://mcp.posthog.com/mcp",
+	envVars: [],
 };
 
 const initialNotionConnectionFormState: NotionConnectionFormState = {
@@ -1878,18 +1876,20 @@ function ConnectionsSettings() {
 		setJiraToken,
 		setNotionBaseUrl,
 		setNotionName,
+		setPostHogName,
 		setPostHogBaseUrl,
-		setPostHogProjectId,
-		setPostHogToken,
 		setZoomBaseUrl,
 		setZoomName,
 		setZoomOAuthClientId,
 		setZoomOAuthClientSecret,
 		addNotionEnvVar,
+		addPostHogEnvVar,
 		addZoomEnvVar,
 		removeNotionEnvVar,
+		removePostHogEnvVar,
 		removeZoomEnvVar,
 		updateNotionEnvVar,
+		updatePostHogEnvVar,
 		updateZoomEnvVar,
 		setYandexCalendarEmail,
 		setYandexCalendarPassword,
@@ -1960,9 +1960,11 @@ function ConnectionsSettings() {
 				open={isPostHogDialogOpen}
 				onOpenChange={handlePostHogDialogOpenChange}
 				formState={posthogFormState}
+				onNameChange={setPostHogName}
 				onBaseUrlChange={setPostHogBaseUrl}
-				onProjectIdChange={setPostHogProjectId}
-				onTokenChange={setPostHogToken}
+				onAddEnvVar={addPostHogEnvVar}
+				onRemoveEnvVar={removePostHogEnvVar}
+				onUpdateEnvVar={updatePostHogEnvVar}
 				onConnect={() => {
 					void handleConnectPostHog();
 				}}
@@ -2349,9 +2351,11 @@ function useConnectionsSettingsController() {
 			dispatch({
 				type: "setPostHogFormState",
 				value: {
-					baseUrl: posthogConnection?.baseUrl ?? "",
-					projectId: posthogConnection?.projectId ?? "",
-					token: "",
+					name: posthogConnection?.displayName ?? "PostHog",
+					baseUrl:
+						posthogConnection?.endpoint ??
+						initialPostHogConnectionFormState.baseUrl,
+					envVars: [],
 				},
 			});
 		} else {
@@ -2365,30 +2369,34 @@ function useConnectionsSettingsController() {
 	const handleConnectPostHog = async () => {
 		if (
 			!activeWorkspaceId ||
-			!posthogFormState.baseUrl.trim() ||
-			!posthogFormState.projectId.trim() ||
-			!posthogFormState.token.trim()
+			!posthogFormState.name.trim() ||
+			!posthogFormState.baseUrl.trim()
 		) {
 			return;
 		}
 
 		dispatch({ type: "setIsSavingPostHogConnection", value: true });
+		const oauthWindow = createOAuthNavigationTarget();
 
 		try {
-			await connectPostHog({
+			const result = await connectPostHog({
 				workspaceId: activeWorkspaceId,
+				displayName: posthogFormState.name.trim(),
 				baseUrl: posthogFormState.baseUrl.trim(),
-				projectId: posthogFormState.projectId.trim(),
-				token: posthogFormState.token.trim(),
+				env: Object.fromEntries(
+					posthogFormState.envVars
+						.map((envVar) => [envVar.key.trim(), envVar.value] as const)
+						.filter(([key, value]) => key.length > 0 && value.length > 0),
+				),
 			});
-			toast.success("PostHog connected");
+			await navigateToOAuthUrl(result.authorizationUrl, oauthWindow);
+			toast.success("Continue in PostHog to finish connecting");
 			handlePostHogDialogOpenChange(false);
 		} catch (error) {
+			oauthWindow?.close();
 			console.error("Failed to connect PostHog", error);
 			toast.error(
-				error instanceof Error
-					? withoutTrailingPeriod(error.message)
-					: "Failed to connect PostHog",
+				getConnectionErrorMessage(error, "Failed to connect PostHog"),
 			);
 		} finally {
 			dispatch({ type: "setIsSavingPostHogConnection", value: false });
@@ -2396,9 +2404,41 @@ function useConnectionsSettingsController() {
 	};
 
 	const isPostHogFormValid =
-		posthogFormState.baseUrl.trim().length > 0 &&
-		posthogFormState.projectId.trim().length > 0 &&
-		posthogFormState.token.trim().length > 0;
+		posthogFormState.name.trim().length > 0 &&
+		posthogFormState.baseUrl.trim().length > 0;
+
+	const addPostHogEnvVar = () =>
+		dispatch({
+			type: "patchPostHogFormState",
+			value: {
+				envVars: [
+					...posthogFormState.envVars,
+					{ id: crypto.randomUUID(), key: "", value: "" },
+				],
+			},
+		});
+
+	const removePostHogEnvVar = (id: string) =>
+		dispatch({
+			type: "patchPostHogFormState",
+			value: {
+				envVars: posthogFormState.envVars.filter((envVar) => envVar.id !== id),
+			},
+		});
+
+	const updatePostHogEnvVar = (
+		id: string,
+		key: "key" | "value",
+		value: string,
+	) =>
+		dispatch({
+			type: "patchPostHogFormState",
+			value: {
+				envVars: posthogFormState.envVars.map((envVar) =>
+					envVar.id === id ? { ...envVar, [key]: value } : envVar,
+				),
+			},
+		});
 
 	const handleNotionDialogOpenChange = (open: boolean) => {
 		dispatch({ type: "setIsNotionDialogOpen", value: open });
@@ -2840,10 +2880,13 @@ function useConnectionsSettingsController() {
 		handlePostHogDialogOpenChange,
 		handleYandexTrackerDialogOpenChange,
 		handleZoomDialogOpenChange,
+		addPostHogEnvVar,
 		addNotionEnvVar,
 		addZoomEnvVar,
+		removePostHogEnvVar,
 		removeNotionEnvVar,
 		removeZoomEnvVar,
+		updatePostHogEnvVar,
 		updateNotionEnvVar,
 		updateZoomEnvVar,
 		isJiraDialogOpen,
@@ -2888,15 +2931,10 @@ function useConnectionsSettingsController() {
 				type: "patchPostHogFormState",
 				value: { baseUrl },
 			}),
-		setPostHogProjectId: (projectId: string) =>
+		setPostHogName: (name: string) =>
 			dispatch({
 				type: "patchPostHogFormState",
-				value: { projectId },
-			}),
-		setPostHogToken: (token: string) =>
-			dispatch({
-				type: "patchPostHogFormState",
-				value: { token },
+				value: { name },
 			}),
 		setNotionBaseUrl: (baseUrl: string) =>
 			dispatch({
@@ -3288,9 +3326,11 @@ function PostHogDialog({
 	open,
 	onOpenChange,
 	formState,
+	onNameChange,
 	onBaseUrlChange,
-	onProjectIdChange,
-	onTokenChange,
+	onAddEnvVar,
+	onRemoveEnvVar,
+	onUpdateEnvVar,
 	onConnect,
 	isFormValid,
 	isSaving,
@@ -3298,63 +3338,121 @@ function PostHogDialog({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	formState: PostHogConnectionFormState;
+	onNameChange: (name: string) => void;
 	onBaseUrlChange: (baseUrl: string) => void;
-	onProjectIdChange: (projectId: string) => void;
-	onTokenChange: (token: string) => void;
+	onAddEnvVar: () => void;
+	onRemoveEnvVar: (id: string) => void;
+	onUpdateEnvVar: (id: string, key: "key" | "value", value: string) => void;
 	onConnect: () => void;
 	isFormValid: boolean;
 	isSaving: boolean;
 }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md">
+			<DialogContent className="sm:max-w-lg">
 				<DialogHeader>
 					<DialogTitle>Connect PostHog</DialogTitle>
 					<DialogDescription>
-						Enter the credentials OpenGran should use for your PostHog project.
+						Enter the PostHog MCP connection details OpenGran should use for
+						product analytics context.
 					</DialogDescription>
 				</DialogHeader>
 				<FieldGroup className="gap-4">
 					<Field>
 						<Label
-							htmlFor="posthog-base-url"
+							htmlFor="posthog-mcp-name"
 							className={SETTINGS_LABEL_CLASSNAME}
 						>
-							PostHog URL
+							Name
 						</Label>
 						<Input
-							id="posthog-base-url"
-							value={formState.baseUrl}
-							onChange={(event) => onBaseUrlChange(event.target.value)}
-							placeholder="https://us.posthog.com"
+							id="posthog-mcp-name"
+							value={formState.name}
+							onChange={(event) => onNameChange(event.target.value)}
+							placeholder="PostHog"
 						/>
 					</Field>
 					<Field>
 						<Label
-							htmlFor="posthog-project-id"
+							htmlFor="posthog-mcp-base-url"
 							className={SETTINGS_LABEL_CLASSNAME}
 						>
-							Project ID
+							Base URL
 						</Label>
 						<Input
-							id="posthog-project-id"
-							value={formState.projectId}
-							onChange={(event) => onProjectIdChange(event.target.value)}
-							placeholder="123456"
+							id="posthog-mcp-base-url"
+							value={formState.baseUrl}
+							onChange={(event) => onBaseUrlChange(event.target.value)}
+							placeholder="https://mcp.posthog.com/mcp"
 						/>
 					</Field>
 					<Field>
-						<Label htmlFor="posthog-token" className={SETTINGS_LABEL_CLASSNAME}>
-							Personal API key
-						</Label>
-						<Input
-							id="posthog-token"
-							type="password"
-							value={formState.token}
-							onChange={(event) => onTokenChange(event.target.value)}
-							placeholder="phx_..."
-						/>
+						<div className="flex items-center justify-between gap-3">
+							<Label className={SETTINGS_LABEL_CLASSNAME}>
+								Headers (optional)
+							</Label>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={onAddEnvVar}
+							>
+								<Plus />
+								Add variable
+							</Button>
+						</div>
+						{formState.envVars.length > 0 ? (
+							<div className="space-y-2">
+								{formState.envVars.map((envVar) => (
+									<div key={envVar.id} className="flex gap-2">
+										<Input
+											value={envVar.key}
+											onChange={(event) =>
+												onUpdateEnvVar(envVar.id, "key", event.target.value)
+											}
+											placeholder="key"
+										/>
+										<Input
+											type="password"
+											value={envVar.value}
+											onChange={(event) =>
+												onUpdateEnvVar(envVar.id, "value", event.target.value)
+											}
+											placeholder="value"
+										/>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											onClick={() => onRemoveEnvVar(envVar.id)}
+											aria-label="Remove variable"
+										>
+											<X />
+										</Button>
+									</div>
+								))}
+							</div>
+						) : null}
 					</Field>
+					<Collapsible>
+						<CollapsibleTrigger asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								className="w-full justify-between bg-transparent aria-expanded:bg-transparent"
+							>
+								Advanced settings
+								<ChevronDown className="size-4" />
+							</Button>
+						</CollapsibleTrigger>
+						<CollapsibleContent className="space-y-4 pt-4">
+							<FieldDescription>
+								PostHog MCP uses OAuth with dynamic client registration. Headers
+								are only needed for optional MCP server configuration such as
+								project selection.
+							</FieldDescription>
+						</CollapsibleContent>
+					</Collapsible>
 				</FieldGroup>
 				<div className="flex justify-end gap-2 pt-2">
 					<Button

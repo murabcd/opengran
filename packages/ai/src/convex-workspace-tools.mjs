@@ -1,6 +1,5 @@
 import { api } from "../../../convex/_generated/api.js";
 import { buildWorkspaceToolSet } from "./workspace-tool-registry.mjs";
-import { buildPostHogTools } from "./posthog-tools.mjs";
 
 const hasConnection = (connections, provider) =>
 	connections.some((connection) => connection.provider === provider);
@@ -13,13 +12,6 @@ export const buildConvexWorkspaceToolSet = async ({
 	const canUseWorkspaceTools = Boolean(convexClient && workspaceId);
 
 	return await buildWorkspaceToolSet(connections, {
-		...(hasConnection(connections, "posthog")
-			? {
-					posthog: {
-						buildTools: buildPostHogTools,
-					},
-				}
-			: {}),
 		...(hasConnection(connections, "google-calendar") &&
 		convexClient &&
 		canUseWorkspaceTools

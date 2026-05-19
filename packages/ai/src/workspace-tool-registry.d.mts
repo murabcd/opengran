@@ -1,7 +1,7 @@
 import type { ToolSet } from "ai";
 import type { JiraToolConnection } from "./jira-tools.mjs";
 import type { NotionMcpToolConnection } from "./notion-tools.mjs";
-import type { PostHogToolConnection } from "./posthog-tools.mjs";
+import type { PostHogMcpToolConnection } from "./posthog-tools.mjs";
 import type { YandexTrackerToolConnection } from "./yandex-tracker-tools.mjs";
 import type { ZoomMcpToolConnection } from "./zoom-mcp-tools.mjs";
 
@@ -32,7 +32,7 @@ export type GoogleDriveToolConnection = {
 export type WorkspaceToolConnection =
 	| JiraToolConnection
 	| NotionMcpToolConnection
-	| PostHogToolConnection
+	| PostHogMcpToolConnection
 	| YandexTrackerToolConnection
 	| YandexCalendarToolConnection
 	| GoogleCalendarToolConnection
@@ -40,9 +40,6 @@ export type WorkspaceToolConnection =
 	| ZoomMcpToolConnection;
 
 export type WorkspaceToolAdapters = {
-	posthog?: {
-		buildTools(connection: PostHogToolConnection): Promise<ToolSet>;
-	};
 	googleCalendar?: {
 		listEvents(args: {
 			limit?: number;

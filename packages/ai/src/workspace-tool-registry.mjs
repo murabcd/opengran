@@ -3,6 +3,7 @@ import { buildGoogleCalendarTools } from "./google-calendar-tools.mjs";
 import { buildGoogleDriveTools } from "./google-drive-tools.mjs";
 import { buildJiraTools } from "./jira-tools.mjs";
 import { buildNotionTools } from "./notion-tools.mjs";
+import { buildPostHogTools } from "./posthog-tools.mjs";
 import { buildYandexCalendarTools } from "./yandex-calendar-tools.mjs";
 import { buildYandexTrackerTools } from "./yandex-tracker-tools.mjs";
 import { buildZoomMcpTools } from "./zoom-mcp-tools.mjs";
@@ -98,8 +99,8 @@ export const buildWorkspaceToolSet = async (connections, adapters = {}) => {
 			Object.assign(tools, await buildNotionTools(connection));
 		}
 
-		if (connection.provider === "posthog" && adapters.posthog) {
-			Object.assign(tools, await adapters.posthog.buildTools(connection));
+		if (connection.provider === "posthog") {
+			Object.assign(tools, await buildPostHogTools(connection));
 		}
 
 		if (connection.provider === "google-calendar" && adapters.googleCalendar) {

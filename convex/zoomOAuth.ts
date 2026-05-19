@@ -101,12 +101,20 @@ export const handleZoomOAuthCallbackRequest = async (
 	}
 
 	const pendingState = await ctx.runMutation(
-		internal.appConnections.consumeZoomOAuthState,
-		{ state },
+		internal.appConnections.consumeMcpOAuthState,
+		{ provider: "zoom", state },
 	);
 
 	if (!pendingState || pendingState.expiresAt < Date.now()) {
 		return htmlResponse("Zoom connection expired", "Start the Zoom connection again.", 400);
+	}
+
+	if (!pendingState.oauthClientSecret) {
+		return htmlResponse(
+			"Zoom connection failed",
+			"Zoom OAuth client secret is missing.",
+			500,
+		);
 	}
 
 	const redirectUri = getRedirectUri();

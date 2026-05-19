@@ -56,9 +56,7 @@ const posthogConnectionSettingsValidator = v.object({
 	provider: posthogProviderValidator,
 	status: appConnectionStatusValidator,
 	displayName: v.string(),
-	baseUrl: v.string(),
-	projectId: v.string(),
-	projectName: v.string(),
+	endpoint: v.string(),
 });
 
 const notionConnectionSettingsValidator = v.object({
@@ -137,9 +135,9 @@ const posthogChatToolConnectionValidator = v.object({
 	provider: posthogProviderValidator,
 	displayName: v.string(),
 	baseUrl: v.string(),
-	projectId: v.string(),
-	projectName: v.string(),
-	token: v.string(),
+	env: v.optional(v.record(v.string(), v.string())),
+	oauthClientId: v.optional(v.string()),
+	oauthAccessToken: v.string(),
 });
 
 const notionChatToolConnectionValidator = v.object({
@@ -198,10 +196,17 @@ const zoomOAuthConnectionValidator = v.object({
 	tokenExpiresAt: v.optional(v.number()),
 });
 
-const notionOAuthConnectionValidator = v.object({
+const mcpOAuthProviderValidator = v.union(
+	v.literal("notion"),
+	v.literal("posthog"),
+	v.literal("zoom"),
+);
+
+const mcpOAuthConnectionValidator = v.object({
 	connectionId: v.id("appConnections"),
 	ownerTokenIdentifier: v.string(),
 	workspaceId: v.id("workspaces"),
+	provider: mcpOAuthProviderValidator,
 	baseUrl: v.string(),
 	oauthClientId: v.string(),
 	oauthClientSecret: v.optional(v.string()),
@@ -246,9 +251,7 @@ type PostHogConnectionSettings = {
 	provider: "posthog";
 	status: "connected" | "disconnected";
 	displayName: string;
-	baseUrl: string;
-	projectId: string;
-	projectName: string;
+	endpoint: string;
 };
 
 type NotionConnectionSettings = {
@@ -317,9 +320,9 @@ export type ChatToolConnection =
 			provider: "posthog";
 			displayName: string;
 			baseUrl: string;
-			projectId: string;
-			projectName: string;
-			token: string;
+			env?: Record<string, string>;
+			oauthClientId?: string;
+			oauthAccessToken: string;
 	  }
 	| {
 			sourceId: string;
@@ -401,19 +404,14 @@ const getJiraPreview = (connection: Doc<"appConnections">) => {
 };
 
 const getPostHogPreview = (connection: Doc<"appConnections">) => {
-	const projectLabel =
-		connection.projectName?.trim() ||
-		(connection.projectId ? `Project ${connection.projectId}` : "PostHog");
-
 	if (!connection.baseUrl) {
-		return projectLabel;
+		return "PostHog MCP";
 	}
 
 	try {
-		const hostname = new URL(connection.baseUrl).hostname;
-		return `${hostname} • ${projectLabel}`;
+		return new URL(connection.baseUrl).hostname;
 	} catch {
-		return `${connection.baseUrl} • ${projectLabel}`;
+		return connection.baseUrl;
 	}
 };
 
@@ -634,8 +632,6 @@ const toChatToolConnection = (
 	if (
 		connection.provider === "posthog" &&
 		connection.baseUrl &&
-		connection.projectId &&
-		connection.projectName &&
 		connection.token
 	) {
 		return {
@@ -643,9 +639,13 @@ const toChatToolConnection = (
 			provider: "posthog",
 			displayName: connection.displayName,
 			baseUrl: connection.baseUrl,
-			projectId: connection.projectId,
-			projectName: connection.projectName,
-			token: connection.token,
+			...(connection.envJson
+				? { env: JSON.parse(connection.envJson) as Record<string, string> }
+				: {}),
+			...(connection.accountId
+				? { oauthClientId: connection.accountId }
+				: {}),
+			oauthAccessToken: connection.token,
 		};
 	}
 
@@ -883,11 +883,7 @@ export const getPostHog = query({
 			args.workspaceId,
 		);
 
-		if (
-			!connection?.baseUrl ||
-			!connection.projectId ||
-			!connection.projectName
-		) {
+		if (!connection?.baseUrl) {
 			return null;
 		}
 
@@ -896,9 +892,7 @@ export const getPostHog = query({
 			provider: "posthog" as const,
 			status: connection.status,
 			displayName: connection.displayName,
-			baseUrl: connection.baseUrl,
-			projectId: connection.projectId,
-			projectName: connection.projectName,
+			endpoint: connection.baseUrl,
 		};
 	},
 });
@@ -1056,7 +1050,7 @@ export const getZoomOAuthConnectionsForWorkspace = internalQuery({
 						.eq("workspaceId", args.workspaceId)
 						.eq("provider", "zoom"),
 			)
-			.collect();
+			.take(10);
 
 		return connections
 			.filter(
@@ -1082,12 +1076,13 @@ export const getZoomOAuthConnectionsForWorkspace = internalQuery({
 	},
 });
 
-export const getNotionOAuthConnectionsForWorkspace = internalQuery({
+export const getMcpOAuthConnectionsForWorkspace = internalQuery({
 	args: {
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),
+		provider: mcpOAuthProviderValidator,
 	},
-	returns: v.array(notionOAuthConnectionValidator),
+	returns: v.array(mcpOAuthConnectionValidator),
 	handler: async (ctx, args) => {
 		const connections = await ctx.db
 			.query("appConnections")
@@ -1097,9 +1092,9 @@ export const getNotionOAuthConnectionsForWorkspace = internalQuery({
 					q
 						.eq("ownerTokenIdentifier", args.ownerTokenIdentifier)
 						.eq("workspaceId", args.workspaceId)
-						.eq("provider", "notion"),
+						.eq("provider", args.provider),
 			)
-			.collect();
+			.take(10);
 
 		return connections
 			.filter(
@@ -1113,6 +1108,7 @@ export const getNotionOAuthConnectionsForWorkspace = internalQuery({
 				connectionId: connection._id,
 				ownerTokenIdentifier: connection.ownerTokenIdentifier,
 				workspaceId: connection.workspaceId,
+				provider: args.provider,
 				baseUrl: connection.baseUrl as string,
 				oauthClientId: connection.accountId as string,
 				...(connection.oauthClientSecret
@@ -1161,11 +1157,12 @@ export const updateZoomOAuthTokens = internalMutation({
 	},
 });
 
-export const updateNotionOAuthTokens = internalMutation({
+export const updateMcpOAuthTokens = internalMutation({
 	args: {
 		connectionId: v.id("appConnections"),
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),
+		provider: mcpOAuthProviderValidator,
 		oauthAccessToken: v.string(),
 		oauthRefreshToken: v.optional(v.string()),
 		tokenExpiresAt: v.optional(v.number()),
@@ -1176,7 +1173,7 @@ export const updateNotionOAuthTokens = internalMutation({
 
 		if (
 			!connection ||
-			connection.provider !== "notion" ||
+			connection.provider !== args.provider ||
 			connection.ownerTokenIdentifier !== args.ownerTokenIdentifier ||
 			connection.workspaceId !== args.workspaceId
 		) {
@@ -1753,10 +1750,14 @@ export const upsertPostHog = internalMutation({
 	args: {
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),
+		displayName: v.string(),
 		baseUrl: v.string(),
-		projectId: v.string(),
-		projectName: v.string(),
-		token: v.string(),
+		env: v.optional(v.record(v.string(), v.string())),
+		oauthClientId: v.optional(v.string()),
+		oauthClientSecret: v.optional(v.string()),
+		oauthAccessToken: v.string(),
+		oauthRefreshToken: v.optional(v.string()),
+		tokenExpiresAt: v.optional(v.number()),
 	},
 	returns: posthogConnectionSettingsValidator,
 	handler: async (ctx, args): Promise<PostHogConnectionSettings> => {
@@ -1766,11 +1767,12 @@ export const upsertPostHog = internalMutation({
 			args.workspaceId,
 		);
 		const now = Date.now();
+		const displayName = args.displayName.trim() || "PostHog";
 		const baseUrl = args.baseUrl.trim();
-		const projectId = args.projectId.trim();
-		const projectName = args.projectName.trim() || `Project ${projectId}`;
-		const token = args.token.trim();
-		const displayName = projectName;
+		const envJson = args.env ? JSON.stringify(args.env) : undefined;
+		const oauthClientId = args.oauthClientId?.trim() || undefined;
+		const oauthClientSecret = args.oauthClientSecret?.trim() || undefined;
+		const oauthRefreshToken = args.oauthRefreshToken?.trim() || undefined;
 		const existingConnection = await getOwnedPostHogConnection(
 			ctx,
 			args.ownerTokenIdentifier,
@@ -1782,9 +1784,12 @@ export const upsertPostHog = internalMutation({
 				status: "connected",
 				displayName,
 				baseUrl,
-				projectId,
-				projectName,
-				token,
+				envJson,
+				...(oauthClientId ? { accountId: oauthClientId } : {}),
+				...(oauthClientSecret ? { oauthClientSecret } : {}),
+				token: args.oauthAccessToken,
+				...(oauthRefreshToken ? { oauthRefreshToken } : {}),
+				tokenExpiresAt: args.tokenExpiresAt,
 				updatedAt: now,
 			});
 
@@ -1793,9 +1798,7 @@ export const upsertPostHog = internalMutation({
 				provider: "posthog" as const,
 				status: "connected" as const,
 				displayName,
-				baseUrl,
-				projectId,
-				projectName,
+				endpoint: baseUrl,
 			};
 		}
 
@@ -1806,9 +1809,12 @@ export const upsertPostHog = internalMutation({
 			status: "connected",
 			displayName,
 			baseUrl,
-			projectId,
-			projectName,
-			token,
+			...(envJson ? { envJson } : {}),
+			...(oauthClientId ? { accountId: oauthClientId } : {}),
+			...(oauthClientSecret ? { oauthClientSecret } : {}),
+			token: args.oauthAccessToken,
+			...(oauthRefreshToken ? { oauthRefreshToken } : {}),
+			...(args.tokenExpiresAt ? { tokenExpiresAt: args.tokenExpiresAt } : {}),
 			createdAt: now,
 			updatedAt: now,
 		});
@@ -1818,9 +1824,7 @@ export const upsertPostHog = internalMutation({
 			provider: "posthog" as const,
 			status: "connected" as const,
 			displayName,
-			baseUrl,
-			projectId,
-			projectName,
+			endpoint: baseUrl,
 		};
 	},
 });
@@ -1993,8 +1997,18 @@ export const upsertZoom = internalMutation({
 	},
 });
 
-export const createNotionOAuthState = internalMutation({
+const removeExpiredMcpOAuthStates = async (ctx: MutationCtx, now: number) => {
+	const expiredStates = await ctx.db
+		.query("mcpOAuthStates")
+		.withIndex("by_expiresAt", (q) => q.lt("expiresAt", now))
+		.take(50);
+
+	await Promise.all(expiredStates.map((state) => ctx.db.delete(state._id)));
+};
+
+export const createMcpOAuthState = internalMutation({
 	args: {
+		provider: mcpOAuthProviderValidator,
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),
 		displayName: v.string(),
@@ -2002,8 +2016,8 @@ export const createNotionOAuthState = internalMutation({
 		env: v.optional(v.record(v.string(), v.string())),
 		oauthClientId: v.string(),
 		oauthClientSecret: v.optional(v.string()),
-		oauthTokenEndpoint: v.string(),
-		codeVerifier: v.string(),
+		oauthTokenEndpoint: v.optional(v.string()),
+		codeVerifier: v.optional(v.string()),
 		state: v.string(),
 		expiresAt: v.number(),
 	},
@@ -2015,20 +2029,30 @@ export const createNotionOAuthState = internalMutation({
 			args.workspaceId,
 		);
 		const now = Date.now();
+		await removeExpiredMcpOAuthStates(ctx, now);
 
-		await ctx.db.insert("notionOAuthStates", {
+		await ctx.db.insert("mcpOAuthStates", {
+			provider: args.provider,
 			state: args.state,
 			ownerTokenIdentifier: args.ownerTokenIdentifier,
 			workspaceId: args.workspaceId,
-			displayName: args.displayName.trim() || "Notion",
+			displayName:
+				args.displayName.trim() ||
+				(args.provider === "posthog"
+					? "PostHog"
+					: args.provider === "zoom"
+						? "Zoom"
+						: "Notion"),
 			baseUrl: args.baseUrl.trim(),
 			...(args.env ? { envJson: JSON.stringify(args.env) } : {}),
 			oauthClientId: args.oauthClientId.trim(),
 			...(args.oauthClientSecret
 				? { oauthClientSecret: args.oauthClientSecret.trim() }
 				: {}),
-			oauthTokenEndpoint: args.oauthTokenEndpoint.trim(),
-			codeVerifier: args.codeVerifier,
+			...(args.oauthTokenEndpoint
+				? { oauthTokenEndpoint: args.oauthTokenEndpoint.trim() }
+				: {}),
+			...(args.codeVerifier ? { codeVerifier: args.codeVerifier } : {}),
 			expiresAt: args.expiresAt,
 			createdAt: now,
 		});
@@ -2037,12 +2061,14 @@ export const createNotionOAuthState = internalMutation({
 	},
 });
 
-export const consumeNotionOAuthState = internalMutation({
+export const consumeMcpOAuthState = internalMutation({
 	args: {
+		provider: mcpOAuthProviderValidator,
 		state: v.string(),
 	},
 	returns: v.union(
 		v.object({
+			provider: mcpOAuthProviderValidator,
 			ownerTokenIdentifier: v.string(),
 			workspaceId: v.id("workspaces"),
 			displayName: v.string(),
@@ -2050,25 +2076,26 @@ export const consumeNotionOAuthState = internalMutation({
 			envJson: v.optional(v.string()),
 			oauthClientId: v.string(),
 			oauthClientSecret: v.optional(v.string()),
-			oauthTokenEndpoint: v.string(),
-			codeVerifier: v.string(),
+			oauthTokenEndpoint: v.optional(v.string()),
+			codeVerifier: v.optional(v.string()),
 			expiresAt: v.number(),
 		}),
 		v.null(),
 	),
 	handler: async (ctx, args) => {
 		const state = await ctx.db
-			.query("notionOAuthStates")
+			.query("mcpOAuthStates")
 			.withIndex("by_state", (q) => q.eq("state", args.state))
 			.unique();
 
-		if (!state) {
+		if (!state || state.provider !== args.provider) {
 			return null;
 		}
 
 		await ctx.db.delete(state._id);
 
 		return {
+			provider: state.provider,
 			ownerTokenIdentifier: state.ownerTokenIdentifier,
 			workspaceId: state.workspaceId,
 			displayName: state.displayName,
@@ -2078,88 +2105,10 @@ export const consumeNotionOAuthState = internalMutation({
 			...(state.oauthClientSecret
 				? { oauthClientSecret: state.oauthClientSecret }
 				: {}),
-			oauthTokenEndpoint: state.oauthTokenEndpoint,
-			codeVerifier: state.codeVerifier,
-			expiresAt: state.expiresAt,
-		};
-	},
-});
-
-export const createZoomOAuthState = internalMutation({
-	args: {
-		ownerTokenIdentifier: v.string(),
-		workspaceId: v.id("workspaces"),
-		displayName: v.string(),
-		baseUrl: v.string(),
-		env: v.optional(v.record(v.string(), v.string())),
-		oauthClientId: v.string(),
-		oauthClientSecret: v.string(),
-		state: v.string(),
-		expiresAt: v.number(),
-	},
-	returns: v.null(),
-	handler: async (ctx, args) => {
-		await requireOwnedWorkspace(
-			ctx,
-			args.ownerTokenIdentifier,
-			args.workspaceId,
-		);
-		const now = Date.now();
-
-		await ctx.db.insert("zoomOAuthStates", {
-			state: args.state,
-			ownerTokenIdentifier: args.ownerTokenIdentifier,
-			workspaceId: args.workspaceId,
-			displayName: args.displayName.trim() || "Zoom",
-			baseUrl: args.baseUrl.trim(),
-			...(args.env ? { envJson: JSON.stringify(args.env) } : {}),
-			oauthClientId: args.oauthClientId.trim(),
-			oauthClientSecret: args.oauthClientSecret.trim(),
-			expiresAt: args.expiresAt,
-			createdAt: now,
-		});
-
-		return null;
-	},
-});
-
-export const consumeZoomOAuthState = internalMutation({
-	args: {
-		state: v.string(),
-	},
-	returns: v.union(
-		v.object({
-			ownerTokenIdentifier: v.string(),
-			workspaceId: v.id("workspaces"),
-			displayName: v.string(),
-			baseUrl: v.string(),
-			envJson: v.optional(v.string()),
-			oauthClientId: v.string(),
-			oauthClientSecret: v.string(),
-			expiresAt: v.number(),
-		}),
-		v.null(),
-	),
-	handler: async (ctx, args) => {
-		const state = await ctx.db
-			.query("zoomOAuthStates")
-			.withIndex("by_state", (q) => q.eq("state", args.state))
-			.unique();
-
-		if (!state) {
-			return null;
-		}
-
-		await ctx.db.delete(state._id);
-
-		return {
-			ownerTokenIdentifier: state.ownerTokenIdentifier,
-			workspaceId: state.workspaceId,
-			displayName: state.displayName,
-			baseUrl: state.baseUrl,
-			...(state.envJson ? { envJson: state.envJson } : {}),
-			oauthClientId: state.oauthClientId,
-			oauthClientSecret: state.oauthClientSecret,
+			...(state.oauthTokenEndpoint
+				? { oauthTokenEndpoint: state.oauthTokenEndpoint }
+				: {}),
+			...(state.codeVerifier ? { codeVerifier: state.codeVerifier } : {}),
 			expiresAt: state.expiresAt,
 		};
 	},

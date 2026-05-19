@@ -8,7 +8,6 @@ import {
 	type WorkspaceToolConnection,
 } from "../packages/ai/src/workspace-tool-registry.mjs";
 import { getChatModelProviderOptions } from "../packages/ai/src/models.mjs";
-import { buildPostHogTools } from "../packages/ai/src/posthog-tools.mjs";
 import { BASE_CHAT_SYSTEM_PROMPT } from "../packages/ai/src/prompts.mjs";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -77,11 +76,7 @@ const getAutomationAppTools = async (
 					},
 				);
 
-	return await buildWorkspaceToolSet(connections as WorkspaceToolConnection[], {
-		posthog: {
-			buildTools: buildPostHogTools,
-		},
-	});
+	return await buildWorkspaceToolSet(connections as WorkspaceToolConnection[]);
 };
 
 const buildAutomationSystemPrompt = ({

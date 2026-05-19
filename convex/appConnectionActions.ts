@@ -52,21 +52,11 @@ const jiraConnectionResultValidator = v.object({
 	lastMentionSyncAt: v.optional(v.number()),
 });
 
-const posthogConnectionResultValidator = v.object({
-	sourceId: v.string(),
-	provider: v.literal("posthog"),
-	status: v.union(v.literal("connected"), v.literal("disconnected")),
-	displayName: v.string(),
-	baseUrl: v.string(),
-	projectId: v.string(),
-	projectName: v.string(),
-});
-
 const zoomOAuthStartResultValidator = v.object({
 	authorizationUrl: v.string(),
 });
 
-const notionOAuthStartResultValidator = v.object({
+const mcpOAuthStartResultValidator = v.object({
 	authorizationUrl: v.string(),
 });
 
@@ -102,26 +92,16 @@ type JiraConnectionResult = {
 	lastMentionSyncAt?: number;
 };
 
-type PostHogConnectionResult = {
-	sourceId: string;
-	provider: "posthog";
-	status: "connected" | "disconnected";
-	displayName: string;
-	baseUrl: string;
-	projectId: string;
-	projectName: string;
-};
-
 type ZoomOAuthStartResult = {
 	authorizationUrl: string;
 };
 
-type NotionOAuthStartResult = {
+type McpOAuthStartResult = {
 	authorizationUrl: string;
 };
 
 const ZOOM_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
-const NOTION_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+const MCP_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 const getConvexSiteUrl = () => {
 	const siteUrl = process.env.CONVEX_SITE_URL?.trim();
@@ -139,11 +119,10 @@ const getConvexSiteUrl = () => {
 const getZoomOAuthRedirectUri = () =>
 	`${getConvexSiteUrl()}/api/oauth/zoom/callback`;
 
-const createZoomOAuthState = () => crypto.randomUUID();
-const createNotionOAuthState = () => randomBytes(32).toString("hex");
+const createMcpOAuthState = () => randomBytes(32).toString("hex");
 
-const getNotionOAuthRedirectUri = () =>
-	`${getConvexSiteUrl()}/api/oauth/notion/callback`;
+const getMcpOAuthRedirectUri = (provider: "notion" | "posthog") =>
+	`${getConvexSiteUrl()}/api/oauth/${provider}/callback`;
 
 const getZoomOAuthConfig = (overrides: {
 	oauthClientId?: string;
@@ -274,7 +253,7 @@ type DynamicClientRegistrationResponse = {
 	client_secret?: unknown;
 };
 
-type NotionTokenResponse = {
+type McpOAuthTokenResponse = {
 	access_token?: unknown;
 	refresh_token?: unknown;
 	expires_in?: unknown;
@@ -292,7 +271,7 @@ const createPkceVerifier = () => base64UrlEncode(randomBytes(32));
 const createPkceChallenge = (verifier: string) =>
 	base64UrlEncode(createHash("sha256").update(verifier).digest());
 
-const discoverNotionOAuthMetadata = async (baseUrl: string) => {
+const discoverMcpOAuthMetadata = async (baseUrl: string, displayName: string) => {
 	const mcpUrl = new URL(baseUrl);
 	const resourceMetadataUrl = new URL(
 		"/.well-known/oauth-protected-resource",
@@ -306,7 +285,7 @@ const discoverNotionOAuthMetadata = async (baseUrl: string) => {
 
 	if (!resourceResponse.ok) {
 		throw new Error(
-			`Notion MCP OAuth resource discovery failed (${resourceResponse.status}).`,
+			`${displayName} MCP OAuth resource discovery failed (${resourceResponse.status}).`,
 		);
 	}
 
@@ -319,7 +298,9 @@ const discoverNotionOAuthMetadata = async (baseUrl: string) => {
 			: "";
 
 	if (!authServerUrl) {
-		throw new Error("Notion MCP OAuth discovery did not return an auth server.");
+		throw new Error(
+			`${displayName} MCP OAuth discovery did not return an auth server.`,
+		);
 	}
 
 	const metadataUrl = new URL(
@@ -332,7 +313,7 @@ const discoverNotionOAuthMetadata = async (baseUrl: string) => {
 
 	if (!metadataResponse.ok) {
 		throw new Error(
-			`Notion MCP OAuth metadata discovery failed (${metadataResponse.status}).`,
+			`${displayName} MCP OAuth metadata discovery failed (${metadataResponse.status}).`,
 		);
 	}
 
@@ -343,7 +324,9 @@ const discoverNotionOAuthMetadata = async (baseUrl: string) => {
 		typeof metadata.token_endpoint !== "string" ||
 		typeof metadata.registration_endpoint !== "string"
 	) {
-		throw new Error("Notion MCP OAuth metadata is missing required endpoints.");
+		throw new Error(
+			`${displayName} MCP OAuth metadata is missing required endpoints.`,
+		);
 	}
 
 	return {
@@ -353,12 +336,14 @@ const discoverNotionOAuthMetadata = async (baseUrl: string) => {
 	};
 };
 
-const registerNotionOAuthClient = async ({
+const registerMcpOAuthClient = async ({
 	registrationEndpoint,
 	redirectUri,
+	displayName,
 }: {
 	registrationEndpoint: string;
 	redirectUri: string;
+	displayName: string;
 }) => {
 	const response = await fetch(registrationEndpoint, {
 		method: "POST",
@@ -378,7 +363,7 @@ const registerNotionOAuthClient = async ({
 	if (!response.ok) {
 		const responseText = await response.text().catch(() => "");
 		throw new Error(
-			`Notion MCP OAuth client registration failed (${response.status}).${responseText ? ` ${responseText}` : ""}`,
+			`${displayName} MCP OAuth client registration failed (${response.status}).${responseText ? ` ${responseText}` : ""}`,
 		);
 	}
 
@@ -387,7 +372,7 @@ const registerNotionOAuthClient = async ({
 
 	if (typeof registration.client_id !== "string") {
 		throw new Error(
-			"Notion MCP OAuth client registration did not return a client ID.",
+			`${displayName} MCP OAuth client registration did not return a client ID.`,
 		);
 	}
 
@@ -400,18 +385,20 @@ const registerNotionOAuthClient = async ({
 	};
 };
 
-const refreshNotionOAuthToken = async ({
+const refreshMcpOAuthToken = async ({
 	baseUrl,
 	clientId,
 	clientSecret,
 	refreshToken,
+	displayName,
 }: {
 	baseUrl: string;
 	clientId: string;
 	clientSecret?: string;
 	refreshToken: string;
+	displayName: string;
 }) => {
-	const { tokenEndpoint } = await discoverNotionOAuthMetadata(baseUrl);
+	const { tokenEndpoint } = await discoverMcpOAuthMetadata(baseUrl, displayName);
 	const params = new URLSearchParams({
 		grant_type: "refresh_token",
 		refresh_token: refreshToken,
@@ -435,14 +422,16 @@ const refreshNotionOAuthToken = async ({
 	if (!response.ok) {
 		const responseText = await response.text().catch(() => "");
 		throw new Error(
-			`Notion MCP OAuth refresh failed (${response.status}).${responseText ? ` ${responseText}` : ""}`,
+			`${displayName} MCP OAuth refresh failed (${response.status}).${responseText ? ` ${responseText}` : ""}`,
 		);
 	}
 
-	const tokenResponse = (await response.json()) as NotionTokenResponse;
+	const tokenResponse = (await response.json()) as McpOAuthTokenResponse;
 
 	if (typeof tokenResponse.access_token !== "string") {
-		throw new Error("Notion MCP OAuth refresh did not return an access token.");
+		throw new Error(
+			`${displayName} MCP OAuth refresh did not return an access token.`,
+		);
 	}
 
 	return {
@@ -458,16 +447,18 @@ const refreshNotionOAuthToken = async ({
 	};
 };
 
-const refreshNotionTokensForWorkspace = async (
+const refreshMcpTokensForWorkspace = async (
 	ctx: ActionCtx,
 	ownerTokenIdentifier: string,
 	workspaceId: Id<"workspaces">,
+	provider: "notion" | "posthog",
 ) => {
 	const refreshSkewMs = 2 * 60 * 1000;
 	const connections = await ctx.runQuery(
-		internal.appConnections.getNotionOAuthConnectionsForWorkspace,
-		{ ownerTokenIdentifier, workspaceId },
+		internal.appConnections.getMcpOAuthConnectionsForWorkspace,
+		{ ownerTokenIdentifier, workspaceId, provider },
 	);
+	const displayName = provider === "posthog" ? "PostHog" : "Notion";
 
 	await Promise.all(
 		connections
@@ -477,19 +468,21 @@ const refreshNotionTokensForWorkspace = async (
 					connection.tokenExpiresAt <= Date.now() + refreshSkewMs,
 			)
 			.map(async (connection) => {
-				const tokens = await refreshNotionOAuthToken({
+				const tokens = await refreshMcpOAuthToken({
 					baseUrl: connection.baseUrl,
 					clientId: connection.oauthClientId,
 					...(connection.oauthClientSecret
 						? { clientSecret: connection.oauthClientSecret }
 						: {}),
 					refreshToken: connection.oauthRefreshToken,
+					displayName,
 				});
 
-				await ctx.runMutation(internal.appConnections.updateNotionOAuthTokens, {
+				await ctx.runMutation(internal.appConnections.updateMcpOAuthTokens, {
 					connectionId: connection.connectionId,
 					ownerTokenIdentifier: connection.ownerTokenIdentifier,
 					workspaceId: connection.workspaceId,
+					provider,
 					oauthAccessToken: tokens.accessToken,
 					...(tokens.refreshToken
 						? { oauthRefreshToken: tokens.refreshToken }
@@ -506,11 +499,6 @@ type JiraCurrentUserResponse = {
 	accountId?: unknown;
 };
 
-type PostHogProjectResponse = {
-	id?: unknown;
-	name?: unknown;
-};
-
 const TRACKER_API_BASE_URL =
 	process.env.TRACKER_API_BASE_URL ?? "https://api.tracker.yandex.net";
 
@@ -525,27 +513,6 @@ const normalizeJiraBaseUrl = (value: string) => {
 		throw new ConvexError({
 			code: "INVALID_CONNECTION_DETAILS",
 			message: "Jira base URL must be a valid URL.",
-		});
-	}
-
-	url.pathname = url.pathname.replace(/\/+$/, "");
-	url.search = "";
-	url.hash = "";
-
-	return url.toString().replace(/\/$/, "");
-};
-
-const normalizePostHogBaseUrl = (value: string) => {
-	const trimmedValue = value.trim();
-
-	let url: URL;
-
-	try {
-		url = new URL(trimmedValue);
-	} catch {
-		throw new ConvexError({
-			code: "INVALID_CONNECTION_DETAILS",
-			message: "PostHog URL must be a valid URL.",
 		});
 	}
 
@@ -582,13 +549,16 @@ const normalizeZoomMcpEndpoint = (value: string) => {
 	return url.toString();
 };
 
-const normalizeNotionMcpEndpoint = (value: string) => {
+const normalizeRemoteMcpEndpoint = (
+	value: string,
+	{ provider, label }: { provider: "notion" | "posthog"; label: string },
+) => {
 	const trimmedValue = value.trim();
 
 	if (!trimmedValue) {
 		throw new ConvexError({
-			code: "NOTION_MCP_ENDPOINT_REQUIRED",
-			message: "Notion MCP endpoint is required.",
+			code: `${provider.toUpperCase()}_MCP_ENDPOINT_REQUIRED`,
+			message: `${label} MCP endpoint is required.`,
 		});
 	}
 
@@ -598,15 +568,15 @@ const normalizeNotionMcpEndpoint = (value: string) => {
 		url = new URL(trimmedValue);
 	} catch {
 		throw new ConvexError({
-			code: "NOTION_MCP_ENDPOINT_INVALID",
-			message: "Notion MCP endpoint must be a valid URL.",
+			code: `${provider.toUpperCase()}_MCP_ENDPOINT_INVALID`,
+			message: `${label} MCP endpoint must be a valid URL.`,
 		});
 	}
 
 	if (url.protocol !== "https:") {
 		throw new ConvexError({
-			code: "NOTION_MCP_ENDPOINT_INVALID",
-			message: "Notion MCP endpoint must use HTTPS.",
+			code: `${provider.toUpperCase()}_MCP_ENDPOINT_INVALID`,
+			message: `${label} MCP endpoint must use HTTPS.`,
 		});
 	}
 
@@ -791,60 +761,80 @@ export const connectJira = action({
 export const connectPostHog = action({
 	args: {
 		workspaceId: v.id("workspaces"),
+		displayName: v.string(),
 		baseUrl: v.string(),
-		projectId: v.string(),
-		token: v.string(),
+		env: v.optional(v.record(v.string(), v.string())),
 	},
-	returns: posthogConnectionResultValidator,
-	handler: async (ctx, args): Promise<PostHogConnectionResult> => {
+	returns: mcpOAuthStartResultValidator,
+	handler: async (ctx, args): Promise<McpOAuthStartResult> => {
 		const identity = await requireIdentity(ctx);
-		const baseUrl = normalizePostHogBaseUrl(args.baseUrl);
-		const projectId = args.projectId.trim();
-		const token = args.token.trim();
-
-		if (!projectId || !token) {
-			throw new ConvexError({
-				code: "INVALID_CONNECTION_DETAILS",
-				message: "PostHog project ID and personal API key are required.",
-			});
-		}
-
-		const response = await fetch(
-			`${baseUrl}/api/projects/${encodeURIComponent(projectId)}`,
-			{
-				headers: {
-					Authorization: `Bearer ${token}`,
-					Accept: "application/json",
-				},
-			},
+		const redirectUri = getMcpOAuthRedirectUri("posthog");
+		const baseUrl = normalizeRemoteMcpEndpoint(args.baseUrl, {
+			provider: "posthog",
+			label: "PostHog",
+		});
+		const displayName = args.displayName.trim() || "PostHog";
+		const env = Object.fromEntries(
+			Object.entries(args.env ?? {}).filter(
+				([key, value]) => key.trim().length > 0 && value.length > 0,
+			),
 		);
 
-		if (!response.ok) {
-			const responseText = await response.text().catch(() => "");
+		if (!redirectUri.startsWith("http")) {
 			throw new ConvexError({
-				code: "POSTHOG_CONNECTION_FAILED",
-				message: responseText.trim()
-					? `Failed to connect PostHog: ${responseText.trim()}`
-					: `Failed to connect PostHog (${response.status}).`,
+				code: "POSTHOG_OAUTH_NOT_CONFIGURED",
+				message: "PostHog OAuth is not configured.",
 			});
 		}
 
-		const project = (await response
-			.json()
-			.catch(() => null)) as PostHogProjectResponse | null;
-		const projectName =
-			project && typeof project.name === "string" && project.name.trim()
-				? project.name.trim()
-				: `Project ${projectId}`;
+		let metadata: Awaited<ReturnType<typeof discoverMcpOAuthMetadata>>;
+		let client: Awaited<ReturnType<typeof registerMcpOAuthClient>>;
+		try {
+			metadata = await discoverMcpOAuthMetadata(baseUrl, "PostHog");
+			client = await registerMcpOAuthClient({
+				registrationEndpoint: metadata.registrationEndpoint,
+				redirectUri,
+				displayName: "PostHog",
+			});
+		} catch (error) {
+			console.error("Failed to prepare PostHog MCP OAuth connection", error);
+			throw new ConvexError({
+				code: "POSTHOG_OAUTH_NOT_CONFIGURED",
+				message: "Failed to start PostHog OAuth.",
+			});
+		}
 
-		return await ctx.runMutation(internal.appConnections.upsertPostHog, {
+		const codeVerifier = createPkceVerifier();
+		const codeChallenge = createPkceChallenge(codeVerifier);
+		const state = createMcpOAuthState();
+
+		await ctx.runMutation(internal.appConnections.createMcpOAuthState, {
+			provider: "posthog",
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,
+			displayName,
 			baseUrl,
-			projectId,
-			projectName,
-			token,
+			...(Object.keys(env).length > 0 ? { env } : {}),
+			oauthClientId: client.clientId,
+			...(client.clientSecret
+				? { oauthClientSecret: client.clientSecret }
+				: {}),
+			oauthTokenEndpoint: metadata.tokenEndpoint,
+			codeVerifier,
+			state,
+			expiresAt: Date.now() + MCP_OAUTH_STATE_TTL_MS,
 		});
+
+		const authorizationUrl = new URL(metadata.authorizationEndpoint);
+		authorizationUrl.searchParams.set("response_type", "code");
+		authorizationUrl.searchParams.set("client_id", client.clientId);
+		authorizationUrl.searchParams.set("redirect_uri", redirectUri);
+		authorizationUrl.searchParams.set("state", state);
+		authorizationUrl.searchParams.set("code_challenge", codeChallenge);
+		authorizationUrl.searchParams.set("code_challenge_method", "S256");
+		authorizationUrl.searchParams.set("prompt", "consent");
+
+		return { authorizationUrl: authorizationUrl.toString() };
 	},
 });
 
@@ -855,11 +845,14 @@ export const connectNotion = action({
 		baseUrl: v.string(),
 		env: v.optional(v.record(v.string(), v.string())),
 	},
-	returns: notionOAuthStartResultValidator,
-	handler: async (ctx, args): Promise<NotionOAuthStartResult> => {
+	returns: mcpOAuthStartResultValidator,
+	handler: async (ctx, args): Promise<McpOAuthStartResult> => {
 		const identity = await requireIdentity(ctx);
-		const redirectUri = getNotionOAuthRedirectUri();
-		const baseUrl = normalizeNotionMcpEndpoint(args.baseUrl);
+		const redirectUri = getMcpOAuthRedirectUri("notion");
+		const baseUrl = normalizeRemoteMcpEndpoint(args.baseUrl, {
+			provider: "notion",
+			label: "Notion",
+		});
 		const displayName = args.displayName.trim() || "Notion";
 		const env = Object.fromEntries(
 			Object.entries(args.env ?? {}).filter(
@@ -874,13 +867,14 @@ export const connectNotion = action({
 			});
 		}
 
-		let metadata: Awaited<ReturnType<typeof discoverNotionOAuthMetadata>>;
-		let client: Awaited<ReturnType<typeof registerNotionOAuthClient>>;
+		let metadata: Awaited<ReturnType<typeof discoverMcpOAuthMetadata>>;
+		let client: Awaited<ReturnType<typeof registerMcpOAuthClient>>;
 		try {
-			metadata = await discoverNotionOAuthMetadata(baseUrl);
-			client = await registerNotionOAuthClient({
+			metadata = await discoverMcpOAuthMetadata(baseUrl, "Notion");
+			client = await registerMcpOAuthClient({
 				registrationEndpoint: metadata.registrationEndpoint,
 				redirectUri,
+				displayName: "Notion",
 			});
 		} catch (error) {
 			console.error("Failed to prepare Notion MCP OAuth connection", error);
@@ -892,9 +886,10 @@ export const connectNotion = action({
 
 		const codeVerifier = createPkceVerifier();
 		const codeChallenge = createPkceChallenge(codeVerifier);
-		const state = createNotionOAuthState();
+		const state = createMcpOAuthState();
 
-		await ctx.runMutation(internal.appConnections.createNotionOAuthState, {
+		await ctx.runMutation(internal.appConnections.createMcpOAuthState, {
+			provider: "notion",
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,
 			displayName,
@@ -907,7 +902,7 @@ export const connectNotion = action({
 			oauthTokenEndpoint: metadata.tokenEndpoint,
 			codeVerifier,
 			state,
-			expiresAt: Date.now() + NOTION_OAUTH_STATE_TTL_MS,
+			expiresAt: Date.now() + MCP_OAUTH_STATE_TTL_MS,
 		});
 
 		const authorizationUrl = new URL(metadata.authorizationEndpoint);
@@ -947,8 +942,9 @@ export const connectZoom = action({
 			),
 		);
 
-		const state = createZoomOAuthState();
-		await ctx.runMutation(internal.appConnections.createZoomOAuthState, {
+		const state = createMcpOAuthState();
+		await ctx.runMutation(internal.appConnections.createMcpOAuthState, {
+			provider: "zoom",
 			ownerTokenIdentifier: identity.tokenIdentifier,
 			workspaceId: args.workspaceId,
 			displayName,
@@ -978,10 +974,17 @@ export const getAllForChatWithFreshTokens = action({
 	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
 		const identity = await requireIdentity(ctx);
 		await Promise.all([
-			refreshNotionTokensForWorkspace(
+			refreshMcpTokensForWorkspace(
 				ctx,
 				identity.tokenIdentifier,
 				args.workspaceId,
+				"notion",
+			),
+			refreshMcpTokensForWorkspace(
+				ctx,
+				identity.tokenIdentifier,
+				args.workspaceId,
+				"posthog",
 			),
 			refreshZoomTokensForWorkspace(
 				ctx,
@@ -1008,10 +1011,17 @@ export const getSelectedForChatWithFreshTokens = action({
 	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
 		const identity = await requireIdentity(ctx);
 		await Promise.all([
-			refreshNotionTokensForWorkspace(
+			refreshMcpTokensForWorkspace(
 				ctx,
 				identity.tokenIdentifier,
 				args.workspaceId,
+				"notion",
+			),
+			refreshMcpTokensForWorkspace(
+				ctx,
+				identity.tokenIdentifier,
+				args.workspaceId,
+				"posthog",
 			),
 			refreshZoomTokensForWorkspace(
 				ctx,
@@ -1037,11 +1047,25 @@ export const getAllForChatInternalWithFreshTokens = internalAction({
 	},
 	returns: v.array(chatToolConnectionValidator),
 	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
-		await refreshZoomTokensForWorkspace(
-			ctx,
-			args.ownerTokenIdentifier,
-			args.workspaceId,
-		);
+		await Promise.all([
+			refreshMcpTokensForWorkspace(
+				ctx,
+				args.ownerTokenIdentifier,
+				args.workspaceId,
+				"notion",
+			),
+			refreshMcpTokensForWorkspace(
+				ctx,
+				args.ownerTokenIdentifier,
+				args.workspaceId,
+				"posthog",
+			),
+			refreshZoomTokensForWorkspace(
+				ctx,
+				args.ownerTokenIdentifier,
+				args.workspaceId,
+			),
+		]);
 		return await ctx.runQuery(
 			internal.appConnections.getAllForChatInternal,
 			{
@@ -1060,11 +1084,25 @@ export const getSelectedForChatInternalWithFreshTokens = internalAction({
 	},
 	returns: v.array(chatToolConnectionValidator),
 	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
-		await refreshZoomTokensForWorkspace(
-			ctx,
-			args.ownerTokenIdentifier,
-			args.workspaceId,
-		);
+		await Promise.all([
+			refreshMcpTokensForWorkspace(
+				ctx,
+				args.ownerTokenIdentifier,
+				args.workspaceId,
+				"notion",
+			),
+			refreshMcpTokensForWorkspace(
+				ctx,
+				args.ownerTokenIdentifier,
+				args.workspaceId,
+				"posthog",
+			),
+			refreshZoomTokensForWorkspace(
+				ctx,
+				args.ownerTokenIdentifier,
+				args.workspaceId,
+			),
+		]);
 		return await ctx.runQuery(
 			internal.appConnections.getSelectedForChatInternal,
 			{

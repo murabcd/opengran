@@ -131,12 +131,6 @@ export const toolUiMetadata = {
 		complete: "Searched Tracker",
 		subtitleKeys: ["query", "q"],
 	},
-	posthog_query_generate_hogql_from_question: {
-		icon: "database",
-		running: "Querying PostHog",
-		complete: "Queried PostHog",
-		subtitleKeys: ["question"],
-	},
 };
 
 export const getToolUiMetadata = (toolName) => toolUiMetadata[toolName] ?? null;

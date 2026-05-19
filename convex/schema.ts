@@ -573,8 +573,6 @@ export default defineSchema({
 		oauthRefreshToken: v.optional(v.string()),
 		oauthClientSecret: v.optional(v.string()),
 		tokenExpiresAt: v.optional(v.number()),
-		projectId: v.optional(v.string()),
-		projectName: v.optional(v.string()),
 		webhookSecret: v.optional(v.string()),
 		serverAddress: v.optional(v.string()),
 		calendarHomePath: v.optional(v.string()),
@@ -601,25 +599,8 @@ export default defineSchema({
 			"status",
 			"updatedAt",
 		]),
-	zoomOAuthStates: defineTable({
-		state: v.string(),
-		ownerTokenIdentifier: v.string(),
-		workspaceId: v.id("workspaces"),
-		displayName: v.string(),
-		baseUrl: v.string(),
-		envJson: v.optional(v.string()),
-		oauthClientId: v.string(),
-		oauthClientSecret: v.string(),
-		expiresAt: v.number(),
-		createdAt: v.number(),
-	})
-		.index("by_state", ["state"])
-		.index("by_ownerTokenIdentifier_and_workspaceId", [
-			"ownerTokenIdentifier",
-			"workspaceId",
-		])
-		.index("by_expiresAt", ["expiresAt"]),
-	notionOAuthStates: defineTable({
+	mcpOAuthStates: defineTable({
+		provider: v.union(v.literal("notion"), v.literal("posthog"), v.literal("zoom")),
 		state: v.string(),
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),
@@ -628,8 +609,8 @@ export default defineSchema({
 		envJson: v.optional(v.string()),
 		oauthClientId: v.string(),
 		oauthClientSecret: v.optional(v.string()),
-		oauthTokenEndpoint: v.string(),
-		codeVerifier: v.string(),
+		oauthTokenEndpoint: v.optional(v.string()),
+		codeVerifier: v.optional(v.string()),
 		expiresAt: v.number(),
 		createdAt: v.number(),
 	})

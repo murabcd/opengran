@@ -690,7 +690,7 @@ export const handleChatRequest = async (
 			: ""
 	}${
 		posthogConnection
-			? `\n\nThe selected app source for this chat is PostHog (${posthogConnection.projectName}). Treat it as the preferred source for product analytics, saved insights, dashboards, feature flags, experiments, errors, event schema, surveys, and queryable product usage context. Only read-only PostHog tools are available in this chat. If the user's request could plausibly be answered from PostHog, use the PostHog tools before saying the context is unavailable.`
+			? `\n\nThe selected app source for this chat is PostHog (${posthogConnection.displayName}). Treat it as the preferred source for product analytics, saved insights, dashboards, feature flags, experiments, errors, event schema, surveys, and queryable product usage context. If the user's request could plausibly be answered from PostHog, use the PostHog MCP tools before saying the context is unavailable.`
 			: ""
 	}${
 		notionConnection

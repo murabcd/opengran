@@ -1,6 +1,17 @@
-import { validateNotionMcpConnection } from "../packages/ai/src/notion-tools.mjs";
+import { validateRemoteMcpConnection } from "../packages/ai/src/remote-mcp-tools.mjs";
 import { internal } from "./_generated/api";
 import type { ActionCtx } from "./_generated/server";
+
+type McpOAuthProvider = "notion" | "posthog";
+
+type ProviderConfig = {
+	displayName: string;
+};
+
+const PROVIDER_CONFIG: Record<McpOAuthProvider, ProviderConfig> = {
+	notion: { displayName: "Notion" },
+	posthog: { displayName: "PostHog" },
+};
 
 const jsonResponse = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), {
@@ -26,21 +37,23 @@ const htmlResponse = (title: string, message: string, status = 200) =>
 
 const getConvexSiteUrl = () => process.env.CONVEX_SITE_URL?.trim() ?? "";
 
-const getRedirectUri = () => `${getConvexSiteUrl()}/api/oauth/notion/callback`;
+const getRedirectUri = (provider: McpOAuthProvider) =>
+	`${getConvexSiteUrl()}/api/oauth/${provider}/callback`;
 
-type NotionTokenResponse = {
+type McpTokenResponse = {
 	access_token?: unknown;
 	refresh_token?: unknown;
 	expires_in?: unknown;
 };
 
-const exchangeNotionOAuthCode = async ({
+const exchangeMcpOAuthCode = async ({
 	clientId,
 	clientSecret,
 	code,
 	codeVerifier,
 	redirectUri,
 	tokenEndpoint,
+	displayName,
 }: {
 	clientId: string;
 	clientSecret?: string;
@@ -48,6 +61,7 @@ const exchangeNotionOAuthCode = async ({
 	codeVerifier: string;
 	redirectUri: string;
 	tokenEndpoint: string;
+	displayName: string;
 }) => {
 	const params = new URLSearchParams({
 		grant_type: "authorization_code",
@@ -74,14 +88,16 @@ const exchangeNotionOAuthCode = async ({
 	if (!response.ok) {
 		const responseText = await response.text().catch(() => "");
 		throw new Error(
-			`Notion OAuth token exchange failed (${response.status}).${responseText ? ` ${responseText}` : ""}`,
+			`${displayName} OAuth token exchange failed (${response.status}).${responseText ? ` ${responseText}` : ""}`,
 		);
 	}
 
-	const tokenResponse = (await response.json()) as NotionTokenResponse;
+	const tokenResponse = (await response.json()) as McpTokenResponse;
 
 	if (typeof tokenResponse.access_token !== "string") {
-		throw new Error("Notion OAuth token exchange did not return an access token.");
+		throw new Error(
+			`${displayName} OAuth token exchange did not return an access token.`,
+		);
 	}
 
 	return {
@@ -97,10 +113,12 @@ const exchangeNotionOAuthCode = async ({
 	};
 };
 
-export const handleNotionOAuthCallbackRequest = async (
+export const handleMcpOAuthCallbackRequest = async (
 	ctx: ActionCtx,
 	request: Request,
+	provider: McpOAuthProvider,
 ) => {
+	const { displayName } = PROVIDER_CONFIG[provider];
 	const url = new URL(request.url);
 	const code = url.searchParams.get("code")?.trim();
 	const state = url.searchParams.get("state")?.trim();
@@ -109,40 +127,51 @@ export const handleNotionOAuthCallbackRequest = async (
 
 	if (error) {
 		return htmlResponse(
-			"Notion connection failed",
+			`${displayName} connection failed`,
 			errorDescription || error,
 			400,
 		);
 	}
 
 	if (!code || !state) {
-		return jsonResponse({ message: "Missing Notion OAuth code or state." }, 400);
-	}
-
-	const pendingState = await ctx.runMutation(
-		internal.appConnections.consumeNotionOAuthState,
-		{ state },
-	);
-
-	if (!pendingState || pendingState.expiresAt < Date.now()) {
-		return htmlResponse(
-			"Notion connection expired",
-			"Start the Notion connection again.",
+		return jsonResponse(
+			{ message: `Missing ${displayName} OAuth code or state.` },
 			400,
 		);
 	}
 
-	const redirectUri = getRedirectUri();
+	const pendingState = await ctx.runMutation(
+		internal.appConnections.consumeMcpOAuthState,
+		{ provider, state },
+	);
+
+	if (!pendingState || pendingState.expiresAt < Date.now()) {
+		return htmlResponse(
+			`${displayName} connection expired`,
+			`Start the ${displayName} connection again.`,
+			400,
+		);
+	}
+
+	const redirectUri = getRedirectUri(provider);
 	if (!redirectUri.startsWith("http")) {
 		return htmlResponse(
-			"Notion connection failed",
+			`${displayName} connection failed`,
 			"CONVEX_SITE_URL is not configured.",
 			500,
 		);
 	}
 
+	if (!pendingState.oauthTokenEndpoint || !pendingState.codeVerifier) {
+		return htmlResponse(
+			`${displayName} connection failed`,
+			`${displayName} OAuth state is incomplete.`,
+			500,
+		);
+	}
+
 	try {
-		const tokens = await exchangeNotionOAuthCode({
+		const tokens = await exchangeMcpOAuthCode({
 			clientId: pendingState.oauthClientId,
 			...(pendingState.oauthClientSecret
 				? { clientSecret: pendingState.oauthClientSecret }
@@ -151,19 +180,27 @@ export const handleNotionOAuthCallbackRequest = async (
 			codeVerifier: pendingState.codeVerifier,
 			redirectUri,
 			tokenEndpoint: pendingState.oauthTokenEndpoint,
+			displayName,
 		});
 		const env = pendingState.envJson
 			? (JSON.parse(pendingState.envJson) as Record<string, string>)
 			: undefined;
 
-		await validateNotionMcpConnection({
+		await validateRemoteMcpConnection({
+			provider,
+			displayName,
 			baseUrl: pendingState.baseUrl,
 			...(env ? { env } : {}),
 			oauthClientId: pendingState.oauthClientId,
 			oauthAccessToken: tokens.accessToken,
 		});
 
-		await ctx.runMutation(internal.appConnections.upsertNotion, {
+		const mutation =
+			provider === "posthog"
+				? internal.appConnections.upsertPostHog
+				: internal.appConnections.upsertNotion;
+
+		await ctx.runMutation(mutation, {
 			ownerTokenIdentifier: pendingState.ownerTokenIdentifier,
 			workspaceId: pendingState.workspaceId,
 			displayName: pendingState.displayName,
@@ -180,13 +217,16 @@ export const handleNotionOAuthCallbackRequest = async (
 				: {}),
 		});
 	} catch (connectionError) {
-		console.error("Failed to complete Notion OAuth connection", connectionError);
+		console.error(`Failed to complete ${displayName} OAuth connection`, connectionError);
 		return htmlResponse(
-			"Notion connection failed",
-			"OpenGran could not complete the Notion connection.",
+			`${displayName} connection failed`,
+			`OpenGran could not complete the ${displayName} connection.`,
 			500,
 		);
 	}
 
-	return htmlResponse("Notion connected", "You can close this window and return to OpenGran.");
+	return htmlResponse(
+		`${displayName} connected`,
+		"You can close this window and return to OpenGran.",
+	);
 };
