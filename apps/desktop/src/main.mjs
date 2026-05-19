@@ -94,6 +94,8 @@ const transcriptDraftStorageVersion = 1;
 const transcriptDraftMaxAgeMs = 72 * 60 * 60 * 1000;
 const noteDraftStorageVersion = 1;
 const noteDraftMaxAgeMs = 72 * 60 * 60 * 1000;
+const maxLocalFolderShareRequestPaths = 8;
+const maxLocalFolderPathLength = 4096;
 const maxSharedLocalFolders = 12;
 const meetingDetectionDebounceMs = 8_000;
 const meetingDetectionDismissMs = 30 * 60 * 1000;
@@ -190,6 +192,12 @@ const shareLocalFolders = async (paths) => {
 		throw new Error("Local folder paths must be an array.");
 	}
 
+	if (paths.length > maxLocalFolderShareRequestPaths) {
+		throw new Error(
+			`At most ${maxLocalFolderShareRequestPaths} local folders can be shared at once.`,
+		);
+	}
+
 	const folders = [];
 
 	for (const value of paths) {
@@ -197,7 +205,13 @@ const shareLocalFolders = async (paths) => {
 			continue;
 		}
 
-		const folderPath = await realpath(value.trim());
+		const requestedPath = value.trim();
+
+		if (requestedPath.length > maxLocalFolderPathLength) {
+			throw new Error("Local folder path is too long.");
+		}
+
+		const folderPath = await realpath(requestedPath);
 		const folderStat = await stat(folderPath);
 
 		if (!folderStat.isDirectory()) {
