@@ -57,6 +57,7 @@ const posthogConnectionSettingsValidator = v.object({
 	status: appConnectionStatusValidator,
 	displayName: v.string(),
 	endpoint: v.string(),
+	oauthClientId: v.optional(v.string()),
 });
 
 const notionConnectionSettingsValidator = v.object({
@@ -65,6 +66,7 @@ const notionConnectionSettingsValidator = v.object({
 	status: appConnectionStatusValidator,
 	displayName: v.string(),
 	endpoint: v.string(),
+	oauthClientId: v.optional(v.string()),
 });
 
 const zoomConnectionSettingsValidator = v.object({
@@ -893,6 +895,9 @@ export const getPostHog = query({
 			status: connection.status,
 			displayName: connection.displayName,
 			endpoint: connection.baseUrl,
+			...(connection.accountId
+				? { oauthClientId: connection.accountId }
+				: {}),
 		};
 	},
 });
@@ -925,6 +930,9 @@ export const getNotion = query({
 			status: connection.status,
 			displayName: connection.displayName,
 			endpoint: connection.baseUrl,
+			...(connection.accountId
+				? { oauthClientId: connection.accountId }
+				: {}),
 		};
 	},
 });
@@ -1799,6 +1807,7 @@ export const upsertPostHog = internalMutation({
 				status: "connected" as const,
 				displayName,
 				endpoint: baseUrl,
+				...(oauthClientId ? { oauthClientId } : {}),
 			};
 		}
 
@@ -1825,6 +1834,7 @@ export const upsertPostHog = internalMutation({
 			status: "connected" as const,
 			displayName,
 			endpoint: baseUrl,
+			...(oauthClientId ? { oauthClientId } : {}),
 		};
 	},
 });
@@ -1882,6 +1892,7 @@ export const upsertNotion = internalMutation({
 				status: "connected" as const,
 				displayName,
 				endpoint: baseUrl,
+				...(oauthClientId ? { oauthClientId } : {}),
 			};
 		}
 
@@ -1908,6 +1919,7 @@ export const upsertNotion = internalMutation({
 			status: "connected" as const,
 			displayName,
 			endpoint: baseUrl,
+			...(oauthClientId ? { oauthClientId } : {}),
 		};
 	},
 });

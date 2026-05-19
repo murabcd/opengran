@@ -764,6 +764,8 @@ export const connectPostHog = action({
 		displayName: v.string(),
 		baseUrl: v.string(),
 		env: v.optional(v.record(v.string(), v.string())),
+		oauthClientId: v.optional(v.string()),
+		oauthClientSecret: v.optional(v.string()),
 	},
 	returns: mcpOAuthStartResultValidator,
 	handler: async (ctx, args): Promise<McpOAuthStartResult> => {
@@ -779,6 +781,9 @@ export const connectPostHog = action({
 				([key, value]) => key.trim().length > 0 && value.length > 0,
 			),
 		);
+		const requestedOAuthClientId = args.oauthClientId?.trim() || undefined;
+		const requestedOAuthClientSecret =
+			args.oauthClientSecret?.trim() || undefined;
 
 		if (!redirectUri.startsWith("http")) {
 			throw new ConvexError({
@@ -788,14 +793,21 @@ export const connectPostHog = action({
 		}
 
 		let metadata: Awaited<ReturnType<typeof discoverMcpOAuthMetadata>>;
-		let client: Awaited<ReturnType<typeof registerMcpOAuthClient>>;
+		let client: { clientId: string; clientSecret?: string };
 		try {
 			metadata = await discoverMcpOAuthMetadata(baseUrl, "PostHog");
-			client = await registerMcpOAuthClient({
-				registrationEndpoint: metadata.registrationEndpoint,
-				redirectUri,
-				displayName: "PostHog",
-			});
+			client = requestedOAuthClientId
+				? {
+						clientId: requestedOAuthClientId,
+						...(requestedOAuthClientSecret
+							? { clientSecret: requestedOAuthClientSecret }
+							: {}),
+					}
+				: await registerMcpOAuthClient({
+						registrationEndpoint: metadata.registrationEndpoint,
+						redirectUri,
+						displayName: "PostHog",
+					});
 		} catch (error) {
 			console.error("Failed to prepare PostHog MCP OAuth connection", error);
 			throw new ConvexError({
@@ -844,6 +856,8 @@ export const connectNotion = action({
 		displayName: v.string(),
 		baseUrl: v.string(),
 		env: v.optional(v.record(v.string(), v.string())),
+		oauthClientId: v.optional(v.string()),
+		oauthClientSecret: v.optional(v.string()),
 	},
 	returns: mcpOAuthStartResultValidator,
 	handler: async (ctx, args): Promise<McpOAuthStartResult> => {
@@ -859,6 +873,9 @@ export const connectNotion = action({
 				([key, value]) => key.trim().length > 0 && value.length > 0,
 			),
 		);
+		const requestedOAuthClientId = args.oauthClientId?.trim() || undefined;
+		const requestedOAuthClientSecret =
+			args.oauthClientSecret?.trim() || undefined;
 
 		if (!redirectUri.startsWith("http")) {
 			throw new ConvexError({
@@ -868,14 +885,21 @@ export const connectNotion = action({
 		}
 
 		let metadata: Awaited<ReturnType<typeof discoverMcpOAuthMetadata>>;
-		let client: Awaited<ReturnType<typeof registerMcpOAuthClient>>;
+		let client: { clientId: string; clientSecret?: string };
 		try {
 			metadata = await discoverMcpOAuthMetadata(baseUrl, "Notion");
-			client = await registerMcpOAuthClient({
-				registrationEndpoint: metadata.registrationEndpoint,
-				redirectUri,
-				displayName: "Notion",
-			});
+			client = requestedOAuthClientId
+				? {
+						clientId: requestedOAuthClientId,
+						...(requestedOAuthClientSecret
+							? { clientSecret: requestedOAuthClientSecret }
+							: {}),
+					}
+				: await registerMcpOAuthClient({
+						registrationEndpoint: metadata.registrationEndpoint,
+						redirectUri,
+						displayName: "Notion",
+					});
 		} catch (error) {
 			console.error("Failed to prepare Notion MCP OAuth connection", error);
 			throw new ConvexError({

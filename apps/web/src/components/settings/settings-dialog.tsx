@@ -298,12 +298,16 @@ type PostHogConnectionFormState = {
 	name: string;
 	baseUrl: string;
 	envVars: Array<{ id: string; key: string; value: string }>;
+	oauthClientId: string;
+	oauthClientSecret: string;
 };
 
 type NotionConnectionFormState = {
 	name: string;
 	baseUrl: string;
 	envVars: Array<{ id: string; key: string; value: string }>;
+	oauthClientId: string;
+	oauthClientSecret: string;
 };
 
 type ZoomConnectionFormState = {
@@ -430,6 +434,7 @@ type PostHogConnectionSettings = {
 	status: AppConnectionStatus;
 	displayName: string;
 	endpoint: string;
+	oauthClientId?: string;
 };
 
 type NotionConnectionSettings = {
@@ -438,6 +443,7 @@ type NotionConnectionSettings = {
 	status: AppConnectionStatus;
 	displayName: string;
 	endpoint: string;
+	oauthClientId?: string;
 };
 
 type ZoomConnectionSettings = {
@@ -617,12 +623,16 @@ const initialPostHogConnectionFormState: PostHogConnectionFormState = {
 	name: "PostHog",
 	baseUrl: "https://mcp.posthog.com/mcp",
 	envVars: [],
+	oauthClientId: "",
+	oauthClientSecret: "",
 };
 
 const initialNotionConnectionFormState: NotionConnectionFormState = {
 	name: "Notion",
 	baseUrl: "https://mcp.notion.com/mcp",
 	envVars: [],
+	oauthClientId: "",
+	oauthClientSecret: "",
 };
 
 const initialZoomConnectionFormState: ZoomConnectionFormState = {
@@ -1876,8 +1886,12 @@ function ConnectionsSettings() {
 		setJiraToken,
 		setNotionBaseUrl,
 		setNotionName,
+		setNotionOAuthClientId,
+		setNotionOAuthClientSecret,
 		setPostHogName,
 		setPostHogBaseUrl,
+		setPostHogOAuthClientId,
+		setPostHogOAuthClientSecret,
 		setZoomBaseUrl,
 		setZoomName,
 		setZoomOAuthClientId,
@@ -1965,6 +1979,8 @@ function ConnectionsSettings() {
 				onAddEnvVar={addPostHogEnvVar}
 				onRemoveEnvVar={removePostHogEnvVar}
 				onUpdateEnvVar={updatePostHogEnvVar}
+				onOAuthClientIdChange={setPostHogOAuthClientId}
+				onOAuthClientSecretChange={setPostHogOAuthClientSecret}
 				onConnect={() => {
 					void handleConnectPostHog();
 				}}
@@ -1980,6 +1996,8 @@ function ConnectionsSettings() {
 				onAddEnvVar={addNotionEnvVar}
 				onRemoveEnvVar={removeNotionEnvVar}
 				onUpdateEnvVar={updateNotionEnvVar}
+				onOAuthClientIdChange={setNotionOAuthClientId}
+				onOAuthClientSecretChange={setNotionOAuthClientSecret}
 				onConnect={() => {
 					void handleConnectNotion();
 				}}
@@ -2356,6 +2374,8 @@ function useConnectionsSettingsController() {
 						posthogConnection?.endpoint ??
 						initialPostHogConnectionFormState.baseUrl,
 					envVars: [],
+					oauthClientId: posthogConnection?.oauthClientId ?? "",
+					oauthClientSecret: "",
 				},
 			});
 		} else {
@@ -2388,6 +2408,12 @@ function useConnectionsSettingsController() {
 						.map((envVar) => [envVar.key.trim(), envVar.value] as const)
 						.filter(([key, value]) => key.length > 0 && value.length > 0),
 				),
+				...(posthogFormState.oauthClientId.trim()
+					? { oauthClientId: posthogFormState.oauthClientId.trim() }
+					: {}),
+				...(posthogFormState.oauthClientSecret.trim()
+					? { oauthClientSecret: posthogFormState.oauthClientSecret.trim() }
+					: {}),
 			});
 			await navigateToOAuthUrl(result.authorizationUrl, oauthWindow);
 			toast.success("Continue in PostHog to finish connecting");
@@ -2440,6 +2466,18 @@ function useConnectionsSettingsController() {
 			},
 		});
 
+	const setPostHogOAuthClientId = (oauthClientId: string) =>
+		dispatch({
+			type: "patchPostHogFormState",
+			value: { oauthClientId },
+		});
+
+	const setPostHogOAuthClientSecret = (oauthClientSecret: string) =>
+		dispatch({
+			type: "patchPostHogFormState",
+			value: { oauthClientSecret },
+		});
+
 	const handleNotionDialogOpenChange = (open: boolean) => {
 		dispatch({ type: "setIsNotionDialogOpen", value: open });
 
@@ -2452,6 +2490,8 @@ function useConnectionsSettingsController() {
 						notionConnection?.endpoint ??
 						initialNotionConnectionFormState.baseUrl,
 					envVars: [],
+					oauthClientId: notionConnection?.oauthClientId ?? "",
+					oauthClientSecret: "",
 				},
 			});
 		} else {
@@ -2484,6 +2524,12 @@ function useConnectionsSettingsController() {
 						.map((envVar) => [envVar.key.trim(), envVar.value])
 						.filter(([key]) => key.length > 0),
 				),
+				...(notionFormState.oauthClientId.trim()
+					? { oauthClientId: notionFormState.oauthClientId.trim() }
+					: {}),
+				...(notionFormState.oauthClientSecret.trim()
+					? { oauthClientSecret: notionFormState.oauthClientSecret.trim() }
+					: {}),
 			});
 			await navigateToOAuthUrl(result.authorizationUrl, oauthWindow);
 			toast.success("Continue in Notion to finish connecting");
@@ -2532,6 +2578,18 @@ function useConnectionsSettingsController() {
 					envVar.id === id ? { ...envVar, [key]: value } : envVar,
 				),
 			},
+		});
+
+	const setNotionOAuthClientId = (oauthClientId: string) =>
+		dispatch({
+			type: "patchNotionFormState",
+			value: { oauthClientId },
+		});
+
+	const setNotionOAuthClientSecret = (oauthClientSecret: string) =>
+		dispatch({
+			type: "patchNotionFormState",
+			value: { oauthClientSecret },
 		});
 
 	const handleZoomDialogOpenChange = (open: boolean) => {
@@ -2936,6 +2994,8 @@ function useConnectionsSettingsController() {
 				type: "patchPostHogFormState",
 				value: { name },
 			}),
+		setPostHogOAuthClientId,
+		setPostHogOAuthClientSecret,
 		setNotionBaseUrl: (baseUrl: string) =>
 			dispatch({
 				type: "patchNotionFormState",
@@ -2946,6 +3006,8 @@ function useConnectionsSettingsController() {
 				type: "patchNotionFormState",
 				value: { name },
 			}),
+		setNotionOAuthClientId,
+		setNotionOAuthClientSecret,
 		setZoomBaseUrl: (baseUrl: string) =>
 			dispatch({
 				type: "patchZoomFormState",
@@ -3331,6 +3393,8 @@ function PostHogDialog({
 	onAddEnvVar,
 	onRemoveEnvVar,
 	onUpdateEnvVar,
+	onOAuthClientIdChange,
+	onOAuthClientSecretChange,
 	onConnect,
 	isFormValid,
 	isSaving,
@@ -3343,13 +3407,15 @@ function PostHogDialog({
 	onAddEnvVar: () => void;
 	onRemoveEnvVar: (id: string) => void;
 	onUpdateEnvVar: (id: string, key: "key" | "value", value: string) => void;
+	onOAuthClientIdChange: (oauthClientId: string) => void;
+	onOAuthClientSecretChange: (oauthClientSecret: string) => void;
 	onConnect: () => void;
 	isFormValid: boolean;
 	isSaving: boolean;
 }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-lg">
+			<DialogContent className="sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>Connect PostHog</DialogTitle>
 					<DialogDescription>
@@ -3389,7 +3455,7 @@ function PostHogDialog({
 					<Field>
 						<div className="flex items-center justify-between gap-3">
 							<Label className={SETTINGS_LABEL_CLASSNAME}>
-								Headers (optional)
+								Environment variables (optional)
 							</Label>
 							<Button
 								type="button"
@@ -3439,18 +3505,46 @@ function PostHogDialog({
 							<Button
 								type="button"
 								variant="ghost"
-								className="w-full justify-between bg-transparent aria-expanded:bg-transparent"
+								className="w-full justify-between bg-transparent text-sm font-medium aria-expanded:bg-transparent"
 							>
 								Advanced settings
 								<ChevronDown className="size-4" />
 							</Button>
 						</CollapsibleTrigger>
 						<CollapsibleContent className="space-y-4 pt-4">
-							<FieldDescription>
-								PostHog MCP uses OAuth with dynamic client registration. Headers
-								are only needed for optional MCP server configuration such as
-								project selection.
-							</FieldDescription>
+							<Field>
+								<Label
+									htmlFor="posthog-oauth-client-id"
+									className={SETTINGS_LABEL_CLASSNAME}
+								>
+									OAuth Client ID
+								</Label>
+								<Input
+									id="posthog-oauth-client-id"
+									value={formState.oauthClientId}
+									onChange={(event) =>
+										onOAuthClientIdChange(event.target.value)
+									}
+									placeholder="OAuth Client ID"
+								/>
+							</Field>
+							<Field>
+								<Label
+									htmlFor="posthog-oauth-client-secret"
+									className={SETTINGS_LABEL_CLASSNAME}
+								>
+									OAuth Client Secret
+								</Label>
+								<Input
+									id="posthog-oauth-client-secret"
+									type="password"
+									value={formState.oauthClientSecret}
+									onChange={(event) =>
+										onOAuthClientSecretChange(event.target.value)
+									}
+									placeholder="OAuth Client Secret"
+								/>
+							</Field>
 						</CollapsibleContent>
 					</Collapsible>
 				</FieldGroup>
@@ -3492,6 +3586,8 @@ function NotionDialog({
 	onAddEnvVar,
 	onRemoveEnvVar,
 	onUpdateEnvVar,
+	onOAuthClientIdChange,
+	onOAuthClientSecretChange,
 	onConnect,
 	isFormValid,
 	isSaving,
@@ -3504,13 +3600,15 @@ function NotionDialog({
 	onAddEnvVar: () => void;
 	onRemoveEnvVar: (id: string) => void;
 	onUpdateEnvVar: (id: string, key: "key" | "value", value: string) => void;
+	onOAuthClientIdChange: (oauthClientId: string) => void;
+	onOAuthClientSecretChange: (oauthClientSecret: string) => void;
 	onConnect: () => void;
 	isFormValid: boolean;
 	isSaving: boolean;
 }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-lg">
+			<DialogContent className="sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>Connect Notion</DialogTitle>
 					<DialogDescription>
@@ -3550,7 +3648,7 @@ function NotionDialog({
 					<Field>
 						<div className="flex items-center justify-between gap-3">
 							<Label className={SETTINGS_LABEL_CLASSNAME}>
-								Headers (optional)
+								Environment variables (optional)
 							</Label>
 							<Button
 								type="button"
@@ -3600,17 +3698,46 @@ function NotionDialog({
 							<Button
 								type="button"
 								variant="ghost"
-								className="w-full justify-between bg-transparent aria-expanded:bg-transparent"
+								className="w-full justify-between bg-transparent text-sm font-medium aria-expanded:bg-transparent"
 							>
 								Advanced settings
 								<ChevronDown className="size-4" />
 							</Button>
 						</CollapsibleTrigger>
 						<CollapsibleContent className="space-y-4 pt-4">
-							<FieldDescription>
-								Notion MCP uses OAuth with dynamic client registration, so there
-								are no additional client credentials to enter.
-							</FieldDescription>
+							<Field>
+								<Label
+									htmlFor="notion-oauth-client-id"
+									className={SETTINGS_LABEL_CLASSNAME}
+								>
+									OAuth Client ID
+								</Label>
+								<Input
+									id="notion-oauth-client-id"
+									value={formState.oauthClientId}
+									onChange={(event) =>
+										onOAuthClientIdChange(event.target.value)
+									}
+									placeholder="OAuth Client ID"
+								/>
+							</Field>
+							<Field>
+								<Label
+									htmlFor="notion-oauth-client-secret"
+									className={SETTINGS_LABEL_CLASSNAME}
+								>
+									OAuth Client Secret
+								</Label>
+								<Input
+									id="notion-oauth-client-secret"
+									type="password"
+									value={formState.oauthClientSecret}
+									onChange={(event) =>
+										onOAuthClientSecretChange(event.target.value)
+									}
+									placeholder="OAuth Client Secret"
+								/>
+							</Field>
 						</CollapsibleContent>
 					</Collapsible>
 				</FieldGroup>
@@ -3674,7 +3801,7 @@ function ZoomDialog({
 }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-lg">
+			<DialogContent className="sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>Connect Zoom</DialogTitle>
 					<DialogDescription>
@@ -3711,7 +3838,7 @@ function ZoomDialog({
 					<Field>
 						<div className="flex items-center justify-between gap-3">
 							<Label className={SETTINGS_LABEL_CLASSNAME}>
-								Headers (optional)
+								Environment variables (optional)
 							</Label>
 							<Button
 								type="button"
@@ -3761,7 +3888,7 @@ function ZoomDialog({
 							<Button
 								type="button"
 								variant="ghost"
-								className="w-full justify-between bg-transparent aria-expanded:bg-transparent"
+								className="w-full justify-between bg-transparent text-sm font-medium aria-expanded:bg-transparent"
 							>
 								Advanced settings
 								<ChevronDown className="size-4" />
