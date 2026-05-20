@@ -1,4 +1,4 @@
-import { auth, type OAuthTokens } from "@ai-sdk/mcp";
+import type { OAuthTokens } from "@ai-sdk/mcp";
 import { validateRemoteMcpConnection } from "../packages/ai/src/remote-mcp-tools.mjs";
 import { internal } from "./_generated/api";
 import type { ActionCtx } from "./_generated/server";
@@ -24,6 +24,27 @@ const PROVIDER_CONFIG: Record<McpOAuthProvider, ProviderConfig> = {
 	"jira-mcp": { displayName: "Jira" },
 	notion: { displayName: "Notion" },
 	posthog: { displayName: "PostHog" },
+};
+
+const ensureUrlCanParse = () => {
+	if (typeof URL.canParse === "function") {
+		return;
+	}
+
+	URL.canParse = (value: string | URL, base?: string | URL) => {
+		try {
+			new URL(value, base);
+			return true;
+		} catch {
+			return false;
+		}
+	};
+};
+
+const getMcpSdkAuth = async () => {
+	ensureUrlCanParse();
+	const { auth } = await import("@ai-sdk/mcp");
+	return auth;
 };
 
 const jsonResponse = (body: unknown, status = 200) =>
@@ -98,6 +119,7 @@ export const startMcpSdkOAuth = async ({
 	client?: McpSdkOAuthClient;
 	createState: () => string;
 }) => {
+	const auth = await getMcpSdkAuth();
 	let authorizationUrl: string | undefined;
 	let codeVerifier: string | undefined;
 	let state: string | undefined;
@@ -180,6 +202,7 @@ const exchangeMcpSdkOAuthCode = async ({
 	state: string;
 	displayName: string;
 }) => {
+	const auth = await getMcpSdkAuth();
 	let oauthTokens: OAuthTokens | undefined;
 
 	const result = await auth(
@@ -229,6 +252,7 @@ export const refreshMcpSdkOAuthToken = async ({
 	refreshToken: string;
 	displayName: string;
 }) => {
+	const auth = await getMcpSdkAuth();
 	let oauthTokens: OAuthTokens | undefined;
 
 	const result = await auth(
@@ -382,7 +406,9 @@ export const handleMcpOAuthCallbackRequest = async (
 
 	if (
 		!pendingState.codeVerifier ||
-		(provider !== "jira-mcp" && !pendingState.oauthTokenEndpoint)
+		(provider !== "jira-mcp" &&
+			provider !== "posthog" &&
+			!pendingState.oauthTokenEndpoint)
 	) {
 		return htmlResponse(
 			`${displayName} connection failed`,
@@ -398,7 +424,7 @@ export const handleMcpOAuthCallbackRequest = async (
 		}
 		const tokenEndpoint = pendingState.oauthTokenEndpoint;
 		const tokens = await (async () => {
-			if (provider === "jira-mcp") {
+			if (provider === "jira-mcp" || provider === "posthog") {
 				return await exchangeMcpSdkOAuthCode({
 					baseUrl: pendingState.baseUrl,
 					redirectUri,

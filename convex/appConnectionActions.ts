@@ -500,10 +500,10 @@ const refreshMcpTokensForWorkspace = async (
 			)
 			.map(async (connection) => {
 				const tokens =
-					provider === "jira-mcp"
+					provider === "jira-mcp" || provider === "posthog"
 						? await refreshMcpSdkOAuthToken({
 								baseUrl: connection.baseUrl,
-								redirectUri: getMcpOAuthRedirectUri("jira-mcp"),
+								redirectUri: getMcpOAuthRedirectUri(provider),
 								client: {
 									clientId: connection.oauthClientId,
 									...(connection.oauthClientSecret
@@ -923,10 +923,9 @@ export const connectPostHog = action({
 			});
 		}
 
-		let metadata: Awaited<ReturnType<typeof discoverMcpOAuthMetadata>>;
 		let client: { clientId: string; clientSecret?: string };
+		let oauthStart: Awaited<ReturnType<typeof startMcpSdkOAuth>>;
 		try {
-			metadata = await discoverMcpOAuthMetadata(baseUrl, "PostHog");
 			client = requestedOAuthClientId
 				? {
 						clientId: requestedOAuthClientId,
@@ -934,11 +933,14 @@ export const connectPostHog = action({
 							? { clientSecret: requestedOAuthClientSecret }
 							: {}),
 					}
-				: await registerMcpOAuthClient({
-						registrationEndpoint: metadata.registrationEndpoint,
-						redirectUri,
-						displayName: "PostHog",
-					});
+				: { clientId: "" };
+			oauthStart = await startMcpSdkOAuth({
+				baseUrl,
+				redirectUri,
+				client: client.clientId ? client : undefined,
+				createState: createMcpOAuthState,
+			});
+			client = oauthStart.client;
 		} catch (error) {
 			console.error("Failed to prepare PostHog MCP OAuth connection", error);
 			throw new ConvexError({
@@ -946,10 +948,6 @@ export const connectPostHog = action({
 				message: "Failed to start PostHog OAuth.",
 			});
 		}
-
-		const codeVerifier = createPkceVerifier();
-		const codeChallenge = createPkceChallenge(codeVerifier);
-		const state = createMcpOAuthState();
 
 		await ctx.runMutation(internal.appConnections.createMcpOAuthState, {
 			provider: "posthog",
@@ -962,22 +960,12 @@ export const connectPostHog = action({
 			...(client.clientSecret
 				? { oauthClientSecret: client.clientSecret }
 				: {}),
-			oauthTokenEndpoint: metadata.tokenEndpoint,
-			codeVerifier,
-			state,
+			codeVerifier: oauthStart.codeVerifier,
+			state: oauthStart.state,
 			expiresAt: Date.now() + MCP_OAUTH_STATE_TTL_MS,
 		});
 
-		const authorizationUrl = new URL(metadata.authorizationEndpoint);
-		authorizationUrl.searchParams.set("response_type", "code");
-		authorizationUrl.searchParams.set("client_id", client.clientId);
-		authorizationUrl.searchParams.set("redirect_uri", redirectUri);
-		authorizationUrl.searchParams.set("state", state);
-		authorizationUrl.searchParams.set("code_challenge", codeChallenge);
-		authorizationUrl.searchParams.set("code_challenge_method", "S256");
-		authorizationUrl.searchParams.set("prompt", "consent");
-
-		return { authorizationUrl: authorizationUrl.toString() };
+		return { authorizationUrl: oauthStart.authorizationUrl };
 	},
 });
 
