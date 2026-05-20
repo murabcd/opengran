@@ -18,6 +18,9 @@ export const defineAiTool = ({
 		tool({
 			description,
 			inputSchema,
+			metadata: {
+				ui,
+			},
 			execute: async (input) => await withToolTiming(async () => execute(input)),
 		}),
 });

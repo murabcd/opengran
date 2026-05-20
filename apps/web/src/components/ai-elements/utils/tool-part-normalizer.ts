@@ -26,7 +26,10 @@ export function normalizeToolPart(part: unknown): unknown {
 		return part;
 	}
 
-	if (typeof part.type !== "string" || !part.type.startsWith("tool-")) {
+	if (
+		typeof part.type !== "string" ||
+		(!part.type.startsWith("tool-") && part.type !== "dynamic-tool")
+	) {
 		return part;
 	}
 

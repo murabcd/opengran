@@ -41,7 +41,9 @@ export const extractFileParts = (message: UIMessage) =>
 	);
 
 export const extractToolParts = (message: UIMessage) =>
-	message.parts.filter((part) => part.type.startsWith("tool-"));
+	message.parts.filter(
+		(part) => part.type.startsWith("tool-") || part.type === "dynamic-tool",
+	);
 
 export const extractGeneratedArtifacts = (
 	message: UIMessage,

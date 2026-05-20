@@ -79,11 +79,16 @@ const collectToolSources = (message: UIMessage): ToolSource[] => {
 	};
 
 	for (const part of message.parts) {
-		if (!part.type.startsWith("tool-")) {
+		if (!part.type.startsWith("tool-") && part.type !== "dynamic-tool") {
 			continue;
 		}
 
-		const toolName = part.type.slice("tool-".length);
+		const toolName =
+			part.type === "dynamic-tool" &&
+			"toolName" in part &&
+			typeof part.toolName === "string"
+				? part.toolName
+				: part.type.slice("tool-".length);
 
 		if (
 			!("output" in part) ||

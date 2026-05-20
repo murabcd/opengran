@@ -55,6 +55,29 @@ const makeUniqueToolName = (provider, toolName, tools) => {
 	return candidateName;
 };
 
+const REMOTE_MCP_SUBTITLE_KEYS = [
+	"query",
+	"question",
+	"q",
+	"search",
+	"jql",
+	"issueKey",
+	"key",
+	"url",
+	"id",
+	"name",
+	"title",
+];
+
+const getRemoteMcpToolUiMetadata = (connection) => ({
+	groupKey: `mcp:${connection.provider}`,
+	groupLabel: connection.displayName,
+	icon: "database",
+	running: `Using ${connection.displayName}`,
+	complete: `Used ${connection.displayName}`,
+	subtitleKeys: REMOTE_MCP_SUBTITLE_KEYS,
+});
+
 const executeRemoteMcpTool = async (connection, definition, args, options) =>
 	await withRemoteMcpClient(connection, async (client) => {
 		const tools = client.toolsFromDefinitions({ tools: [definition] });
@@ -102,6 +125,7 @@ export const buildRemoteMcpTools = async (connection) =>
 					provider: connection.provider,
 					source: "mcp",
 					mcpToolName: definition.name,
+					ui: getRemoteMcpToolUiMetadata(connection),
 				},
 				execute: async (args, options) =>
 					await executeRemoteMcpTool(connection, definition, args, options),

@@ -1,4 +1,4 @@
-import { isToolUIPart, type UIMessage } from "ai";
+import type { UIMessage } from "ai";
 import { memo, useEffect, useMemo, useState } from "react";
 import { GenericTool } from "@/components/ai-elements/tools/generic-tool";
 import {
@@ -26,6 +26,7 @@ export const toToolPartLike = (
 		output?: unknown;
 		result?: unknown;
 		state?: string;
+		toolMetadata?: unknown;
 		toolCallId?: string;
 		toolName?: string;
 		type: string;
@@ -51,6 +52,12 @@ export const toToolPartLike = (
 			!Array.isArray(normalized.result)
 				? (normalized.result as Record<string, unknown>)
 				: undefined,
+		toolMetadata:
+			normalized.toolMetadata &&
+			typeof normalized.toolMetadata === "object" &&
+			!Array.isArray(normalized.toolMetadata)
+				? (normalized.toolMetadata as Record<string, unknown>)
+				: undefined,
 	};
 };
 
@@ -58,12 +65,15 @@ export const ToolRenderer = memo(function ToolRenderer({
 	chatStatus,
 	part,
 }: ToolRendererProps) {
-	if (!isToolUIPart(part)) {
+	if (!isRenderableToolPart(part)) {
 		return null;
 	}
 
 	return <ToolRendererContent part={part} chatStatus={chatStatus} />;
 });
+
+const isRenderableToolPart = (part: UIMessage["parts"][number]) =>
+	part.type.startsWith("tool-") || part.type === "dynamic-tool";
 
 function ToolRendererContent({ chatStatus, part }: ToolRendererProps) {
 	const toolPart = toToolPartLike(part);

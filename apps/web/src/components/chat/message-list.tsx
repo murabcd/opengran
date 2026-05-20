@@ -364,12 +364,13 @@ function ChatMessageToolCalls({
 }
 
 const getToolGroupInfo = (part: UIMessage["parts"][number]) => {
-	const groupKey = getToolMeta(toToolPartLike(part))?.groupKey;
+	const meta = getToolMeta(toToolPartLike(part));
+	const groupKey = meta?.groupKey;
 
-	if (groupKey === "posthog") {
+	if (groupKey?.startsWith("mcp:")) {
 		return {
-			key: "posthog",
-			label: "PostHog",
+			key: groupKey,
+			label: meta?.groupLabel ?? "MCP",
 		};
 	}
 

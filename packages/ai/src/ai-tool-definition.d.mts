@@ -11,6 +11,7 @@ export type AiToolPolicy = {
 
 export type AiToolUi = {
 	complete: string;
+	groupLabel?: string;
 	groupKey?: string;
 	icon: string;
 	running: string;

@@ -1561,8 +1561,10 @@ function YandexCalendarDialog({
 	onEmailChange,
 	onPasswordChange,
 	onConnect,
+	onDisable,
 	isFormValid,
 	isSaving,
+	isDisabling,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -1570,8 +1572,10 @@ function YandexCalendarDialog({
 	onEmailChange: (email: string) => void;
 	onPasswordChange: (password: string) => void;
 	onConnect: () => void;
+	onDisable?: () => void;
 	isFormValid: boolean;
 	isSaving: boolean;
+	isDisabling: boolean;
 }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -1615,30 +1619,14 @@ function YandexCalendarDialog({
 						/>
 					</Field>
 				</FieldGroup>
-				<div className="flex justify-end gap-2 pt-2">
-					<Button
-						type="button"
-						variant="ghost"
-						onClick={() => onOpenChange(false)}
-						disabled={isSaving}
-					>
-						Cancel
-					</Button>
-					<Button
-						type="button"
-						onClick={onConnect}
-						disabled={!isFormValid || isSaving}
-					>
-						{isSaving ? (
-							<>
-								<LoaderCircle className="animate-spin" />
-								Connecting
-							</>
-						) : (
-							"Connect"
-						)}
-					</Button>
-				</div>
+				<ConnectionDialogFooter
+					onCancel={() => onOpenChange(false)}
+					onConnect={onConnect}
+					onDisable={onDisable}
+					isFormValid={isFormValid}
+					isSaving={isSaving}
+					isDisabling={isDisabling}
+				/>
 			</DialogContent>
 		</Dialog>
 	);
@@ -1753,6 +1741,11 @@ function ConnectionsSettings() {
 		handleJiraMcpDialogOpenChange,
 		handleDisableJiraMcp,
 		handleDisableJiraSync,
+		handleDisableNotion,
+		handleDisablePostHog,
+		handleDisableYandexCalendar,
+		handleDisableYandexTracker,
+		handleDisableZoom,
 		handleNotionDialogOpenChange,
 		handlePostHogDialogOpenChange,
 		handleYandexCalendarDialogOpenChange,
@@ -1785,8 +1778,13 @@ function ConnectionsSettings() {
 		jiraMcpConnection,
 		jiraMcpFormState,
 		jiraWebhookUrl,
+		notionConnection,
 		notionFormState,
+		posthogConnection,
 		posthogFormState,
+		yandexCalendarConnection,
+		yandexTrackerConnection,
+		zoomConnection,
 		setJiraBaseUrl,
 		setJiraEmail,
 		setJiraMcpBaseUrl,
@@ -1849,8 +1847,12 @@ function ConnectionsSettings() {
 				onConnect={() => {
 					void handleConnectYandexCalendar();
 				}}
+				onDisable={
+					yandexCalendarConnection ? handleDisableYandexCalendar : undefined
+				}
 				isFormValid={isYandexCalendarFormValid}
 				isSaving={isSavingYandexCalendarConnection}
+				isDisabling={isDisablingConnection}
 			/>
 			<YandexTrackerDialog
 				open={isYandexTrackerDialogOpen}
@@ -1862,8 +1864,12 @@ function ConnectionsSettings() {
 				onConnect={() => {
 					void handleConnectYandexTracker();
 				}}
+				onDisable={
+					yandexTrackerConnection ? handleDisableYandexTracker : undefined
+				}
 				isFormValid={isYandexTrackerFormValid}
 				isSaving={isSavingYandexTrackerConnection}
+				isDisabling={isDisablingConnection}
 			/>
 			<JiraDialog
 				open={isJiraDialogOpen}
@@ -1918,8 +1924,10 @@ function ConnectionsSettings() {
 				onConnect={() => {
 					void handleConnectPostHog();
 				}}
+				onDisable={posthogConnection ? handleDisablePostHog : undefined}
 				isFormValid={isPostHogFormValid}
 				isSaving={isSavingPostHogConnection}
+				isDisabling={isDisablingConnection}
 			/>
 			<NotionDialog
 				open={isNotionDialogOpen}
@@ -1935,8 +1943,10 @@ function ConnectionsSettings() {
 				onConnect={() => {
 					void handleConnectNotion();
 				}}
+				onDisable={notionConnection ? handleDisableNotion : undefined}
 				isFormValid={isNotionFormValid}
 				isSaving={isSavingNotionConnection}
+				isDisabling={isDisablingConnection}
 			/>
 			<ZoomDialog
 				open={isZoomDialogOpen}
@@ -1952,8 +1962,10 @@ function ConnectionsSettings() {
 				onConnect={() => {
 					void handleConnectZoom();
 				}}
+				onDisable={zoomConnection ? handleDisableZoom : undefined}
 				isFormValid={isZoomFormValid}
 				isSaving={isSavingZoomConnection}
+				isDisabling={isDisablingConnection}
 			/>
 		</div>
 	);
@@ -2440,6 +2452,67 @@ function useConnectionsSettingsController() {
 			sourceId: jiraMcpConnection.sourceId,
 			successMessage: "Jira disabled",
 			onDisabled: () => handleJiraMcpDialogOpenChange(false),
+		});
+	};
+
+	const handleDisableYandexCalendar = async () => {
+		if (!yandexCalendarConnection) {
+			return;
+		}
+
+		await disableAppConnection({
+			sourceId: yandexCalendarConnection.sourceId,
+			successMessage: "Yandex Calendar disabled",
+			onDisabled: () =>
+				yandexCalendarDialog.handleYandexCalendarDialogOpenChange(false),
+		});
+	};
+
+	const handleDisableYandexTracker = async () => {
+		if (!yandexTrackerConnection) {
+			return;
+		}
+
+		await disableAppConnection({
+			sourceId: yandexTrackerConnection.sourceId,
+			successMessage: "Yandex Tracker disabled",
+			onDisabled: () => handleYandexTrackerDialogOpenChange(false),
+		});
+	};
+
+	const handleDisablePostHog = async () => {
+		if (!posthogConnection) {
+			return;
+		}
+
+		await disableAppConnection({
+			sourceId: posthogConnection.sourceId,
+			successMessage: "PostHog disabled",
+			onDisabled: () => handlePostHogDialogOpenChange(false),
+		});
+	};
+
+	const handleDisableNotion = async () => {
+		if (!notionConnection) {
+			return;
+		}
+
+		await disableAppConnection({
+			sourceId: notionConnection.sourceId,
+			successMessage: "Notion disabled",
+			onDisabled: () => handleNotionDialogOpenChange(false),
+		});
+	};
+
+	const handleDisableZoom = async () => {
+		if (!zoomConnection) {
+			return;
+		}
+
+		await disableAppConnection({
+			sourceId: zoomConnection.sourceId,
+			successMessage: "Zoom disabled",
+			onDisabled: () => handleZoomDialogOpenChange(false),
 		});
 	};
 
@@ -3070,6 +3143,11 @@ function useConnectionsSettingsController() {
 		handleConnectYandexTracker,
 		handleDisableJiraMcp,
 		handleDisableJiraSync,
+		handleDisableNotion,
+		handleDisablePostHog,
+		handleDisableYandexCalendar,
+		handleDisableYandexTracker,
+		handleDisableZoom,
 		handleJiraDialogOpenChange,
 		handleJiraMcpDialogOpenChange,
 		handleNotionDialogOpenChange,
@@ -3114,8 +3192,13 @@ function useConnectionsSettingsController() {
 		jiraMcpConnection,
 		jiraMcpFormState,
 		jiraWebhookUrl,
+		notionConnection,
 		notionFormState,
+		posthogConnection,
 		posthogFormState,
+		yandexCalendarConnection,
+		yandexTrackerConnection,
+		zoomConnection,
 		zoomFormState,
 		setJiraBaseUrl: (baseUrl: string) =>
 			dispatch({
@@ -3302,6 +3385,70 @@ function ToolConnectionRow({
 	);
 }
 
+function ConnectionDialogFooter({
+	onCancel,
+	onConnect,
+	onDisable,
+	isFormValid,
+	isSaving,
+	isDisabling,
+}: {
+	onCancel: () => void;
+	onConnect: () => void;
+	onDisable?: () => void;
+	isFormValid: boolean;
+	isSaving: boolean;
+	isDisabling: boolean;
+}) {
+	return (
+		<div className="flex items-center justify-between gap-2 pt-2">
+			{onDisable ? (
+				<Button
+					type="button"
+					variant="destructive"
+					onClick={onDisable}
+					disabled={isSaving || isDisabling}
+				>
+					{isDisabling ? (
+						<>
+							<LoaderCircle className="animate-spin" />
+							Disabling
+						</>
+					) : (
+						"Disable"
+					)}
+				</Button>
+			) : (
+				<span />
+			)}
+			<div className="flex justify-end gap-2">
+				<Button
+					type="button"
+					variant="ghost"
+					onClick={onCancel}
+					disabled={isSaving || isDisabling}
+				>
+					Cancel
+				</Button>
+				<Button
+					type="button"
+					onClick={onConnect}
+					disabled={!isFormValid || isSaving || isDisabling}
+				>
+					{isSaving ? (
+						<>
+							<LoaderCircle className="animate-spin" />
+							Connecting
+						</>
+					) : (
+						"Connect"
+					)}
+				</Button>
+			</div>
+		</div>
+	);
+}
+
 function YandexTrackerDialog({
 	open,
 	onOpenChange,
@@ -3310,8 +3457,10 @@ function YandexTrackerDialog({
 	onOrgIdChange,
 	onTokenChange,
 	onConnect,
+	onDisable,
 	isFormValid,
 	isSaving,
+	isDisabling,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -3320,8 +3469,10 @@ function YandexTrackerDialog({
 	onOrgIdChange: (orgId: string) => void;
 	onTokenChange: (token: string) => void;
 	onConnect: () => void;
+	onDisable?: () => void;
 	isFormValid: boolean;
 	isSaving: boolean;
+	isDisabling: boolean;
 }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -3393,30 +3544,14 @@ function YandexTrackerDialog({
 						/>
 					</Field>
 				</FieldGroup>
-				<div className="flex justify-end gap-2 pt-2">
-					<Button
-						type="button"
-						variant="ghost"
-						onClick={() => onOpenChange(false)}
-						disabled={isSaving}
-					>
-						Cancel
-					</Button>
-					<Button
-						type="button"
-						onClick={onConnect}
-						disabled={!isFormValid || isSaving}
-					>
-						{isSaving ? (
-							<>
-								<LoaderCircle className="animate-spin" />
-								Connecting
-							</>
-						) : (
-							"Connect"
-						)}
-					</Button>
-				</div>
+				<ConnectionDialogFooter
+					onCancel={() => onOpenChange(false)}
+					onConnect={onConnect}
+					onDisable={onDisable}
+					isFormValid={isFormValid}
+					isSaving={isSaving}
+					isDisabling={isDisabling}
+				/>
 			</DialogContent>
 		</Dialog>
 	);
@@ -3796,8 +3931,10 @@ function PostHogDialog({
 	onOAuthClientIdChange,
 	onOAuthClientSecretChange,
 	onConnect,
+	onDisable,
 	isFormValid,
 	isSaving,
+	isDisabling,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -3810,8 +3947,10 @@ function PostHogDialog({
 	onOAuthClientIdChange: (oauthClientId: string) => void;
 	onOAuthClientSecretChange: (oauthClientSecret: string) => void;
 	onConnect: () => void;
+	onDisable?: () => void;
 	isFormValid: boolean;
 	isSaving: boolean;
+	isDisabling: boolean;
 }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -3948,30 +4087,14 @@ function PostHogDialog({
 						</CollapsibleContent>
 					</Collapsible>
 				</FieldGroup>
-				<div className="flex justify-end gap-2 pt-2">
-					<Button
-						type="button"
-						variant="ghost"
-						onClick={() => onOpenChange(false)}
-						disabled={isSaving}
-					>
-						Cancel
-					</Button>
-					<Button
-						type="button"
-						onClick={onConnect}
-						disabled={!isFormValid || isSaving}
-					>
-						{isSaving ? (
-							<>
-								<LoaderCircle className="animate-spin" />
-								Connecting
-							</>
-						) : (
-							"Connect"
-						)}
-					</Button>
-				</div>
+				<ConnectionDialogFooter
+					onCancel={() => onOpenChange(false)}
+					onConnect={onConnect}
+					onDisable={onDisable}
+					isFormValid={isFormValid}
+					isSaving={isSaving}
+					isDisabling={isDisabling}
+				/>
 			</DialogContent>
 		</Dialog>
 	);
@@ -3989,8 +4112,10 @@ function NotionDialog({
 	onOAuthClientIdChange,
 	onOAuthClientSecretChange,
 	onConnect,
+	onDisable,
 	isFormValid,
 	isSaving,
+	isDisabling,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -4003,8 +4128,10 @@ function NotionDialog({
 	onOAuthClientIdChange: (oauthClientId: string) => void;
 	onOAuthClientSecretChange: (oauthClientSecret: string) => void;
 	onConnect: () => void;
+	onDisable?: () => void;
 	isFormValid: boolean;
 	isSaving: boolean;
+	isDisabling: boolean;
 }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -4141,30 +4268,14 @@ function NotionDialog({
 						</CollapsibleContent>
 					</Collapsible>
 				</FieldGroup>
-				<div className="flex justify-end gap-2 pt-2">
-					<Button
-						type="button"
-						variant="ghost"
-						onClick={() => onOpenChange(false)}
-						disabled={isSaving}
-					>
-						Cancel
-					</Button>
-					<Button
-						type="button"
-						onClick={onConnect}
-						disabled={!isFormValid || isSaving}
-					>
-						{isSaving ? (
-							<>
-								<LoaderCircle className="animate-spin" />
-								Connecting
-							</>
-						) : (
-							"Connect"
-						)}
-					</Button>
-				</div>
+				<ConnectionDialogFooter
+					onCancel={() => onOpenChange(false)}
+					onConnect={onConnect}
+					onDisable={onDisable}
+					isFormValid={isFormValid}
+					isSaving={isSaving}
+					isDisabling={isDisabling}
+				/>
 			</DialogContent>
 		</Dialog>
 	);
@@ -4182,8 +4293,10 @@ function ZoomDialog({
 	onOAuthClientIdChange,
 	onOAuthClientSecretChange,
 	onConnect,
+	onDisable,
 	isFormValid,
 	isSaving,
+	isDisabling,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -4196,8 +4309,10 @@ function ZoomDialog({
 	onOAuthClientIdChange: (oauthClientId: string) => void;
 	onOAuthClientSecretChange: (oauthClientSecret: string) => void;
 	onConnect: () => void;
+	onDisable?: () => void;
 	isFormValid: boolean;
 	isSaving: boolean;
+	isDisabling: boolean;
 }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -4331,30 +4446,14 @@ function ZoomDialog({
 						</CollapsibleContent>
 					</Collapsible>
 				</FieldGroup>
-				<div className="flex justify-end gap-2 pt-2">
-					<Button
-						type="button"
-						variant="ghost"
-						onClick={() => onOpenChange(false)}
-						disabled={isSaving}
-					>
-						Cancel
-					</Button>
-					<Button
-						type="button"
-						onClick={onConnect}
-						disabled={!isFormValid || isSaving}
-					>
-						{isSaving ? (
-							<>
-								<LoaderCircle className="animate-spin" />
-								Connecting
-							</>
-						) : (
-							"Connect"
-						)}
-					</Button>
-				</div>
+				<ConnectionDialogFooter
+					onCancel={() => onOpenChange(false)}
+					onConnect={onConnect}
+					onDisable={onDisable}
+					isFormValid={isFormValid}
+					isSaving={isSaving}
+					isDisabling={isDisabling}
+				/>
 			</DialogContent>
 		</Dialog>
 	);

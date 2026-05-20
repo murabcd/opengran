@@ -16,6 +16,7 @@ import { toolUiMetadata } from "../../../../../../packages/ai/src/tool-ui-metada
 
 export type ToolMeta = {
 	groupKey?: string;
+	groupLabel?: string;
 	icon: React.ComponentType<{ className?: string }>;
 	subtitle?: (part: ToolPartLike) => string;
 	title: (part: ToolPartLike) => string;
@@ -29,6 +30,7 @@ export type ToolPartLike = {
 	result?: Record<string, unknown>;
 	state?: string;
 	startedAt?: unknown;
+	toolMetadata?: Record<string, unknown>;
 	toolCallId?: string;
 	toolName?: string;
 	type: string;
@@ -106,56 +108,56 @@ const toolRegistry = Object.fromEntries(
 	]),
 ) as Record<string, ToolMeta>;
 
-function getPostHogToolMeta(part: ToolPartLike): ToolMeta | null {
-	if (!part.type.startsWith("tool-posthog_")) {
+const getStaticToolMeta = (part: ToolPartLike) => {
+	if (part.type === "dynamic-tool") {
 		return null;
 	}
 
-	return {
-		groupKey: "posthog",
-		icon: Database,
-		title: () => (isPending(part) ? "Querying PostHog" : "Queried PostHog"),
-		subtitle: (currentPart) =>
-			clamp(
-				getFirstString(currentPart.input, [
-					"query",
-					"question",
-					"insightId",
-					"event",
-					"name",
-				]),
-			),
-	};
-}
+	return toolRegistry[part.type] ?? null;
+};
 
-const getRenderableToolName = (part: ToolPartLike) =>
-	typeof part.toolName === "string" && part.toolName.length > 0
-		? part.toolName
-		: part.type.replace(/^tool-/, "");
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+	value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
 
-function getZoomToolMeta(part: ToolPartLike): ToolMeta | null {
-	const toolName = getRenderableToolName(part);
+const getStringArray = (value: unknown) =>
+	Array.isArray(value)
+		? value.filter((item): item is string => typeof item === "string")
+		: [];
 
-	if (!toolName.startsWith("zoom_")) {
+function getMetadataToolMeta(part: ToolPartLike): ToolMeta | null {
+	const metadata = part.toolMetadata;
+	const ui = asRecord(metadata?.ui);
+
+	if (!ui) {
 		return null;
 	}
 
+	const running = getString(ui.running);
+	const complete = getString(ui.complete);
+	const iconKey = getString(ui.icon);
+
+	if (!running || !complete || !(iconKey in toolIconRegistry)) {
+		return null;
+	}
+
+	const icon = toolIconRegistry[iconKey as keyof typeof toolIconRegistry];
+	const subtitleKeys = getStringArray(ui.subtitleKeys);
+	const groupKey = getString(ui.groupKey) || undefined;
+	const groupLabel = getString(ui.groupLabel) || undefined;
+
 	return {
-		groupKey: toolName.includes("search") ? "search" : undefined,
-		icon: Video,
-		title: () => (isPending(part) ? "Using Zoom" : "Used Zoom"),
-		subtitle: (currentPart) =>
-			clamp(
-				getFirstString(currentPart.input, [
-					"query",
-					"q",
-					"meetingId",
-					"meeting_id",
-					"id",
-				]) || toolName.replace(/^zoom_/, ""),
-			),
+		groupKey,
+		groupLabel,
+		icon,
+		title: (currentPart) => (isPending(currentPart) ? running : complete),
+		subtitle: (currentPart) => {
+			const value = getFirstString(currentPart.input, subtitleKeys);
+			return value ? clamp(value) : "";
+		},
 	};
 }
 
 export const getToolMeta = (part: ToolPartLike) =>
-	toolRegistry[part.type] ?? getPostHogToolMeta(part) ?? getZoomToolMeta(part);
+	getMetadataToolMeta(part) ?? getStaticToolMeta(part);

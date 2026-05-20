@@ -5,6 +5,7 @@ export type RemoteMcpToolConnection = {
 	provider: string;
 	displayName: string;
 	baseUrl: string;
+	toolPrefix?: string;
 	env?: Record<string, string>;
 	oauthClientId?: string;
 	oauthAccessToken: string;
