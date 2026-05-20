@@ -1,7 +1,7 @@
 import { listYandexUpcomingEvents } from "../../../convex/yandexCalendar.ts";
 import { buildGoogleCalendarTools } from "./google-calendar-tools.mjs";
 import { buildGoogleDriveTools } from "./google-drive-tools.mjs";
-import { buildJiraTools } from "./jira-tools.mjs";
+import { buildJiraMcpTools } from "./jira-mcp-tools.mjs";
 import { buildNotionTools } from "./notion-tools.mjs";
 import { buildPostHogTools } from "./posthog-tools.mjs";
 import { buildYandexCalendarTools } from "./yandex-calendar-tools.mjs";
@@ -91,8 +91,8 @@ export const buildWorkspaceToolSet = async (connections, adapters = {}) => {
 	const tools = {};
 
 	for (const connection of connections) {
-		if (connection.provider === "jira") {
-			Object.assign(tools, buildJiraTools(connection));
+		if (connection.provider === "jira-mcp") {
+			Object.assign(tools, await buildJiraMcpTools(connection));
 		}
 
 		if (connection.provider === "notion") {

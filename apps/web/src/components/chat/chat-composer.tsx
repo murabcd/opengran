@@ -1073,7 +1073,7 @@ function MentionPicker({
 						<ChatNoteListSkeleton />
 					</div>
 				) : null}
-				{!isNotesLoading && items.length === 0 ? (
+				{!isNotesLoading && items.length === 0 && shouldSearchDocuments ? (
 					<div className="py-6 text-center text-sm text-muted-foreground">
 						{emptyStateMessage}
 					</div>

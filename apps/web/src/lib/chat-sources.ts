@@ -43,6 +43,7 @@ const collectToolSources = (message: UIMessage): ToolSource[] => {
 			toolName !== "yandex_tracker_get_issue" &&
 			toolName !== "jira_search" &&
 			toolName !== "jira_get_issue" &&
+			!toolName.startsWith("jira_") &&
 			!toolName.startsWith("notion_") &&
 			!toolName.startsWith("posthog_")
 		) {

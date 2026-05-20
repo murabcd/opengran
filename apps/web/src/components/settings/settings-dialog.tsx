@@ -119,7 +119,6 @@ import {
 	GOOGLE_DRIVE_SCOPES,
 	getGoogleLinkedAccount,
 	hasGoogleScope,
-	type LinkedAccount,
 } from "@/lib/google-integrations";
 import { loadRuntimeConfig } from "@/lib/runtime-config";
 import {
@@ -184,6 +183,8 @@ const getSettingsNav = (isDesktopApp: boolean) =>
 		: settingsNav.filter((item) => item.name !== "Preferences");
 
 const SETTINGS_LABEL_CLASSNAME = "text-xs text-muted-foreground";
+const SETTINGS_COLLAPSIBLE_TRIGGER_CLASSNAME =
+	"group w-full justify-between px-0 text-sm font-medium text-foreground hover:!bg-transparent hover:text-foreground active:!bg-transparent aria-expanded:!bg-transparent aria-expanded:hover:!bg-transparent focus-visible:!bg-transparent";
 const MAX_PROFILE_AVATAR_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 const withoutTrailingPeriod = (message: string) =>
@@ -292,6 +293,14 @@ type JiraConnectionFormState = {
 	baseUrl: string;
 	email: string;
 	token: string;
+};
+
+type JiraMcpConnectionFormState = {
+	name: string;
+	baseUrl: string;
+	envVars: Array<{ id: string; key: string; value: string }>;
+	oauthClientId: string;
+	oauthClientSecret: string;
 };
 
 type PostHogConnectionFormState = {
@@ -418,6 +427,15 @@ type JiraConnectionSettings = {
 	lastMentionSyncAt?: number;
 };
 
+type JiraMcpConnectionSettings = {
+	sourceId: string;
+	provider: "jira-mcp";
+	status: AppConnectionStatus;
+	displayName: string;
+	endpoint: string;
+	oauthClientId?: string;
+};
+
 type PostHogConnectionSettings = {
 	sourceId: string;
 	provider: "posthog";
@@ -449,6 +467,7 @@ type StableConnectionSettings = {
 	yandexTracker: YandexTrackerConnectionSettings | null;
 	yandexCalendar: YandexCalendarConnectionSettings | null;
 	jira: JiraConnectionSettings | null;
+	jiraMcp: JiraMcpConnectionSettings | null;
 	posthog: PostHogConnectionSettings | null;
 	notion: NotionConnectionSettings | null;
 	zoom: ZoomConnectionSettings | null;
@@ -462,16 +481,20 @@ const stableConnectionSettingsByWorkspace = new Map<
 type ConnectionsSettingsState = {
 	isYandexTrackerDialogOpen: boolean;
 	isJiraDialogOpen: boolean;
+	isJiraMcpDialogOpen: boolean;
 	isPostHogDialogOpen: boolean;
 	isNotionDialogOpen: boolean;
 	isZoomDialogOpen: boolean;
 	isSavingYandexTrackerConnection: boolean;
 	isSavingJiraConnection: boolean;
+	isSavingJiraMcpConnection: boolean;
+	isDisablingConnection: boolean;
 	isSavingPostHogConnection: boolean;
 	isSavingNotionConnection: boolean;
 	isSavingZoomConnection: boolean;
 	yandexTrackerFormState: YandexTrackerConnectionFormState;
 	jiraFormState: JiraConnectionFormState;
+	jiraMcpFormState: JiraMcpConnectionFormState;
 	posthogFormState: PostHogConnectionFormState;
 	notionFormState: NotionConnectionFormState;
 	zoomFormState: ZoomConnectionFormState;
@@ -484,6 +507,10 @@ type ConnectionsSettingsAction =
 	  }
 	| {
 			type: "setIsJiraDialogOpen";
+			value: boolean;
+	  }
+	| {
+			type: "setIsJiraMcpDialogOpen";
 			value: boolean;
 	  }
 	| {
@@ -504,6 +531,14 @@ type ConnectionsSettingsAction =
 	  }
 	| {
 			type: "setIsSavingJiraConnection";
+			value: boolean;
+	  }
+	| {
+			type: "setIsSavingJiraMcpConnection";
+			value: boolean;
+	  }
+	| {
+			type: "setIsDisablingConnection";
 			value: boolean;
 	  }
 	| {
@@ -533,6 +568,14 @@ type ConnectionsSettingsAction =
 	| {
 			type: "patchJiraFormState";
 			value: Partial<JiraConnectionFormState>;
+	  }
+	| {
+			type: "setJiraMcpFormState";
+			value: JiraMcpConnectionFormState;
+	  }
+	| {
+			type: "patchJiraMcpFormState";
+			value: Partial<JiraMcpConnectionFormState>;
 	  }
 	| {
 			type: "setPostHogFormState";
@@ -609,6 +652,14 @@ const initialJiraConnectionFormState: JiraConnectionFormState = {
 	token: "",
 };
 
+const initialJiraMcpConnectionFormState: JiraMcpConnectionFormState = {
+	name: "Jira",
+	baseUrl: "https://mcp.atlassian.com/v1/mcp",
+	envVars: [],
+	oauthClientId: "",
+	oauthClientSecret: "",
+};
+
 const initialPostHogConnectionFormState: PostHogConnectionFormState = {
 	name: "PostHog",
 	baseUrl: "https://mcp.posthog.com/mcp",
@@ -646,16 +697,20 @@ const initialCalendarSettingsState: CalendarSettingsState = {
 const initialConnectionsSettingsState: ConnectionsSettingsState = {
 	isYandexTrackerDialogOpen: false,
 	isJiraDialogOpen: false,
+	isJiraMcpDialogOpen: false,
 	isPostHogDialogOpen: false,
 	isNotionDialogOpen: false,
 	isZoomDialogOpen: false,
 	isSavingYandexTrackerConnection: false,
 	isSavingJiraConnection: false,
+	isSavingJiraMcpConnection: false,
+	isDisablingConnection: false,
 	isSavingPostHogConnection: false,
 	isSavingNotionConnection: false,
 	isSavingZoomConnection: false,
 	yandexTrackerFormState: initialYandexTrackerConnectionFormState,
 	jiraFormState: initialJiraConnectionFormState,
+	jiraMcpFormState: initialJiraMcpConnectionFormState,
 	posthogFormState: initialPostHogConnectionFormState,
 	notionFormState: initialNotionConnectionFormState,
 	zoomFormState: initialZoomConnectionFormState,
@@ -710,6 +765,8 @@ const connectionsSettingsReducer = (
 			return { ...state, isYandexTrackerDialogOpen: action.value };
 		case "setIsJiraDialogOpen":
 			return { ...state, isJiraDialogOpen: action.value };
+		case "setIsJiraMcpDialogOpen":
+			return { ...state, isJiraMcpDialogOpen: action.value };
 		case "setIsPostHogDialogOpen":
 			return { ...state, isPostHogDialogOpen: action.value };
 		case "setIsNotionDialogOpen":
@@ -720,6 +777,10 @@ const connectionsSettingsReducer = (
 			return { ...state, isSavingYandexTrackerConnection: action.value };
 		case "setIsSavingJiraConnection":
 			return { ...state, isSavingJiraConnection: action.value };
+		case "setIsSavingJiraMcpConnection":
+			return { ...state, isSavingJiraMcpConnection: action.value };
+		case "setIsDisablingConnection":
+			return { ...state, isDisablingConnection: action.value };
 		case "setIsSavingPostHogConnection":
 			return { ...state, isSavingPostHogConnection: action.value };
 		case "setIsSavingNotionConnection":
@@ -743,6 +804,16 @@ const connectionsSettingsReducer = (
 				...state,
 				jiraFormState: {
 					...state.jiraFormState,
+					...action.value,
+				},
+			};
+		case "setJiraMcpFormState":
+			return { ...state, jiraMcpFormState: action.value };
+		case "patchJiraMcpFormState":
+			return {
+				...state,
+				jiraMcpFormState: {
+					...state.jiraMcpFormState,
 					...action.value,
 				},
 			};
@@ -1430,15 +1501,9 @@ function useCalendarSettingsController() {
 	};
 }
 
-const getGoogleToolAction = ({
-	account,
-	hasScope,
-}: {
-	account: LinkedAccount | undefined;
-	hasScope: boolean;
-}) => ({
-	buttonLabel: !account ? "Connect" : !hasScope ? "Grant access" : "Manage",
-	buttonVariant: hasScope ? ("outline" as const) : ("default" as const),
+const getGoogleToolAction = ({ hasScope }: { hasScope: boolean }) => ({
+	buttonLabel: hasScope ? "Manage" : "Connect",
+	buttonVariant: "outline" as const,
 });
 
 function VisibleCalendarsSection({
@@ -1678,12 +1743,16 @@ function ConnectionsSettings() {
 		activeWorkspaceId,
 		handleConnectYandexCalendar,
 		handleConnectJira,
+		handleConnectJiraMcp,
 		handleConnectNotion,
 		handleConnectPostHog,
 		handleCopyJiraWebhookUrl,
 		handleConnectZoom,
 		handleConnectYandexTracker,
 		handleJiraDialogOpenChange,
+		handleJiraMcpDialogOpenChange,
+		handleDisableJiraMcp,
+		handleDisableJiraSync,
 		handleNotionDialogOpenChange,
 		handlePostHogDialogOpenChange,
 		handleYandexCalendarDialogOpenChange,
@@ -1691,6 +1760,9 @@ function ConnectionsSettings() {
 		handleZoomDialogOpenChange,
 		isJiraDialogOpen,
 		isJiraFormValid,
+		isJiraMcpDialogOpen,
+		isJiraMcpFormValid,
+		isDisablingConnection,
 		isNotionDialogOpen,
 		isNotionFormValid,
 		isPostHogDialogOpen,
@@ -1701,6 +1773,7 @@ function ConnectionsSettings() {
 		isYandexCalendarDialogOpen,
 		isYandexCalendarFormValid,
 		isSavingJiraConnection,
+		isSavingJiraMcpConnection,
 		isSavingNotionConnection,
 		isSavingPostHogConnection,
 		isSavingYandexTrackerConnection,
@@ -1709,11 +1782,17 @@ function ConnectionsSettings() {
 		isYandexTrackerFormValid,
 		jiraConnection,
 		jiraFormState,
+		jiraMcpConnection,
+		jiraMcpFormState,
 		jiraWebhookUrl,
 		notionFormState,
 		posthogFormState,
 		setJiraBaseUrl,
 		setJiraEmail,
+		setJiraMcpBaseUrl,
+		setJiraMcpName,
+		setJiraMcpOAuthClientId,
+		setJiraMcpOAuthClientSecret,
 		setJiraToken,
 		setNotionBaseUrl,
 		setNotionName,
@@ -1729,12 +1808,15 @@ function ConnectionsSettings() {
 		setZoomOAuthClientSecret,
 		addNotionEnvVar,
 		addPostHogEnvVar,
+		addJiraMcpEnvVar,
 		addZoomEnvVar,
 		removeNotionEnvVar,
 		removePostHogEnvVar,
+		removeJiraMcpEnvVar,
 		removeZoomEnvVar,
 		updateNotionEnvVar,
 		updatePostHogEnvVar,
+		updateJiraMcpEnvVar,
 		updateZoomEnvVar,
 		setYandexCalendarEmail,
 		setYandexCalendarPassword,
@@ -1795,11 +1877,32 @@ function ConnectionsSettings() {
 				}}
 				isFormValid={isJiraFormValid}
 				isSaving={isSavingJiraConnection}
+				isDisabling={isDisablingConnection}
+				onDisable={jiraConnection ? handleDisableJiraSync : undefined}
 				onCopyWebhookUrl={() => {
 					void handleCopyJiraWebhookUrl();
 				}}
 				showSyncSettings={Boolean(jiraConnection)}
 				webhookUrl={jiraWebhookUrl}
+			/>
+			<JiraMcpDialog
+				open={isJiraMcpDialogOpen}
+				onOpenChange={handleJiraMcpDialogOpenChange}
+				formState={jiraMcpFormState}
+				onNameChange={setJiraMcpName}
+				onBaseUrlChange={setJiraMcpBaseUrl}
+				onAddEnvVar={addJiraMcpEnvVar}
+				onRemoveEnvVar={removeJiraMcpEnvVar}
+				onUpdateEnvVar={updateJiraMcpEnvVar}
+				onOAuthClientIdChange={setJiraMcpOAuthClientId}
+				onOAuthClientSecretChange={setJiraMcpOAuthClientSecret}
+				onConnect={() => {
+					void handleConnectJiraMcp();
+				}}
+				isFormValid={isJiraMcpFormValid}
+				isSaving={isSavingJiraMcpConnection}
+				isDisabling={isDisablingConnection}
+				onDisable={jiraMcpConnection ? handleDisableJiraMcp : undefined}
 			/>
 			<PostHogDialog
 				open={isPostHogDialogOpen}
@@ -1881,6 +1984,10 @@ function useConnectionsSettingsController() {
 		api.appConnections.getJira,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
 	);
+	const jiraMcpConnectionResult = useQuery(
+		api.appConnections.getJiraMcp,
+		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
+	);
 	const posthogConnectionResult = useQuery(
 		api.appConnections.getPostHog,
 		activeWorkspaceId ? { workspaceId: activeWorkspaceId } : "skip",
@@ -1908,6 +2015,10 @@ function useConnectionsSettingsController() {
 		jiraConnectionResult === undefined
 			? (stableConnectionSettings?.jira ?? null)
 			: jiraConnectionResult;
+	const jiraMcpConnection =
+		jiraMcpConnectionResult === undefined
+			? (stableConnectionSettings?.jiraMcp ?? null)
+			: jiraMcpConnectionResult;
 	const posthogConnection =
 		posthogConnectionResult === undefined
 			? (stableConnectionSettings?.posthog ?? null)
@@ -1924,9 +2035,11 @@ function useConnectionsSettingsController() {
 		api.appConnectionActions.connectYandexTracker,
 	);
 	const connectJira = useAction(api.appConnectionActions.connectJira);
+	const connectJiraMcp = useAction(api.appConnectionActions.connectJiraMcp);
 	const connectPostHog = useAction(api.appConnectionActions.connectPostHog);
 	const connectNotion = useAction(api.appConnectionActions.connectNotion);
 	const connectZoom = useAction(api.appConnectionActions.connectZoom);
+	const disableConnection = useMutation(api.appConnections.disableConnection);
 	const prepareJiraMentionSync = useAction(
 		api.appConnectionActions.prepareJiraMentionSync,
 	);
@@ -1945,16 +2058,20 @@ function useConnectionsSettingsController() {
 	const {
 		isYandexTrackerDialogOpen,
 		isJiraDialogOpen,
+		isJiraMcpDialogOpen,
 		isPostHogDialogOpen,
 		isNotionDialogOpen,
 		isZoomDialogOpen,
 		isSavingYandexTrackerConnection,
 		isSavingJiraConnection,
+		isSavingJiraMcpConnection,
+		isDisablingConnection,
 		isSavingPostHogConnection,
 		isSavingNotionConnection,
 		isSavingZoomConnection,
 		yandexTrackerFormState,
 		jiraFormState,
+		jiraMcpFormState,
 		posthogFormState,
 		notionFormState,
 		zoomFormState,
@@ -1989,6 +2106,7 @@ function useConnectionsSettingsController() {
 			yandexTracker: null,
 			yandexCalendar: null,
 			jira: null,
+			jiraMcp: null,
 			posthog: null,
 			notion: null,
 			zoom: null,
@@ -2007,6 +2125,10 @@ function useConnectionsSettingsController() {
 				jiraConnectionResult === undefined
 					? previous.jira
 					: jiraConnectionResult,
+			jiraMcp:
+				jiraMcpConnectionResult === undefined
+					? previous.jiraMcp
+					: jiraMcpConnectionResult,
 			posthog:
 				posthogConnectionResult === undefined
 					? previous.posthog
@@ -2022,6 +2144,7 @@ function useConnectionsSettingsController() {
 		});
 	}, [
 		jiraConnectionResult,
+		jiraMcpConnectionResult,
 		notionConnectionResult,
 		posthogConnectionResult,
 		stableConnectionSettingsKey,
@@ -2174,7 +2297,7 @@ function useConnectionsSettingsController() {
 				email: jiraFormState.email.trim(),
 				token: jiraFormState.token.trim(),
 			});
-			toast.success("Jira connected");
+			toast.success("Jira sync connected");
 			handleJiraDialogOpenChange(false);
 		} catch (error) {
 			console.error("Failed to connect Jira", error);
@@ -2192,6 +2315,178 @@ function useConnectionsSettingsController() {
 		jiraFormState.baseUrl.trim().length > 0 &&
 		jiraFormState.email.trim().length > 0 &&
 		jiraFormState.token.trim().length > 0;
+
+	const handleJiraMcpDialogOpenChange = (open: boolean) => {
+		dispatch({ type: "setIsJiraMcpDialogOpen", value: open });
+
+		if (open) {
+			dispatch({
+				type: "setJiraMcpFormState",
+				value: {
+					name: jiraMcpConnection?.displayName ?? "Jira",
+					baseUrl:
+						jiraMcpConnection?.endpoint ??
+						initialJiraMcpConnectionFormState.baseUrl,
+					envVars: [],
+					oauthClientId: jiraMcpConnection?.oauthClientId ?? "",
+					oauthClientSecret: "",
+				},
+			});
+		} else {
+			dispatch({
+				type: "setJiraMcpFormState",
+				value: initialJiraMcpConnectionFormState,
+			});
+		}
+	};
+
+	const handleConnectJiraMcp = async () => {
+		if (
+			!activeWorkspaceId ||
+			!jiraMcpFormState.name.trim() ||
+			!jiraMcpFormState.baseUrl.trim()
+		) {
+			return;
+		}
+
+		dispatch({ type: "setIsSavingJiraMcpConnection", value: true });
+		const oauthWindow = createOAuthNavigationTarget();
+
+		try {
+			const result = await connectJiraMcp({
+				workspaceId: activeWorkspaceId,
+				displayName: jiraMcpFormState.name.trim(),
+				baseUrl: jiraMcpFormState.baseUrl.trim(),
+				env: Object.fromEntries(
+					jiraMcpFormState.envVars
+						.map((envVar) => [envVar.key.trim(), envVar.value] as const)
+						.filter(([key, value]) => key.length > 0 && value.length > 0),
+				),
+				...(jiraMcpFormState.oauthClientId.trim()
+					? { oauthClientId: jiraMcpFormState.oauthClientId.trim() }
+					: {}),
+				...(jiraMcpFormState.oauthClientSecret.trim()
+					? { oauthClientSecret: jiraMcpFormState.oauthClientSecret.trim() }
+					: {}),
+			});
+			await navigateToOAuthUrl(result.authorizationUrl, oauthWindow);
+			toast.success("Continue in Jira to finish connecting");
+			handleJiraMcpDialogOpenChange(false);
+		} catch (error) {
+			oauthWindow?.close();
+			console.error("Failed to connect Jira", error);
+			toast.error(getConnectionErrorMessage(error, "Failed to connect Jira"));
+		} finally {
+			dispatch({ type: "setIsSavingJiraMcpConnection", value: false });
+		}
+	};
+
+	const isJiraMcpFormValid =
+		jiraMcpFormState.name.trim().length > 0 &&
+		jiraMcpFormState.baseUrl.trim().length > 0;
+
+	const disableAppConnection = async ({
+		sourceId,
+		successMessage,
+		onDisabled,
+	}: {
+		sourceId: string;
+		successMessage: string;
+		onDisabled: () => void;
+	}) => {
+		if (!activeWorkspaceId || isDisablingConnection) {
+			return;
+		}
+
+		dispatch({ type: "setIsDisablingConnection", value: true });
+
+		try {
+			await disableConnection({
+				workspaceId: activeWorkspaceId,
+				sourceId,
+			});
+			toast.success(successMessage);
+			onDisabled();
+		} catch (error) {
+			console.error("Failed to disable connection", error);
+			toast.error(
+				error instanceof Error
+					? withoutTrailingPeriod(error.message)
+					: "Failed to disable connection",
+			);
+		} finally {
+			dispatch({ type: "setIsDisablingConnection", value: false });
+		}
+	};
+
+	const handleDisableJiraSync = async () => {
+		if (!jiraConnection) {
+			return;
+		}
+
+		await disableAppConnection({
+			sourceId: jiraConnection.sourceId,
+			successMessage: "Jira sync disabled",
+			onDisabled: () => handleJiraDialogOpenChange(false),
+		});
+	};
+
+	const handleDisableJiraMcp = async () => {
+		if (!jiraMcpConnection) {
+			return;
+		}
+
+		await disableAppConnection({
+			sourceId: jiraMcpConnection.sourceId,
+			successMessage: "Jira disabled",
+			onDisabled: () => handleJiraMcpDialogOpenChange(false),
+		});
+	};
+
+	const addJiraMcpEnvVar = () =>
+		dispatch({
+			type: "patchJiraMcpFormState",
+			value: {
+				envVars: [
+					...jiraMcpFormState.envVars,
+					{ id: crypto.randomUUID(), key: "", value: "" },
+				],
+			},
+		});
+
+	const removeJiraMcpEnvVar = (id: string) =>
+		dispatch({
+			type: "patchJiraMcpFormState",
+			value: {
+				envVars: jiraMcpFormState.envVars.filter((envVar) => envVar.id !== id),
+			},
+		});
+
+	const updateJiraMcpEnvVar = (
+		id: string,
+		key: "key" | "value",
+		value: string,
+	) =>
+		dispatch({
+			type: "patchJiraMcpFormState",
+			value: {
+				envVars: jiraMcpFormState.envVars.map((envVar) =>
+					envVar.id === id ? { ...envVar, [key]: value } : envVar,
+				),
+			},
+		});
+
+	const setJiraMcpOAuthClientId = (oauthClientId: string) =>
+		dispatch({
+			type: "patchJiraMcpFormState",
+			value: { oauthClientId },
+		});
+
+	const setJiraMcpOAuthClientSecret = (oauthClientSecret: string) =>
+		dispatch({
+			type: "patchJiraMcpFormState",
+			value: { oauthClientSecret },
+		});
 
 	const handlePostHogDialogOpenChange = (open: boolean) => {
 		dispatch({ type: "setIsPostHogDialogOpen", value: open });
@@ -2607,11 +2902,9 @@ function useConnectionsSettingsController() {
 	};
 
 	const googleCalendarToolAction = getGoogleToolAction({
-		account: googleAccount,
 		hasScope: hasGoogleCalendarToolScope && googleCalendarEnabledForWorkspace,
 	});
 	const googleDriveToolAction = getGoogleToolAction({
-		account: googleAccount,
 		hasScope: hasGoogleDriveToolScope && googleDriveEnabledForWorkspace,
 	});
 
@@ -2690,6 +2983,17 @@ function useConnectionsSettingsController() {
 		{
 			icon: <AppSourceIcon provider="jira" className="size-5 shrink-0" />,
 			name: "Jira",
+			buttonLabel: jiraMcpConnection ? "Manage" : "Connect",
+			buttonVariant: "outline",
+			buttonDisabled: isSavingJiraMcpConnection || !session?.user,
+			buttonIcon: isSavingJiraMcpConnection ? (
+				<LoaderCircle className="animate-spin" />
+			) : null,
+			onButtonClick: () => handleJiraMcpDialogOpenChange(true),
+		},
+		{
+			icon: <AppSourceIcon provider="jira" className="size-5 shrink-0" />,
+			name: "Jira sync",
 			buttonLabel: jiraConnection ? "Manage" : "Connect",
 			buttonVariant: "outline",
 			onButtonClick: () => handleJiraDialogOpenChange(true),
@@ -2758,34 +3062,45 @@ function useConnectionsSettingsController() {
 		activeWorkspaceId,
 		...yandexCalendarDialog,
 		handleConnectJira,
+		handleConnectJiraMcp,
 		handleConnectNotion,
 		handleConnectPostHog,
 		handleConnectZoom,
 		handleCopyJiraWebhookUrl,
 		handleConnectYandexTracker,
+		handleDisableJiraMcp,
+		handleDisableJiraSync,
 		handleJiraDialogOpenChange,
+		handleJiraMcpDialogOpenChange,
 		handleNotionDialogOpenChange,
 		handleOpenJiraWebhookSettings,
 		handlePostHogDialogOpenChange,
 		handleYandexTrackerDialogOpenChange,
 		handleZoomDialogOpenChange,
 		addPostHogEnvVar,
+		addJiraMcpEnvVar,
 		addNotionEnvVar,
 		addZoomEnvVar,
 		removePostHogEnvVar,
+		removeJiraMcpEnvVar,
 		removeNotionEnvVar,
 		removeZoomEnvVar,
 		updatePostHogEnvVar,
+		updateJiraMcpEnvVar,
 		updateNotionEnvVar,
 		updateZoomEnvVar,
 		isJiraDialogOpen,
 		isJiraFormValid,
+		isJiraMcpDialogOpen,
+		isJiraMcpFormValid,
+		isDisablingConnection,
 		isNotionDialogOpen,
 		isNotionFormValid,
 		isPostHogDialogOpen,
 		isPostHogFormValid,
 		isPreparingJiraMentionSync,
 		isSavingJiraConnection,
+		isSavingJiraMcpConnection,
 		isSavingNotionConnection,
 		isSavingPostHogConnection,
 		isSavingYandexTrackerConnection,
@@ -2796,6 +3111,8 @@ function useConnectionsSettingsController() {
 		isZoomFormValid,
 		jiraConnection,
 		jiraFormState,
+		jiraMcpConnection,
+		jiraMcpFormState,
 		jiraWebhookUrl,
 		notionFormState,
 		posthogFormState,
@@ -2815,6 +3132,18 @@ function useConnectionsSettingsController() {
 				type: "patchJiraFormState",
 				value: { token },
 			}),
+		setJiraMcpBaseUrl: (baseUrl: string) =>
+			dispatch({
+				type: "patchJiraMcpFormState",
+				value: { baseUrl },
+			}),
+		setJiraMcpName: (name: string) =>
+			dispatch({
+				type: "patchJiraMcpFormState",
+				value: { name },
+			}),
+		setJiraMcpOAuthClientId,
+		setJiraMcpOAuthClientSecret,
 		setPostHogBaseUrl: (baseUrl: string) =>
 			dispatch({
 				type: "patchPostHogFormState",
@@ -3102,9 +3431,11 @@ function JiraDialog({
 	onEmailChange,
 	onTokenChange,
 	onConnect,
+	onDisable,
 	showSyncSettings,
 	isFormValid,
 	isSaving,
+	isDisabling,
 	webhookUrl,
 }: {
 	open: boolean;
@@ -3115,18 +3446,20 @@ function JiraDialog({
 	onEmailChange: (email: string) => void;
 	onTokenChange: (token: string) => void;
 	onConnect: () => void;
+	onDisable?: () => void;
 	showSyncSettings: boolean;
 	isFormValid: boolean;
 	isSaving: boolean;
+	isDisabling: boolean;
 	webhookUrl: string | null;
 }) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="sm:max-w-md">
 				<DialogHeader>
-					<DialogTitle>Connect Jira</DialogTitle>
+					<DialogTitle>Connect Jira sync</DialogTitle>
 					<DialogDescription>
-						Enter the credentials OpenGran should use for your Jira connection.
+						Enter the Jira API credentials OpenGran should use for mention sync.
 					</DialogDescription>
 				</DialogHeader>
 				<FieldGroup className="gap-4">
@@ -3172,7 +3505,7 @@ function JiraDialog({
 							<Button
 								type="button"
 								variant="ghost"
-								className="group w-full justify-between px-0 text-foreground hover:!bg-transparent hover:text-foreground active:!bg-transparent aria-expanded:!bg-transparent aria-expanded:hover:!bg-transparent focus-visible:!bg-transparent"
+								className={SETTINGS_COLLAPSIBLE_TRIGGER_CLASSNAME}
 							>
 								Sync settings
 								<ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
@@ -3186,29 +3519,265 @@ function JiraDialog({
 						</CollapsibleContent>
 					</Collapsible>
 				) : null}
-				<div className="flex justify-end gap-2 pt-2">
-					<Button
-						type="button"
-						variant="ghost"
-						onClick={() => onOpenChange(false)}
-						disabled={isSaving}
-					>
-						Cancel
-					</Button>
-					<Button
-						type="button"
-						onClick={onConnect}
-						disabled={!isFormValid || isSaving}
-					>
-						{isSaving ? (
-							<>
-								<LoaderCircle className="animate-spin" />
-								Connecting
-							</>
-						) : (
-							"Connect"
-						)}
-					</Button>
+				<div className="flex items-center justify-between gap-2 pt-2">
+					{onDisable ? (
+						<Button
+							type="button"
+							variant="destructive"
+							onClick={onDisable}
+							disabled={isSaving || isDisabling}
+						>
+							{isDisabling ? (
+								<>
+									<LoaderCircle className="animate-spin" />
+									Disabling
+								</>
+							) : (
+								"Disable"
+							)}
+						</Button>
+					) : (
+						<span />
+					)}
+					<div className="flex justify-end gap-2">
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={() => onOpenChange(false)}
+							disabled={isSaving || isDisabling}
+						>
+							Cancel
+						</Button>
+						<Button
+							type="button"
+							onClick={onConnect}
+							disabled={!isFormValid || isSaving || isDisabling}
+						>
+							{isSaving ? (
+								<>
+									<LoaderCircle className="animate-spin" />
+									Connecting
+								</>
+							) : (
+								"Connect"
+							)}
+						</Button>
+					</div>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+function JiraMcpDialog({
+	open,
+	onOpenChange,
+	formState,
+	onNameChange,
+	onBaseUrlChange,
+	onAddEnvVar,
+	onRemoveEnvVar,
+	onUpdateEnvVar,
+	onOAuthClientIdChange,
+	onOAuthClientSecretChange,
+	onConnect,
+	onDisable,
+	isFormValid,
+	isSaving,
+	isDisabling,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	formState: JiraMcpConnectionFormState;
+	onNameChange: (name: string) => void;
+	onBaseUrlChange: (baseUrl: string) => void;
+	onAddEnvVar: () => void;
+	onRemoveEnvVar: (id: string) => void;
+	onUpdateEnvVar: (id: string, key: "key" | "value", value: string) => void;
+	onOAuthClientIdChange: (oauthClientId: string) => void;
+	onOAuthClientSecretChange: (oauthClientSecret: string) => void;
+	onConnect: () => void;
+	onDisable?: () => void;
+	isFormValid: boolean;
+	isSaving: boolean;
+	isDisabling: boolean;
+}) {
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="sm:max-w-md">
+				<DialogHeader>
+					<DialogTitle>Connect Jira</DialogTitle>
+					<DialogDescription>
+						Enter the Jira MCP connection details OpenGran should use for AI
+						tools.
+					</DialogDescription>
+				</DialogHeader>
+				<FieldGroup className="gap-4">
+					<Field>
+						<Label htmlFor="jira-mcp-name" className={SETTINGS_LABEL_CLASSNAME}>
+							Name
+						</Label>
+						<Input
+							id="jira-mcp-name"
+							value={formState.name}
+							onChange={(event) => onNameChange(event.target.value)}
+							placeholder="Jira"
+						/>
+					</Field>
+					<Field>
+						<Label
+							htmlFor="jira-mcp-base-url"
+							className={SETTINGS_LABEL_CLASSNAME}
+						>
+							Base URL
+						</Label>
+						<Input
+							id="jira-mcp-base-url"
+							value={formState.baseUrl}
+							onChange={(event) => onBaseUrlChange(event.target.value)}
+							placeholder="https://mcp.atlassian.com/v1/mcp"
+						/>
+					</Field>
+					<Field>
+						<div className="flex items-center justify-between gap-3">
+							<Label className={SETTINGS_LABEL_CLASSNAME}>
+								Environment variables (optional)
+							</Label>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={onAddEnvVar}
+							>
+								<Plus />
+								Add variable
+							</Button>
+						</div>
+						{formState.envVars.length > 0 ? (
+							<div className="space-y-2">
+								{formState.envVars.map((envVar) => (
+									<div key={envVar.id} className="flex gap-2">
+										<Input
+											value={envVar.key}
+											onChange={(event) =>
+												onUpdateEnvVar(envVar.id, "key", event.target.value)
+											}
+											placeholder="key"
+										/>
+										<Input
+											type="password"
+											value={envVar.value}
+											onChange={(event) =>
+												onUpdateEnvVar(envVar.id, "value", event.target.value)
+											}
+											placeholder="value"
+										/>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											onClick={() => onRemoveEnvVar(envVar.id)}
+											aria-label="Remove variable"
+										>
+											<X />
+										</Button>
+									</div>
+								))}
+							</div>
+						) : null}
+					</Field>
+					<Collapsible>
+						<CollapsibleTrigger asChild>
+							<Button
+								type="button"
+								variant="ghost"
+								className={SETTINGS_COLLAPSIBLE_TRIGGER_CLASSNAME}
+							>
+								Advanced settings
+								<ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
+							</Button>
+						</CollapsibleTrigger>
+						<CollapsibleContent className="space-y-4 pt-4">
+							<Field>
+								<Label
+									htmlFor="jira-mcp-oauth-client-id"
+									className={SETTINGS_LABEL_CLASSNAME}
+								>
+									OAuth Client ID
+								</Label>
+								<Input
+									id="jira-mcp-oauth-client-id"
+									value={formState.oauthClientId}
+									onChange={(event) =>
+										onOAuthClientIdChange(event.target.value)
+									}
+									placeholder="OAuth Client ID"
+								/>
+							</Field>
+							<Field>
+								<Label
+									htmlFor="jira-mcp-oauth-client-secret"
+									className={SETTINGS_LABEL_CLASSNAME}
+								>
+									OAuth Client Secret
+								</Label>
+								<Input
+									id="jira-mcp-oauth-client-secret"
+									type="password"
+									value={formState.oauthClientSecret}
+									onChange={(event) =>
+										onOAuthClientSecretChange(event.target.value)
+									}
+									placeholder="OAuth Client Secret"
+								/>
+							</Field>
+						</CollapsibleContent>
+					</Collapsible>
+				</FieldGroup>
+				<div className="flex items-center justify-between gap-2 pt-2">
+					{onDisable ? (
+						<Button
+							type="button"
+							variant="destructive"
+							onClick={onDisable}
+							disabled={isSaving || isDisabling}
+						>
+							{isDisabling ? (
+								<>
+									<LoaderCircle className="animate-spin" />
+									Disabling
+								</>
+							) : (
+								"Disable"
+							)}
+						</Button>
+					) : (
+						<span />
+					)}
+					<div className="flex justify-end gap-2">
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={() => onOpenChange(false)}
+							disabled={isSaving || isDisabling}
+						>
+							Cancel
+						</Button>
+						<Button
+							type="button"
+							onClick={onConnect}
+							disabled={!isFormValid || isSaving || isDisabling}
+						>
+							{isSaving ? (
+								<>
+									<LoaderCircle className="animate-spin" />
+									Connecting
+								</>
+							) : (
+								"Connect"
+							)}
+						</Button>
+					</div>
 				</div>
 			</DialogContent>
 		</Dialog>
@@ -3336,10 +3905,10 @@ function PostHogDialog({
 							<Button
 								type="button"
 								variant="ghost"
-								className="w-full justify-between bg-transparent text-sm font-medium aria-expanded:bg-transparent"
+								className={SETTINGS_COLLAPSIBLE_TRIGGER_CLASSNAME}
 							>
 								Advanced settings
-								<ChevronDown className="size-4" />
+								<ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
 							</Button>
 						</CollapsibleTrigger>
 						<CollapsibleContent className="space-y-4 pt-4">
@@ -3529,10 +4098,10 @@ function NotionDialog({
 							<Button
 								type="button"
 								variant="ghost"
-								className="w-full justify-between bg-transparent text-sm font-medium aria-expanded:bg-transparent"
+								className={SETTINGS_COLLAPSIBLE_TRIGGER_CLASSNAME}
 							>
 								Advanced settings
-								<ChevronDown className="size-4" />
+								<ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
 							</Button>
 						</CollapsibleTrigger>
 						<CollapsibleContent className="space-y-4 pt-4">
@@ -3719,10 +4288,10 @@ function ZoomDialog({
 							<Button
 								type="button"
 								variant="ghost"
-								className="w-full justify-between bg-transparent text-sm font-medium aria-expanded:bg-transparent"
+								className={SETTINGS_COLLAPSIBLE_TRIGGER_CLASSNAME}
 							>
 								Advanced settings
-								<ChevronDown className="size-4" />
+								<ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
 							</Button>
 						</CollapsibleTrigger>
 						<CollapsibleContent className="space-y-4 pt-4">

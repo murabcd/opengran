@@ -623,7 +623,7 @@ export const handleChatRequest = async (
 		) ?? null;
 	const jiraConnection =
 		selectedAppConnections.find(
-			(connection) => connection.provider === "jira",
+			(connection) => connection.provider === "jira-mcp",
 		) ?? null;
 	const googleCalendarConnection =
 		selectedAppConnections.find(
@@ -682,7 +682,7 @@ export const handleChatRequest = async (
 			: ""
 	}${
 		jiraConnection
-			? `\n\nThe selected app source for this chat is Jira (${jiraConnection.displayName}). Treat it as the preferred source for project history, tickets, tasks, comments, assignees, and status. If the user's request could be answered from Jira, search Jira first before saying the context is unavailable.`
+			? `\n\nThe selected app source for this chat is Jira (${jiraConnection.displayName}). Treat it as the preferred source for project history, tickets, tasks, comments, assignees, and status. If the user's request could be answered from Jira, use the Jira MCP tools before saying the context is unavailable.`
 			: ""
 	}${
 		googleDriveConnection

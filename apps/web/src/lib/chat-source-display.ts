@@ -2,6 +2,7 @@ export type ChatAppSourceProvider =
 	| "google-calendar"
 	| "google-drive"
 	| "jira"
+	| "jira-mcp"
 	| "notion"
 	| "posthog"
 	| "zoom"
@@ -12,6 +13,7 @@ export const CHAT_APP_SOURCE_PROVIDERS = [
 	"google-calendar",
 	"google-drive",
 	"jira",
+	"jira-mcp",
 	"notion",
 	"posthog",
 	"zoom",
@@ -29,6 +31,7 @@ const APP_SOURCE_LABELS: Record<ChatAppSourceProvider, string> = {
 	"google-calendar": "Google Calendar",
 	"google-drive": "Google Drive",
 	jira: "Jira",
+	"jira-mcp": "Jira",
 	notion: "Notion",
 	posthog: "PostHog",
 	zoom: "Zoom",

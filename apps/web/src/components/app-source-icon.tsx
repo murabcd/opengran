@@ -14,6 +14,7 @@ export function AppSourceIcon({
 		case "google-drive":
 			return <Icons.googleDriveLogo className={className} />;
 		case "jira":
+		case "jira-mcp":
 			return <Icons.jiraLogo className={className} />;
 		case "notion":
 			return <Icons.notionLogo className={className} />;

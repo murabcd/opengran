@@ -35,6 +35,7 @@ const automationAppSourceProviderValidator = v.union(
 	v.literal("yandex-calendar"),
 	v.literal("yandex-tracker"),
 	v.literal("jira"),
+	v.literal("jira-mcp"),
 	v.literal("posthog"),
 	v.literal("notion"),
 	v.literal("zoom"),
@@ -55,6 +56,7 @@ type AutomationAppSource = {
 		| "yandex-calendar"
 		| "yandex-tracker"
 		| "jira"
+		| "jira-mcp"
 		| "posthog"
 		| "notion"
 		| "zoom";

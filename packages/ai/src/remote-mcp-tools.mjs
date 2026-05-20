@@ -89,7 +89,7 @@ export const buildRemoteMcpTools = async (connection) =>
 			}
 
 			const toolName = makeUniqueToolName(
-				connection.provider,
+				connection.toolPrefix ?? connection.provider,
 				definition.name,
 				tools,
 			);

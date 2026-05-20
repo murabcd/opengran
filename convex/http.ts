@@ -63,6 +63,15 @@ http.route({
 });
 
 http.route({
+	path: "/api/oauth/jira-mcp/callback",
+	method: "GET",
+	handler: httpAction(
+		async (ctx, request) =>
+			await handleMcpOAuthCallbackRequest(ctx, request, "jira-mcp"),
+	),
+});
+
+http.route({
 	path: "/api/oauth/notion/callback",
 	method: "GET",
 	handler: httpAction(

@@ -25,6 +25,7 @@ const appConnectionProviderValidator = v.union(
 	v.literal("yandex-tracker"),
 	v.literal("yandex-calendar"),
 	v.literal("jira"),
+	v.literal("jira-mcp"),
 	v.literal("posthog"),
 	v.literal("notion"),
 	v.literal("zoom"),
@@ -600,7 +601,12 @@ export default defineSchema({
 			"updatedAt",
 		]),
 	mcpOAuthStates: defineTable({
-		provider: v.union(v.literal("notion"), v.literal("posthog"), v.literal("zoom")),
+		provider: v.union(
+			v.literal("jira-mcp"),
+			v.literal("notion"),
+			v.literal("posthog"),
+			v.literal("zoom"),
+		),
 		state: v.string(),
 		ownerTokenIdentifier: v.string(),
 		workspaceId: v.id("workspaces"),

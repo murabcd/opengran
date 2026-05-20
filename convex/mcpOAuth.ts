@@ -1,14 +1,27 @@
+import { auth, type OAuthTokens } from "@ai-sdk/mcp";
 import { validateRemoteMcpConnection } from "../packages/ai/src/remote-mcp-tools.mjs";
 import { internal } from "./_generated/api";
 import type { ActionCtx } from "./_generated/server";
 
-type McpOAuthProvider = "notion" | "posthog";
+type McpOAuthProvider = "jira-mcp" | "notion" | "posthog";
+
+type McpSdkOAuthClient = {
+	clientId: string;
+	clientSecret?: string;
+};
+
+type McpSdkOAuthTokenResult = {
+	accessToken: string;
+	refreshToken?: string;
+	expiresIn?: number;
+};
 
 type ProviderConfig = {
 	displayName: string;
 };
 
 const PROVIDER_CONFIG: Record<McpOAuthProvider, ProviderConfig> = {
+	"jira-mcp": { displayName: "Jira" },
 	notion: { displayName: "Notion" },
 	posthog: { displayName: "PostHog" },
 };
@@ -44,6 +57,211 @@ type McpTokenResponse = {
 	access_token?: unknown;
 	refresh_token?: unknown;
 	expires_in?: unknown;
+};
+
+const getMcpSdkClientMetadata = (redirectUri: string) => ({
+	redirect_uris: [redirectUri],
+	client_name: "OpenGran",
+	grant_types: ["authorization_code", "refresh_token"],
+	response_types: ["code"],
+});
+
+const toMcpSdkClientInformation = (client: McpSdkOAuthClient) => ({
+	client_id: client.clientId,
+	...(client.clientSecret ? { client_secret: client.clientSecret } : {}),
+});
+
+const toMcpSdkTokenResult = (
+	tokens: OAuthTokens | undefined,
+	displayName: string,
+	action: string,
+): McpSdkOAuthTokenResult => {
+	if (!tokens?.access_token) {
+		throw new Error(`${displayName} OAuth ${action} failed.`);
+	}
+
+	return {
+		accessToken: tokens.access_token,
+		refreshToken: tokens.refresh_token,
+		expiresIn: tokens.expires_in,
+	};
+};
+
+export const startMcpSdkOAuth = async ({
+	baseUrl,
+	redirectUri,
+	client,
+	createState,
+}: {
+	baseUrl: string;
+	redirectUri: string;
+	client?: McpSdkOAuthClient;
+	createState: () => string;
+}) => {
+	let authorizationUrl: string | undefined;
+	let codeVerifier: string | undefined;
+	let state: string | undefined;
+	let currentClient = client ?? { clientId: "" };
+
+	const result = await auth(
+		{
+			tokens: () => undefined,
+			saveTokens: () => undefined,
+			redirectToAuthorization: (url) => {
+				authorizationUrl = url.toString();
+			},
+			saveCodeVerifier: (value) => {
+				codeVerifier = value;
+			},
+			codeVerifier: () => codeVerifier ?? "",
+			get redirectUrl() {
+				return redirectUri;
+			},
+			get clientMetadata() {
+				return getMcpSdkClientMetadata(redirectUri);
+			},
+			clientInformation: () =>
+				currentClient.clientId
+					? toMcpSdkClientInformation(currentClient)
+					: undefined,
+			saveClientInformation: (clientInformation) => {
+				currentClient = {
+					clientId: clientInformation.client_id,
+					...(clientInformation.client_secret
+						? { clientSecret: clientInformation.client_secret }
+						: {}),
+				};
+			},
+			state: () => {
+				state = createState();
+				return state;
+			},
+			saveState: (value) => {
+				state = value;
+			},
+			validateResourceURL: async (serverUrl, resource) =>
+				new URL(resource ?? serverUrl),
+		},
+		{ serverUrl: baseUrl },
+	);
+
+	if (
+		result !== "REDIRECT" ||
+		!authorizationUrl ||
+		!codeVerifier ||
+		!state ||
+		!currentClient.clientId
+	) {
+		throw new Error("MCP OAuth did not produce an authorization URL.");
+	}
+
+	return {
+		authorizationUrl,
+		codeVerifier,
+		state,
+		client: currentClient,
+	};
+};
+
+const exchangeMcpSdkOAuthCode = async ({
+	baseUrl,
+	redirectUri,
+	client,
+	code,
+	codeVerifier,
+	state,
+	displayName,
+}: {
+	baseUrl: string;
+	redirectUri: string;
+	client: McpSdkOAuthClient;
+	code: string;
+	codeVerifier: string;
+	state: string;
+	displayName: string;
+}) => {
+	let oauthTokens: OAuthTokens | undefined;
+
+	const result = await auth(
+		{
+			tokens: () => undefined,
+			saveTokens: (tokens) => {
+				oauthTokens = tokens;
+			},
+			redirectToAuthorization: () => undefined,
+			saveCodeVerifier: () => undefined,
+			codeVerifier: () => codeVerifier,
+			get redirectUrl() {
+				return redirectUri;
+			},
+			get clientMetadata() {
+				return getMcpSdkClientMetadata(redirectUri);
+			},
+			clientInformation: () => toMcpSdkClientInformation(client),
+			storedState: () => state,
+			validateResourceURL: async (serverUrl, resource) =>
+				new URL(resource ?? serverUrl),
+		},
+		{
+			serverUrl: baseUrl,
+			authorizationCode: code,
+			callbackState: state,
+		},
+	);
+
+	if (result !== "AUTHORIZED") {
+		throw new Error(`${displayName} OAuth authorization failed.`);
+	}
+
+	return toMcpSdkTokenResult(oauthTokens, displayName, "token exchange");
+};
+
+export const refreshMcpSdkOAuthToken = async ({
+	baseUrl,
+	redirectUri,
+	client,
+	refreshToken,
+	displayName,
+}: {
+	baseUrl: string;
+	redirectUri: string;
+	client: McpSdkOAuthClient;
+	refreshToken: string;
+	displayName: string;
+}) => {
+	let oauthTokens: OAuthTokens | undefined;
+
+	const result = await auth(
+		{
+			tokens: () => ({
+				access_token: "",
+				token_type: "Bearer",
+				refresh_token: refreshToken,
+			}),
+			saveTokens: (tokens) => {
+				oauthTokens = tokens;
+			},
+			redirectToAuthorization: () => undefined,
+			saveCodeVerifier: () => undefined,
+			codeVerifier: () => "",
+			get redirectUrl() {
+				return redirectUri;
+			},
+			get clientMetadata() {
+				return getMcpSdkClientMetadata(redirectUri);
+			},
+			clientInformation: () => toMcpSdkClientInformation(client),
+			validateResourceURL: async (serverUrl, resource) =>
+				new URL(resource ?? serverUrl),
+		},
+		{ serverUrl: baseUrl },
+	);
+
+	if (result !== "AUTHORIZED") {
+		throw new Error(`${displayName} OAuth refresh failed.`);
+	}
+
+	return toMcpSdkTokenResult(oauthTokens, displayName, "refresh");
 };
 
 const exchangeMcpOAuthCode = async ({
@@ -162,7 +380,10 @@ export const handleMcpOAuthCallbackRequest = async (
 		);
 	}
 
-	if (!pendingState.oauthTokenEndpoint || !pendingState.codeVerifier) {
+	if (
+		!pendingState.codeVerifier ||
+		(provider !== "jira-mcp" && !pendingState.oauthTokenEndpoint)
+	) {
 		return htmlResponse(
 			`${displayName} connection failed`,
 			`${displayName} OAuth state is incomplete.`,
@@ -171,17 +392,45 @@ export const handleMcpOAuthCallbackRequest = async (
 	}
 
 	try {
-		const tokens = await exchangeMcpOAuthCode({
-			clientId: pendingState.oauthClientId,
-			...(pendingState.oauthClientSecret
-				? { clientSecret: pendingState.oauthClientSecret }
-				: {}),
-			code,
-			codeVerifier: pendingState.codeVerifier,
-			redirectUri,
-			tokenEndpoint: pendingState.oauthTokenEndpoint,
-			displayName,
-		});
+		const codeVerifier = pendingState.codeVerifier;
+		if (!codeVerifier) {
+			throw new Error(`${displayName} OAuth state is incomplete.`);
+		}
+		const tokenEndpoint = pendingState.oauthTokenEndpoint;
+		const tokens = await (async () => {
+			if (provider === "jira-mcp") {
+				return await exchangeMcpSdkOAuthCode({
+					baseUrl: pendingState.baseUrl,
+					redirectUri,
+					client: {
+						clientId: pendingState.oauthClientId,
+						...(pendingState.oauthClientSecret
+							? { clientSecret: pendingState.oauthClientSecret }
+							: {}),
+					},
+					code,
+					codeVerifier,
+					state: pendingState.state,
+					displayName,
+				});
+			}
+
+			if (!tokenEndpoint) {
+				throw new Error(`${displayName} OAuth state is incomplete.`);
+			}
+
+			return await exchangeMcpOAuthCode({
+				clientId: pendingState.oauthClientId,
+				...(pendingState.oauthClientSecret
+					? { clientSecret: pendingState.oauthClientSecret }
+					: {}),
+				code,
+				codeVerifier,
+				redirectUri,
+				tokenEndpoint,
+				displayName,
+			});
+		})();
 		const env = pendingState.envJson
 			? (JSON.parse(pendingState.envJson) as Record<string, string>)
 			: undefined;
@@ -196,9 +445,11 @@ export const handleMcpOAuthCallbackRequest = async (
 		});
 
 		const mutation =
-			provider === "posthog"
-				? internal.appConnections.upsertPostHog
-				: internal.appConnections.upsertNotion;
+			provider === "jira-mcp"
+				? internal.appConnections.upsertJiraMcp
+				: provider === "posthog"
+					? internal.appConnections.upsertPostHog
+					: internal.appConnections.upsertNotion;
 
 		await ctx.runMutation(mutation, {
 			ownerTokenIdentifier: pendingState.ownerTokenIdentifier,

@@ -2,11 +2,17 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalMutation, internalQuery, query } from "./_generated/server";
+import {
+	internalMutation,
+	internalQuery,
+	mutation,
+	query,
+} from "./_generated/server";
 
 const yandexTrackerProviderValidator = v.literal("yandex-tracker");
 const yandexCalendarProviderValidator = v.literal("yandex-calendar");
 const jiraProviderValidator = v.literal("jira");
+const jiraMcpProviderValidator = v.literal("jira-mcp");
 const posthogProviderValidator = v.literal("posthog");
 const notionProviderValidator = v.literal("notion");
 const zoomProviderValidator = v.literal("zoom");
@@ -60,6 +66,15 @@ const posthogConnectionSettingsValidator = v.object({
 	oauthClientId: v.optional(v.string()),
 });
 
+const jiraMcpConnectionSettingsValidator = v.object({
+	sourceId: v.string(),
+	provider: jiraMcpProviderValidator,
+	status: appConnectionStatusValidator,
+	displayName: v.string(),
+	endpoint: v.string(),
+	oauthClientId: v.optional(v.string()),
+});
+
 const notionConnectionSettingsValidator = v.object({
 	sourceId: v.string(),
 	provider: notionProviderValidator,
@@ -98,6 +113,7 @@ const appConnectionSourceValidator = v.object({
 		yandexCalendarProviderValidator,
 		yandexTrackerProviderValidator,
 		jiraProviderValidator,
+		jiraMcpProviderValidator,
 		posthogProviderValidator,
 		notionProviderValidator,
 		zoomProviderValidator,
@@ -123,18 +139,19 @@ const yandexCalendarChatToolConnectionValidator = v.object({
 	calendarHomePath: v.string(),
 });
 
-const jiraChatToolConnectionValidator = v.object({
-	sourceId: v.string(),
-	provider: jiraProviderValidator,
-	displayName: v.string(),
-	baseUrl: v.string(),
-	email: v.string(),
-	token: v.string(),
-});
-
 const posthogChatToolConnectionValidator = v.object({
 	sourceId: v.string(),
 	provider: posthogProviderValidator,
+	displayName: v.string(),
+	baseUrl: v.string(),
+	env: v.optional(v.record(v.string(), v.string())),
+	oauthClientId: v.optional(v.string()),
+	oauthAccessToken: v.string(),
+});
+
+const jiraMcpChatToolConnectionValidator = v.object({
+	sourceId: v.string(),
+	provider: jiraMcpProviderValidator,
 	displayName: v.string(),
 	baseUrl: v.string(),
 	env: v.optional(v.record(v.string(), v.string())),
@@ -165,7 +182,7 @@ const zoomChatToolConnectionValidator = v.object({
 export const chatToolConnectionValidator = v.union(
 	yandexCalendarChatToolConnectionValidator,
 	yandexTrackerChatToolConnectionValidator,
-	jiraChatToolConnectionValidator,
+	jiraMcpChatToolConnectionValidator,
 	posthogChatToolConnectionValidator,
 	notionChatToolConnectionValidator,
 	zoomChatToolConnectionValidator,
@@ -202,6 +219,7 @@ const mcpOAuthProviderValidator = v.union(
 	v.literal("notion"),
 	v.literal("posthog"),
 	v.literal("zoom"),
+	jiraMcpProviderValidator,
 );
 
 const mcpOAuthConnectionValidator = v.object({
@@ -248,6 +266,15 @@ type JiraConnectionSettings = {
 	lastMentionSyncAt?: number;
 };
 
+type JiraMcpConnectionSettings = {
+	sourceId: string;
+	provider: "jira-mcp";
+	status: "connected" | "disconnected";
+	displayName: string;
+	endpoint: string;
+	oauthClientId?: string;
+};
+
 type PostHogConnectionSettings = {
 	sourceId: string;
 	provider: "posthog";
@@ -284,6 +311,7 @@ type AppConnectionSource = {
 	preview: string;
 	provider:
 		| "jira"
+		| "jira-mcp"
 		| "notion"
 		| "posthog"
 		| "zoom"
@@ -311,11 +339,12 @@ export type ChatToolConnection =
 	  }
 	| {
 			sourceId: string;
-			provider: "jira";
+			provider: "jira-mcp";
 			displayName: string;
 			baseUrl: string;
-			email: string;
-			token: string;
+			env?: Record<string, string>;
+			oauthClientId?: string;
+			oauthAccessToken: string;
 	  }
 	| {
 			sourceId: string;
@@ -381,16 +410,18 @@ const getProviderPreview = (connection: Doc<"appConnections">) =>
 	connection.provider === "yandex-calendar"
 		? (connection.email ?? "Yandex Calendar")
 		: connection.provider === "jira"
-			? getJiraPreview(connection)
+			? getJiraSyncPreview(connection)
+		: connection.provider === "jira-mcp"
+			? getMcpPreview(connection, "Jira MCP")
 			: connection.provider === "posthog"
-				? getPostHogPreview(connection)
+				? getMcpPreview(connection, "PostHog MCP")
 				: connection.provider === "notion"
-					? (connection.baseUrl ?? "Notion workspace")
+					? getMcpPreview(connection, "Notion MCP")
 					: connection.provider === "zoom"
-						? getZoomPreview(connection)
+						? getMcpPreview(connection, "Zoom MCP")
 						: `${connection.orgType === "x-org-id" ? "Yandex 360" : "Yandex Cloud"} • Org ${connection.orgId}`;
 
-const getJiraPreview = (connection: Doc<"appConnections">) => {
+const getJiraSyncPreview = (connection: Doc<"appConnections">) => {
 	if (!connection.baseUrl) {
 		return connection.email ?? "Jira";
 	}
@@ -405,21 +436,12 @@ const getJiraPreview = (connection: Doc<"appConnections">) => {
 	}
 };
 
-const getPostHogPreview = (connection: Doc<"appConnections">) => {
+const getMcpPreview = (
+	connection: Doc<"appConnections">,
+	fallback: string,
+) => {
 	if (!connection.baseUrl) {
-		return "PostHog MCP";
-	}
-
-	try {
-		return new URL(connection.baseUrl).hostname;
-	} catch {
-		return connection.baseUrl;
-	}
-};
-
-const getZoomPreview = (connection: Doc<"appConnections">) => {
-	if (!connection.baseUrl) {
-		return "Zoom MCP";
+		return fallback;
 	}
 
 	try {
@@ -438,6 +460,7 @@ const getOwnedConnection = async (
 	workspaceId: Id<"workspaces">,
 	provider:
 		| "jira"
+		| "jira-mcp"
 		| "notion"
 		| "posthog"
 		| "zoom"
@@ -483,6 +506,13 @@ const getOwnedJiraConnection = async (
 	ownerTokenIdentifier: string,
 	workspaceId: Id<"workspaces">,
 ) => await getOwnedConnection(ctx, ownerTokenIdentifier, workspaceId, "jira");
+
+const getOwnedJiraMcpConnection = async (
+	ctx: QueryCtx | MutationCtx,
+	ownerTokenIdentifier: string,
+	workspaceId: Id<"workspaces">,
+) =>
+	await getOwnedConnection(ctx, ownerTokenIdentifier, workspaceId, "jira-mcp");
 
 const getOwnedPostHogConnection = async (
 	ctx: QueryCtx | MutationCtx,
@@ -616,29 +646,14 @@ const toChatToolConnection = (
 	}
 
 	if (
-		connection.provider === "jira" &&
-		connection.baseUrl &&
-		connection.email &&
-		connection.token
-	) {
-		return {
-			sourceId: toAppSourceId(connection._id),
-			provider: "jira",
-			displayName: connection.displayName,
-			baseUrl: connection.baseUrl,
-			email: connection.email,
-			token: connection.token,
-		};
-	}
-
-	if (
-		connection.provider === "posthog" &&
+		(connection.provider === "jira-mcp" ||
+			connection.provider === "posthog") &&
 		connection.baseUrl &&
 		connection.token
 	) {
 		return {
 			sourceId: toAppSourceId(connection._id),
-			provider: "posthog",
+			provider: connection.provider,
 			displayName: connection.displayName,
 			baseUrl: connection.baseUrl,
 			...(connection.envJson
@@ -729,10 +744,10 @@ export const listSources = query({
 
 		for (const connection of connections) {
 			if (
-				connection.provider !== "yandex-calendar" &&
-				connection.provider !== "yandex-tracker" &&
-				connection.provider !== "jira" &&
-				connection.provider !== "posthog" &&
+					connection.provider !== "yandex-calendar" &&
+					connection.provider !== "yandex-tracker" &&
+					connection.provider !== "jira-mcp" &&
+					connection.provider !== "posthog" &&
 				connection.provider !== "notion" &&
 				connection.provider !== "zoom"
 			) {
@@ -818,6 +833,76 @@ export const getYandexCalendar = query({
 			email: connection.email,
 			serverAddress: connection.serverAddress,
 			calendarHomePath: connection.calendarHomePath,
+		};
+	},
+});
+
+export const disableConnection = mutation({
+	args: {
+		workspaceId: v.id("workspaces"),
+		sourceId: v.string(),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const identity = await requireIdentity(ctx);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
+
+		const connectionId = normalizeConnectionId(ctx, args.sourceId);
+		if (!connectionId) {
+			return null;
+		}
+
+		const connection = await ctx.db.get(connectionId);
+		if (
+			!connection ||
+			connection.ownerTokenIdentifier !== identity.tokenIdentifier ||
+			connection.workspaceId !== args.workspaceId
+		) {
+			return null;
+		}
+
+		await deleteConnectionActivity(ctx, connection._id);
+		await ctx.db.delete(connection._id);
+
+		return null;
+	},
+});
+
+export const getJiraMcp = query({
+	args: {
+		workspaceId: v.id("workspaces"),
+	},
+	returns: v.union(jiraMcpConnectionSettingsValidator, v.null()),
+	handler: async (ctx, args) => {
+		const identity = await requireIdentity(ctx);
+		await requireOwnedWorkspace(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
+		const connection = await getOwnedJiraMcpConnection(
+			ctx,
+			identity.tokenIdentifier,
+			args.workspaceId,
+		);
+
+		if (!connection?.baseUrl) {
+			return null;
+		}
+
+		return {
+			sourceId: toAppSourceId(connection._id),
+			provider: "jira-mcp" as const,
+			status: connection.status,
+			displayName: connection.displayName,
+			endpoint: connection.baseUrl,
+			...(connection.accountId
+				? { oauthClientId: connection.accountId }
+				: {}),
 		};
 	},
 });
@@ -1693,7 +1778,7 @@ export const upsertJira = internalMutation({
 			);
 			const patch: Partial<Doc<"appConnections">> = {
 				status: "connected",
-				displayName: "Jira",
+				displayName: "Jira sync",
 				baseUrl,
 				email,
 				token,
@@ -1711,7 +1796,7 @@ export const upsertJira = internalMutation({
 				sourceId: toAppSourceId(existingConnection._id),
 				provider: "jira" as const,
 				status: "connected" as const,
-				displayName: "Jira",
+				displayName: "Jira sync",
 				baseUrl,
 				email,
 				webhookSecret,
@@ -1731,7 +1816,7 @@ export const upsertJira = internalMutation({
 			workspaceId: args.workspaceId,
 			provider: "jira",
 			status: "connected",
-			displayName: "Jira",
+			displayName: "Jira sync",
 			baseUrl,
 			email,
 			token,
@@ -1745,11 +1830,96 @@ export const upsertJira = internalMutation({
 			sourceId: toAppSourceId(id),
 			provider: "jira" as const,
 			status: "connected" as const,
-			displayName: "Jira",
+			displayName: "Jira sync",
 			baseUrl,
 			email,
 			webhookSecret,
 			...(accountId ? { accountId } : {}),
+		};
+	},
+});
+
+export const upsertJiraMcp = internalMutation({
+	args: {
+		ownerTokenIdentifier: v.string(),
+		workspaceId: v.id("workspaces"),
+		displayName: v.string(),
+		baseUrl: v.string(),
+		env: v.optional(v.record(v.string(), v.string())),
+		oauthClientId: v.optional(v.string()),
+		oauthClientSecret: v.optional(v.string()),
+		oauthAccessToken: v.string(),
+		oauthRefreshToken: v.optional(v.string()),
+		tokenExpiresAt: v.optional(v.number()),
+	},
+	returns: jiraMcpConnectionSettingsValidator,
+	handler: async (ctx, args): Promise<JiraMcpConnectionSettings> => {
+		await requireOwnedWorkspace(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+		const now = Date.now();
+		const displayName = args.displayName.trim() || "Jira";
+		const baseUrl = args.baseUrl.trim();
+		const envJson = args.env ? JSON.stringify(args.env) : undefined;
+		const oauthClientId = args.oauthClientId?.trim() || undefined;
+		const oauthClientSecret = args.oauthClientSecret?.trim() || undefined;
+		const oauthRefreshToken = args.oauthRefreshToken?.trim() || undefined;
+		const existingConnection = await getOwnedJiraMcpConnection(
+			ctx,
+			args.ownerTokenIdentifier,
+			args.workspaceId,
+		);
+
+		if (existingConnection) {
+			await ctx.db.patch(existingConnection._id, {
+				status: "connected",
+				displayName,
+				baseUrl,
+				envJson,
+				...(oauthClientId ? { accountId: oauthClientId } : {}),
+				...(oauthClientSecret ? { oauthClientSecret } : {}),
+				token: args.oauthAccessToken,
+				...(oauthRefreshToken ? { oauthRefreshToken } : {}),
+				tokenExpiresAt: args.tokenExpiresAt,
+				updatedAt: now,
+			});
+
+			return {
+				sourceId: toAppSourceId(existingConnection._id),
+				provider: "jira-mcp" as const,
+				status: "connected" as const,
+				displayName,
+				endpoint: baseUrl,
+				...(oauthClientId ? { oauthClientId } : {}),
+			};
+		}
+
+		const id = await ctx.db.insert("appConnections", {
+			ownerTokenIdentifier: args.ownerTokenIdentifier,
+			workspaceId: args.workspaceId,
+			provider: "jira-mcp",
+			status: "connected",
+			displayName,
+			baseUrl,
+			...(envJson ? { envJson } : {}),
+			...(oauthClientId ? { accountId: oauthClientId } : {}),
+			...(oauthClientSecret ? { oauthClientSecret } : {}),
+			token: args.oauthAccessToken,
+			...(oauthRefreshToken ? { oauthRefreshToken } : {}),
+			...(args.tokenExpiresAt ? { tokenExpiresAt: args.tokenExpiresAt } : {}),
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		return {
+			sourceId: toAppSourceId(id),
+			provider: "jira-mcp" as const,
+			status: "connected" as const,
+			displayName,
+			endpoint: baseUrl,
+			...(oauthClientId ? { oauthClientId } : {}),
 		};
 	},
 });
@@ -2081,6 +2251,7 @@ export const consumeMcpOAuthState = internalMutation({
 	returns: v.union(
 		v.object({
 			provider: mcpOAuthProviderValidator,
+			state: v.string(),
 			ownerTokenIdentifier: v.string(),
 			workspaceId: v.id("workspaces"),
 			displayName: v.string(),
@@ -2108,6 +2279,7 @@ export const consumeMcpOAuthState = internalMutation({
 
 		return {
 			provider: state.provider,
+			state: state.state,
 			ownerTokenIdentifier: state.ownerTokenIdentifier,
 			workspaceId: state.workspaceId,
 			displayName: state.displayName,

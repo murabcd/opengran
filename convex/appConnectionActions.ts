@@ -11,6 +11,13 @@ import {
 	type ChatToolConnection,
 } from "./appConnections";
 import {
+	DEFAULT_JIRA_MCP_ENDPOINT,
+} from "../packages/ai/src/jira-mcp-tools.mjs";
+import {
+	refreshMcpSdkOAuthToken,
+	startMcpSdkOAuth,
+} from "./mcpOAuth";
+import {
 	verifyYandexCalendarConnection,
 	YANDEX_CALENDAR_SERVER_ADDRESS,
 } from "./yandexCalendar";
@@ -121,7 +128,9 @@ const getZoomOAuthRedirectUri = () =>
 
 const createMcpOAuthState = () => randomBytes(32).toString("hex");
 
-const getMcpOAuthRedirectUri = (provider: "notion" | "posthog") =>
+const getMcpOAuthRedirectUri = (
+	provider: "jira-mcp" | "notion" | "posthog",
+) =>
 	`${getConvexSiteUrl()}/api/oauth/${provider}/callback`;
 
 const getZoomOAuthConfig = (overrides: {
@@ -273,19 +282,24 @@ const createPkceChallenge = (verifier: string) =>
 
 const discoverMcpOAuthMetadata = async (baseUrl: string, displayName: string) => {
 	const mcpUrl = new URL(baseUrl);
-	const resourceMetadataUrl = new URL(
-		"/.well-known/oauth-protected-resource",
-		mcpUrl,
-	);
-	resourceMetadataUrl.searchParams.set("resource", baseUrl);
+	const resourceMetadataUrls = [
+		new URL(`/.well-known/oauth-protected-resource${mcpUrl.pathname}`, mcpUrl),
+		new URL("/.well-known/oauth-protected-resource", mcpUrl),
+	];
+	let resourceResponse: Response | undefined;
 
-	const resourceResponse = await fetch(resourceMetadataUrl, {
-		headers: { Accept: "application/json" },
-	});
+	for (const resourceMetadataUrl of resourceMetadataUrls) {
+		resourceResponse = await fetch(resourceMetadataUrl, {
+			headers: { Accept: "application/json" },
+		});
+		if (resourceResponse.ok) {
+			break;
+		}
+	}
 
-	if (!resourceResponse.ok) {
+	if (!resourceResponse?.ok) {
 		throw new Error(
-			`${displayName} MCP OAuth resource discovery failed (${resourceResponse.status}).`,
+			`${displayName} MCP OAuth resource discovery failed (${resourceResponse?.status ?? "unknown"}).`,
 		);
 	}
 
@@ -303,17 +317,29 @@ const discoverMcpOAuthMetadata = async (baseUrl: string, displayName: string) =>
 		);
 	}
 
-	const metadataUrl = new URL(
-		"/.well-known/oauth-authorization-server",
-		authServerUrl,
-	);
-	const metadataResponse = await fetch(metadataUrl, {
-		headers: { Accept: "application/json" },
-	});
+	const authServer = new URL(authServerUrl);
+	const authServerPath = authServer.pathname.replace(/\/$/u, "");
+	const metadataUrls = [
+		new URL(
+			`/.well-known/oauth-authorization-server${authServerPath === "/" ? "" : authServerPath}`,
+			authServer.origin,
+		),
+		new URL("/.well-known/oauth-authorization-server", authServer.origin),
+	];
+	let metadataResponse: Response | undefined;
 
-	if (!metadataResponse.ok) {
+	for (const metadataUrl of metadataUrls) {
+		metadataResponse = await fetch(metadataUrl, {
+			headers: { Accept: "application/json" },
+		});
+		if (metadataResponse.ok) {
+			break;
+		}
+	}
+
+	if (!metadataResponse?.ok) {
 		throw new Error(
-			`${displayName} MCP OAuth metadata discovery failed (${metadataResponse.status}).`,
+			`${displayName} MCP OAuth metadata discovery failed (${metadataResponse?.status ?? "unknown"}).`,
 		);
 	}
 
@@ -451,14 +477,19 @@ const refreshMcpTokensForWorkspace = async (
 	ctx: ActionCtx,
 	ownerTokenIdentifier: string,
 	workspaceId: Id<"workspaces">,
-	provider: "notion" | "posthog",
+	provider: "jira-mcp" | "notion" | "posthog",
 ) => {
 	const refreshSkewMs = 2 * 60 * 1000;
 	const connections = await ctx.runQuery(
 		internal.appConnections.getMcpOAuthConnectionsForWorkspace,
 		{ ownerTokenIdentifier, workspaceId, provider },
 	);
-	const displayName = provider === "posthog" ? "PostHog" : "Notion";
+	const displayName =
+		provider === "jira-mcp"
+			? "Jira"
+			: provider === "posthog"
+				? "PostHog"
+				: "Notion";
 
 	await Promise.all(
 		connections
@@ -468,15 +499,29 @@ const refreshMcpTokensForWorkspace = async (
 					connection.tokenExpiresAt <= Date.now() + refreshSkewMs,
 			)
 			.map(async (connection) => {
-				const tokens = await refreshMcpOAuthToken({
-					baseUrl: connection.baseUrl,
-					clientId: connection.oauthClientId,
-					...(connection.oauthClientSecret
-						? { clientSecret: connection.oauthClientSecret }
-						: {}),
-					refreshToken: connection.oauthRefreshToken,
-					displayName,
-				});
+				const tokens =
+					provider === "jira-mcp"
+						? await refreshMcpSdkOAuthToken({
+								baseUrl: connection.baseUrl,
+								redirectUri: getMcpOAuthRedirectUri("jira-mcp"),
+								client: {
+									clientId: connection.oauthClientId,
+									...(connection.oauthClientSecret
+										? { clientSecret: connection.oauthClientSecret }
+										: {}),
+								},
+								refreshToken: connection.oauthRefreshToken,
+								displayName,
+							})
+						: await refreshMcpOAuthToken({
+								baseUrl: connection.baseUrl,
+								clientId: connection.oauthClientId,
+								...(connection.oauthClientSecret
+									? { clientSecret: connection.oauthClientSecret }
+									: {}),
+								refreshToken: connection.oauthRefreshToken,
+								displayName,
+							});
 
 				await ctx.runMutation(internal.appConnections.updateMcpOAuthTokens, {
 					connectionId: connection.connectionId,
@@ -551,7 +596,10 @@ const normalizeZoomMcpEndpoint = (value: string) => {
 
 const normalizeRemoteMcpEndpoint = (
 	value: string,
-	{ provider, label }: { provider: "notion" | "posthog"; label: string },
+	{
+		provider,
+		label,
+	}: { provider: "jira-mcp" | "notion" | "posthog"; label: string },
 ) => {
 	const trimmedValue = value.trim();
 
@@ -755,6 +803,89 @@ export const connectJira = action({
 			token,
 			...(accountId ? { accountId } : {}),
 		});
+	},
+});
+
+export const connectJiraMcp = action({
+	args: {
+		workspaceId: v.id("workspaces"),
+		displayName: v.string(),
+		baseUrl: v.string(),
+		env: v.optional(v.record(v.string(), v.string())),
+		oauthClientId: v.optional(v.string()),
+		oauthClientSecret: v.optional(v.string()),
+	},
+	returns: mcpOAuthStartResultValidator,
+	handler: async (ctx, args): Promise<McpOAuthStartResult> => {
+		const identity = await requireIdentity(ctx);
+		const redirectUri = getMcpOAuthRedirectUri("jira-mcp");
+		const baseUrl = normalizeRemoteMcpEndpoint(
+			args.baseUrl.trim() || DEFAULT_JIRA_MCP_ENDPOINT,
+			{
+				provider: "jira-mcp",
+				label: "Jira",
+			},
+		);
+		const displayName = args.displayName.trim() || "Jira";
+		const env = Object.fromEntries(
+			Object.entries(args.env ?? {}).filter(
+				([key, value]) => key.trim().length > 0 && value.length > 0,
+			),
+		);
+		const requestedOAuthClientId = args.oauthClientId?.trim() || undefined;
+		const requestedOAuthClientSecret =
+			args.oauthClientSecret?.trim() || undefined;
+
+		if (!redirectUri.startsWith("http")) {
+			throw new ConvexError({
+				code: "JIRA_MCP_OAUTH_NOT_CONFIGURED",
+				message: "Jira OAuth is not configured.",
+			});
+		}
+
+		let client: { clientId: string; clientSecret?: string };
+		let oauthStart: Awaited<ReturnType<typeof startMcpSdkOAuth>>;
+		try {
+			client = requestedOAuthClientId
+				? {
+						clientId: requestedOAuthClientId,
+						...(requestedOAuthClientSecret
+							? { clientSecret: requestedOAuthClientSecret }
+							: {}),
+					}
+				: { clientId: "" };
+			oauthStart = await startMcpSdkOAuth({
+				baseUrl,
+				redirectUri,
+				client: client.clientId ? client : undefined,
+				createState: createMcpOAuthState,
+			});
+			client = oauthStart.client;
+		} catch (error) {
+			console.error("Failed to prepare Jira MCP OAuth connection", error);
+			throw new ConvexError({
+				code: "JIRA_MCP_OAUTH_NOT_CONFIGURED",
+				message: "Failed to start Jira OAuth.",
+			});
+		}
+
+		await ctx.runMutation(internal.appConnections.createMcpOAuthState, {
+			provider: "jira-mcp",
+			ownerTokenIdentifier: identity.tokenIdentifier,
+			workspaceId: args.workspaceId,
+			displayName,
+			baseUrl,
+			...(Object.keys(env).length > 0 ? { env } : {}),
+			oauthClientId: client.clientId,
+			...(client.clientSecret
+				? { oauthClientSecret: client.clientSecret }
+				: {}),
+			codeVerifier: oauthStart.codeVerifier,
+			state: oauthStart.state,
+			expiresAt: Date.now() + MCP_OAUTH_STATE_TTL_MS,
+		});
+
+		return { authorizationUrl: oauthStart.authorizationUrl };
 	},
 });
 
@@ -1002,6 +1133,12 @@ export const getAllForChatWithFreshTokens = action({
 				ctx,
 				identity.tokenIdentifier,
 				args.workspaceId,
+				"jira-mcp",
+			),
+			refreshMcpTokensForWorkspace(
+				ctx,
+				identity.tokenIdentifier,
+				args.workspaceId,
 				"notion",
 			),
 			refreshMcpTokensForWorkspace(
@@ -1035,6 +1172,12 @@ export const getSelectedForChatWithFreshTokens = action({
 	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
 		const identity = await requireIdentity(ctx);
 		await Promise.all([
+			refreshMcpTokensForWorkspace(
+				ctx,
+				identity.tokenIdentifier,
+				args.workspaceId,
+				"jira-mcp",
+			),
 			refreshMcpTokensForWorkspace(
 				ctx,
 				identity.tokenIdentifier,
@@ -1076,6 +1219,12 @@ export const getAllForChatInternalWithFreshTokens = internalAction({
 				ctx,
 				args.ownerTokenIdentifier,
 				args.workspaceId,
+				"jira-mcp",
+			),
+			refreshMcpTokensForWorkspace(
+				ctx,
+				args.ownerTokenIdentifier,
+				args.workspaceId,
 				"notion",
 			),
 			refreshMcpTokensForWorkspace(
@@ -1109,6 +1258,12 @@ export const getSelectedForChatInternalWithFreshTokens = internalAction({
 	returns: v.array(chatToolConnectionValidator),
 	handler: async (ctx, args): Promise<ChatToolConnection[]> => {
 		await Promise.all([
+			refreshMcpTokensForWorkspace(
+				ctx,
+				args.ownerTokenIdentifier,
+				args.workspaceId,
+				"jira-mcp",
+			),
 			refreshMcpTokensForWorkspace(
 				ctx,
 				args.ownerTokenIdentifier,
