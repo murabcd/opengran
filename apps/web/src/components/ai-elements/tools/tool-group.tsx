@@ -1,5 +1,5 @@
 import type { UIMessage } from "ai";
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { ToolDetails } from "@/components/ai-elements/tools/tool-details";
 import { getToolMeta } from "@/components/ai-elements/tools/tool-registry";
 import { toToolPartLike } from "@/components/ai-elements/tools/tool-renderer";
@@ -8,6 +8,7 @@ import { getToolStatus } from "@/components/ai-elements/utils/format-tool";
 import {
 	formatElapsedTime,
 	getToolDurationMs,
+	getToolStartedAt,
 } from "@/components/ai-elements/utils/tool-display";
 
 export type ToolGroupProps = {
@@ -39,29 +40,56 @@ export const ToolGroup = memo(function ToolGroup({
 	parts,
 }: ToolGroupProps) {
 	const [expanded, setExpanded] = useState(false);
+	const [now, setNow] = useState(() => Date.now());
 	const summary = useMemo(() => {
 		const toolParts = parts.map(toToolPartLike);
-		const failedCount = toolParts.filter(
-			(part) => getToolStatus(part, chatStatus).isError,
-		).length;
-		const pendingCount = toolParts.filter(
-			(part) => getToolStatus(part, chatStatus).isPending,
-		).length;
-		const durationMs = toolParts.reduce(
-			(total, part) => total + (getToolDurationMs(part) ?? 0),
-			0,
-		);
+		let durationMs = 0;
+		let failedCount = 0;
+		let hasLiveTimer = false;
+		let pendingCount = 0;
+
+		for (const part of toolParts) {
+			const status = getToolStatus(part, chatStatus);
+			if (status.isError) {
+				failedCount += 1;
+			}
+
+			if (status.isPending) {
+				pendingCount += 1;
+				hasLiveTimer ||= getToolStartedAt(part) !== null;
+			}
+
+			durationMs += getToolDisplayDurationMs({
+				isPending: status.isPending,
+				now,
+				part,
+			});
+		}
 
 		return {
 			durationLabel: durationMs > 0 ? formatElapsedTime(durationMs) : "",
 			failedCount,
+			hasLiveTimer,
 			isPending: pendingCount > 0,
 			summary: getGroupSummary({
 				failedCount,
 				totalCount: toolParts.length,
 			}),
 		};
-	}, [chatStatus, parts]);
+	}, [chatStatus, now, parts]);
+
+	useEffect(() => {
+		if (!summary.hasLiveTimer) {
+			return;
+		}
+
+		setNow(Date.now());
+		const interval = window.setInterval(() => {
+			setNow(Date.now());
+		}, 1000);
+
+		return () => window.clearInterval(interval);
+	}, [summary.hasLiveTimer]);
 
 	return (
 		<ToolRowBase
@@ -92,6 +120,28 @@ export const ToolGroup = memo(function ToolGroup({
 		</ToolRowBase>
 	);
 });
+
+const getToolDisplayDurationMs = ({
+	isPending,
+	now,
+	part,
+}: {
+	isPending: boolean;
+	now: number;
+	part: ReturnType<typeof toToolPartLike>;
+}) => {
+	const completedDuration = getToolDurationMs(part);
+	if (completedDuration !== null) {
+		return completedDuration;
+	}
+
+	if (!isPending) {
+		return 0;
+	}
+
+	const startedAt = getToolStartedAt(part);
+	return startedAt === null ? 0 : Math.max(0, now - startedAt);
+};
 
 const getToolPartKey = (part: UIMessage["parts"][number], index: number) =>
 	"toolCallId" in part && typeof part.toolCallId === "string"
