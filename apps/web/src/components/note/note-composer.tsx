@@ -1,9 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import type { Editor, JSONContent, Range } from "@tiptap/core";
-import Document from "@tiptap/extension-document";
-import Paragraph from "@tiptap/extension-paragraph";
 import Placeholder from "@tiptap/extension-placeholder";
-import Text from "@tiptap/extension-text";
 import { Tiptap, useEditor } from "@tiptap/react";
 import {
 	canOpenDesktopSoundSettings,
@@ -133,6 +130,7 @@ import {
 	storeSharedLocalFolders,
 } from "@/lib/local-folder-sharing";
 import { ENHANCED_NOTE_TEMPLATE_SLUG } from "@/lib/note-templates";
+import { createPlainTextEditorExtensions } from "@/lib/plain-text-editor";
 import {
 	getRecipeIcon,
 	type RecipePrompt,
@@ -2733,9 +2731,7 @@ function ChatInlinePopoverFooter({
 	}, [onRecipePopoverOpenChange, selectRecipeIndex]);
 	const composerEditor = useEditor({
 		extensions: [
-			Document,
-			Paragraph,
-			Text,
+			...createPlainTextEditorExtensions(),
 			TypedMention.configure({
 				HTMLAttributes: {
 					class: INLINE_MENTION_CLASS,

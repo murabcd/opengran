@@ -1,8 +1,5 @@
 import type { Editor, JSONContent, Range } from "@tiptap/core";
-import Document from "@tiptap/extension-document";
-import Paragraph from "@tiptap/extension-paragraph";
 import Placeholder from "@tiptap/extension-placeholder";
-import Text from "@tiptap/extension-text";
 import { Tiptap, useEditor } from "@tiptap/react";
 import {
 	DropdownMenu,
@@ -54,6 +51,7 @@ import {
 	getAppSourceLabel,
 	getSelectedScopeLabel,
 } from "@/lib/chat-source-display";
+import { createPlainTextEditorExtensions } from "@/lib/plain-text-editor";
 import {
 	getMentionAnchorRect,
 	getMentionPickerPosition,
@@ -588,9 +586,7 @@ function ChatComposerTextEditor({
 
 	const composerEditor = useEditor({
 		extensions: [
-			Document,
-			Paragraph,
-			Text,
+			...createPlainTextEditorExtensions(),
 			TypedMention.configure({
 				HTMLAttributes: {
 					class: INLINE_MENTION_CLASS,

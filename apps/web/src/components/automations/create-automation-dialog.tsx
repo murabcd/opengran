@@ -1,10 +1,7 @@
 "use client";
 
 import type { Editor, JSONContent, Range } from "@tiptap/core";
-import Document from "@tiptap/extension-document";
-import Paragraph from "@tiptap/extension-paragraph";
 import Placeholder from "@tiptap/extension-placeholder";
-import Text from "@tiptap/extension-text";
 import { Tiptap, useEditor } from "@tiptap/react";
 import { Button } from "@workspace/ui/components/button";
 import {
@@ -79,6 +76,7 @@ import {
 	getAppSourceLabel,
 } from "@/lib/chat-source-display";
 import { getNoteDisplayTitle } from "@/lib/note-title";
+import { createPlainTextEditorExtensions } from "@/lib/plain-text-editor";
 import {
 	getMentionAnchorRect,
 	getMentionPickerPosition,
@@ -987,9 +985,7 @@ function AutomationPromptEditor({
 
 	const editor = useEditor({
 		extensions: [
-			Document,
-			Paragraph,
-			Text,
+			...createPlainTextEditorExtensions(),
 			TypedMention.configure({
 				HTMLAttributes: {
 					class: INLINE_MENTION_CLASS,

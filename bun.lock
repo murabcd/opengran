@@ -88,6 +88,7 @@
         "@tiptap/extension-table-of-contents": "3.21.0",
         "@tiptap/extension-text": "3.21.0",
         "@tiptap/extension-underline": "3.21.0",
+        "@tiptap/extensions": "3.21.0",
         "@tiptap/markdown": "3.21.0",
         "@tiptap/pm": "3.21.0",
         "@tiptap/react": "3.21.0",
